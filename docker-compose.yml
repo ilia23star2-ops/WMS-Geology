@@ -1,0 +1,30 @@
+# ============================================================
+# WMS Geology — локальный PostgreSQL для разработки
+# ============================================================
+# Запуск:   docker compose up -d
+# Стоп:     docker compose down
+# Логи:     docker compose logs -f postgres
+# Сброс:    docker compose down -v  (УДАЛИТ ДАННЫЕ!)
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: wms-geology-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wms_geology
+      POSTGRES_USER: wms_user
+      POSTGRES_PASSWORD: wms_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U wms_user -d wms_geology" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
