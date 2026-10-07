@@ -10,4 +10,5 @@ urlpatterns = [
     path("api/v1/", include("apps.samples.urls")),
     path("api/v1/", include("apps.inventory.urls")),
     path("api/v1/", include("apps.picking.urls")),
+    path("api/v1/", include("apps.movements.urls")),
 ]
