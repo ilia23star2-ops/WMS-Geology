@@ -1,0 +1,1 @@
+# Приложение "Перемещения" — MoveOperation, MoveOperationItem.

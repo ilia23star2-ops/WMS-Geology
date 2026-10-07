@@ -1,0 +1,1 @@
+# Приложение "Выборка" — PickList, PickListItem, Shipment, ShipmentItem.
