@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     # Локальные
     "apps.storage",
     "apps.samples",
@@ -136,6 +137,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 # --- JWT ---
@@ -150,6 +152,20 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# --- drf-spectacular ---
+SPECTACULAR_SETTINGS = {
+    "TITLE": "WMS Geology API",
+    "DESCRIPTION": (
+        "API системы управления складским хранением "
+        "геологических материалов."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "SORT_OPERATIONS": False,
 }
 
 # --- CORS ---

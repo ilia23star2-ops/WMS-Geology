@@ -3,9 +3,11 @@
 
 - LoginSerializer — обёртка над TokenObtainPairSerializer,
   добавляет username и role в ответ.
-- UserInfoSerializer — информация о текущем пользователе.
+- LogoutRequestSerializer — body для logout (refresh).
+- UserInfoSerializer — информация о текущем пользователе (/me).
 """
 
+from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
@@ -33,7 +35,6 @@ class LoginSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        # Дополнительные поля в ответе (не в токене).
         data["username"] = self.user.username
         role = None
         full_name = ""
@@ -44,3 +45,21 @@ class LoginSerializer(TokenObtainPairSerializer):
         data["role"] = role
         data["full_name"] = full_name
         return data
+
+
+class LogoutRequestSerializer(serializers.Serializer):
+    """Body для POST /auth/logout/."""
+
+    refresh = serializers.CharField(
+        help_text="Refresh-токен для отзыва (blacklist).",
+    )
+
+
+class UserInfoSerializer(serializers.Serializer):
+    """Ответ GET /auth/me/."""
+
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    email = serializers.EmailField(allow_blank=True)
+    full_name = serializers.CharField(allow_blank=True)
+    role = serializers.CharField(allow_null=True, allow_blank=True)

@@ -11,6 +11,7 @@ python = "^3.12"
 django = "^5.2"
 djangorestframework = "^3.15"
 djangorestframework-simplejwt = "^5.3"
+drf-spectacular = "^0.27"
 psycopg = {extras = ["binary"], version = "^3.2"}
 django-environ = "^0.11"
 qrcode = "^7.4"
@@ -25,9 +26,6 @@ ruff = "^0.6"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-# ------------------------------------------------------------
-# Ruff — линтер и форматтер
-# ------------------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py312"
@@ -37,9 +35,6 @@ exclude = ["migrations", ".venv"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
 ignore = ["E501"]
 
-# ------------------------------------------------------------
-# pytest — тесты
-# ------------------------------------------------------------
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "wms_geology.settings"
 python_files = ["test_*.py"]

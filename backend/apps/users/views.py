@@ -8,6 +8,7 @@ Views приложения users.
 Refresh — стандартный из simplejwt (подключается в urls).
 """
 
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -15,7 +16,11 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .serializers import LoginSerializer
+from .serializers import (
+    LoginSerializer,
+    LogoutRequestSerializer,
+    UserInfoSerializer,
+)
 
 
 class LoginView(TokenObtainPairView):
@@ -30,6 +35,16 @@ class LogoutView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=LogoutRequestSerializer,
+        responses={
+            200: OpenApiResponse(description="Токен отозван."),
+            400: OpenApiResponse(
+                description="Ошибка: не передан refresh или токен невалиден."
+            ),
+        },
+        description="Отозвать refresh-токен (blacklist).",
+    )
     def post(self, request):
         refresh_token = request.data.get("refresh")
         if not refresh_token:
@@ -45,7 +60,9 @@ class LogoutView(APIView):
                 {"error": f"Не удалось отозвать токен: {exc}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response({"detail": "Токен отозван."}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Токен отозван."}, status=status.HTTP_200_OK
+        )
 
 
 class MeView(APIView):
@@ -53,6 +70,10 @@ class MeView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses={200: UserInfoSerializer},
+        description="Информация о текущем пользователе.",
+    )
     def get(self, request):
         user = request.user
         role = None
