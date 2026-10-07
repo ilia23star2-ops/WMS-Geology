@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+"""Утилита управления Django-проектом WMS Geology."""
+
+import os
+import sys
+
+
+def main() -> None:
+    """Точка входа для административных команд Django."""
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "wms_geology.settings")
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Не удалось импортировать Django. Убедитесь, что он установлен "
+            "и доступен в PYTHONPATH, или активируйте виртуальное окружение."
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == "__main__":
+    main()
