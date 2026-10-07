@@ -1,19 +1,18 @@
 """
-Модели приложения "Пробы".
+Модели приложения "Пробы" (v2).
 
 - Well — справочник скважин.
-- Sample — физическая единица хранения (проба в таре с типом исследования).
+- Sample — физическая единица хранения.
 - SampleWorkOrder — M:N-связь пробы с наряд-заказами.
 
-Ключевые доменные правила (см. docs/DECISIONS.md):
-- sample_number НЕ уникален (1.6);
-- проба всегда привязана к таре (container);
-- связь с Н/З — многие-ко-многим (1.7);
-- старые этикетки хранятся в legacy_data (JSONB) (1.8).
-
-Соответствует docs/DATABASE.md v1.
+Изменения v2 (относительно v1):
+- Soft-delete утилизации: `disposed_at`, `disposed_by`, `disposal_reason`
+  (см. docs/DECISIONS.md 1.24).
+- Ссылка на `Container` из storage v2 (FK та же, но у тары
+  теперь появился обязательный `container_type`).
 """
 
+from django.conf import settings
 from django.db import models
 
 from apps.storage.models import Container
@@ -23,27 +22,10 @@ from apps.work_orders.models import WorkOrder
 class Well(models.Model):
     """Скважина — источник пробы."""
 
-    well_name = models.CharField(
-        max_length=150,
-        help_text="Номер или название скважины",
-    )
-    field_name = models.CharField(
-        max_length=150,
-        blank=True,
-        default="",
-        help_text="Месторождение / площадь",
-    )
-    cluster = models.CharField(
-        max_length=100,
-        blank=True,
-        default="",
-        help_text="Куст",
-    )
-    coordinates = models.TextField(
-        blank=True,
-        default="",
-        help_text="Координаты (в будущем — PostGIS geography)",
-    )
+    well_name = models.CharField(max_length=150)
+    field_name = models.CharField(max_length=150, blank=True, default="")
+    cluster = models.CharField(max_length=100, blank=True, default="")
+    coordinates = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -60,31 +42,27 @@ class Sample(models.Model):
     Проба — физическая единица хранения.
 
     Одна строка = одна проба с конкретным типом исследования
-    в конкретной таре.
-
-    Номер пробы может повторяться (например, для разных типов
-    исследования). Уникальность — по sample_id.
+    в конкретной таре. Номер пробы не уникален.
     """
 
     STATUS_IN_STORAGE = "IN_STORAGE"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
     STATUS_ISSUED = "ISSUED"
     STATUS_CONSUMED = "CONSUMED"
+    STATUS_DISPOSED = "DISPOSED"
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
         (STATUS_CONSUMED, "Израсходована"),
+        (STATUS_DISPOSED, "Утилизирована"),
     ]
 
     sample_number = models.CharField(
         max_length=100,
         help_text="Номер пробы. НЕ уникален — может повторяться для разных типов исследования.",
     )
-    research_type = models.CharField(
-        max_length=100,
-        help_text="Тип исследования: Шлифы, Химия, Изотопы и т.д.",
-    )
+    research_type = models.CharField(max_length=100)
     well = models.ForeignKey(
         Well,
         on_delete=models.SET_NULL,
@@ -93,28 +71,16 @@ class Sample(models.Model):
         related_name="samples",
     )
     depth_from = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
+        max_digits=10, decimal_places=2, null=True, blank=True,
     )
     depth_to = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True,
+        max_digits=10, decimal_places=2, null=True, blank=True,
     )
-    site = models.CharField(
-        max_length=150,
-        blank=True,
-        default="",
-        help_text="Участок",
-    )
+    site = models.CharField(max_length=150, blank=True, default="")
     container = models.ForeignKey(
         Container,
         on_delete=models.PROTECT,
         related_name="samples",
-        help_text="Тара, в которой лежит проба. Обязательна.",
     )
     current_work_order = models.ForeignKey(
         WorkOrder,
@@ -122,24 +88,35 @@ class Sample(models.Model):
         null=True,
         blank=True,
         related_name="current_samples",
-        help_text="Актуальный наряд-заказ для быстрого отображения.",
     )
     status = models.CharField(
         max_length=50,
         choices=STATUS_CHOICES,
         default=STATUS_IN_STORAGE,
     )
-    qr_code = models.TextField(
-        unique=True,
+    qr_code = models.TextField(unique=True, null=True, blank=True)
+    legacy_data = models.JSONField(null=True, blank=True)
+
+    # --- Soft-delete утилизации (v2) ---
+    disposed_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="QR-код пробы (опционально).",
+        help_text="Когда проба утилизирована.",
     )
-    legacy_data = models.JSONField(
+    disposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text="Данные старой этикетки (для миграции).",
+        related_name="disposed_samples",
+        help_text="Кто утилизировал пробу.",
     )
+    disposal_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Причина утилизации.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -152,6 +129,7 @@ class Sample(models.Model):
             models.Index(fields=["research_type"], name="sample_research_type_idx"),
             models.Index(fields=["container"], name="sample_container_idx"),
             models.Index(fields=["current_work_order"], name="sample_work_order_idx"),
+            models.Index(fields=["status"], name="sample_status_idx"),
         ]
 
     def __str__(self) -> str:
@@ -159,12 +137,7 @@ class Sample(models.Model):
 
 
 class SampleWorkOrder(models.Model):
-    """
-    M:N-связь пробы с наряд-заказами.
-
-    Проба относится и к входящему, и к зашифрованному Н/З
-    одновременно. Фильтр по любому из них даёт одинаковый набор проб.
-    """
+    """M:N-связь пробы с наряд-заказами."""
 
     sample = models.ForeignKey(
         Sample,
