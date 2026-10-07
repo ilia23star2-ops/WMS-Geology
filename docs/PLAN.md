@@ -9,15 +9,17 @@
 
 ## Ближайший план
 
-**Активная серия:** `feature/0.2-prep-code` (планируется)
+**Активная серия:** `feature/1.0-backend-init`
 
 | # | Заход / пачка | Статус | Файлов |
 |---|---|---|---|
-| 1 | `TEMPLATES-PROJECT.md` — дополнение к шаблонам | ✅ | 1 |
-| 2 | Структура папок: `backend/`, `mobile/`, `web/`, `label-generator/` | ⬜ | 4 |
-| 3 | `.env.example` (backend) | ⬜ | 1 |
-| 4 | `.github/workflows/ci.yml` — черновик CI | ⬜ | 1 |
-| 5 | `README` в каждой папке (что там будет) | ⬜ | 4 |
+| 1 | Poetry init + `pyproject.toml` | ⬜ | 1 |
+| 2 | Django project skeleton (`wms_geology/`) | ⬜ | 3–4 |
+| 3 | Settings с PostgreSQL из `.env` | ⬜ | 1 |
+| 4 | Приложения `storage`, `samples`, `work_orders` | ⬜ | 3 |
+| 5 | Модели по `DATABASE.md` | ⬜ | 3–4 |
+| 6 | Миграции v1 | ⬜ | 1 |
+| 7 | Seeds: роли, тестовый пользователь | ⬜ | 1 |
 
 Легенда: ⬜ не начат · 🟡 в работе · ✅ закрыт · ❌ отменён
 
@@ -27,13 +29,12 @@
 
 | # | Серия | Что делает | Заходов |
 |---|---|---|---|
-| 1 | `feature/0.2-prep-code` | Подготовка структуры к кодовой фазе | 4–5 |
-| 2 | `feature/1.0-backend-init` | Django-проект, модели, миграции v1 | 5–7 |
-| 3 | `feature/1.1-backend-api` | Реализация эндпоинтов из `API.md` | 6–8 |
-| 4 | `feature/1.2-mobile-init` | Flutter-проект, сканер, поиск | 4–6 |
-| 5 | `feature/1.3-web-init` | React-проект, дашборд, реестр | 4–6 |
-| 6 | `feature/2.0-label-generator` | Генератор этикеток (Уровень 2) | 3–4 |
-| 7 | `feature/2.1-migration` | Миграция старых этикеток (OCR) | 4–5 |
+| 1 | `feature/1.0-backend-init` | Django-проект, модели, миграции v1 | 5–7 |
+| 2 | `feature/1.1-backend-api` | Реализация эндпоинтов из `API.md` | 6–8 |
+| 3 | `feature/1.2-mobile-init` | Flutter-проект, сканер, поиск | 4–6 |
+| 4 | `feature/1.3-web-init` | React-проект, дашборд, реестр | 4–6 |
+| 5 | `feature/2.0-label-generator` | Генератор этикеток (Уровень 2) | 3–4 |
+| 6 | `feature/2.1-migration` | Миграция старых этикеток (OCR) | 4–5 |
 
 ---
 
@@ -54,12 +55,13 @@
 
 | # | Задача | Приоритет | Когда |
 |---|---|---|---|
-| ТД-1 | Добавить шаблон `API.md` в шаблоны | ✅ закрыт | 0.1 |
-| ТД-2 | Расширить `TESTING.md` на unit/integration/contract | ✅ закрыт | 0.1 |
-| ТД-3 | `UI.md` — дизайн-система | средний | 0.2 |
-| ТД-4 | GitHub Actions (CI) — черновик | средний | 0.2 |
-| ТД-5 | `.env.example` для backend | низкий | 0.2 |
-| ТД-6 | Определить формат `legacy_data` (JSONB) | высокий | 0.2 |
+| ТД-1 | Шаблон `API.md` в шаблонах | ✅ закрыт | 0.1 |
+| ТД-2 | `TESTING.md` unit/integration/contract | ✅ закрыт | 0.1 |
+| ТД-3 | `UI.md` — дизайн-система | средний | перед 1.3 |
+| ТД-4 | GitHub Actions CI | ✅ закрыт | 0.2 |
+| ТД-5 | `.env.example` для backend | ✅ закрыт | 0.2 |
+| ТД-6 | Определить формат `legacy_data` (JSONB) | высокий | перед 2.1 |
+| ТД-7 | ERD-диаграмма БД | низкий | по запросу |
 
 ---
 
@@ -76,4 +78,5 @@
 
 | Серия | Дата закрытия | Ветка |
 |---|---|---|
-| `feature/0.1-foundation` | 2026-10-07 | commit `2e7ea42` (docs → main) |
+| `feature/0.1-foundation` | 2026-10-07 | docs → `main` (commit `2e7ea42`) |
+| `feature/0.2-prep-code` | 2026-10-07 | docs → `main` (commit `0a72c9f`) |
