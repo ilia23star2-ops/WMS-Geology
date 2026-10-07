@@ -1,0 +1,146 @@
+# ============================================================
+# WMS Geology — CI
+# ============================================================
+# Запускается на push в main / feature/** / fix/** и на PR.
+#
+# Каждый job активируется, только если есть соответствующий
+# файл проекта (pyproject.toml / package.json / pubspec.yaml).
+# Пока кода нет — все jobs пропускаются, CI остаётся зелёным.
+#
+# Когда появится код — jobs включаются автоматически.
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+      - 'feature/**'
+
+# Отменяем предыдущие запуски, если пришёл новый push в ту же ветку
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------
+  # Backend (Django + pytest)
+  # Активируется, когда появится backend/pyproject.toml
+  # --------------------------------------------------------
+  backend:
+    name: Backend (Django)
+    if: hashFiles('backend/pyproject.toml') != ''
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wms_geology_test
+          POSTGRES_USER: wms_user
+          POSTGRES_PASSWORD: wms_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Install dependencies
+        working-directory: backend
+        run: poetry install --no-interaction
+
+      - name: Run unit tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://wms_user:wms_password@localhost:5432/wms_geology_test
+          DJANGO_SECRET_KEY: ci-secret-key
+          DJANGO_DEBUG: 'True'
+        run: poetry run pytest tests/unit/ -v
+
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://wms_user:wms_password@localhost:5432/wms_geology_test
+          DJANGO_SECRET_KEY: ci-secret-key
+          DJANGO_DEBUG: 'True'
+        run: poetry run pytest tests/integration/ -v
+
+  # --------------------------------------------------------
+  # Web (React + Vite + vitest)
+  # Активируется, когда появится web/package.json
+  # --------------------------------------------------------
+  web:
+    name: Web (React)
+    if: hashFiles('web/package.json') != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run tests
+        working-directory: web
+        run: npm test -- --run
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+  # --------------------------------------------------------
+  # Mobile (Flutter)
+  # Активируется, когда появится mobile/pubspec.yaml
+  # --------------------------------------------------------
+  mobile:
+    name: Mobile (Flutter)
+    if: hashFiles('mobile/pubspec.yaml') != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Run tests
+        working-directory: mobile
+        run: flutter test
