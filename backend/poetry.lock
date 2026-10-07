@@ -83,6 +83,31 @@ files = [
 django = ">=5.2"
 
 [[package]]
+name = "djangorestframework-simplejwt"
+version = "5.5.1"
+description = "A minimal JSON Web Token authentication plugin for Django REST Framework"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "djangorestframework_simplejwt-5.5.1-py3-none-any.whl", hash = "sha256:2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469"},
+    {file = "djangorestframework_simplejwt-5.5.1.tar.gz", hash = "sha256:e72c5572f51d7803021288e2057afcbd03f17fe11d484096f40a460abc76e87f"},
+]
+
+[package.dependencies]
+django = ">=4.2"
+djangorestframework = ">=3.14"
+pyjwt = ">=1.7.1"
+
+[package.extras]
+crypto = ["cryptography (>=3.3.1)"]
+dev = ["Sphinx", "cryptography", "freezegun", "ipython", "pre-commit", "pytest", "pytest-cov", "pytest-django", "pytest-watch", "pytest-xdist", "python-jose (==3.3.0)", "pyupgrade", "ruff", "sphinx_rtd_theme (>=0.1.9)", "tox", "twine", "wheel", "yesqa"]
+doc = ["Sphinx", "sphinx_rtd_theme (>=0.1.9)"]
+lint = ["pre-commit", "pyupgrade", "ruff", "yesqa"]
+python-jose = ["python-jose (==3.3.0)"]
+test = ["cryptography", "freezegun", "pytest", "pytest-cov", "pytest-django", "pytest-xdist", "tox"]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.1"
 description = "brain-dead simple config-ini parsing"
@@ -338,6 +363,21 @@ files = [
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pyjwt"
+version = "2.15.1"
+description = "JSON Web Token implementation in Python"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pyjwt-2.15.1-py3-none-any.whl", hash = "sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193"},
+    {file = "pyjwt-2.15.1.tar.gz", hash = "sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8"},
+]
+
+[package.extras]
+crypto = ["cryptography (>=3.4.0)"]
+
+[[package]]
 name = "pypng"
 version = "0.20220715.0"
 description = "Pure Python library for saving and loading PNG images"
@@ -486,4 +526,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "9030b0ae5abc518a00d31ed38332cb0b188f9c8f3758c4f6e2afc8650dc84015"
+content-hash = "d40b7512436ece369355bc16d4974ff14df537fcceb0319329758ba6f47dec3c"
