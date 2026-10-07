@@ -47,6 +47,9 @@ INSTALLED_APPS = [
     "apps.storage",
     "apps.samples",
     "apps.work_orders",
+    "apps.inventory",
+    "apps.labels",
+    "apps.users",
 ]
 
 MIDDLEWARE = [
@@ -110,7 +113,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# --- Медиа (фото этикеток и т.п.) ---
+# --- Медиа ---
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
