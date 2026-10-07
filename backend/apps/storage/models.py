@@ -1,10 +1,20 @@
 """
-Модели приложения "Склад".
+Модели приложения "Склад" (v2).
 
-Топология хранения (комната → стеллаж → пролёт → ярус → ячейка),
-поддоны и тара.
+Топология:
+    Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3)
+    В ячейке ровно 1 поддон.
+    На поддоне — N тар, в каждой таре — M проб.
 
-Соответствует docs/DATABASE.md v1.
+Напольное хранение: поддон или тара могут стоять прямо в комнате.
+
+Ключевые решения (см. docs/DECISIONS.md):
+- 1.20 — топология: 4 яруса A–D, 1 поддон в ячейке;
+- 1.21 — Pallet «тихий»: без QR и pallet_code, OneToOne с Cell;
+- 1.22 — QR на Section, Cell, Container; не на Pallet/пробе;
+- 1.26 — вместимость через ContainerType.max_on_standard_pallet
+         + Pallet.capacity_override;
+- 1.29 — керн: поля есть, логика потом.
 """
 
 from django.db import models
@@ -53,7 +63,7 @@ class Rack(models.Model):
 
 
 class Section(models.Model):
-    """Пролёт внутри стеллажа."""
+    """Секция (пролёт) внутри стеллажа. Содержит 4 яруса A–D."""
 
     rack = models.ForeignKey(
         Rack,
@@ -61,11 +71,17 @@ class Section(models.Model):
         related_name="sections",
     )
     code = models.CharField(max_length=50)
+    qr_code = models.TextField(
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="QR-код секции (обязателен для виртуального вида).",
+    )
     description = models.TextField(blank=True, default="")
 
     class Meta:
-        verbose_name = "Пролёт"
-        verbose_name_plural = "Пролёты"
+        verbose_name = "Секция"
+        verbose_name_plural = "Секции"
         ordering = ["rack", "code"]
         constraints = [
             models.UniqueConstraint(
@@ -79,25 +95,32 @@ class Section(models.Model):
 
 
 class Tier(models.Model):
-    """Ярус внутри пролёта."""
+    """Ярус внутри секции. Кодовое обозначение — A, B, C, D (снизу вверх)."""
+
+    CODE_CHOICES = [
+        ("A", "A (нижний)"),
+        ("B", "B"),
+        ("C", "C"),
+        ("D", "D (верхний)"),
+    ]
 
     section = models.ForeignKey(
         Section,
         on_delete=models.CASCADE,
         related_name="tiers",
     )
-    code = models.CharField(max_length=50)
+    code = models.CharField(max_length=1, choices=CODE_CHOICES)
     level_number = models.IntegerField(
         null=True,
         blank=True,
-        help_text="Порядковый номер яруса (снизу вверх)",
+        help_text="1=A, 2=B, 3=C, 4=D",
     )
     description = models.TextField(blank=True, default="")
 
     class Meta:
         verbose_name = "Ярус"
         verbose_name_plural = "Ярусы"
-        ordering = ["section", "level_number", "code"]
+        ordering = ["section", "level_number"]
         constraints = [
             models.UniqueConstraint(
                 fields=["section", "code"],
@@ -110,25 +133,36 @@ class Tier(models.Model):
 
 
 class Cell(models.Model):
-    """Ячейка на ярусе. Вмещает до `max_pallets` поддонов."""
+    """Ячейка на ярусе. Вмещает ровно 1 поддон."""
+
+    CELL_TYPE_STANDARD = "STANDARD"
+    CELL_TYPE_CORE = "CORE"
+    CELL_TYPE_CHOICES = [
+        (CELL_TYPE_STANDARD, "Обычная"),
+        (CELL_TYPE_CORE, "Керновая"),
+    ]
 
     tier = models.ForeignKey(
         Tier,
         on_delete=models.CASCADE,
         related_name="cells",
     )
-    code = models.CharField(max_length=50)
+    code = models.CharField(max_length=50, help_text="1, 2 или 3")
     full_address = models.CharField(
         max_length=500,
         unique=True,
-        help_text="Полный адрес: Комната / Стеллаж / Пролёт / Ярус / Ячейка",
+        help_text="Комната / Стеллаж / Секция / Ярус / Ячейка",
     )
-    max_pallets = models.IntegerField(default=3)
+    cell_type = models.CharField(
+        max_length=20,
+        choices=CELL_TYPE_CHOICES,
+        default=CELL_TYPE_STANDARD,
+    )
     qr_code = models.TextField(
         unique=True,
         null=True,
         blank=True,
-        help_text="Содержимое QR-кода, привязанного к ячейке",
+        help_text="QR-код ячейки. Обязателен для точечной работы.",
     )
     is_active = models.BooleanField(default=True)
 
@@ -149,15 +183,19 @@ class Cell(models.Model):
 
 class Pallet(models.Model):
     """
-    Поддон — платформа для тар.
+    Поддон — «тихий» объект.
 
-    Может стоять:
-    - в ячейке (cell + position_in_cell), либо
-    - прямо на полу в комнате (floor_room), либо
-    - нигде ("в пути" — все три поля NULL).
-
-    Одновременно в ячейке и на полу — нельзя.
+    Не имеет QR и пользовательского кода. 1 ячейка = 1 поддон
+    (OneToOne). Все данные о хранении — в ячейке; при перемещении
+    поддона меняется только `Pallet.cell`, все тары «уезжают» вместе.
     """
+
+    PALLET_TYPE_STANDARD = "STANDARD"
+    PALLET_TYPE_CORE = "CORE"
+    PALLET_TYPE_CHOICES = [
+        (PALLET_TYPE_STANDARD, "Обычный"),
+        (PALLET_TYPE_CORE, "Керновый"),
+    ]
 
     STATUS_ACTIVE = "ACTIVE"
     STATUS_EMPTY = "EMPTY"
@@ -168,19 +206,13 @@ class Pallet(models.Model):
         (STATUS_IN_TRANSIT, "В пути"),
     ]
 
-    pallet_code = models.CharField(max_length=100, unique=True)
-    qr_code = models.TextField(unique=True, null=True, blank=True)
-    cell = models.ForeignKey(
+    cell = models.OneToOneField(
         Cell,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name="pallets",
-    )
-    position_in_cell = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Позиция поддона в ячейке: 1, 2 или 3",
+        related_name="pallet",
+        help_text="Ячейка, где стоит поддон (1 ячейка = 1 поддон).",
     )
     floor_room = models.ForeignKey(
         Room,
@@ -188,7 +220,21 @@ class Pallet(models.Model):
         null=True,
         blank=True,
         related_name="floor_pallets",
-        help_text="Комната, если поддон стоит прямо на полу",
+        help_text="Комната, если поддон стоит прямо на полу.",
+    )
+    pallet_type = models.CharField(
+        max_length=20,
+        choices=PALLET_TYPE_CHOICES,
+        default=PALLET_TYPE_STANDARD,
+    )
+    capacity_override = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Переопределение вместимости на этом поддоне: "
+            '{"container_type_id": max_count}. '
+            "Если пусто — используется ContainerType.max_on_standard_pallet."
+        ),
     )
     status = models.CharField(
         max_length=50,
@@ -200,37 +246,53 @@ class Pallet(models.Model):
     class Meta:
         verbose_name = "Поддон"
         verbose_name_plural = "Поддоны"
-        ordering = ["pallet_code"]
+        ordering = ["created_at"]
         constraints = [
             # Либо в ячейке, либо на полу, либо нигде ("в пути").
-            # Запрещено: одновременно cell и floor_room.
             models.CheckConstraint(
                 condition=(
-                    Q(cell__isnull=False, position_in_cell__isnull=False, floor_room__isnull=True)
-                    | Q(cell__isnull=True, position_in_cell__isnull=True, floor_room__isnull=False)
-                    | Q(cell__isnull=True, position_in_cell__isnull=True, floor_room__isnull=True)
+                    Q(cell__isnull=False, floor_room__isnull=True)
+                    | Q(cell__isnull=True, floor_room__isnull=False)
+                    | Q(cell__isnull=True, floor_room__isnull=True)
                 ),
                 name="pallet_location_exclusive",
-            ),
-            models.CheckConstraint(
-                condition=(
-                    Q(position_in_cell__isnull=True)
-                    | Q(position_in_cell__gte=1, position_in_cell__lte=3)
-                ),
-                name="pallet_position_in_cell_range",
             ),
         ]
 
     def __str__(self) -> str:
-        return self.pallet_code
+        return f"Pallet #{self.pk}"
+
+
+class ContainerType(models.Model):
+    """Справочник типов тары (коробка, ящик, кернобокс)."""
+
+    name = models.CharField(max_length=100, unique=True)
+    size_class = models.CharField(max_length=10, blank=True, default="")
+    max_on_standard_pallet = models.IntegerField(
+        default=10,
+        help_text="Максимум таких тар на стандартном поддоне.",
+    )
+    is_core = models.BooleanField(
+        default=False,
+        help_text="Задел: тип относится к керну.",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Тип тары"
+        verbose_name_plural = "Типы тары"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Container(models.Model):
     """
     Тара — физический контейнер с пробами одного типа исследования.
 
-    Может стоять либо на поддоне, либо прямо на полу в комнате,
-    либо быть "в пути" (оба поля NULL).
+    Может стоять на поддоне, прямо на полу в комнате, либо быть
+    «в пути» (оба поля NULL).
     """
 
     STATUS_ACTIVE = "ACTIVE"
@@ -243,8 +305,17 @@ class Container(models.Model):
     ]
 
     container_number = models.CharField(max_length=100, unique=True)
-    container_type = models.CharField(max_length=50, blank=True, default="")
-    qr_code = models.TextField(unique=True, null=True, blank=True)
+    container_type = models.ForeignKey(
+        ContainerType,
+        on_delete=models.PROTECT,
+        related_name="containers",
+    )
+    qr_code = models.TextField(
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="QR-код тары. Обязателен для приёмки/выборки.",
+    )
     pallet = models.ForeignKey(
         Pallet,
         on_delete=models.SET_NULL,
@@ -258,7 +329,12 @@ class Container(models.Model):
         null=True,
         blank=True,
         related_name="floor_containers",
-        help_text="Комната, если тара стоит прямо на полу",
+        help_text="Комната, если тара стоит прямо на полу.",
+    )
+    position_on_pallet = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Позиция на поддоне (порядок сканирования). Опционально.",
     )
     status = models.CharField(
         max_length=50,

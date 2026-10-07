@@ -9,15 +9,16 @@
 
 ## Где мы
 
-**Активная серия:** `feature/1.0-backend-init` (закрыта, ждёт merge в `main`)
+**Активная серия:** `feature/1.0a-topology-v2` (закрыта, ждёт merge в `main`)
 **Следующая серия:** `feature/1.1-backend-api` (планируется)
 
-**Текущий заход:** закрытие серии 1.0, обновление документации.
+**Текущий заход:** закрытие серии 1.0a, обновление документации.
 
 **Что делаем:**
-Серия 1.0 завершена. Django-проект инициализирован, все 6 приложений
-созданы, модели написаны и покрыты тестами, миграции применены, seeds
-ролей работают. Готовы к API.
+Серия 1.0a завершена. Топология v2 (4 яруса A–D, 1 поддон в ячейке,
+ContainerType, Pallet OneToOne), soft-delete утилизации,
+InventoryIssue, picking, movements — всё реализовано и покрыто тестами.
+Готовы к API.
 
 **Ближайшая работа:**
 Серия 1.1 — реализация API-эндпоинтов из `docs/API.md`.
@@ -27,22 +28,28 @@
 ## Что готово
 
 ### Инфраструктура
-- Python 3.14 + Poetry + PostgreSQL (портативный) + Django 5.2 + DRF.
-- 6 приложений: `storage`, `samples`, `work_orders`, `inventory`, `labels`, `users`.
+- Python 3.14 + Poetry + Django 5.2 + DRF.
+- **PostgreSQL:**
+  - рабочий ПК — портативный в `D:\Dev\pgsql\`;
+  - домашний ПК — Docker-контейнер `wms-geology-postgres`.
+- 8 приложений: `storage`, `samples`, `work_orders`, `inventory`,
+  `labels`, `users`, `picking`, `movements`.
 - Все миграции применены в БД `wms_geology`.
 
-### Модели (всего 13 моделей)
+### Модели (15 моделей, 128 тестов)
 
 | Приложение | Модели | Тестов |
 |---|---|---|
-| `storage` | Room, Rack, Section, Tier, Cell, Pallet, Container | 19 |
+| `storage` | Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container | 26 |
 | `users` | Role, UserProfile, AuditLog | 14 |
 | `work_orders` | WorkOrder (self-ref INCOMING↔CODED) | 12 |
-| `samples` | Well, Sample, SampleWorkOrder | 15 |
-| `inventory` | InventorySession, InventoryScan | 13 |
+| `samples` | Well, Sample (soft-delete), SampleWorkOrder | 18 |
+| `inventory` | InventorySession, InventoryScan, InventoryIssue | 21 |
+| `picking` | PickList, PickListItem, Shipment, ShipmentItem | 18 |
+| `movements` | MoveOperation, MoveOperationItem | 14 |
 | `users` (seeds) | management-команда `seed_roles` | 5 |
 
-**Всего тестов:** 78. Все зелёные.
+**Всего:** 128 тестов, все зелёные.
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`,
@@ -52,36 +59,33 @@
 
 ## Известные грабли
 
-### PostgreSQL (портативный)
-- Путь к бинарникам: `D:\Dev\pgsql\pgsql\bin\`.
-- Путь к данным: `D:\Dev\pgsql\pgdata\`.
-- Запуск: `pg_ctl.exe -D "D:/Dev/pgsql/pgdata" -l ... start`.
-- Стоп: `pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop`.
-- Пользователь `wms_user` имеет право `CREATEDB` (для тестов Django).
-- Пароль суперпользователя `postgres` — `postgres`.
-- `wms_user` / `wms_password`, БД `wms_geology`.
+### PostgreSQL
+- **Рабочий ПК:** портативный, `D:\Dev\pgsql\`, запуск через `pg_ctl`.
+- **Домашний ПК:** Docker, `docker compose up -d`.
+- Оба — порт 5432. Не запускать оба одновременно на одной машине.
+- `wms_user` имеет право `CREATEDB` (для тестов Django).
 
 ### Django
-- **Все команды — только через** `poetry run python manage.py ...`.
-- `manage.py check` и `pytest` запускаются из `backend/`.
-- **`CheckConstraint(check=...)` устарел** в Django 5.2 → использовать `condition=...`.
-- CHECK с NULL в Postgres: `NULL = NULL` не TRUE → учитывать в constraints.
-- **`ProtectedError`** при удалении `Container` с пробами (PROTECT).
-- **`on_delete=SET_NULL`** для `AuditLog.user`, `InventoryScan.sample`,
-  `WorkOrder.linked_order` → запись остаётся.
+- Все команды — **только через** `poetry run python manage.py ...`.
+- `CheckConstraint` — использовать `condition=`, не `check=`.
+- CHECK с NULL в Postgres: `NULL = NULL` не TRUE → учитывать.
+- `ProtectedError` при удалении `Container` с пробами / `ContainerType`
+  с контейнерами / `Sample` из `PickListItem` и `ShipmentItem`.
+- `on_delete=SET_NULL` для audit, dispose, move items.
 
 ### Домен
-- Проба **не уникальна** по номеру. Уникальна по `sample_id`.
-- `SampleParts` **не нужна** — проба и есть единица хранения.
-- Одна тара = **один** тип исследования.
+- Проба **не уникальна** по номеру.
+- Одна тара = один тип исследования.
+- `Pallet` — «тихий» объект (OneToOne с Cell, без QR).
 - `WorkOrders.linked_order_id` — self-ref INCOMING ↔ CODED.
-- Проба связана с Н/З через `SampleWorkOrders` (M:N).
-- `Pallet` может быть: в ячейке, на полу, или «в пути» (все NULL).
+- `SampleWorkOrders` — M:N проба ↔ Н/З.
+- Керн — поля есть, логика позже.
 
 ### Инструменты
-- Git — только терминал. Терминал VS Code — **Git Bash**.
+- Git — только терминал.
+- **Рабочий ПК:** Git Bash (MINGW64), SSH через `ssh.github.com:443`.
+- **Домашний ПК:** UCRT64 (MSYS2), SSH напрямую `github.com:22`.
 - VS Code может дописывать `.vscode/settings.json` — откатывать.
-- SSH через `ssh.github.com:443`.
 
 ---
 
@@ -97,7 +101,7 @@
 ## Правила текущей сессии
 
 - Кодовая фаза.
-- Каждый заход — 1–3 файла кода + тесты (пачки-исключения — boilerplate).
+- Каждый заход — 1–3 файла кода + тесты (пачки-исключения).
 - Файлы выдаются единым блоком.
 - Все Django-команды — через `poetry run`.
 
