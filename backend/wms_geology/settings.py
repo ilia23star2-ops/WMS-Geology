@@ -5,6 +5,7 @@
 См. .env.example — там перечислены все поддерживаемые переменные.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -43,6 +44,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Сторонние
     "rest_framework",
+    "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     # Локальные
     "apps.storage",
     "apps.samples",
@@ -125,6 +129,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # --- DRF ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -132,6 +137,35 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# --- JWT ---
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=env("JWT_ACCESS_LIFETIME_MINUTES")
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=env("JWT_REFRESH_LIFETIME_DAYS")
+    ),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# --- drf-spectacular ---
+SPECTACULAR_SETTINGS = {
+    "TITLE": "WMS Geology API",
+    "DESCRIPTION": (
+        "API системы управления складским хранением "
+        "геологических материалов."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "SORT_OPERATIONS": False,
 }
 
 # --- CORS ---

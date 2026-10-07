@@ -9,19 +9,18 @@
 
 ## Где мы
 
-**Активная серия:** `feature/1.0a-topology-v2` (закрыта, ждёт merge в `main`)
-**Следующая серия:** `feature/1.1-backend-api` (планируется)
+**Активная серия:** `feature/1.1-backend-api` (закрыта, ждёт merge в `main`)
+**Следующая серия:** `feature/1.2-mobile-init` (планируется)
 
-**Текущий заход:** закрытие серии 1.0a, обновление документации.
+**Текущий заход:** закрытие серии 1.1, обновление документации.
 
 **Что делаем:**
-Серия 1.0a завершена. Топология v2 (4 яруса A–D, 1 поддон в ячейке,
-ContainerType, Pallet OneToOne), soft-delete утилизации,
-InventoryIssue, picking, movements — всё реализовано и покрыто тестами.
-Готовы к API.
+Серия 1.1 завершена. REST API реализован полностью: 8 приложений,
+~60 эндпоинтов, JWT-аутентификация, OpenAPI-схема, 268 тестов.
+Бэкенд готов к подключению мобильного и веб-клиентов.
 
 **Ближайшая работа:**
-Серия 1.1 — реализация API-эндпоинтов из `docs/API.md`.
+Серия 1.2 — Flutter-приложение: сканер QR, поиск, инвентаризация.
 
 ---
 
@@ -29,63 +28,78 @@ InventoryIssue, picking, movements — всё реализовано и покр
 
 ### Инфраструктура
 - Python 3.14 + Poetry + Django 5.2 + DRF.
-- **PostgreSQL:**
-  - рабочий ПК — портативный в `D:\Dev\pgsql\`;
-  - домашний ПК — Docker-контейнер `wms-geology-postgres`.
-- 8 приложений: `storage`, `samples`, `work_orders`, `inventory`,
-  `labels`, `users`, `picking`, `movements`.
-- Все миграции применены в БД `wms_geology`.
+- PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
+- JWT-аутентификация (`djangorestframework-simplejwt`).
+- OpenAPI 3 (`drf-spectacular`), Swagger UI на `/api/docs/`.
 
-### Модели (15 моделей, 128 тестов)
+### API (v1)
+- **storage** — 8 ViewSets (Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container).
+- **work_orders** — WorkOrder + custom action `link`.
+- **samples** — Well, Sample, SampleWorkOrder + **фильтр `?work_order=`** с учётом linked_order.
+- **inventory** — сессии, сканы, расхождения + custom `complete`, `resolve`.
+- **picking** — PickList, PickListItem, Shipment + custom `activate`, `complete`, `pick`, `add-from-pick-list`.
+- **movements** — MoveOperation + custom `execute`.
+- **users** — JWT auth: `login`, `refresh`, `logout`, `me`.
+
+### Модели (15 моделей, 268 тестов)
 
 | Приложение | Модели | Тестов |
 |---|---|---|
-| `storage` | Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container | 26 |
-| `users` | Role, UserProfile, AuditLog | 14 |
-| `work_orders` | WorkOrder (self-ref INCOMING↔CODED) | 12 |
-| `samples` | Well, Sample (soft-delete), SampleWorkOrder | 18 |
-| `inventory` | InventorySession, InventoryScan, InventoryIssue | 21 |
-| `picking` | PickList, PickListItem, Shipment, ShipmentItem | 18 |
-| `movements` | MoveOperation, MoveOperationItem | 14 |
-| `users` (seeds) | management-команда `seed_roles` | 5 |
+| storage | Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container | 26 + 19 + 17 |
+| users | Role, UserProfile, AuditLog | 14 + 5 + 12 (auth) |
+| work_orders | WorkOrder | 12 + 15 |
+| samples | Well, Sample, SampleWorkOrder | 18 + 20 |
+| inventory | InventorySession, InventoryScan, InventoryIssue | 21 + 16 |
+| picking | PickList, PickListItem, Shipment, ShipmentItem | 18 + 18 |
+| movements | MoveOperation, MoveOperationItem | 14 + 15 |
+| openapi | — | 7 |
 
-**Всего:** 128 тестов, все зелёные.
+**Всего:** 268 тестов, все зелёные.
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`,
   `TESTING`, `PLAN`, `PROGRESS`, `ISSUES` — актуальны.
+- OpenAPI-схема автогенерируется.
 
 ---
 
 ## Известные грабли
 
 ### PostgreSQL
-- **Рабочий ПК:** портативный, `D:\Dev\pgsql\`, запуск через `pg_ctl`.
-- **Домашний ПК:** Docker, `docker compose up -d`.
-- Оба — порт 5432. Не запускать оба одновременно на одной машине.
+- **Домашний ПК:** Docker (`docker compose up -d`).
+- **Рабочий ПК:** портативный `pg_ctl`.
+- Порт 5432 на обеих машинах.
 - `wms_user` имеет право `CREATEDB` (для тестов Django).
 
 ### Django
-- Все команды — **только через** `poetry run python manage.py ...`.
-- `CheckConstraint` — использовать `condition=`, не `check=`.
-- CHECK с NULL в Postgres: `NULL = NULL` не TRUE → учитывать.
-- `ProtectedError` при удалении `Container` с пробами / `ContainerType`
-  с контейнерами / `Sample` из `PickListItem` и `ShipmentItem`.
-- `on_delete=SET_NULL` для audit, dispose, move items.
+- Все команды — только через `poetry run python manage.py ...`.
+- `CheckConstraint(condition=...)`, не `check=`.
+- CHECK с NULL: `NULL = NULL` не TRUE.
+- `ProtectedError` при удалении Container с пробами, ContainerType
+  с контейнерами, Sample из PickListItem и ShipmentItem.
+- **`poetry lock`** после изменения `pyproject.toml`.
+
+### API
+- Аутентификация — JWT (`Authorization: Bearer <access>`).
+- Pagination — `PageNumberPagination`, `PAGE_SIZE=50`.
+- Формат ошибок DRF — стандартный (`{"field": ["..."]}` и
+  `{"non_field_errors": ["..."]}` для XOR-валидаций).
+- **Ключевой фильтр** `?work_order=` — учитывает linked_order
+  (см. DECISIONS 1.7).
 
 ### Домен
-- Проба **не уникальна** по номеру.
+- Проба не уникальна по номеру.
 - Одна тара = один тип исследования.
 - `Pallet` — «тихий» объект (OneToOne с Cell, без QR).
 - `WorkOrders.linked_order_id` — self-ref INCOMING ↔ CODED.
-- `SampleWorkOrders` — M:N проба ↔ Н/З.
 - Керн — поля есть, логика позже.
 
 ### Инструменты
 - Git — только терминал.
-- **Рабочий ПК:** Git Bash (MINGW64), SSH через `ssh.github.com:443`.
-- **Домашний ПК:** UCRT64 (MSYS2), SSH напрямую `github.com:22`.
+- **Домашний ПК:** UCRT64 (MSYS2), SSH `github.com:22`.
+- **Рабочий ПК:** Git Bash (MINGW64), SSH через порт 443.
 - VS Code может дописывать `.vscode/settings.json` — откатывать.
+- Кириллица в пути (`Програмирование`) — оборачивать в кавычки.
 
 ---
 
