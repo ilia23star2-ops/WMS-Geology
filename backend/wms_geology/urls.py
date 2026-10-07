@@ -1,9 +1,9 @@
 """Корневая маршрутизация URL проекта WMS Geology."""
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # API v1 подключим в следующих заходах
+    path("api/v1/storage/", include("apps.storage.urls")),
 ]
