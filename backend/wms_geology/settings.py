@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.labels",
     "apps.users",
+    "apps.picking",
+    "apps.movements",
 ]
 
 MIDDLEWARE = [
