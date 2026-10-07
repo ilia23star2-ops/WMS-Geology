@@ -36,8 +36,9 @@ Android-приложение для планшетов. QR-коды как ос�
 **Основная ветка:** `main`
 
 **Архивные ветки (не удаляем, `RULES.md` §7):**
-- `feature/1.0-backend-init` (архив, влита в `main` 2026-10-07)
-- `feature/1.0a-topology-v2` (архив, влита в `main` 2026-10-07)
+- `feature/1.0-backend-init` (архив)
+- `feature/1.0a-topology-v2` (архив)
+- `feature/1.1-backend-api` (архив)
 
 **Активные имена веток:**
 - `feature/X.Y-<имя>` — долгоживущая серия
@@ -58,29 +59,36 @@ Android-приложение для планшетов. QR-коды как ос�
 
 ### Основное
 
-- **Язык (бэкенд):** Python 3.14 (целевой 3.12+)
+- **Язык (бэкенд):** Python 3.14
 - **Фреймворк (бэкенд):** Django 5.2 + Django REST Framework
-- **БД:** PostgreSQL 16+ (см. §БД — два окружения)
-- **Язык (мобильное):** Dart (Flutter)
-- **Язык (веб):** TypeScript / React
+- **БД:** PostgreSQL 16+ (см. §БД)
+- **Язык (мобильное):** Dart 3.13+ / Flutter 3.47+
+- **Язык (веб):** TypeScript / React (позже)
 - **Сборщик:** Poetry, pub, npm
 
 ### Зависимости (ключевые)
 
+**Backend:**
 - `psycopg[binary]` — драйвер PostgreSQL.
 - `djangorestframework` — REST API.
+- `djangorestframework-simplejwt` — JWT-аутентификация.
+- `drf-spectacular` — OpenAPI 3.
 - `django-environ` — чтение `.env`.
-- `qrcode` — генерация QR.
-- `pillow` — работа с изображениями для QR.
-- `mobile_scanner` — сканирование QR (Flutter, позже).
-- `google_ml_kit` — OCR старых этикеток (Flutter, позже).
+- `qrcode` + `pillow` — генерация QR.
+
+**Mobile (план):**
+- `dio` — HTTP-клиент (bundle-2).
+- `flutter_secure_storage` — JWT (bundle-2).
+- `provider` — state management (bundle-2).
+- `mobile_scanner` — QR-сканер (bundle-4).
+- `sqflite` — офлайн-кэш (позже).
 
 ### Окружение
 
-- **IDE:** VS Code (бэкенд, веб, доки) + Android Studio (мобильное).
-- **ОС разработки:** Windows (две машины — см. §Многомашинность).
+- **IDE:** VS Code (backend, mobile, web, docs) + Android Studio (mobile).
+- **ОС разработки:** Windows.
 - **ОС сервера:** Linux (план).
-- **CI:** GitHub Actions (условный, включается по мере появления кода).
+- **CI:** GitHub Actions (условный).
 
 ---
 
@@ -88,7 +96,9 @@ Android-приложение для планшетов. QR-коды как ос�
 
 ### Git
 
-Все операции — только в терминале. Создание ветки пачки:
+Все операции — только в терминале.
+
+Создание ветки пачки:
 git checkout feature/X.Y-xxx
 git pull
 git checkout -b fix/X.Y-bundle
@@ -109,28 +119,30 @@ git push origin --delete fix/X.Y-bundle
 
 text
 
-### Сборка
+### Backend
 
-- Backend: `cd backend && poetry install`
-- Web: `cd web && npm install` (позже)
-- Mobile: `cd mobile && flutter pub get` (позже)
+- Установка: `cd backend && poetry install`
+- Тесты: `cd backend && poetry run pytest -q`
+- Проверка миграций:
+  `cd backend && poetry run python manage.py makemigrations --check --dry-run`
+- Миграции: `cd backend && poetry run python manage.py migrate`
+- Seeds: `cd backend && poetry run python manage.py seed_roles`
+- Запуск: `cd backend && poetry run python manage.py runserver`
 
-### Тесты
+### Mobile
 
-- Backend: `cd backend && poetry run pytest -v`
-- Проверка миграций: `cd backend && poetry run python manage.py makemigrations --check --dry-run`
-- Web: `cd web && npm test` (позже)
-- Mobile: `cd mobile && flutter test` (позже)
-
-### Запуск
-
-- Backend: `cd backend && poetry run python manage.py runserver`
-- Web: `cd web && npm run dev` (позже)
-- Mobile: `cd mobile && flutter run` (позже)
+- Зависимости: `cd mobile && flutter pub get`
+- Анализ: `cd mobile && flutter analyze`
+- Тесты: `cd mobile && flutter test`
+- Устройства: `cd mobile && flutter devices`
+- Эмуляторы: `cd mobile && flutter emulators`
+- Запуск: `cd mobile && flutter run -d <device_id>`
+- Запуск на эмуляторе: `flutter run -d emulator-5554`
+- Запуск на планшете: `flutter run -d 2312FPCA6G`
 
 ### База данных
 
-Зависит от машины (см. §БД).
+Зависит от машины (см. §Многомашинность).
 
 **Домашний ПК (Docker):**
 docker compose up -d # Запустить PostgreSQL
@@ -145,13 +157,6 @@ text
 pg_ctl.exe -D "D:/Dev/pgsql/pgdata" -l "D:/Dev/pgsql/pgdata/logfile.log" start
 pg_ctl.exe -D "D:/Dev/pgsql/pgdata" status
 pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop
-
-text
-
-**Миграции и seeds (любая машина):**
-cd backend
-poetry run python manage.py migrate
-poetry run python manage.py seed_roles
 
 text
 
@@ -173,13 +178,16 @@ text
 
 | Параметр | Рабочий ПК | Домашний ПК |
 |---|---|---|
-| Путь проекта | `D:\Dev\projects\WMS-Geology` | `C:\Users\Илья\Desktop\Програмирование\WMS-Geology` |
+| Путь проекта | `D:\Dev\projects\WMS-Geology` | `C:\Projert\WMS-Geology` |
 | Терминал | Git Bash (MINGW64) | UCRT64 (MSYS2) |
-| Python | 3.14 (`D:\Dev\python`) | 3.14 (user install) |
+| Python | 3.14 (`D:\Dev\python`) | 3.14 (`AppData\Local\...\Python314`) |
 | Poetry | 2.5.1 | 2.5.1 |
 | **PostgreSQL** | **Портативный** (`D:\Dev\pgsql\`) | **Docker Compose** |
 | SSH к GitHub | `ssh.github.com:443` | `github.com:22` |
 | Права админа | ❌ нет | ✅ есть |
+| Flutter | ❌ не установлен | ✅ 3.47.6 / Dart 3.13.5 |
+| Android SDK | ❌ | `C:\Android\Sdk` |
+| Android Studio | есть | есть |
 
 **Параметры БД одинаковые на обеих машинах:**
 - БД: `wms_geology`
@@ -190,12 +198,17 @@ text
 - **Основной:** VS Code + терминал (Git Bash / UCRT64).
 - **Fallback:** веб-редактор GitHub.
 
-**При переключении машин:**
-1. `git pull` — обновить локальную ветку.
-2. `poetry install` — если изменился `pyproject.toml`.
-3. `docker compose up -d` или `pg_ctl start` — поднять БД.
-4. `poetry run python manage.py migrate` — применить новые миграции.
-5. `poetry run pytest` — убедиться, что всё зелёное.
+**Правила при переезде проекта (переносе папки):**
+1. `docker compose down` (домашний) / `pg_ctl stop` (рабочий).
+2. Закрыть VS Code полностью.
+3. Убить процессы `dart.exe`, `flutter.exe`, `python.exe`, `Code.exe`.
+4. Переместить папку.
+5. Открыть в VS Code.
+6. **Backend:** `poetry env remove --all && poetry install` — venv хранит старый путь.
+7. **Mobile:** `flutter clean && flutter pub get` — Dart-кэш хранит старый путь.
+8. `docker compose up -d`.
+9. `poetry run pytest -q` — 268 должно быть зелёное.
+10. `flutter analyze` — 0 issues.
 
 **Вопросы при старте чата:**
 1. На какой машине работаешь? (Рабочий / Домашний)
@@ -207,10 +220,8 @@ text
 
 ### Фазы проекта
 
-1. **Проектная фаза** — завершена (серии 0.1, 0.2).
+1. **Проектная фаза** — завершена.
 2. **Кодовая фаза** — активна.
-
-**Текущая фаза:** кодовая.
 
 ### Серии
 
@@ -219,19 +230,18 @@ text
 | 0.1-foundation | ✅ | Проектные доки |
 | 0.2-prep-code | ✅ | Структура, `.env.example`, CI |
 | 1.0-backend-init | ✅ | Django, 15 моделей, 78 тестов |
-| 1.0a-topology-v2 | ✅ | Модели v2, picking, movements, **128 тестов** |
-| **1.1-backend-api** | 🟡 текущая | API-эндпоинты по `docs/API.md` |
-| 1.2-mobile-init | ⬜ | Flutter: сканер, поиск |
+| 1.0a-topology-v2 | ✅ | Модели v2, picking, movements, 128 тестов |
+| 1.1-backend-api | ✅ | REST API, JWT, OpenAPI, 268 тестов |
+| **1.2-mobile-init** | 🟡 текущая | Flutter: структура, сканер, поиск, инвентаризация |
 | 1.3-web-init | ⬜ | React: дашборд, реестр |
-| 2.0-label-generator | ⬜ | Генератор этикеток (Уровень 2) |
+| 2.0-label-generator | ⬜ | Генератор этикеток |
 | 2.1-migration | ⬜ | Миграция старых этикеток (OCR) |
 | 2.2-sorting-assistant | ⬜ | Помощник сортировки (bin packing) |
 
 ### Внешние интеграции
 
 Лаборатории — источники данных. Формат обмена на первом
-этапе — **Уровень 1 (наклейка поверх)**. Уровень 2 (генератор
-этикеток как сервис) — серия 2.0.
+этапе — **Уровень 1 (наклейка поверх)**. Уровень 2 — серия 2.0.
 
 ### QR-стратегия
 
@@ -239,49 +249,53 @@ text
 - QR на **секции** — виртуальный вид ярусов A–D.
 - QR на **ячейке** — точечная работа.
 - На поддонах и пробах — **нет**.
-- Существующие этикетки не переклеиваются.
 - Старый ID → `Sample.legacy_data` (JSONB).
 
 ### Домен (ключевое)
 
 - **Проба** — физическая единица хранения (`Sample`).
-- Разделение по типам — **вне WMS**.
 - Одна тара = **один** тип исследования.
 - Номер пробы может повторяться.
 - Н/З: `INCOMING` ↔ `CODED` через `linked_order_id`.
 - Проба ↔ Н/З: M:N через `SampleWorkOrder`.
-- **User** — стандартный Django + `UserProfile` (OneToOne).
 - `Pallet` — «тихий» объект (OneToOne с `Cell`).
-- `Cell` вмещает **1 поддон** (не 3).
 - Ярусы — A, B, C, D (снизу вверх).
-- `Container` удаляется только если пуст (`PROTECT` от `Sample`).
+- `Container` удаляется только если пуст (`PROTECT`).
 - Утилизация — **soft-delete** (`status = DISPOSED`).
 
 ### БД — два окружения
 
 **Домашний ПК — Docker:**
 - Образ `postgres:16`, контейнер `wms-geology-postgres`.
-- Volume `postgres_data` — данные переживают рестарт.
+- Volume `postgres_data`.
 - `docker-compose.yml` в корне проекта.
-- Снести всё: `docker compose down -v`.
 
 **Рабочий ПК — портативный PostgreSQL:**
 - Бинарники: `D:\Dev\pgsql\pgsql\bin\`.
 - Данные: `D:\Dev\pgsql\pgdata\`.
-- Запуск вручную (не служба Windows).
-- Локаль кластера — `Russian_Russia.1251` (техдолг ТД-8).
+- Локаль кластера — `Russian_Russia.1251` (ТД-8).
 
 ### Терминал
 
 **Рабочий ПК:** Git Bash (MINGW64).
 **Домашний ПК:** UCRT64 (MSYS2).
 
-Различия:
-- Git Bash — `MINGW64`, пути `/c/Users/...`.
-- UCRT64 — `MSYS2`, пути `/c/Users/...` (то же), но окружение MSYS2.
+**Общее:** `~` = домашняя папка; кириллицу в путях оборачивать
+в кавычки; **не хранить проекты в папках с кириллицей** (Dart-анализатор
+падает с `FormatException`).
 
-**На обеих машинах:** `~` = домашняя папка; кириллицу в путях
-оборачивать в кавычки.
+### Flutter (домашний ПК)
+
+- **Flutter:** 3.47.6 / Dart 3.13.5.
+- **Android SDK:** `C:\Android\Sdk`, API 35.
+- **JDK:** 17 (Microsoft).
+- **Эмулятор:** Pixel Tablet.
+- **Реальное устройство:** `2312FPCA6G` (Samsung Galaxy Tab).
+
+### Известные грабли
+
+- **`mobile/test/widget_test.dart`** — обновлён под `WmsGeologyApp`.
+- **`drf-spectacular`** — warning про `_UnionGenericAlias` при Python 3.17. Не наш код.
 
 ---
 
@@ -304,12 +318,13 @@ text
 2. **Тесты** — `poetry run pytest`. Новый код → новые тесты.
 3. **Миграции** — после изменения моделей: `makemigrations` + `migrate`.
 4. **Проверка миграций** перед коммитом:
-   `poetry run python manage.py makemigrations --check --dry-run`
-   должен говорить `No changes detected`.
+   `makemigrations --check --dry-run` → `No changes detected`.
 5. **Схема БД меняется** только через миграцию + обновление `DATABASE.md`.
 6. **API меняется** только через обновление `API.md`.
 7. **Файлы доков** выдаются единым блоком.
 8. **Архивные feature-ветки не удаляются** после merge в `main`.
 9. **`.vscode/settings.json`** при появлении в `git status` — откатывать.
-10. **Docker/PostgreSQL** — на домашнем через Docker Compose, на рабочем
-    портативный. Не запускать оба на одной машине одновременно.
+10. **Docker/PostgreSQL** — на домашнем через Docker Compose,
+    на рабочем портативный.
+11. **Не хранить проекты в путях с кириллицей** — Dart-анализатор падает.
+12. **После переноса проекта** — пересоздавать `.venv` (`poetry env remove --all && poetry install`) и `flutter clean && flutter pub get`.
