@@ -43,7 +43,10 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Сторонние
     "rest_framework",
-    # Локальные (появятся в следующих заходах)
+    # Локальные
+    "apps.storage",
+    "apps.samples",
+    "apps.work_orders",
 ]
 
 MIDDLEWARE = [
