@@ -2,14 +2,11 @@
 Модели приложения "Пробы" (v2).
 
 - Well — справочник скважин.
-- Sample — физическая единица хранения.
+- Sample — физическая единица хранения (проба/навеска).
 - SampleWorkOrder — M:N-связь пробы с наряд-заказами.
 
-Изменения v2 (относительно v1):
-- Soft-delete утилизации: `disposed_at`, `disposed_by`, `disposal_reason`
-  (см. docs/DECISIONS.md 1.24).
-- Ссылка на `Container` из storage v2 (FK та же, но у тары
-  теперь появился обязательный `container_type`).
+Справочники (ResearchType, Site, Laboratory) — в catalogs.py,
+импортируются ниже для регистрации Django.
 """
 
 from django.conf import settings
@@ -17,6 +14,9 @@ from django.db import models
 
 from apps.storage.models import Container
 from apps.work_orders.models import WorkOrder
+
+# --- Справочники (импорт для регистрации Django) ---
+from .catalogs import Laboratory, ResearchType, Site  # noqa: F401
 
 
 class Well(models.Model):
@@ -39,10 +39,11 @@ class Well(models.Model):
 
 class Sample(models.Model):
     """
-    Проба — физическая единица хранения.
+    Проба — физическая единица хранения (навеска).
 
     Одна строка = одна проба с конкретным типом исследования
-    в конкретной таре. Номер пробы не уникален.
+    в конкретной таре. Номер пробы не уникален — один номер
+    может встречаться для разных типов исследования.
     """
 
     STATUS_IN_STORAGE = "IN_STORAGE"
@@ -50,12 +51,14 @@ class Sample(models.Model):
     STATUS_ISSUED = "ISSUED"
     STATUS_CONSUMED = "CONSUMED"
     STATUS_DISPOSED = "DISPOSED"
+    STATUS_PENDING_DECRYPTION = "PENDING_DECRYPTION"
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
         (STATUS_CONSUMED, "Израсходована"),
         (STATUS_DISPOSED, "Утилизирована"),
+        (STATUS_PENDING_DECRYPTION, "Ожидает расшифровки"),
     ]
 
     sample_number = models.CharField(
@@ -97,25 +100,15 @@ class Sample(models.Model):
     qr_code = models.TextField(unique=True, null=True, blank=True)
     legacy_data = models.JSONField(null=True, blank=True)
 
-    # --- Soft-delete утилизации (v2) ---
-    disposed_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Когда проба утилизирована.",
-    )
+    disposed_at = models.DateTimeField(null=True, blank=True)
     disposed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="disposed_samples",
-        help_text="Кто утилизировал пробу.",
     )
-    disposal_reason = models.TextField(
-        blank=True,
-        default="",
-        help_text="Причина утилизации.",
-    )
+    disposal_reason = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
