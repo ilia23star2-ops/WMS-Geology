@@ -1,10 +1,10 @@
 """
 ViewSets приложения picking.
 
-- PickListViewSet — CRUD + custom actions `activate`, `complete`.
-- PickListItemViewSet — CRUD + custom action `pick`.
-- ShipmentViewSet — CRUD + custom action `add-from-pick-list`.
-- ShipmentItemViewSet — CRUD.
+PickList: CRUD + custom actions activate, complete.
+PickListItem: CRUD + custom action pick.
+Shipment: CRUD + custom actions add-from-pick-list, assemble, cancel.
+ShipmentItem: CRUD.
 """
 
 from django.db import transaction
@@ -24,14 +24,7 @@ from .serializers import (
 
 
 class PickListViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для списков выборки.
-
-    Фильтры: ?status=
-    Custom:
-      - POST /pick-lists/{id}/activate/ — DRAFT → ACTIVE
-      - POST /pick-lists/{id}/complete/ — ACTIVE → COMPLETED
-    """
+    """CRUD для списков выборки. Фильтр: ?status="""
 
     serializer_class = PickListSerializer
     permission_classes = [IsAuthenticated]
@@ -48,7 +41,6 @@ class PickListViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def activate(self, request, pk=None):
-        """DRAFT → ACTIVE. Иначе — ошибка."""
         pl = self.get_object()
         if pl.status != PickList.STATUS_DRAFT:
             return Response(
@@ -61,7 +53,6 @@ class PickListViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """ACTIVE → COMPLETED, completed_at = NOW. Иначе — ошибка."""
         pl = self.get_object()
         if pl.status != PickList.STATUS_ACTIVE:
             return Response(
@@ -75,20 +66,14 @@ class PickListViewSet(viewsets.ModelViewSet):
 
 
 class PickListItemViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для строк выборки.
-
-    Фильтры: ?pick_list_id=, ?status=
-    Custom:
-      - POST /pick-items/{id}/pick/ — отметить как извлечённую.
-    """
+    """CRUD для строк выборки. Фильтры: ?pick_list_id=, ?status="""
 
     serializer_class = PickListItemSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = PickListItem.objects.select_related(
-            "pick_list", "sample", "picked_by"
+            "pick_list", "sample", "picked_by",
         ).all()
         pick_list_id = self.request.query_params.get("pick_list_id")
         if pick_list_id:
@@ -100,7 +85,6 @@ class PickListItemViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def pick(self, request, pk=None):
-        """PENDING → PICKED. Иначе — ошибка."""
         item = self.get_object()
         if item.status != PickListItem.STATUS_PENDING:
             return Response(
@@ -118,25 +102,38 @@ class ShipmentViewSet(viewsets.ModelViewSet):
     """
     CRUD для отправок.
 
-    Custom:
-      - POST /shipments/{id}/add-from-pick-list/ —
-        body {"pick_list_id": X}.
-        Добавляет все PICKED-пробы из списка в отправку
-        и помечает их как SENT. В одной транзакции.
+    Фильтры: ?direction=, ?status=, ?laboratory_id=, ?site_id=
+    Custom actions:
+      - POST /shipments/{id}/add-from-pick-list/
+      - POST /shipments/{id}/assemble/ — status ASSEMBLED
+      - POST /shipments/{id}/cancel/ — status CANCELLED
     """
 
     serializer_class = ShipmentSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Shipment.objects.select_related("sent_by").all()
+        qs = Shipment.objects.select_related(
+            "sent_by", "laboratory", "site", "cancelled_by",
+        ).all()
+        p = self.request.query_params
+
+        if p.get("direction"):
+            qs = qs.filter(direction=p["direction"])
+        if p.get("status"):
+            qs = qs.filter(status=p["status"])
+        if p.get("laboratory_id"):
+            qs = qs.filter(laboratory_id=p["laboratory_id"])
+        if p.get("site_id"):
+            qs = qs.filter(site_id=p["site_id"])
+
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(sent_by=self.request.user)
 
     @action(detail=True, methods=["post"], url_path="add-from-pick-list")
     def add_from_pick_list(self, request, pk=None):
-        """Добавить все PICKED-пробы из списка в отправку."""
         shipment = self.get_object()
         pick_list_id = request.data.get("pick_list_id")
         if not pick_list_id:
@@ -153,8 +150,7 @@ class ShipmentViewSet(viewsets.ModelViewSet):
             )
 
         items_to_send = PickListItem.objects.filter(
-            pick_list=pick_list,
-            status=PickListItem.STATUS_PICKED,
+            pick_list=pick_list, status=PickListItem.STATUS_PICKED,
         )
         if not items_to_send.exists():
             return Response(
@@ -182,20 +178,54 @@ class ShipmentViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["post"])
+    def assemble(self, request, pk=None):
+        """DRAFT → ASSEMBLED."""
+        shipment = self.get_object()
+        if shipment.status != Shipment.STATUS_DRAFT:
+            return Response(
+                {"error": "Собрать можно только черновик."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        shipment.status = Shipment.STATUS_ASSEMBLED
+        shipment.assembled_at = timezone.now()
+        shipment.save(update_fields=["status", "assembled_at"])
+        return Response(ShipmentSerializer(shipment).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """Отменить отправку (до RECEIVED)."""
+        shipment = self.get_object()
+        if shipment.status in (
+            Shipment.STATUS_RECEIVED,
+            Shipment.STATUS_PARTIALLY_RECEIVED,
+            Shipment.STATUS_CANCELLED,
+        ):
+            return Response(
+                {"error": "Нельзя отменить эту отправку в текущем статусе."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = request.data.get("reason", "").strip()
+        shipment.status = Shipment.STATUS_CANCELLED
+        shipment.cancelled_at = timezone.now()
+        shipment.cancelled_by = request.user
+        if reason:
+            shipment.cancel_reason = reason
+        shipment.save(update_fields=[
+            "status", "cancelled_at", "cancelled_by", "cancel_reason",
+        ])
+        return Response(ShipmentSerializer(shipment).data)
+
 
 class ShipmentItemViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для строк отправки.
-
-    Фильтры: ?shipment_id=, ?sample_id=
-    """
+    """CRUD для строк отправки. Фильтры: ?shipment_id=, ?sample_id="""
 
     serializer_class = ShipmentItemSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         qs = ShipmentItem.objects.select_related(
-            "shipment", "sample", "pick_list_item"
+            "shipment", "sample", "pick_list_item",
         ).all()
         shipment_id = self.request.query_params.get("shipment_id")
         if shipment_id:

@@ -1,13 +1,18 @@
 """
 Модели приложения "Выборка" (picking).
 
-- PickList — список выборки (создаёт менеджер).
-- PickListItem — одна проба в списке.
-- Shipment — отправка в лабораторию.
-- ShipmentItem — одна проба в отправке.
+- PickList — список выборки.
+- PickListItem — строка списка.
+- Shipment — отправка (INBOUND или OUTBOUND).
+- ShipmentItem — строка отправки.
 
-Решения (см. docs/DECISIONS.md):
-- 1.23 — выборка на уровне пробы, `PickList` + `PickListItem` + `Shipment`.
+Изменения v2 (этап 1.3):
+- `Shipment.direction` (INBOUND / OUTBOUND).
+- `Shipment.laboratory`, `Shipment.site` — FK.
+- `Shipment.shipment_date`, `driver_name`, `vehicle_number`.
+- Расширенные статусы (DRAFT / ASSEMBLED / SENT / RECEIVED / ...).
+- `assembled_at`, `sent_at`, `received_at`, `cancelled_at`,
+  `cancelled_by`, `cancel_reason`.
 """
 
 from django.conf import settings
@@ -106,10 +111,77 @@ class PickListItem(models.Model):
 
 
 class Shipment(models.Model):
-    """Отправка проб в лабораторию."""
+    """
+    Отправка.
+
+    Направления:
+    - OUTBOUND — мы → лаборатория (по умолчанию).
+    - INBOUND — лаборатория → мы.
+
+    Статусы (расширенные в 1.3):
+    - DRAFT — собирается (лаборатория).
+    - ASSEMBLED — собран, ждёт отправки.
+    - SENT — отправлен, в пути.
+    - RECEIVED — принят полностью.
+    - PARTIALLY_RECEIVED — принят с расхождениями.
+    - RETURNED — возвращён.
+    - CANCELLED — отменён.
+    - LOST — утерян (форс-мажор).
+    """
+
+    DIRECTION_OUTBOUND = "OUTBOUND"
+    DIRECTION_INBOUND = "INBOUND"
+    DIRECTION_CHOICES = [
+        (DIRECTION_OUTBOUND, "Исходящая (мы → лаборатория)"),
+        (DIRECTION_INBOUND, "Входящая (лаборатория → мы)"),
+    ]
+
+    STATUS_DRAFT = "DRAFT"
+    STATUS_ASSEMBLED = "ASSEMBLED"
+    STATUS_SENT = "SENT"
+    STATUS_RECEIVED = "RECEIVED"
+    STATUS_PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED"
+    STATUS_RETURNED = "RETURNED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_LOST = "LOST"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Черновик"),
+        (STATUS_ASSEMBLED, "Собран"),
+        (STATUS_SENT, "Отправлен"),
+        (STATUS_RECEIVED, "Принят"),
+        (STATUS_PARTIALLY_RECEIVED, "Принят с расхождениями"),
+        (STATUS_RETURNED, "Возвращён"),
+        (STATUS_CANCELLED, "Отменён"),
+        (STATUS_LOST, "Утерян"),
+    ]
 
     shipment_number = models.CharField(max_length=100, unique=True)
-    destination = models.CharField(max_length=200)
+    direction = models.CharField(
+        max_length=20,
+        choices=DIRECTION_CHOICES,
+        default=DIRECTION_OUTBOUND,
+    )
+    destination = models.CharField(max_length=200, blank=True, default="")
+    laboratory = models.ForeignKey(
+        "samples.Laboratory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shipments",
+    )
+    site = models.ForeignKey(
+        "samples.Site",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shipments",
+    )
+    shipment_date = models.DateField(null=True, blank=True)
+    driver_name = models.CharField(max_length=200, blank=True, default="")
+    vehicle_number = models.CharField(max_length=50, blank=True, default="")
+    status = models.CharField(
+        max_length=50, choices=STATUS_CHOICES, default=STATUS_SENT,
+    )
     sent_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -118,15 +190,33 @@ class Shipment(models.Model):
         related_name="sent_shipments",
     )
     sent_at = models.DateTimeField(auto_now_add=True)
+    assembled_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_shipments",
+    )
+    cancel_reason = models.TextField(blank=True, default="")
     note = models.TextField(blank=True, default="")
 
     class Meta:
         verbose_name = "Отправка"
         verbose_name_plural = "Отправки"
         ordering = ["-sent_at"]
+        indexes = [
+            models.Index(fields=["direction"], name="shipment_direction_idx"),
+            models.Index(fields=["status"], name="shipment_status_idx"),
+            models.Index(
+                fields=["laboratory"], name="shipment_laboratory_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.shipment_number} → {self.destination}"
+        return f"{self.shipment_number} ({self.get_status_display()})"
 
 
 class ShipmentItem(models.Model):
