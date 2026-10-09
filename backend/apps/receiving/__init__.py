@@ -1,0 +1,1 @@
+# Приложение "Приёмка" — Receipt, ReceiptItem, ImportSession.
