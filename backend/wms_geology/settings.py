@@ -1,8 +1,5 @@
 """
 Настройки Django-проекта WMS Geology.
-
-Значения читаются из переменных окружения (файл .env в корне backend/).
-См. .env.example — там перечислены все поддерживаемые переменные.
 """
 
 from datetime import timedelta
@@ -10,10 +7,8 @@ from pathlib import Path
 
 import environ
 
-# --- Пути ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# --- Чтение .env ---
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
     DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
@@ -29,12 +24,10 @@ env_file = BASE_DIR / ".env"
 if env_file.exists():
     env.read_env(str(env_file))
 
-# --- Безопасность ---
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="unsafe-dev-key-change-me")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
 
-# --- Приложения ---
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -56,6 +49,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.picking",
     "apps.movements",
+    "apps.receiving",
 ]
 
 MIDDLEWARE = [
@@ -89,7 +83,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "wms_geology.wsgi.application"
 ASGI_APPLICATION = "wms_geology.asgi.application"
 
-# --- База данных (PostgreSQL) ---
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -101,7 +94,6 @@ DATABASES = {
     }
 }
 
-# --- Валидация паролей ---
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -109,24 +101,19 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# --- Локализация ---
 LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = env("DJANGO_TIME_ZONE")
 USE_I18N = True
 USE_TZ = True
 
-# --- Статика ---
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# --- Медиа ---
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# --- Прочее ---
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# --- DRF ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -140,7 +127,6 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
-# --- JWT ---
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(
         minutes=env("JWT_ACCESS_LIFETIME_MINUTES")
@@ -154,7 +140,6 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# --- drf-spectacular ---
 SPECTACULAR_SETTINGS = {
     "TITLE": "WMS Geology API",
     "DESCRIPTION": (
@@ -168,10 +153,8 @@ SPECTACULAR_SETTINGS = {
     "SORT_OPERATIONS": False,
 }
 
-# --- CORS ---
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 
-# --- Логирование ---
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -193,5 +176,4 @@ LOGGING = {
     },
 }
 
-# --- Проектные константы ---
 QR_BASE_URL = env("QR_BASE_URL")

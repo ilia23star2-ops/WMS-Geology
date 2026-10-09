@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     CellViewSet,
+    ContainerCommentViewSet,
     ContainerTypeViewSet,
     ContainerViewSet,
     PalletViewSet,
@@ -14,6 +15,13 @@ from .views import (
 )
 
 router = DefaultRouter()
+
+# Справочники
+router.register(
+    "container-comments", ContainerCommentViewSet, basename="container-comment"
+)
+
+# Топология
 router.register("rooms", RoomViewSet, basename="room")
 router.register("racks", RackViewSet, basename="rack")
 router.register("sections", SectionViewSet, basename="section")

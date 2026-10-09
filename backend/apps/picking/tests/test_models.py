@@ -1,11 +1,5 @@
 """
 Тесты моделей приложения picking.
-
-Покрывают:
-- PickList: статусы, ordering;
-- PickListItem: уникальность (pick_list, sample), статусы PENDING/PICKED/SENT;
-- Shipment: связь с пробой, каскады;
-- ShipmentItem: уникальность (shipment, sample), связь с PickListItem.
 """
 
 import pytest
@@ -14,6 +8,7 @@ from django.db import IntegrityError
 from django.db.models import ProtectedError
 
 from apps.picking.models import PickList, PickListItem, Shipment, ShipmentItem
+from apps.samples.catalogs import Laboratory, ResearchType, Site
 from apps.samples.models import Sample
 from apps.storage.models import Container, ContainerType
 
@@ -36,16 +31,21 @@ def container(db, container_type):
 
 
 @pytest.fixture
-def sample(db, container):
+def research_type(db):
+    return ResearchType.objects.create(code="ШЛ", name="Шлифы")
+
+
+@pytest.fixture
+def sample(db, container, research_type):
     return Sample.objects.create(
-        sample_number="PK-001", research_type="Шлифы", container=container,
+        sample_number="PK-001", research_type=research_type, container=container,
     )
 
 
 @pytest.fixture
-def sample2(db, container):
+def sample2(db, container, research_type):
     return Sample.objects.create(
-        sample_number="PK-002", research_type="Химия", container=container,
+        sample_number="PK-002", research_type=research_type, container=container,
     )
 
 
@@ -54,6 +54,16 @@ def pick_list(db, user):
     return PickList.objects.create(
         pick_list_number="В-2026-001", created_by=user,
     )
+
+
+@pytest.fixture
+def laboratory(db):
+    return Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+
+
+@pytest.fixture
+def site(db):
+    return Site.objects.create(code="TST", name="Тестовый")
 
 
 # ============================================================
@@ -123,16 +133,16 @@ def test_pick_list_delete_cascades_to_items(db, pick_list, sample):
 
 
 # ============================================================
-# Shipment
+# Shipment — базовое
 # ============================================================
-def test_shipment_create(db, user):
+def test_shipment_create_minimal(db, user):
     s = Shipment.objects.create(
-        shipment_number="ОТ-001",
-        destination="Лаборатория А",
-        sent_by=user,
+        shipment_number="ОТ-001", sent_by=user,
     )
     assert s.pk is not None
     assert s.sent_by == user
+    assert s.direction == "OUTBOUND"
+    assert s.status == "SENT"
 
 
 def test_shipment_number_unique(db):
@@ -145,42 +155,151 @@ def test_shipment_str(db):
     s = Shipment.objects.create(
         shipment_number="ОТ-003", destination="Лаборатория Б",
     )
-    assert "ОТ-003" in str(s)
-    assert "Лаборатория Б" in str(s)
+    text = str(s)
+    assert "ОТ-003" in text
+    assert "Отправлен" in text
+
+
+# ============================================================
+# Shipment — direction, status
+# ============================================================
+def test_shipment_direction_default_outbound(db):
+    s = Shipment.objects.create(shipment_number="ОТ-010")
+    assert s.direction == "OUTBOUND"
+
+
+def test_shipment_direction_inbound(db):
+    s = Shipment.objects.create(
+        shipment_number="Р-010", direction=Shipment.DIRECTION_INBOUND,
+    )
+    assert s.direction == "INBOUND"
+    assert "Входящая" in s.get_direction_display()
+
+
+def test_shipment_status_draft(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-011", status=Shipment.STATUS_DRAFT,
+    )
+    assert s.status == "DRAFT"
+    assert "Черновик" in s.get_status_display()
+
+
+def test_shipment_status_assembled(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-012", status=Shipment.STATUS_ASSEMBLED,
+    )
+    assert s.status == "ASSEMBLED"
+    assert "Собран" in s.get_status_display()
+
+
+def test_shipment_status_partially_received(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-013",
+        status=Shipment.STATUS_PARTIALLY_RECEIVED,
+    )
+    assert s.status == "PARTIALLY_RECEIVED"
+    assert "с расхождениями" in s.get_status_display()
+
+
+def test_shipment_status_returned(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-014", status=Shipment.STATUS_RETURNED,
+    )
+    assert s.status == "RETURNED"
+    assert "Возвращён" in s.get_status_display()
+
+
+def test_shipment_status_lost(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-015", status=Shipment.STATUS_LOST,
+    )
+    assert s.status == "LOST"
+    assert "Утерян" in s.get_status_display()
+
+
+# ============================================================
+# Shipment — лаборатория и участок
+# ============================================================
+def test_shipment_laboratory_link(db, laboratory):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-020", laboratory=laboratory,
+    )
+    assert s.laboratory == laboratory
+    assert s.laboratory.name == "Лаборатория 1"
+
+
+def test_shipment_laboratory_delete_sets_null(db, laboratory):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-021", laboratory=laboratory,
+    )
+    laboratory.delete()
+    s.refresh_from_db()
+    assert s.laboratory is None
+
+
+def test_shipment_site_link(db, site):
+    s = Shipment.objects.create(shipment_number="ОТ-022", site=site)
+    assert s.site == site
+
+
+def test_shipment_site_delete_sets_null(db, site):
+    s = Shipment.objects.create(shipment_number="ОТ-023", site=site)
+    site.delete()
+    s.refresh_from_db()
+    assert s.site is None
+
+
+# ============================================================
+# Shipment — поля рейса
+# ============================================================
+def test_shipment_driver_vehicle(db):
+    from datetime import date
+    s = Shipment.objects.create(
+        shipment_number="ОТ-030",
+        driver_name="Иванов И.И.",
+        vehicle_number="А123БВ 77",
+        shipment_date=date(2026, 10, 9),
+    )
+    assert s.driver_name == "Иванов И.И."
+    assert s.vehicle_number == "А123БВ 77"
+    assert s.shipment_date.year == 2026
+
+
+def test_shipment_cancel_reason_default_empty(db):
+    s = Shipment.objects.create(shipment_number="ОТ-031")
+    assert s.cancel_reason == ""
+    assert s.cancelled_at is None
+    assert s.cancelled_by is None
 
 
 # ============================================================
 # ShipmentItem
 # ============================================================
 def test_shipment_item_create(db, sample):
-    sh = Shipment.objects.create(shipment_number="ОТ-004", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-040")
     item = ShipmentItem.objects.create(shipment=sh, sample=sample)
     assert item.pk is not None
 
 
 def test_shipment_item_unique_pair(db, sample):
-    sh = Shipment.objects.create(shipment_number="ОТ-005", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-041")
     ShipmentItem.objects.create(shipment=sh, sample=sample)
     with pytest.raises(IntegrityError):
         ShipmentItem.objects.create(shipment=sh, sample=sample)
 
 
-def test_shipment_item_with_pick_list_item(
-    db, pick_list, sample,
-):
+def test_shipment_item_with_pick_list_item(db, pick_list, sample):
     pli = PickListItem.objects.create(pick_list=pick_list, sample=sample)
-    sh = Shipment.objects.create(shipment_number="ОТ-006", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-042")
     item = ShipmentItem.objects.create(
         shipment=sh, sample=sample, pick_list_item=pli,
     )
     assert item.pick_list_item == pli
 
 
-def test_shipment_item_pick_list_item_delete_sets_null(
-    db, pick_list, sample,
-):
+def test_shipment_item_pick_list_item_delete_sets_null(db, pick_list, sample):
     pli = PickListItem.objects.create(pick_list=pick_list, sample=sample)
-    sh = Shipment.objects.create(shipment_number="ОТ-007", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-043")
     item = ShipmentItem.objects.create(
         shipment=sh, sample=sample, pick_list_item=pli,
     )
@@ -190,14 +309,14 @@ def test_shipment_item_pick_list_item_delete_sets_null(
 
 
 def test_shipment_item_sample_protected(db, sample):
-    sh = Shipment.objects.create(shipment_number="ОТ-008", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-044")
     ShipmentItem.objects.create(shipment=sh, sample=sample)
     with pytest.raises(ProtectedError):
         sample.delete()
 
 
 def test_shipment_delete_cascades_to_items(db, sample):
-    sh = Shipment.objects.create(shipment_number="ОТ-009", destination="LAB")
+    sh = Shipment.objects.create(shipment_number="ОТ-045")
     ShipmentItem.objects.create(shipment=sh, sample=sample)
     pk = sh.pk
     sh.delete()

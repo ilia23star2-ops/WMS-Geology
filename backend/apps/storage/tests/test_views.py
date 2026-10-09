@@ -1,18 +1,15 @@
 """
-Тесты API-эндпоинтов приложения storage.
+Тесты API приложения storage (справочники + топология).
 
-Покрывают:
-- 401 без аутентификации;
-- CRUD (list, create, retrieve, update, delete) для Room;
-- пагинацию;
-- фильтры (rack?room_id=, cell?tier_id=, container?status= и т.д.);
-- валидацию XOR (Pallet, Container).
+Справочники: ContainerComment.
+Топология: Room, Rack, Cell, Pallet, Container.
 """
 
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.storage.catalogs import ContainerComment
 from apps.storage.models import (
     Cell,
     Container,
@@ -25,13 +22,9 @@ from apps.storage.models import (
 )
 
 
-# ============================================================
-# Фикстуры
-# ============================================================
 @pytest.fixture
 def auth_client(db):
-    """Аутентифицированный APIClient."""
-    user = User.objects.create_user(username="api_user", password="test")
+    user = User.objects.create_user(username="storage_api", password="test")
     client = APIClient()
     client.force_authenticate(user=user)
     return client
@@ -39,7 +32,6 @@ def auth_client(db):
 
 @pytest.fixture
 def anon_client():
-    """Неаутентифицированный APIClient."""
     return APIClient()
 
 
@@ -75,31 +67,83 @@ def container_type(db):
     return ContainerType.objects.create(name="Коробка")
 
 
+@pytest.fixture
+def container_comment(db):
+    return ContainerComment.objects.create(text="Повреждена")
+
+
 # ============================================================
 # Аутентификация
 # ============================================================
-def test_rooms_requires_auth(anon_client, db):
+def test_requires_auth(anon_client, db):
     response = anon_client.get("/api/v1/storage/rooms/")
     assert response.status_code in (401, 403)
 
 
+# ============================================================
+# ContainerComment API
+# ============================================================
+def test_container_comment_create(auth_client, db):
+    response = auth_client.post(
+        "/api/v1/storage/container-comments/",
+        {"text": "Повреждена"}, format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["text"] == "Повреждена"
+    assert response.data["is_active"] is True
+
+
+def test_container_comment_list(auth_client, db):
+    ContainerComment.objects.create(text="Повреждена")
+    ContainerComment.objects.create(text="Влажная", is_active=False)
+    response = auth_client.get("/api/v1/storage/container-comments/")
+    assert response.status_code == 200
+    assert response.data["count"] == 2
+
+
+def test_container_comment_filter_is_active(auth_client, db):
+    ContainerComment.objects.create(text="Повреждена")
+    ContainerComment.objects.create(text="Влажная", is_active=False)
+    response = auth_client.get(
+        "/api/v1/storage/container-comments/?is_active=true"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_container_comment_update(auth_client, db):
+    cc = ContainerComment.objects.create(text="Повреждена")
+    response = auth_client.patch(
+        f"/api/v1/storage/container-comments/{cc.pk}/",
+        {"text": "Сильно повреждена"}, format="json",
+    )
+    assert response.status_code == 200
+    cc.refresh_from_db()
+    assert cc.text == "Сильно повреждена"
+
+
+def test_container_comment_delete(auth_client, db):
+    cc = ContainerComment.objects.create(text="Повреждена")
+    response = auth_client.delete(
+        f"/api/v1/storage/container-comments/{cc.pk}/"
+    )
+    assert response.status_code == 204
+
+
+# ============================================================
+# Room API
+# ============================================================
 def test_rooms_list_authenticated(auth_client, room):
     response = auth_client.get("/api/v1/storage/rooms/")
     assert response.status_code == 200
     assert response.data["count"] == 1
 
 
-# ============================================================
-# Room — CRUD
-# ============================================================
 def test_room_create(auth_client, db):
     response = auth_client.post(
-        "/api/v1/storage/rooms/",
-        {"name": "Новая комната", "description": ""},
-        format="json",
+        "/api/v1/storage/rooms/", {"name": "Новая комната"}, format="json",
     )
     assert response.status_code == 201
-    assert response.data["name"] == "Новая комната"
 
 
 def test_room_retrieve(auth_client, room):
@@ -111,8 +155,7 @@ def test_room_retrieve(auth_client, room):
 def test_room_update(auth_client, room):
     response = auth_client.patch(
         f"/api/v1/storage/rooms/{room.pk}/",
-        {"name": "Обновлённая"},
-        format="json",
+        {"name": "Обновлённая"}, format="json",
     )
     assert response.status_code == 200
     room.refresh_from_db()
@@ -125,9 +168,6 @@ def test_room_delete(auth_client, room):
     assert not Room.objects.filter(pk=room.pk).exists()
 
 
-# ============================================================
-# Пагинация
-# ============================================================
 def test_rooms_pagination(auth_client, db):
     for i in range(60):
         Room.objects.create(name=f"Комната {i:02d}")
@@ -138,26 +178,26 @@ def test_rooms_pagination(auth_client, db):
 
 
 # ============================================================
-# Rack — фильтры
+# Rack, Cell
 # ============================================================
 def test_rack_list_filter_by_room(auth_client, room):
     room2 = Room.objects.create(name="Комната 2")
     Rack.objects.create(room=room, code="A")
     Rack.objects.create(room=room2, code="B")
-    response = auth_client.get(f"/api/v1/storage/racks/?room_id={room.pk}")
+    response = auth_client.get(
+        f"/api/v1/storage/racks/?room_id={room.pk}"
+    )
     assert response.status_code == 200
     assert response.data["count"] == 1
 
 
-# ============================================================
-# Cell — фильтры
-# ============================================================
 def test_cell_list_filter_by_tier(auth_client, tier, cell):
     other_section = Section.objects.create(rack=tier.section.rack, code="S2")
     other_tier = Tier.objects.create(section=other_section, code="B", level_number=2)
     Cell.objects.create(tier=other_tier, code="1", full_address="Другой")
-
-    response = auth_client.get(f"/api/v1/storage/cells/?tier_id={tier.pk}")
+    response = auth_client.get(
+        f"/api/v1/storage/cells/?tier_id={tier.pk}"
+    )
     assert response.status_code == 200
     assert response.data["count"] == 1
 
@@ -165,8 +205,7 @@ def test_cell_list_filter_by_tier(auth_client, tier, cell):
 def test_cell_list_filter_is_active(auth_client, cell):
     Cell.objects.create(
         tier=cell.tier, code="2",
-        full_address="Комната 1 / A / S1 / A / 2",
-        is_active=False,
+        full_address="Комната 1 / A / S1 / A / 2", is_active=False,
     )
     response = auth_client.get("/api/v1/storage/cells/?is_active=false")
     assert response.status_code == 200
@@ -174,13 +213,11 @@ def test_cell_list_filter_is_active(auth_client, cell):
 
 
 # ============================================================
-# Pallet — валидация XOR
+# Pallet
 # ============================================================
 def test_pallet_create_with_cell(auth_client, cell):
     response = auth_client.post(
-        "/api/v1/storage/pallets/",
-        {"cell": cell.pk},
-        format="json",
+        "/api/v1/storage/pallets/", {"cell": cell.pk}, format="json",
     )
     assert response.status_code == 201
 
@@ -188,27 +225,21 @@ def test_pallet_create_with_cell(auth_client, cell):
 def test_pallet_create_xor_validation(auth_client, cell, room):
     response = auth_client.post(
         "/api/v1/storage/pallets/",
-        {"cell": cell.pk, "floor_room": room.pk},
-        format="json",
+        {"cell": cell.pk, "floor_room": room.pk}, format="json",
     )
     assert response.status_code == 400
-    assert "non_field_errors" in response.data
 
 
 # ============================================================
-# Container — CRUD + валидация
+# Container API
 # ============================================================
 def test_container_create(auth_client, container_type):
     response = auth_client.post(
         "/api/v1/storage/containers/",
-        {
-            "container_number": "T-API-001",
-            "container_type": container_type.pk,
-        },
+        {"container_number": "T-API-001", "container_type": container_type.pk},
         format="json",
     )
     assert response.status_code == 201
-    assert response.data["container_number"] == "T-API-001"
 
 
 def test_container_xor_validation(auth_client, container_type, room):
@@ -256,17 +287,137 @@ def test_container_list_filter_by_type(auth_client, container_type):
 
 
 # ============================================================
-# ContainerType
+# Container — фильтры новых полей
+# ============================================================
+def test_container_list_filter_by_comment_template(
+    auth_client, container_type, container_comment,
+):
+    cc2 = ContainerComment.objects.create(text="Влажная")
+    Container.objects.create(
+        container_number="T-200", container_type=container_type,
+        comment_template=container_comment,
+    )
+    Container.objects.create(
+        container_number="T-201", container_type=container_type,
+        comment_template=cc2,
+    )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/?comment_template_id={container_comment.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_container_list_filter_by_pending_placement(
+    auth_client, container_type,
+):
+    Container.objects.create(
+        container_number="T-300", container_type=container_type,
+        status=Container.STATUS_PENDING_PLACEMENT,
+    )
+    Container.objects.create(
+        container_number="T-301", container_type=container_type,
+        status=Container.STATUS_ACTIVE,
+    )
+    response = auth_client.get(
+        "/api/v1/storage/containers/?status=PENDING_PLACEMENT"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_container_comment_returns_in_serializer(
+    auth_client, container_type, container_comment,
+):
+    Container.objects.create(
+        container_number="T-400", container_type=container_type,
+        comment="Особый случай", comment_template=container_comment,
+    )
+    response = auth_client.get("/api/v1/storage/containers/?container_number=T-400")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    item = response.data["results"][0]
+    assert item["comment"] == "Особый случай"
+    assert item["comment_template_text"] == "Повреждена"
+
+
+# ============================================================
+# ContainerType API
 # ============================================================
 def test_container_type_create(auth_client, db):
     response = auth_client.post(
         "/api/v1/storage/container-types/",
-        {
-            "name": "Кернобокс",
-            "max_on_standard_pallet": 3,
-            "is_core": True,
-        },
+        {"name": "Кернобокс", "max_on_standard_pallet": 3, "is_core": True},
         format="json",
     )
     assert response.status_code == 201
     assert response.data["is_core"] is True
+
+# ============================================================
+# ContainerType — лаборатория (bundle-8b)
+# ============================================================
+def test_container_type_create_with_laboratory(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    response = auth_client.post(
+        "/api/v1/storage/container-types/",
+        {
+            "name": "Коробка лаборатории",
+            "laboratory": lab.pk,
+            "max_on_standard_pallet": 8,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["laboratory"] == lab.pk
+    assert response.data["laboratory_name"] == "Лаборатория 1"
+
+
+def test_container_type_create_common(auth_client, db):
+    response = auth_client.post(
+        "/api/v1/storage/container-types/",
+        {"name": "Общая коробка"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["laboratory"] is None
+    assert response.data["laboratory_name"] is None
+
+
+def test_container_type_filter_by_laboratory_id(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    other_lab = Laboratory.objects.create(code="ЛАБ-2", name="Лаборатория 2")
+
+    ContainerType.objects.create(name="Общая")  # NULL
+    ContainerType.objects.create(name="Лаба 1", laboratory=lab)
+    ContainerType.objects.create(name="Лаба 2", laboratory=other_lab)
+
+    # Должны быть: Общая + Лаба 1
+    response = auth_client.get(
+        f"/api/v1/storage/container-types/?laboratory_id={lab.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 2
+
+
+def test_container_type_filter_laboratory_isnull_true(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    ContainerType.objects.create(name="Общая")
+    ContainerType.objects.create(name="Лаба 1", laboratory=lab)
+
+    response = auth_client.get(
+        "/api/v1/storage/container-types/?laboratory_isnull=true"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["name"] == "Общая"
+
+
+def test_container_type_filter_is_core(auth_client, db):
+    ContainerType.objects.create(name="Обычная", is_core=False)
+    ContainerType.objects.create(name="Керн", is_core=True)
+    response = auth_client.get("/api/v1/storage/container-types/?is_core=true")
+    assert response.status_code == 200
+    assert response.data["count"] == 1

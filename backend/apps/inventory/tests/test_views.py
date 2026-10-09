@@ -1,11 +1,5 @@
 """
 Тесты API приложения inventory.
-
-Покрывают:
-- CRUD сессий, сканов, расхождений;
-- custom action `complete` (успех + повторный вызов);
-- custom action `resolve` (успех, повторный вызов, без resolution);
-- фильтры (status, session_id, issue_type, resolved).
 """
 
 import pytest
@@ -13,13 +7,11 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from apps.inventory.models import InventoryIssue, InventoryScan, InventorySession
+from apps.samples.catalogs import ResearchType
 from apps.samples.models import Sample
 from apps.storage.models import Container, ContainerType
 
 
-# ============================================================
-# Фикстуры
-# ============================================================
 @pytest.fixture
 def auth_client(db):
     user = User.objects.create_user(username="inv_api", password="test")
@@ -46,9 +38,16 @@ def container(db, container_type):
 
 
 @pytest.fixture
-def sample(db, container):
+def research_type(db):
+    return ResearchType.objects.create(code="ШЛ", name="Шлифы")
+
+
+@pytest.fixture
+def sample(db, container, research_type):
     return Sample.objects.create(
-        sample_number="INV-001", research_type="Шлифы", container=container,
+        sample_number="INV-001",
+        research_type=research_type,
+        container=container,
     )
 
 
@@ -119,8 +118,7 @@ def test_session_delete(auth_client, session):
 # ============================================================
 def test_session_complete_success(auth_client, session):
     response = auth_client.post(
-        f"/api/v1/inventory-sessions/{session.pk}/complete/",
-        format="json",
+        f"/api/v1/inventory-sessions/{session.pk}/complete/", format="json",
     )
     assert response.status_code == 200
     session.refresh_from_db()
@@ -130,12 +128,10 @@ def test_session_complete_success(auth_client, session):
 
 def test_session_complete_twice_raises(auth_client, session):
     auth_client.post(
-        f"/api/v1/inventory-sessions/{session.pk}/complete/",
-        format="json",
+        f"/api/v1/inventory-sessions/{session.pk}/complete/", format="json",
     )
     response = auth_client.post(
-        f"/api/v1/inventory-sessions/{session.pk}/complete/",
-        format="json",
+        f"/api/v1/inventory-sessions/{session.pk}/complete/", format="json",
     )
     assert response.status_code == 400
 
@@ -159,9 +155,9 @@ def test_scan_create_with_raw_barcode(auth_client, session, container):
 
 
 def test_scan_list_filter_by_session(auth_client, session, sample):
-    other_session = InventorySession.objects.create(session_name="Сессия 2")
+    other = InventorySession.objects.create(session_name="Сессия 2")
     InventoryScan.objects.create(session=session, sample=sample)
-    InventoryScan.objects.create(session=other_session, sample=sample)
+    InventoryScan.objects.create(session=other, sample=sample)
 
     response = auth_client.get(
         f"/api/v1/inventory-scans/?session_id={session.pk}"
@@ -218,9 +214,9 @@ def test_issue_list_filter_by_type(auth_client, session, container):
     assert response.data["count"] == 1
 
 
-def test_issue_list_filter_resolved(auth_client, session, container, db):
+def test_issue_list_filter_by_resolved(auth_client, session, container, db):
     user = User.objects.create_user(username="resolver", password="x")
-    issue1 = InventoryIssue.objects.create(
+    InventoryIssue.objects.create(
         session=session,
         issue_type=InventoryIssue.ISSUE_CONTAINER_MISSING,
         container=container,
@@ -268,8 +264,7 @@ def test_issue_resolve_without_text_raises(auth_client, session, container):
     )
     response = auth_client.post(
         f"/api/v1/inventory-issues/{issue.pk}/resolve/",
-        {},
-        format="json",
+        {}, format="json",
     )
     assert response.status_code == 400
 
@@ -282,12 +277,10 @@ def test_issue_resolve_twice_raises(auth_client, session, container):
     )
     auth_client.post(
         f"/api/v1/inventory-issues/{issue.pk}/resolve/",
-        {"resolution": "ok"},
-        format="json",
+        {"resolution": "ok"}, format="json",
     )
     response = auth_client.post(
         f"/api/v1/inventory-issues/{issue.pk}/resolve/",
-        {"resolution": "again"},
-        format="json",
+        {"resolution": "again"}, format="json",
     )
     assert response.status_code == 400

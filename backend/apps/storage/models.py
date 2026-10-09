@@ -1,24 +1,18 @@
 """
-Модели приложения "Склад" (v2).
+Модели приложения "Склад" (v3).
 
-Топология:
-    Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3)
-    В ячейке ровно 1 поддон.
-    На поддоне — N тар, в каждой таре — M проб.
+Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
+В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
 
-Напольное хранение: поддон или тара могут стоять прямо в комнате.
-
-Ключевые решения (см. docs/DECISIONS.md):
-- 1.20 — топология: 4 яруса A–D, 1 поддон в ячейке;
-- 1.21 — Pallet «тихий»: без QR и pallet_code, OneToOne с Cell;
-- 1.22 — QR на Section, Cell, Container; не на Pallet/пробе;
-- 1.26 — вместимость через ContainerType.max_on_standard_pallet
-         + Pallet.capacity_override;
-- 1.29 — керн: поля есть, логика потом.
+Изменения v3 (этап 1.3, bundle-8b):
+- `ContainerType.laboratory` — FK (nullable) на Laboratory.
+- Уникальность: `(name, laboratory)` вместо `name`.
 """
 
 from django.db import models
 from django.db.models import Q
+
+from .catalogs import ContainerComment  # noqa: F401
 
 
 class Room(models.Model):
@@ -40,9 +34,7 @@ class Rack(models.Model):
     """Стеллаж внутри комнаты."""
 
     room = models.ForeignKey(
-        Room,
-        on_delete=models.CASCADE,
-        related_name="racks",
+        Room, on_delete=models.CASCADE, related_name="racks",
     )
     code = models.CharField(max_length=50)
     description = models.TextField(blank=True, default="")
@@ -53,8 +45,7 @@ class Rack(models.Model):
         ordering = ["room", "code"]
         constraints = [
             models.UniqueConstraint(
-                fields=["room", "code"],
-                name="rack_unique_room_code",
+                fields=["room", "code"], name="rack_unique_room_code",
             ),
         ]
 
@@ -66,9 +57,7 @@ class Section(models.Model):
     """Секция (пролёт) внутри стеллажа. Содержит 4 яруса A–D."""
 
     rack = models.ForeignKey(
-        Rack,
-        on_delete=models.CASCADE,
-        related_name="sections",
+        Rack, on_delete=models.CASCADE, related_name="sections",
     )
     code = models.CharField(max_length=50)
     qr_code = models.TextField(
@@ -85,8 +74,7 @@ class Section(models.Model):
         ordering = ["rack", "code"]
         constraints = [
             models.UniqueConstraint(
-                fields=["rack", "code"],
-                name="section_unique_rack_code",
+                fields=["rack", "code"], name="section_unique_rack_code",
             ),
         ]
 
@@ -105,16 +93,10 @@ class Tier(models.Model):
     ]
 
     section = models.ForeignKey(
-        Section,
-        on_delete=models.CASCADE,
-        related_name="tiers",
+        Section, on_delete=models.CASCADE, related_name="tiers",
     )
     code = models.CharField(max_length=1, choices=CODE_CHOICES)
-    level_number = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="1=A, 2=B, 3=C, 4=D",
-    )
+    level_number = models.IntegerField(null=True, blank=True)
     description = models.TextField(blank=True, default="")
 
     class Meta:
@@ -123,8 +105,7 @@ class Tier(models.Model):
         ordering = ["section", "level_number"]
         constraints = [
             models.UniqueConstraint(
-                fields=["section", "code"],
-                name="tier_unique_section_code",
+                fields=["section", "code"], name="tier_unique_section_code",
             ),
         ]
 
@@ -143,9 +124,7 @@ class Cell(models.Model):
     ]
 
     tier = models.ForeignKey(
-        Tier,
-        on_delete=models.CASCADE,
-        related_name="cells",
+        Tier, on_delete=models.CASCADE, related_name="cells",
     )
     code = models.CharField(max_length=50, help_text="1, 2 или 3")
     full_address = models.CharField(
@@ -172,8 +151,7 @@ class Cell(models.Model):
         ordering = ["tier", "code"]
         constraints = [
             models.UniqueConstraint(
-                fields=["tier", "code"],
-                name="cell_unique_tier_code",
+                fields=["tier", "code"], name="cell_unique_tier_code",
             ),
         ]
 
@@ -182,13 +160,7 @@ class Cell(models.Model):
 
 
 class Pallet(models.Model):
-    """
-    Поддон — «тихий» объект.
-
-    Не имеет QR и пользовательского кода. 1 ячейка = 1 поддон
-    (OneToOne). Все данные о хранении — в ячейке; при перемещении
-    поддона меняется только `Pallet.cell`, все тары «уезжают» вместе.
-    """
+    """Поддон — «тихий» объект (OneToOne с Cell)."""
 
     PALLET_TYPE_STANDARD = "STANDARD"
     PALLET_TYPE_CORE = "CORE"
@@ -232,14 +204,11 @@ class Pallet(models.Model):
         blank=True,
         help_text=(
             "Переопределение вместимости на этом поддоне: "
-            '{"container_type_id": max_count}. '
-            "Если пусто — используется ContainerType.max_on_standard_pallet."
+            '{"container_type_id": max_count}.'
         ),
     )
     status = models.CharField(
-        max_length=50,
-        choices=STATUS_CHOICES,
-        default=STATUS_ACTIVE,
+        max_length=50, choices=STATUS_CHOICES, default=STATUS_ACTIVE,
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -248,7 +217,6 @@ class Pallet(models.Model):
         verbose_name_plural = "Поддоны"
         ordering = ["created_at"]
         constraints = [
-            # Либо в ячейке, либо на полу, либо нигде ("в пути").
             models.CheckConstraint(
                 condition=(
                     Q(cell__isnull=False, floor_room__isnull=True)
@@ -264,9 +232,24 @@ class Pallet(models.Model):
 
 
 class ContainerType(models.Model):
-    """Справочник типов тары (коробка, ящик, кернобокс)."""
+    """
+    Справочник типов тары.
 
-    name = models.CharField(max_length=100, unique=True)
+    `laboratory = NULL` → общий тип, доступный всем.
+    `laboratory = ЛАБ-А` → только этой лаборатории.
+
+    Уникальность: `(name, laboratory)`.
+    """
+
+    name = models.CharField(max_length=100)
+    laboratory = models.ForeignKey(
+        "samples.Laboratory",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="container_types",
+        help_text="NULL — общий тип, доступный всем лабораториям.",
+    )
     size_class = models.CharField(max_length=10, blank=True, default="")
     max_on_standard_pallet = models.IntegerField(
         default=10,
@@ -281,25 +264,30 @@ class ContainerType(models.Model):
     class Meta:
         verbose_name = "Тип тары"
         verbose_name_plural = "Типы тары"
-        ordering = ["name"]
+        ordering = ["laboratory", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "laboratory"],
+                name="container_type_unique_name_lab",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return self.name
+        if self.laboratory:
+            return f"{self.name} ({self.laboratory.code})"
+        return f"{self.name} (общий)"
 
 
 class Container(models.Model):
-    """
-    Тара — физический контейнер с пробами одного типа исследования.
-
-    Может стоять на поддоне, прямо на полу в комнате, либо быть
-    «в пути» (оба поля NULL).
-    """
+    """Тара — физический контейнер с пробами одного типа исследования."""
 
     STATUS_ACTIVE = "ACTIVE"
+    STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
     STATUS_ISSUED = "ISSUED"
     STATUS_CHOICES = [
         (STATUS_ACTIVE, "Активна"),
+        (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
     ]
@@ -337,9 +325,20 @@ class Container(models.Model):
         help_text="Позиция на поддоне (порядок сканирования). Опционально.",
     )
     status = models.CharField(
-        max_length=50,
-        choices=STATUS_CHOICES,
-        default=STATUS_ACTIVE,
+        max_length=50, choices=STATUS_CHOICES, default=STATUS_ACTIVE,
+    )
+    comment = models.TextField(
+        blank=True,
+        default="",
+        help_text="Произвольный комментарий к таре.",
+    )
+    comment_template = models.ForeignKey(
+        ContainerComment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="containers",
+        help_text="Шаблон комментария (если выбран из списка).",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

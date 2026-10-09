@@ -1,40 +1,66 @@
 """
 Сериализаторы приложения samples.
 
-- WellSerializer — скважина.
-- SampleSerializer — проба (с удобными read-only полями).
-- SampleWorkOrderSerializer — M:N связь пробы с Н/З.
+Справочники: ResearchTypeSerializer, SiteSerializer, LaboratorySerializer.
+Модели: WellSerializer, SampleSerializer, SampleWorkOrderSerializer.
 """
 
 from rest_framework import serializers
 
+from .catalogs import Laboratory, ResearchType, Site
 from .models import Sample, SampleWorkOrder, Well
 
 
-class WellSerializer(serializers.ModelSerializer):
-    """Скважина."""
+# ============================================================
+# Справочники
+# ============================================================
+class ResearchTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResearchType
+        fields = ["id", "code", "name", "description", "sort_order", "is_active"]
 
+
+class SiteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Site
+        fields = [
+            "id", "code", "name", "match_patterns",
+            "description", "sort_order", "is_active",
+        ]
+
+
+class LaboratorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Laboratory
+        fields = [
+            "id", "code", "name", "prefixes",
+            "description", "sort_order", "is_active",
+        ]
+
+
+# ============================================================
+# Модели
+# ============================================================
+class WellSerializer(serializers.ModelSerializer):
     class Meta:
         model = Well
         fields = [
-            "id",
-            "well_name",
-            "field_name",
-            "cluster",
-            "coordinates",
-            "created_at",
+            "id", "well_name", "field_name", "cluster",
+            "coordinates", "created_at",
         ]
         read_only_fields = ["created_at"]
 
 
 class SampleSerializer(serializers.ModelSerializer):
     """
-    Проба.
+    Проба (навеска).
 
-    Read-only поля:
-    - `container_number` — номер тары (для удобства мобильного клиента);
-    - `well_name` — имя скважины;
-    - `current_work_order_number` — номер текущего Н/З.
+    Read-only:
+    - `container_number`;
+    - `well_name`;
+    - `current_work_order_number`;
+    - `research_type_name` — полное имя типа;
+    - `site_name` — полное имя участка.
     """
 
     container_number = serializers.CharField(
@@ -48,6 +74,12 @@ class SampleSerializer(serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    research_type_name = serializers.CharField(
+        source="research_type.name", read_only=True,
+    )
+    site_name = serializers.CharField(
+        source="site.name", read_only=True, default=None,
+    )
 
     class Meta:
         model = Sample
@@ -55,11 +87,13 @@ class SampleSerializer(serializers.ModelSerializer):
             "id",
             "sample_number",
             "research_type",
+            "research_type_name",
             "well",
             "well_name",
             "depth_from",
             "depth_to",
             "site",
+            "site_name",
             "container",
             "container_number",
             "current_work_order",
@@ -74,16 +108,11 @@ class SampleSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = [
-            "created_at",
-            "updated_at",
-            "disposed_at",
-            "disposed_by",
+            "created_at", "updated_at", "disposed_at", "disposed_by",
         ]
 
 
 class SampleWorkOrderSerializer(serializers.ModelSerializer):
-    """Связь пробы с Н/З."""
-
     class Meta:
         model = SampleWorkOrder
         fields = ["id", "sample", "work_order", "linked_at"]
