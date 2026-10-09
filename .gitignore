@@ -112,3 +112,5 @@ docker-compose.override.yml
 *.key
 secrets/
 .env.local
+# Шрифты для PDF-этикеток — не коммитим
+backend/apps/labels/static/fonts/
