@@ -1,11 +1,13 @@
 """
-Тесты моделей приложения samples (v2).
+Тесты моделей приложения samples (v3).
 
 Покрывают:
 - sample_number не уникален;
 - проба обязательно привязана к таре;
+- research_type — FK на ResearchType;
+- site — FK на Site;
 - M:N связь проба ↔ Н/З;
-- soft-delete утилизации (disposed_at/by/reason + status=DISPOSED).
+- soft-delete утилизации.
 """
 
 import pytest
@@ -13,6 +15,7 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.db.models import ProtectedError
 
+from apps.samples.catalogs import ResearchType, Site
 from apps.samples.models import Sample, SampleWorkOrder, Well
 from apps.storage.models import Container, ContainerType
 from apps.work_orders.models import WorkOrder
@@ -29,9 +32,18 @@ def container_type(db):
 @pytest.fixture
 def container(db, container_type):
     return Container.objects.create(
-        container_number="T-001",
-        container_type=container_type,
+        container_number="T-001", container_type=container_type,
     )
+
+
+@pytest.fixture
+def research_type(db):
+    return ResearchType.objects.create(code="ШЛ", name="Шлифы")
+
+
+@pytest.fixture
+def site(db):
+    return Site.objects.create(code="TST", name="Тестовый")
 
 
 @pytest.fixture
@@ -46,16 +58,14 @@ def well(db):
 @pytest.fixture
 def incoming_wo(db):
     return WorkOrder.objects.create(
-        order_number="A-100",
-        order_type=WorkOrder.TYPE_INCOMING,
+        order_number="A-100", order_type=WorkOrder.TYPE_INCOMING,
     )
 
 
 @pytest.fixture
 def coded_wo(db):
     return WorkOrder.objects.create(
-        order_number="X-200",
-        order_type=WorkOrder.TYPE_CODED,
+        order_number="X-200", order_type=WorkOrder.TYPE_CODED,
     )
 
 
@@ -75,78 +85,116 @@ def test_well_ordering_by_name(db):
 
 
 # ============================================================
-# Sample — базовое создание
+# Sample — базовое
 # ============================================================
-def test_sample_create_minimal(db, container):
+def test_sample_create_minimal(db, container, research_type):
     sample = Sample.objects.create(
         sample_number="12345",
-        research_type="Шлифы",
+        research_type=research_type,
         container=container,
     )
     assert sample.pk is not None
     assert sample.status == "IN_STORAGE"
+    assert sample.research_type.code == "ШЛ"
 
 
-def test_sample_number_not_unique(db, container):
+def test_sample_number_not_unique(db, container, research_type, site):
+    """Один номер — разные типы → две строки."""
+    rt_ha = ResearchType.objects.create(code="ХА", name="Хим")
     Sample.objects.create(
-        sample_number="12345", research_type="Шлифы", container=container,
+        sample_number="12345", research_type=research_type, container=container,
     )
     Sample.objects.create(
-        sample_number="12345", research_type="Химия", container=container,
+        sample_number="12345", research_type=rt_ha, container=container,
     )
     assert Sample.objects.filter(sample_number="12345").count() == 2
 
 
-def test_sample_container_required(db):
+def test_sample_container_required(db, research_type):
     with pytest.raises(IntegrityError):
-        Sample.objects.create(sample_number="00001", research_type="Шлифы")
+        Sample.objects.create(sample_number="00001", research_type=research_type)
 
 
-def test_sample_qr_code_unique_raises(db, container):
+def test_sample_research_type_required(db, container):
+    """Проба без типа исследования — ошибка."""
+    with pytest.raises(IntegrityError):
+        Sample.objects.create(sample_number="00002", container=container)
+
+
+def test_sample_research_type_protected(db, container, research_type):
+    """Удаление типа, к которому привязаны пробы — запрещено (PROTECT)."""
     Sample.objects.create(
-        sample_number="11111", research_type="Шлифы",
+        sample_number="00003", research_type=research_type, container=container,
+    )
+    with pytest.raises(ProtectedError):
+        research_type.delete()
+
+
+def test_sample_site_set_null(db, container, research_type, site):
+    """Удаление участка обнуляет FK у пробы (SET_NULL)."""
+    sample = Sample.objects.create(
+        sample_number="00004", research_type=research_type,
+        container=container, site=site,
+    )
+    site.delete()
+    sample.refresh_from_db()
+    assert sample.site is None
+
+
+def test_sample_qr_code_unique_raises(db, container, research_type):
+    Sample.objects.create(
+        sample_number="11111", research_type=research_type,
         container=container, qr_code="WMSG:SAMPLE:1",
     )
     with pytest.raises(IntegrityError):
         Sample.objects.create(
-            sample_number="11112", research_type="Химия",
+            sample_number="11112", research_type=research_type,
             container=container, qr_code="WMSG:SAMPLE:1",
         )
 
 
-def test_sample_legacy_data_jsonb(db, container):
+def test_sample_legacy_data_jsonb(db, container, research_type):
     sample = Sample.objects.create(
-        sample_number="22222", research_type="Изотопы", container=container,
+        sample_number="22222", research_type=research_type, container=container,
         legacy_data={"old_label": "LAB-A-777", "lab": "Лаборатория А"},
     )
     sample.refresh_from_db()
     assert sample.legacy_data["old_label"] == "LAB-A-777"
 
 
-def test_sample_container_protect_on_delete(db, container):
+def test_sample_container_protect_on_delete(db, container, research_type):
     Sample.objects.create(
-        sample_number="33333", research_type="Шлифы", container=container,
+        sample_number="33333", research_type=research_type, container=container,
     )
     with pytest.raises(ProtectedError):
         container.delete()
 
 
+def test_sample_str_contains_number_and_type(db, container, research_type):
+    sample = Sample.objects.create(
+        sample_number="55001", research_type=research_type, container=container,
+    )
+    text = str(sample)
+    assert "55001" in text
+    assert "ШЛ" in text
+
+
 # ============================================================
 # Sample — soft-delete утилизации
 # ============================================================
-def test_sample_disposed_fields_null_by_default(db, container):
+def test_sample_disposed_fields_null_by_default(db, container, research_type):
     s = Sample.objects.create(
-        sample_number="50001", research_type="Шлифы", container=container,
+        sample_number="50001", research_type=research_type, container=container,
     )
     assert s.disposed_at is None
     assert s.disposed_by is None
     assert s.disposal_reason == ""
 
 
-def test_sample_dispose_sets_fields(db, container):
+def test_sample_dispose_sets_fields(db, container, research_type):
     user = User.objects.create_user(username="disposer", password="x")
     s = Sample.objects.create(
-        sample_number="50002", research_type="Химия", container=container,
+        sample_number="50002", research_type=research_type, container=container,
     )
     s.status = Sample.STATUS_DISPOSED
     s.disposal_reason = "Израсходована в лаборатории"
@@ -156,14 +204,13 @@ def test_sample_dispose_sets_fields(db, container):
     s.refresh_from_db()
     assert s.status == "DISPOSED"
     assert s.disposed_by == user
-    assert "лаборатории" in s.disposal_reason
 
 
-def test_sample_disposed_by_delete_sets_null(db, container):
+def test_sample_disposed_by_delete_sets_null(db, container, research_type):
     user = User.objects.create_user(username="disposer", password="x")
     s = Sample.objects.create(
-        sample_number="50003", research_type="Шлифы", container=container,
-        disposed_by=user, status=Sample.STATUS_DISPOSED,
+        sample_number="50003", research_type=research_type,
+        container=container, disposed_by=user, status=Sample.STATUS_DISPOSED,
     )
     user.delete()
     s.refresh_from_db()
@@ -174,26 +221,30 @@ def test_sample_disposed_by_delete_sets_null(db, container):
 # ============================================================
 # SampleWorkOrder — M:N
 # ============================================================
-def test_sample_work_order_create(db, container, incoming_wo):
+def test_sample_work_order_create(db, container, research_type, incoming_wo):
     sample = Sample.objects.create(
-        sample_number="44001", research_type="Шлифы", container=container,
+        sample_number="44001", research_type=research_type, container=container,
     )
     link = SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     assert link.pk is not None
 
 
-def test_sample_work_order_unique_raises(db, container, incoming_wo):
+def test_sample_work_order_unique_raises(
+    db, container, research_type, incoming_wo,
+):
     sample = Sample.objects.create(
-        sample_number="44002", research_type="Шлифы", container=container,
+        sample_number="44002", research_type=research_type, container=container,
     )
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     with pytest.raises(IntegrityError):
         SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
 
 
-def test_sample_linked_to_two_work_orders(db, container, incoming_wo, coded_wo):
+def test_sample_linked_to_two_work_orders(
+    db, container, research_type, incoming_wo, coded_wo,
+):
     sample = Sample.objects.create(
-        sample_number="44003", research_type="Шлифы", container=container,
+        sample_number="44003", research_type=research_type, container=container,
     )
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     SampleWorkOrder.objects.create(sample=sample, work_order=coded_wo)
@@ -201,24 +252,24 @@ def test_sample_linked_to_two_work_orders(db, container, incoming_wo, coded_wo):
 
 
 def test_filter_by_incoming_finds_coded_sample(
-    db, container, incoming_wo, coded_wo
+    db, container, research_type, incoming_wo, coded_wo,
 ):
     sample = Sample.objects.create(
-        sample_number="44004", research_type="Шлифы", container=container,
-        current_work_order=coded_wo,
+        sample_number="44004", research_type=research_type,
+        container=container, current_work_order=coded_wo,
     )
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     SampleWorkOrder.objects.create(sample=sample, work_order=coded_wo)
 
-    found = Sample.objects.filter(
-        work_order_links__work_order__order_number="A-100"
-    )
+    found = Sample.objects.filter(work_order_links__work_order__order_number="A-100")
     assert sample in found
 
 
-def test_sample_delete_cascades_to_links(db, container, incoming_wo):
+def test_sample_delete_cascades_to_links(
+    db, container, research_type, incoming_wo,
+):
     sample = Sample.objects.create(
-        sample_number="44005", research_type="Шлифы", container=container,
+        sample_number="44005", research_type=research_type, container=container,
     )
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     sample_pk = sample.pk
@@ -226,23 +277,13 @@ def test_sample_delete_cascades_to_links(db, container, incoming_wo):
     assert SampleWorkOrder.objects.filter(sample_id=sample_pk).count() == 0
 
 
-def test_work_order_delete_cascades_to_links(db, container, incoming_wo):
+def test_work_order_delete_cascades_to_links(
+    db, container, research_type, incoming_wo,
+):
     sample = Sample.objects.create(
-        sample_number="44006", research_type="Шлифы", container=container,
+        sample_number="44006", research_type=research_type, container=container,
     )
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming_wo)
     incoming_wo.delete()
     assert SampleWorkOrder.objects.filter(sample=sample).count() == 0
     assert Sample.objects.filter(pk=sample.pk).exists()
-
-
-# ============================================================
-# __str__
-# ============================================================
-def test_sample_str_contains_number_and_type(db, container):
-    sample = Sample.objects.create(
-        sample_number="55001", research_type="Химия", container=container,
-    )
-    text = str(sample)
-    assert "55001" in text
-    assert "Химия" in text

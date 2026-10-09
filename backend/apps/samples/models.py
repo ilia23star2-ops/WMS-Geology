@@ -1,12 +1,13 @@
 """
-Модели приложения "Пробы" (v2).
+Модели приложения "Пробы" (v3).
 
 - Well — справочник скважин.
-- Sample — физическая единица хранения (проба/навеска).
+- Sample — физическая единица хранения (навеска).
 - SampleWorkOrder — M:N-связь пробы с наряд-заказами.
 
-Справочники (ResearchType, Site, Laboratory) — в catalogs.py,
-импортируются ниже для регистрации Django.
+Изменения v3:
+- `Sample.research_type` — FK на `ResearchType` (было CharField).
+- `Sample.site` — FK на `Site` (было CharField).
 """
 
 from django.conf import settings
@@ -15,7 +16,6 @@ from django.db import models
 from apps.storage.models import Container
 from apps.work_orders.models import WorkOrder
 
-# --- Справочники (импорт для регистрации Django) ---
 from .catalogs import Laboratory, ResearchType, Site  # noqa: F401
 
 
@@ -42,8 +42,7 @@ class Sample(models.Model):
     Проба — физическая единица хранения (навеска).
 
     Одна строка = одна проба с конкретным типом исследования
-    в конкретной таре. Номер пробы не уникален — один номер
-    может встречаться для разных типов исследования.
+    в конкретной таре. Номер пробы не уникален.
     """
 
     STATUS_IN_STORAGE = "IN_STORAGE"
@@ -65,7 +64,11 @@ class Sample(models.Model):
         max_length=100,
         help_text="Номер пробы. НЕ уникален — может повторяться для разных типов исследования.",
     )
-    research_type = models.CharField(max_length=100)
+    research_type = models.ForeignKey(
+        ResearchType,
+        on_delete=models.PROTECT,
+        related_name="samples",
+    )
     well = models.ForeignKey(
         Well,
         on_delete=models.SET_NULL,
@@ -79,7 +82,13 @@ class Sample(models.Model):
     depth_to = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
     )
-    site = models.CharField(max_length=150, blank=True, default="")
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="samples",
+    )
     container = models.ForeignKey(
         Container,
         on_delete=models.PROTECT,
@@ -116,17 +125,16 @@ class Sample(models.Model):
     class Meta:
         verbose_name = "Проба"
         verbose_name_plural = "Пробы"
-        ordering = ["sample_number", "research_type"]
+        ordering = ["sample_number", "research_type__code"]
         indexes = [
             models.Index(fields=["sample_number"], name="sample_number_idx"),
-            models.Index(fields=["research_type"], name="sample_research_type_idx"),
             models.Index(fields=["container"], name="sample_container_idx"),
             models.Index(fields=["current_work_order"], name="sample_work_order_idx"),
             models.Index(fields=["status"], name="sample_status_idx"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.sample_number} / {self.research_type}"
+        return f"{self.sample_number} / {self.research_type.code}"
 
 
 class SampleWorkOrder(models.Model):

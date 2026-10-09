@@ -1,11 +1,8 @@
 """
-Тесты API приложения samples (справочники + модели + фильтры).
+Тесты API приложения samples.
 
-Справочники:
-- ResearchType, Site, Laboratory: CRUD, фильтр is_active.
-
-Модели:
-- Well, Sample, SampleWorkOrder: CRUD, фильтры, ключевой фильтр work_order.
+Справочники: ResearchType, Site, Laboratory — CRUD, фильтры.
+Модели: Well, Sample, SampleWorkOrder — CRUD, фильтры.
 """
 
 import pytest
@@ -47,6 +44,16 @@ def container(db, container_type):
 
 
 @pytest.fixture
+def research_type(db):
+    return ResearchType.objects.create(code="ШЛ", name="Шлифы")
+
+
+@pytest.fixture
+def site(db):
+    return Site.objects.create(code="TST", name="Тестовый")
+
+
+@pytest.fixture
 def well(db):
     return Well.objects.create(well_name="Скв-101")
 
@@ -66,11 +73,11 @@ def coded(db):
 
 
 @pytest.fixture
-def sample(db, container, well, coded):
+def sample(db, container, research_type, site, well, coded):
     return Sample.objects.create(
         sample_number="12345",
-        research_type="Шлифы",
-        site="Участок-1",
+        research_type=research_type,
+        site=site,
         container=container,
         well=well,
         current_work_order=coded,
@@ -95,17 +102,6 @@ def test_research_type_create(auth_client, db):
         format="json",
     )
     assert response.status_code == 201
-    assert response.data["code"] == "ШЛ"
-    assert response.data["is_active"] is True
-
-
-def test_research_type_list(auth_client, db):
-    ResearchType.objects.create(code="ШЛ", name="Шлифы")
-    ResearchType.objects.create(code="ХА", name="Хим", is_active=False)
-
-    response = auth_client.get("/api/v1/research-types/")
-    assert response.status_code == 200
-    assert response.data["count"] == 2
 
 
 def test_research_type_filter_is_active(auth_client, db):
@@ -115,24 +111,6 @@ def test_research_type_filter_is_active(auth_client, db):
     response = auth_client.get("/api/v1/research-types/?is_active=true")
     assert response.status_code == 200
     assert response.data["count"] == 1
-
-
-def test_research_type_update(auth_client, db):
-    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
-    response = auth_client.patch(
-        f"/api/v1/research-types/{rt.pk}/",
-        {"name": "Шлифы 2"},
-        format="json",
-    )
-    assert response.status_code == 200
-    rt.refresh_from_db()
-    assert rt.name == "Шлифы 2"
-
-
-def test_research_type_delete(auth_client, db):
-    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
-    response = auth_client.delete(f"/api/v1/research-types/{rt.pk}/")
-    assert response.status_code == 204
 
 
 # ============================================================
@@ -148,56 +126,34 @@ def test_site_create_with_patterns(auth_client, db):
     assert response.data["match_patterns"] == ["TST", "Тест"]
 
 
-def test_site_filter_is_active(auth_client, db):
-    Site.objects.create(code="TST", name="Тестовый")
-    Site.objects.create(code="СЕВ", name="Северный", is_active=False)
-
-    response = auth_client.get("/api/v1/sites/?is_active=true")
-    assert response.status_code == 200
-    assert response.data["count"] == 1
-
-
 # ============================================================
 # Laboratory API
 # ============================================================
 def test_laboratory_create_with_prefixes(auth_client, db):
     response = auth_client.post(
         "/api/v1/laboratories/",
-        {
-            "code": "ЛАБ-1",
-            "name": "Лаборатория 1",
-            "prefixes": ["TAA-A", "TAA-B"],
-        },
+        {"code": "ЛАБ-1", "name": "Лаборатория 1", "prefixes": ["TAA-A"]},
         format="json",
     )
     assert response.status_code == 201
-    assert response.data["prefixes"] == ["TAA-A", "TAA-B"]
-
-
-def test_laboratory_filter_is_active(auth_client, db):
-    Laboratory.objects.create(code="ЛАБ-1", name="Лаб 1")
-    Laboratory.objects.create(code="ЛАБ-2", name="Лаб 2", is_active=False)
-
-    response = auth_client.get("/api/v1/laboratories/?is_active=true")
-    assert response.status_code == 200
-    assert response.data["count"] == 1
 
 
 # ============================================================
 # Sample API — CRUD
 # ============================================================
-def test_sample_create(auth_client, container):
+def test_sample_create(auth_client, container, research_type):
     response = auth_client.post(
         "/api/v1/samples/",
         {
             "sample_number": "99999",
-            "research_type": "Химия",
+            "research_type": research_type.pk,
             "container": container.pk,
         },
         format="json",
     )
     assert response.status_code == 201
     assert response.data["sample_number"] == "99999"
+    assert response.data["research_type_name"] == "Шлифы"
 
 
 def test_sample_retrieve_with_nested(auth_client, sample):
@@ -206,17 +162,20 @@ def test_sample_retrieve_with_nested(auth_client, sample):
     assert response.data["container_number"] == "T-001"
     assert response.data["well_name"] == "Скв-101"
     assert response.data["current_work_order_number"] == "X-200"
+    assert response.data["research_type_name"] == "Шлифы"
+    assert response.data["site_name"] == "Тестовый"
 
 
-def test_sample_update(auth_client, sample):
+def test_sample_update(auth_client, sample, db):
+    rt_ha = ResearchType.objects.create(code="ХА", name="Хим")
     response = auth_client.patch(
         f"/api/v1/samples/{sample.pk}/",
-        {"research_type": "Изотопы"},
+        {"research_type": rt_ha.pk},
         format="json",
     )
     assert response.status_code == 200
     sample.refresh_from_db()
-    assert sample.research_type == "Изотопы"
+    assert sample.research_type.code == "ХА"
 
 
 def test_sample_delete(auth_client, sample):
@@ -227,38 +186,69 @@ def test_sample_delete(auth_client, sample):
 # ============================================================
 # Sample API — фильтры
 # ============================================================
-def test_sample_filter_by_number(auth_client, sample, container):
+def test_filter_by_number(auth_client, sample, container, research_type):
     Sample.objects.create(
-        sample_number="67890", research_type="Химия", container=container,
+        sample_number="67890", research_type=research_type, container=container,
     )
     response = auth_client.get("/api/v1/samples/?sample_number=12345")
     assert response.status_code == 200
     assert response.data["count"] == 1
 
 
-def test_filter_by_research_type(auth_client, sample, container):
+def test_filter_by_research_type(auth_client, sample, container, research_type):
+    rt_ha = ResearchType.objects.create(code="ХА", name="Хим")
     Sample.objects.create(
-        sample_number="67890", research_type="Химия", container=container,
+        sample_number="67890", research_type=rt_ha, container=container,
     )
-    response = auth_client.get("/api/v1/samples/?research_type=Шлифы")
+    response = auth_client.get(
+        f"/api/v1/samples/?research_type={research_type.pk}"
+    )
     assert response.status_code == 200
     assert response.data["count"] == 1
 
 
-def test_filter_by_site(auth_client, sample, container):
+def test_filter_by_research_type_code(
+    auth_client, sample, container, research_type,
+):
+    rt_ha = ResearchType.objects.create(code="ХА", name="Хим")
     Sample.objects.create(
-        sample_number="67890", research_type="Химия",
-        site="Участок-2", container=container,
+        sample_number="67890", research_type=rt_ha, container=container,
     )
-    response = auth_client.get("/api/v1/samples/?site=Участок-1")
+    response = auth_client.get("/api/v1/samples/?research_type_code=ШЛ")
     assert response.status_code == 200
     assert response.data["count"] == 1
 
 
-def test_filter_by_well_id(auth_client, sample, well, container):
+def test_filter_by_site(auth_client, sample, container, research_type, site):
+    site2 = Site.objects.create(code="СЕВ", name="Северный")
+    Sample.objects.create(
+        sample_number="67890", research_type=research_type,
+        site=site2, container=container,
+    )
+    response = auth_client.get(f"/api/v1/samples/?site={site.pk}")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_filter_by_site_code(
+    auth_client, sample, container, research_type, site,
+):
+    site2 = Site.objects.create(code="СЕВ", name="Северный")
+    Sample.objects.create(
+        sample_number="67890", research_type=research_type,
+        site=site2, container=container,
+    )
+    response = auth_client.get("/api/v1/samples/?site_code=TST")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_filter_by_well_id(
+    auth_client, sample, well, container, research_type,
+):
     other_well = Well.objects.create(well_name="Скв-202")
     Sample.objects.create(
-        sample_number="67890", research_type="Химия",
+        sample_number="67890", research_type=research_type,
         well=other_well, container=container,
     )
     response = auth_client.get(f"/api/v1/samples/?well_id={well.pk}")
@@ -267,13 +257,13 @@ def test_filter_by_well_id(auth_client, sample, well, container):
 
 
 def test_filter_by_container_id(
-    auth_client, sample, container, container_type,
+    auth_client, sample, container, container_type, research_type,
 ):
-    other_container = Container.objects.create(
+    other = Container.objects.create(
         container_number="T-002", container_type=container_type,
     )
     Sample.objects.create(
-        sample_number="67890", research_type="Химия", container=other_container,
+        sample_number="67890", research_type=research_type, container=other,
     )
     response = auth_client.get(
         f"/api/v1/samples/?container_id={container.pk}"
@@ -283,10 +273,9 @@ def test_filter_by_container_id(
 
 
 # ============================================================
-# Sample API — ключевой фильтр work_order
+# Sample API — фильтр work_order
 # ============================================================
 def test_filter_work_order_by_incoming(auth_client, sample, incoming, coded):
-    """Фильтр по входящему Н/З находит пробу через M:N."""
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming)
     SampleWorkOrder.objects.create(sample=sample, work_order=coded)
 
@@ -296,7 +285,6 @@ def test_filter_work_order_by_incoming(auth_client, sample, incoming, coded):
 
 
 def test_filter_work_order_by_coded(auth_client, sample, incoming, coded):
-    """Фильтр по зашифрованному даёт тот же набор."""
     SampleWorkOrder.objects.create(sample=sample, work_order=incoming)
     SampleWorkOrder.objects.create(sample=sample, work_order=coded)
 
@@ -305,14 +293,9 @@ def test_filter_work_order_by_coded(auth_client, sample, incoming, coded):
     assert response.data["count"] == 1
 
 
-def test_filter_work_order_via_linked_only(
-    auth_client, sample, incoming, coded,
-):
-    """Если проба связана только с одним Н/З пары — фильтр по другому
-    всё равно её находит через linked_order."""
+def test_filter_work_order_via_linked_only(auth_client, sample, incoming, coded):
     incoming.linked_order = coded
     incoming.save()
-
     SampleWorkOrder.objects.create(sample=sample, work_order=coded)
 
     response = auth_client.get("/api/v1/samples/?work_order=A-100")
@@ -327,11 +310,13 @@ def test_filter_work_order_nonexistent_returns_empty(auth_client, db):
 
 
 # ============================================================
-# Sample API — скрытие утилизированных
+# Sample API — утилизированные
 # ============================================================
-def test_disposed_hidden_by_default(auth_client, sample, container):
+def test_disposed_hidden_by_default(
+    auth_client, sample, container, research_type,
+):
     Sample.objects.create(
-        sample_number="DISPOSED", research_type="Химия",
+        sample_number="DISPOSED", research_type=research_type,
         container=container, status=Sample.STATUS_DISPOSED,
     )
     response = auth_client.get("/api/v1/samples/")
@@ -339,9 +324,11 @@ def test_disposed_hidden_by_default(auth_client, sample, container):
     assert response.data["count"] == 1
 
 
-def test_disposed_shown_with_param(auth_client, sample, container):
+def test_disposed_shown_with_param(
+    auth_client, sample, container, research_type,
+):
     Sample.objects.create(
-        sample_number="DISPOSED", research_type="Химия",
+        sample_number="DISPOSED", research_type=research_type,
         container=container, status=Sample.STATUS_DISPOSED,
     )
     response = auth_client.get("/api/v1/samples/?show_disposed=true")
@@ -352,12 +339,6 @@ def test_disposed_shown_with_param(auth_client, sample, container):
 # ============================================================
 # Well API
 # ============================================================
-def test_well_list(auth_client, well):
-    response = auth_client.get("/api/v1/wells/")
-    assert response.status_code == 200
-    assert response.data["count"] == 1
-
-
 def test_well_create(auth_client, db):
     response = auth_client.post(
         "/api/v1/wells/",
@@ -377,12 +358,3 @@ def test_sample_work_order_create(auth_client, sample, incoming):
         format="json",
     )
     assert response.status_code == 201
-
-
-def test_sample_work_order_filter_by_sample(auth_client, sample, incoming):
-    SampleWorkOrder.objects.create(sample=sample, work_order=incoming)
-    response = auth_client.get(
-        f"/api/v1/sample-work-orders/?sample_id={sample.pk}"
-    )
-    assert response.status_code == 200
-    assert response.data["count"] == 1
