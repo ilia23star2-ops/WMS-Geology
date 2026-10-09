@@ -1,12 +1,9 @@
 """
 ViewSets приложения storage.
 
-Справочники:
-- ContainerCommentViewSet.
-
-Модели:
-- RoomViewSet, RackViewSet, SectionViewSet, TierViewSet, CellViewSet,
-  PalletViewSet, ContainerTypeViewSet, ContainerViewSet.
+Справочники: ContainerCommentViewSet.
+Модели: RoomViewSet, RackViewSet, SectionViewSet, TierViewSet, CellViewSet,
+PalletViewSet, ContainerTypeViewSet, ContainerViewSet.
 """
 
 from rest_framework import viewsets
@@ -37,11 +34,7 @@ from .serializers import (
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для шаблонов комментариев к таре.
-
-    Фильтры: ?is_active=
-    """
+    """CRUD для шаблонов комментариев. Фильтр: ?is_active="""
 
     serializer_class = ContainerCommentSerializer
     permission_classes = [IsAuthenticated]
@@ -50,9 +43,7 @@ class ContainerCommentViewSet(viewsets.ModelViewSet):
         qs = ContainerComment.objects.all()
         is_active = self.request.query_params.get("is_active")
         if is_active is not None:
-            qs = qs.filter(
-                is_active=is_active.lower() in ("1", "true", "yes")
-            )
+            qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
         return qs
 
 
@@ -155,7 +146,8 @@ class ContainerViewSet(viewsets.ModelViewSet):
     """
     CRUD для тары.
 
-    Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=, ?status=
+    Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=, ?status=,
+             ?comment_template_id=
     """
 
     serializer_class = ContainerSerializer
@@ -163,18 +155,19 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Container.objects.select_related(
-            "pallet", "floor_room", "container_type"
+            "pallet", "floor_room", "container_type", "comment_template"
         ).all()
-        pallet_id = self.request.query_params.get("pallet_id")
-        if pallet_id:
-            qs = qs.filter(pallet_id=pallet_id)
-        floor_room_id = self.request.query_params.get("floor_room_id")
-        if floor_room_id:
-            qs = qs.filter(floor_room_id=floor_room_id)
-        container_type_id = self.request.query_params.get("container_type_id")
-        if container_type_id:
-            qs = qs.filter(container_type_id=container_type_id)
-        status_ = self.request.query_params.get("status")
-        if status_:
-            qs = qs.filter(status=status_)
+        p = self.request.query_params
+
+        if p.get("pallet_id"):
+            qs = qs.filter(pallet_id=p["pallet_id"])
+        if p.get("floor_room_id"):
+            qs = qs.filter(floor_room_id=p["floor_room_id"])
+        if p.get("container_type_id"):
+            qs = qs.filter(container_type_id=p["container_type_id"])
+        if p.get("status"):
+            qs = qs.filter(status=p["status"])
+        if p.get("comment_template_id"):
+            qs = qs.filter(comment_template_id=p["comment_template_id"])
+
         return qs
