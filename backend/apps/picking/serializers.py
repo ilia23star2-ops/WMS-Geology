@@ -1,10 +1,10 @@
 """
 Сериализаторы приложения picking.
 
-- PickListSerializer — список выборки.
-- PickListItemSerializer — одна строка (проба + статус).
-- ShipmentSerializer — отправка в лабораторию.
-- ShipmentItemSerializer — одна проба в отправке.
+PickList, PickListItem — без изменений.
+Shipment — расширен: direction, laboratory, site, shipment_date,
+  driver_name, vehicle_number, status, cancel_reason.
+ShipmentItem — без изменений.
 """
 
 from rest_framework import serializers
@@ -12,9 +12,10 @@ from rest_framework import serializers
 from .models import PickList, PickListItem, Shipment, ShipmentItem
 
 
+# ============================================================
+# PickList
+# ============================================================
 class PickListSerializer(serializers.ModelSerializer):
-    """Список выборки."""
-
     created_by_username = serializers.CharField(
         source="created_by.username", read_only=True, default=None,
     )
@@ -38,13 +39,11 @@ class PickListSerializer(serializers.ModelSerializer):
 
 
 class PickListItemSerializer(serializers.ModelSerializer):
-    """Строка выборки."""
-
     sample_number = serializers.CharField(
         source="sample.sample_number", read_only=True,
     )
-    research_type = serializers.CharField(
-        source="sample.research_type", read_only=True,
+    research_type_code = serializers.CharField(
+        source="sample.research_type.code", read_only=True, default=None,
     )
     picked_by_username = serializers.CharField(
         source="picked_by.username", read_only=True, default=None,
@@ -57,7 +56,7 @@ class PickListItemSerializer(serializers.ModelSerializer):
             "pick_list",
             "sample",
             "sample_number",
-            "research_type",
+            "research_type_code",
             "status",
             "picked_at",
             "picked_by",
@@ -67,11 +66,24 @@ class PickListItemSerializer(serializers.ModelSerializer):
         read_only_fields = ["picked_at", "picked_by"]
 
 
+# ============================================================
+# Shipment
+# ============================================================
 class ShipmentSerializer(serializers.ModelSerializer):
-    """Отправка в лабораторию."""
+    """Отправка. Read-only: `sent_by_username`, `laboratory_name`,
+    `site_name`, `items_count`."""
 
     sent_by_username = serializers.CharField(
         source="sent_by.username", read_only=True, default=None,
+    )
+    laboratory_name = serializers.CharField(
+        source="laboratory.name", read_only=True, default=None,
+    )
+    site_name = serializers.CharField(
+        source="site.name", read_only=True, default=None,
+    )
+    cancelled_by_username = serializers.CharField(
+        source="cancelled_by.username", read_only=True, default=None,
     )
     items_count = serializers.IntegerField(
         source="items.count", read_only=True,
@@ -82,19 +94,35 @@ class ShipmentSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "shipment_number",
+            "direction",
             "destination",
+            "laboratory",
+            "laboratory_name",
+            "site",
+            "site_name",
+            "shipment_date",
+            "driver_name",
+            "vehicle_number",
+            "status",
             "sent_by",
             "sent_by_username",
-            "items_count",
             "sent_at",
+            "assembled_at",
+            "received_at",
+            "cancelled_at",
+            "cancelled_by",
+            "cancelled_by_username",
+            "cancel_reason",
+            "items_count",
             "note",
         ]
-        read_only_fields = ["sent_at"]
+        read_only_fields = [
+            "sent_at", "assembled_at", "received_at",
+            "cancelled_at", "cancelled_by",
+        ]
 
 
 class ShipmentItemSerializer(serializers.ModelSerializer):
-    """Одна проба в отправке."""
-
     sample_number = serializers.CharField(
         source="sample.sample_number", read_only=True,
     )
