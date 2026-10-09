@@ -2,18 +2,16 @@
 Тесты моделей приложения storage (v2).
 
 Покрывают:
-- уникальность кодов внутри родителей;
-- ярусы A–D через choices;
-- QR на секции и ячейке;
-- Pallet: OneToOne с Cell, XOR cell/floor, "в пути" (все NULL);
-- ContainerType: уникальность имени, max_on_standard_pallet;
-- Container: container_type обязателен, XOR pallet/floor, position_on_pallet.
+- топологию (Room, Rack, Section, Tier, Cell);
+- Pallet (OneToOne, XOR cell/floor);
+- ContainerType, Container (XOR pallet/floor, comment, PENDING_PLACEMENT).
 """
 
 import pytest
 from django.db import IntegrityError
 from django.db.models import ProtectedError
 
+from apps.storage.catalogs import ContainerComment
 from apps.storage.models import (
     Cell,
     Container,
@@ -26,9 +24,6 @@ from apps.storage.models import (
 )
 
 
-# ============================================================
-# Фикстуры
-# ============================================================
 @pytest.fixture
 def room(db):
     return Room.objects.create(name="Комната 1")
@@ -36,14 +31,11 @@ def room(db):
 
 @pytest.fixture
 def full_topology(db, room):
-    """Комната → стеллаж → секция → ярус A → ячейка 1."""
     rack = Rack.objects.create(room=room, code="A")
     section = Section.objects.create(rack=rack, code="S1")
     tier = Tier.objects.create(section=section, code="A", level_number=1)
     cell = Cell.objects.create(
-        tier=tier,
-        code="1",
-        full_address="Комната 1 / A / S1 / A / 1",
+        tier=tier, code="1", full_address="Комната 1 / A / S1 / A / 1",
     )
     return {"room": room, "rack": rack, "section": section, "tier": tier, "cell": cell}
 
@@ -51,10 +43,13 @@ def full_topology(db, room):
 @pytest.fixture
 def container_type(db):
     return ContainerType.objects.create(
-        name="Коробка малая",
-        size_class="S",
-        max_on_standard_pallet=10,
+        name="Коробка малая", size_class="S", max_on_standard_pallet=10,
     )
+
+
+@pytest.fixture
+def container_comment(db):
+    return ContainerComment.objects.create(text="Повреждена")
 
 
 # ============================================================
@@ -87,7 +82,7 @@ def test_section_qr_code_null_allowed(db, room):
 
 
 # ============================================================
-# Tier — коды A-D
+# Tier
 # ============================================================
 def test_tier_codes_a_d(db, room):
     rack = Rack.objects.create(room=room, code="A")
@@ -110,9 +105,7 @@ def test_cell_unique_code_within_tier(db, full_topology):
     tier = full_topology["tier"]
     with pytest.raises(IntegrityError):
         Cell.objects.create(
-            tier=tier,
-            code="1",
-            full_address="Другой адрес",
+            tier=tier, code="1", full_address="Другой адрес",
         )
 
 
@@ -129,34 +122,23 @@ def test_cell_default_type_standard(db, full_topology):
 
 
 def test_cell_qr_code_unique(db, full_topology):
-    """
-    Две ячейки на разных ярусах с одинаковым QR — ошибка.
-
-    Фикстура уже создала ячейку с code="1" на ярусе A.
-    Используем code="2" и code="3", чтобы не конфликтовать
-    с ней по (tier, code).
-    """
     tier_a = full_topology["tier"]
     section = full_topology["section"]
     tier_b = Tier.objects.create(section=section, code="B", level_number=2)
 
     Cell.objects.create(
-        tier=tier_a,
-        code="2",
-        full_address="Адрес A",
+        tier=tier_a, code="2", full_address="Адрес A",
         qr_code="WMSG:CELL:1",
     )
     with pytest.raises(IntegrityError):
         Cell.objects.create(
-            tier=tier_b,
-            code="3",
-            full_address="Адрес B",
+            tier=tier_b, code="3", full_address="Адрес B",
             qr_code="WMSG:CELL:1",
         )
 
 
 # ============================================================
-# ContainerType
+# ContainerType, ContainerComment
 # ============================================================
 def test_container_type_unique_name(db):
     ContainerType.objects.create(name="Ящик")
@@ -170,8 +152,14 @@ def test_container_type_default_max(db):
     assert ct.is_core is False
 
 
+def test_container_comment_unique_text(db):
+    ContainerComment.objects.create(text="Повреждена")
+    with pytest.raises(IntegrityError):
+        ContainerComment.objects.create(text="Повреждена")
+
+
 # ============================================================
-# Pallet — OneToOne с Cell, XOR cell/floor
+# Pallet
 # ============================================================
 def test_pallet_in_cell_valid(db, full_topology):
     cell = full_topology["cell"]
@@ -180,7 +168,6 @@ def test_pallet_in_cell_valid(db, full_topology):
 
 
 def test_pallet_one_to_one_cell_raises(db, full_topology):
-    """В одной ячейке — только 1 поддон (OneToOne)."""
     cell = full_topology["cell"]
     Pallet.objects.create(cell=cell)
     with pytest.raises(IntegrityError):
@@ -200,7 +187,6 @@ def test_pallet_on_cell_and_floor_raises(db, full_topology):
 
 
 def test_pallet_in_transit_valid(db):
-    """Поддон без ячейки и без пола — «в пути»."""
     p = Pallet.objects.create()
     assert p.pk is not None
     assert p.cell is None
@@ -220,31 +206,26 @@ def test_pallet_capacity_override_jsonb(db):
 
 
 # ============================================================
-# Container — type обязателен, XOR pallet/floor
+# Container — базовое
 # ============================================================
 def test_container_on_pallet_valid(db, container_type):
     p = Pallet.objects.create()
     c = Container.objects.create(
-        container_number="T-001",
-        container_type=container_type,
-        pallet=p,
+        container_number="T-001", container_type=container_type, pallet=p,
     )
     assert c.pk is not None
 
 
 def test_container_on_floor_valid(db, room, container_type):
     c = Container.objects.create(
-        container_number="T-002",
-        container_type=container_type,
-        floor_room=room,
+        container_number="T-002", container_type=container_type, floor_room=room,
     )
     assert c.pk is not None
 
 
 def test_container_in_transit_valid(db, container_type):
     c = Container.objects.create(
-        container_number="T-003",
-        container_type=container_type,
+        container_number="T-003", container_type=container_type,
     )
     assert c.pk is not None
 
@@ -253,10 +234,8 @@ def test_container_on_pallet_and_floor_raises(db, room, container_type):
     p = Pallet.objects.create()
     with pytest.raises(IntegrityError):
         Container.objects.create(
-            container_number="T-004",
-            container_type=container_type,
-            pallet=p,
-            floor_room=room,
+            container_number="T-004", container_type=container_type,
+            pallet=p, floor_room=room,
         )
 
 
@@ -271,7 +250,6 @@ def test_container_number_unique(db, container_type):
 
 
 def test_container_type_protected_from_delete(db, container_type):
-    """Удаление ContainerType с контейнерами — запрещено (PROTECT)."""
     Container.objects.create(
         container_number="T-006", container_type=container_type,
     )
@@ -284,3 +262,56 @@ def test_container_position_on_pallet_null_by_default(db, container_type):
         container_number="T-007", container_type=container_type,
     )
     assert c.position_on_pallet is None
+
+
+# ============================================================
+# Container — новые поля v2 (этап 1.3)
+# ============================================================
+def test_container_status_pending_placement_valid(db, container_type):
+    """Статус PENDING_PLACEMENT доступен."""
+    c = Container.objects.create(
+        container_number="T-100",
+        container_type=container_type,
+        status=Container.STATUS_PENDING_PLACEMENT,
+    )
+    assert c.status == "PENDING_PLACEMENT"
+    assert c.get_status_display() == "Ожидает размещения"
+
+
+def test_container_comment_default_empty(db, container_type):
+    c = Container.objects.create(
+        container_number="T-101", container_type=container_type,
+    )
+    assert c.comment == ""
+    assert c.comment_template is None
+
+
+def test_container_comment_freetext(db, container_type):
+    c = Container.objects.create(
+        container_number="T-102",
+        container_type=container_type,
+        comment="Влажная, требует просушки",
+    )
+    c.refresh_from_db()
+    assert "Влажная" in c.comment
+
+
+def test_container_comment_template_link(db, container_type, container_comment):
+    c = Container.objects.create(
+        container_number="T-103",
+        container_type=container_type,
+        comment_template=container_comment,
+    )
+    assert c.comment_template.text == "Повреждена"
+
+
+def test_container_comment_template_set_null(db, container_type, container_comment):
+    """Удаление шаблона обнуляет FK у тары."""
+    c = Container.objects.create(
+        container_number="T-104",
+        container_type=container_type,
+        comment_template=container_comment,
+    )
+    container_comment.delete()
+    c.refresh_from_db()
+    assert c.comment_template is None

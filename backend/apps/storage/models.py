@@ -4,13 +4,15 @@
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
 
-Справочники (ContainerComment) — в catalogs.py, импортируются ниже.
+Изменения v2 (этап 1.3):
+- `Container.comment` — произвольный комментарий.
+- `Container.comment_template` — FK на ContainerComment.
+- `Container.status` — добавлено значение `PENDING_PLACEMENT`.
 """
 
 from django.db import models
 from django.db.models import Q
 
-# --- Справочники (импорт для регистрации Django) ---
 from .catalogs import ContainerComment  # noqa: F401
 
 
@@ -269,10 +271,12 @@ class Container(models.Model):
     """
 
     STATUS_ACTIVE = "ACTIVE"
+    STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
     STATUS_ISSUED = "ISSUED"
     STATUS_CHOICES = [
         (STATUS_ACTIVE, "Активна"),
+        (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
     ]
@@ -311,6 +315,19 @@ class Container(models.Model):
     )
     status = models.CharField(
         max_length=50, choices=STATUS_CHOICES, default=STATUS_ACTIVE,
+    )
+    comment = models.TextField(
+        blank=True,
+        default="",
+        help_text="Произвольный комментарий к таре.",
+    )
+    comment_template = models.ForeignKey(
+        ContainerComment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="containers",
+        help_text="Шаблон комментария (если выбран из списка).",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

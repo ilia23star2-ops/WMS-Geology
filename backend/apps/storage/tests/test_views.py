@@ -1,14 +1,8 @@
 """
 Тесты API приложения storage (справочники + топология).
 
-Справочники:
-- ContainerComment: CRUD, фильтр is_active.
-
-Топология:
-- Room: CRUD, пагинация.
-- Rack, Cell: фильтры.
-- Pallet, Container: CRUD, XOR-валидация, фильтры.
-- ContainerType: CRUD.
+Справочники: ContainerComment.
+Топология: Room, Rack, Cell, Pallet, Container.
 """
 
 import pytest
@@ -28,9 +22,6 @@ from apps.storage.models import (
 )
 
 
-# ============================================================
-# Фикстуры
-# ============================================================
 @pytest.fixture
 def auth_client(db):
     user = User.objects.create_user(username="storage_api", password="test")
@@ -76,6 +67,11 @@ def container_type(db):
     return ContainerType.objects.create(name="Коробка")
 
 
+@pytest.fixture
+def container_comment(db):
+    return ContainerComment.objects.create(text="Повреждена")
+
+
 # ============================================================
 # Аутентификация
 # ============================================================
@@ -90,8 +86,7 @@ def test_requires_auth(anon_client, db):
 def test_container_comment_create(auth_client, db):
     response = auth_client.post(
         "/api/v1/storage/container-comments/",
-        {"text": "Повреждена"},
-        format="json",
+        {"text": "Повреждена"}, format="json",
     )
     assert response.status_code == 201
     assert response.data["text"] == "Повреждена"
@@ -101,7 +96,6 @@ def test_container_comment_create(auth_client, db):
 def test_container_comment_list(auth_client, db):
     ContainerComment.objects.create(text="Повреждена")
     ContainerComment.objects.create(text="Влажная", is_active=False)
-
     response = auth_client.get("/api/v1/storage/container-comments/")
     assert response.status_code == 200
     assert response.data["count"] == 2
@@ -110,7 +104,6 @@ def test_container_comment_list(auth_client, db):
 def test_container_comment_filter_is_active(auth_client, db):
     ContainerComment.objects.create(text="Повреждена")
     ContainerComment.objects.create(text="Влажная", is_active=False)
-
     response = auth_client.get(
         "/api/v1/storage/container-comments/?is_active=true"
     )
@@ -122,8 +115,7 @@ def test_container_comment_update(auth_client, db):
     cc = ContainerComment.objects.create(text="Повреждена")
     response = auth_client.patch(
         f"/api/v1/storage/container-comments/{cc.pk}/",
-        {"text": "Сильно повреждена"},
-        format="json",
+        {"text": "Сильно повреждена"}, format="json",
     )
     assert response.status_code == 200
     cc.refresh_from_db()
@@ -139,7 +131,7 @@ def test_container_comment_delete(auth_client, db):
 
 
 # ============================================================
-# Room API — CRUD + пагинация
+# Room API
 # ============================================================
 def test_rooms_list_authenticated(auth_client, room):
     response = auth_client.get("/api/v1/storage/rooms/")
@@ -149,9 +141,7 @@ def test_rooms_list_authenticated(auth_client, room):
 
 def test_room_create(auth_client, db):
     response = auth_client.post(
-        "/api/v1/storage/rooms/",
-        {"name": "Новая комната"},
-        format="json",
+        "/api/v1/storage/rooms/", {"name": "Новая комната"}, format="json",
     )
     assert response.status_code == 201
 
@@ -165,8 +155,7 @@ def test_room_retrieve(auth_client, room):
 def test_room_update(auth_client, room):
     response = auth_client.patch(
         f"/api/v1/storage/rooms/{room.pk}/",
-        {"name": "Обновлённая"},
-        format="json",
+        {"name": "Обновлённая"}, format="json",
     )
     assert response.status_code == 200
     room.refresh_from_db()
@@ -189,13 +178,12 @@ def test_rooms_pagination(auth_client, db):
 
 
 # ============================================================
-# Rack, Cell — фильтры
+# Rack, Cell
 # ============================================================
 def test_rack_list_filter_by_room(auth_client, room):
     room2 = Room.objects.create(name="Комната 2")
     Rack.objects.create(room=room, code="A")
     Rack.objects.create(room=room2, code="B")
-
     response = auth_client.get(
         f"/api/v1/storage/racks/?room_id={room.pk}"
     )
@@ -207,7 +195,6 @@ def test_cell_list_filter_by_tier(auth_client, tier, cell):
     other_section = Section.objects.create(rack=tier.section.rack, code="S2")
     other_tier = Tier.objects.create(section=other_section, code="B", level_number=2)
     Cell.objects.create(tier=other_tier, code="1", full_address="Другой")
-
     response = auth_client.get(
         f"/api/v1/storage/cells/?tier_id={tier.pk}"
     )
@@ -218,8 +205,7 @@ def test_cell_list_filter_by_tier(auth_client, tier, cell):
 def test_cell_list_filter_is_active(auth_client, cell):
     Cell.objects.create(
         tier=cell.tier, code="2",
-        full_address="Комната 1 / A / S1 / A / 2",
-        is_active=False,
+        full_address="Комната 1 / A / S1 / A / 2", is_active=False,
     )
     response = auth_client.get("/api/v1/storage/cells/?is_active=false")
     assert response.status_code == 200
@@ -227,13 +213,11 @@ def test_cell_list_filter_is_active(auth_client, cell):
 
 
 # ============================================================
-# Pallet API — CRUD + XOR
+# Pallet
 # ============================================================
 def test_pallet_create_with_cell(auth_client, cell):
     response = auth_client.post(
-        "/api/v1/storage/pallets/",
-        {"cell": cell.pk},
-        format="json",
+        "/api/v1/storage/pallets/", {"cell": cell.pk}, format="json",
     )
     assert response.status_code == 201
 
@@ -241,22 +225,18 @@ def test_pallet_create_with_cell(auth_client, cell):
 def test_pallet_create_xor_validation(auth_client, cell, room):
     response = auth_client.post(
         "/api/v1/storage/pallets/",
-        {"cell": cell.pk, "floor_room": room.pk},
-        format="json",
+        {"cell": cell.pk, "floor_room": room.pk}, format="json",
     )
     assert response.status_code == 400
 
 
 # ============================================================
-# Container API — CRUD + XOR + фильтры
+# Container API
 # ============================================================
 def test_container_create(auth_client, container_type):
     response = auth_client.post(
         "/api/v1/storage/containers/",
-        {
-            "container_number": "T-API-001",
-            "container_type": container_type.pk,
-        },
+        {"container_number": "T-API-001", "container_type": container_type.pk},
         format="json",
     )
     assert response.status_code == 201
@@ -307,16 +287,67 @@ def test_container_list_filter_by_type(auth_client, container_type):
 
 
 # ============================================================
+# Container — фильтры новых полей
+# ============================================================
+def test_container_list_filter_by_comment_template(
+    auth_client, container_type, container_comment,
+):
+    cc2 = ContainerComment.objects.create(text="Влажная")
+    Container.objects.create(
+        container_number="T-200", container_type=container_type,
+        comment_template=container_comment,
+    )
+    Container.objects.create(
+        container_number="T-201", container_type=container_type,
+        comment_template=cc2,
+    )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/?comment_template_id={container_comment.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_container_list_filter_by_pending_placement(
+    auth_client, container_type,
+):
+    Container.objects.create(
+        container_number="T-300", container_type=container_type,
+        status=Container.STATUS_PENDING_PLACEMENT,
+    )
+    Container.objects.create(
+        container_number="T-301", container_type=container_type,
+        status=Container.STATUS_ACTIVE,
+    )
+    response = auth_client.get(
+        "/api/v1/storage/containers/?status=PENDING_PLACEMENT"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_container_comment_returns_in_serializer(
+    auth_client, container_type, container_comment,
+):
+    Container.objects.create(
+        container_number="T-400", container_type=container_type,
+        comment="Особый случай", comment_template=container_comment,
+    )
+    response = auth_client.get("/api/v1/storage/containers/?container_number=T-400")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    item = response.data["results"][0]
+    assert item["comment"] == "Особый случай"
+    assert item["comment_template_text"] == "Повреждена"
+
+
+# ============================================================
 # ContainerType API
 # ============================================================
 def test_container_type_create(auth_client, db):
     response = auth_client.post(
         "/api/v1/storage/container-types/",
-        {
-            "name": "Кернобокс",
-            "max_on_standard_pallet": 3,
-            "is_core": True,
-        },
+        {"name": "Кернобокс", "max_on_standard_pallet": 3, "is_core": True},
         format="json",
     )
     assert response.status_code == 201

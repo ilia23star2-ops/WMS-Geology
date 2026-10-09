@@ -1,13 +1,10 @@
 """
 Сериализаторы приложения storage.
 
-Справочники:
-- ContainerCommentSerializer.
-
-Модели:
-- RoomSerializer, RackSerializer, SectionSerializer, TierSerializer.
-- CellSerializer, PalletSerializer, ContainerTypeSerializer,
-  ContainerSerializer.
+Справочники: ContainerCommentSerializer.
+Модели: RoomSerializer, RackSerializer, SectionSerializer, TierSerializer,
+CellSerializer, PalletSerializer, ContainerTypeSerializer,
+ContainerSerializer.
 """
 
 from rest_framework import serializers
@@ -29,8 +26,6 @@ from .models import (
 # Справочники
 # ============================================================
 class ContainerCommentSerializer(serializers.ModelSerializer):
-    """Шаблон комментария к таре."""
-
     class Meta:
         model = ContainerComment
         fields = ["id", "text", "sort_order", "is_active"]
@@ -126,6 +121,12 @@ class ContainerTypeSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
+    """Тара. Read-only: `comment_template_text`."""
+
+    comment_template_text = serializers.CharField(
+        source="comment_template.text", read_only=True, default=None,
+    )
+
     class Meta:
         model = Container
         fields = [
@@ -137,6 +138,9 @@ class ContainerSerializer(serializers.ModelSerializer):
             "floor_room",
             "position_on_pallet",
             "status",
+            "comment",
+            "comment_template",
+            "comment_template_text",
             "created_at",
         ]
         read_only_fields = ["created_at"]
