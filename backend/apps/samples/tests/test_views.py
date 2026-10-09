@@ -93,7 +93,7 @@ def test_requires_auth(anon_client, db):
 
 
 # ============================================================
-# ResearchType API
+# ResearchType API — CRUD
 # ============================================================
 def test_research_type_create(auth_client, db):
     response = auth_client.post(
@@ -102,6 +102,17 @@ def test_research_type_create(auth_client, db):
         format="json",
     )
     assert response.status_code == 201
+    assert response.data["code"] == "ШЛ"
+    assert response.data["is_active"] is True
+
+
+def test_research_type_list(auth_client, db):
+    ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    ResearchType.objects.create(code="ХА", name="Хим", is_active=False)
+
+    response = auth_client.get("/api/v1/research-types/")
+    assert response.status_code == 200
+    assert response.data["count"] == 2
 
 
 def test_research_type_filter_is_active(auth_client, db):
@@ -111,6 +122,24 @@ def test_research_type_filter_is_active(auth_client, db):
     response = auth_client.get("/api/v1/research-types/?is_active=true")
     assert response.status_code == 200
     assert response.data["count"] == 1
+
+
+def test_research_type_update(auth_client, db):
+    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    response = auth_client.patch(
+        f"/api/v1/research-types/{rt.pk}/",
+        {"name": "Шлифы 2"},
+        format="json",
+    )
+    assert response.status_code == 200
+    rt.refresh_from_db()
+    assert rt.name == "Шлифы 2"
+
+
+def test_research_type_delete(auth_client, db):
+    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    response = auth_client.delete(f"/api/v1/research-types/{rt.pk}/")
+    assert response.status_code == 204
 
 
 # ============================================================
@@ -126,6 +155,15 @@ def test_site_create_with_patterns(auth_client, db):
     assert response.data["match_patterns"] == ["TST", "Тест"]
 
 
+def test_site_filter_is_active(auth_client, db):
+    Site.objects.create(code="TST", name="Тестовый")
+    Site.objects.create(code="СЕВ", name="Северный", is_active=False)
+
+    response = auth_client.get("/api/v1/sites/?is_active=true")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
 # ============================================================
 # Laboratory API
 # ============================================================
@@ -136,6 +174,15 @@ def test_laboratory_create_with_prefixes(auth_client, db):
         format="json",
     )
     assert response.status_code == 201
+
+
+def test_laboratory_filter_is_active(auth_client, db):
+    Laboratory.objects.create(code="ЛАБ-1", name="Лаб 1")
+    Laboratory.objects.create(code="ЛАБ-2", name="Лаб 2", is_active=False)
+
+    response = auth_client.get("/api/v1/laboratories/?is_active=true")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
 
 
 # ============================================================
@@ -339,6 +386,12 @@ def test_disposed_shown_with_param(
 # ============================================================
 # Well API
 # ============================================================
+def test_well_list(auth_client, well):
+    response = auth_client.get("/api/v1/wells/")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
 def test_well_create(auth_client, db):
     response = auth_client.post(
         "/api/v1/wells/",
@@ -358,3 +411,12 @@ def test_sample_work_order_create(auth_client, sample, incoming):
         format="json",
     )
     assert response.status_code == 201
+
+
+def test_sample_work_order_filter_by_sample(auth_client, sample, incoming):
+    SampleWorkOrder.objects.create(sample=sample, work_order=incoming)
+    response = auth_client.get(
+        f"/api/v1/sample-work-orders/?sample_id={sample.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1

@@ -54,6 +54,9 @@ def pick_list(db, user):
     )
 
 
+# ============================================================
+# PickList
+# ============================================================
 def test_pick_list_default_status_draft(db):
     pl = PickList.objects.create(pick_list_number="В-001")
     assert pl.status == "DRAFT"
@@ -65,11 +68,23 @@ def test_pick_list_number_unique(db):
         PickList.objects.create(pick_list_number="В-002")
 
 
+def test_pick_list_ordering_desc_by_created(db):
+    pl1 = PickList.objects.create(pick_list_number="В-003")
+    pl2 = PickList.objects.create(pick_list_number="В-004")
+    items = list(PickList.objects.all())
+    assert items[0] == pl2
+    assert items[1] == pl1
+
+
 def test_pick_list_str(pick_list):
     text = str(pick_list)
     assert "В-2026-001" in text
+    assert "Черновик" in text
 
 
+# ============================================================
+# PickListItem
+# ============================================================
 def test_pick_list_item_create(db, pick_list, sample):
     item = PickListItem.objects.create(pick_list=pick_list, sample=sample)
     assert item.pk is not None
@@ -89,6 +104,7 @@ def test_pick_list_item_picked(db, pick_list, sample, user):
     item.save()
     item.refresh_from_db()
     assert item.status == "PICKED"
+    assert item.picked_by == user
 
 
 def test_pick_list_item_sample_protected(db, pick_list, sample):
@@ -104,11 +120,15 @@ def test_pick_list_delete_cascades_to_items(db, pick_list, sample):
     assert PickListItem.objects.filter(pick_list_id=pk).count() == 0
 
 
+# ============================================================
+# Shipment
+# ============================================================
 def test_shipment_create(db, user):
     s = Shipment.objects.create(
         shipment_number="ОТ-001", destination="Лаборатория А", sent_by=user,
     )
     assert s.pk is not None
+    assert s.sent_by == user
 
 
 def test_shipment_number_unique(db):
@@ -117,6 +137,17 @@ def test_shipment_number_unique(db):
         Shipment.objects.create(shipment_number="ОТ-002", destination="Другая")
 
 
+def test_shipment_str(db):
+    s = Shipment.objects.create(
+        shipment_number="ОТ-003", destination="Лаборатория Б",
+    )
+    assert "ОТ-003" in str(s)
+    assert "Лаборатория Б" in str(s)
+
+
+# ============================================================
+# ShipmentItem
+# ============================================================
 def test_shipment_item_create(db, sample):
     sh = Shipment.objects.create(shipment_number="ОТ-004", destination="LAB")
     item = ShipmentItem.objects.create(shipment=sh, sample=sample)
