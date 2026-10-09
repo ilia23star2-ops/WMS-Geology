@@ -421,3 +421,79 @@ def test_container_type_filter_is_core(auth_client, db):
     response = auth_client.get("/api/v1/storage/container-types/?is_core=true")
     assert response.status_code == 200
     assert response.data["count"] == 1
+    
+# ============================================================
+# Container — PDF этикетки (2.1-bundle-3)
+# ============================================================
+def test_container_label_pdf_requires_auth(anon_client, db):
+    """Без аутентификации — 401/403."""
+    response = anon_client.get("/api/v1/storage/containers/1/label.pdf/")
+    assert response.status_code in (401, 403)
+
+
+def test_container_label_pdf_404_for_missing_container(auth_client, db):
+    """Несуществующая тара — 404."""
+    response = auth_client.get(
+        "/api/v1/storage/containers/99999/label.pdf/"
+    )
+    assert response.status_code == 404
+
+
+def test_container_label_pdf_returns_pdf(auth_client, container_type):
+    """Пустая тара — валидный PDF."""
+    c = Container.objects.create(
+        container_number="T-PDF-001", container_type=container_type,
+    )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/{c.pk}/label.pdf/"
+    )
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+
+
+def test_container_label_pdf_signature(auth_client, container_type):
+    """Первые 4 байта ответа — %PDF."""
+    c = Container.objects.create(
+        container_number="T-PDF-002", container_type=container_type,
+    )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/{c.pk}/label.pdf/"
+    )
+    content = b"".join(response.streaming_content)
+    assert content[:4] == b"%PDF"
+
+
+def test_container_label_pdf_content_disposition(auth_client, container_type):
+    """Заголовок Content-Disposition содержит номер тары."""
+    c = Container.objects.create(
+        container_number="T-PDF-003", container_type=container_type,
+    )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/{c.pk}/label.pdf/"
+    )
+    assert "T-PDF-003" in response["Content-Disposition"]
+
+
+def test_container_label_pdf_with_samples(
+    auth_client, container_type, db,
+):
+    """Тара с пробами — PDF валидный."""
+    from apps.samples.catalogs import ResearchType
+    from apps.samples.models import Sample
+
+    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    c = Container.objects.create(
+        container_number="T-PDF-004", container_type=container_type,
+    )
+    for i in range(1, 4):
+        Sample.objects.create(
+            sample_number=f"TAA-{i:03d}",
+            research_type=rt,
+            container=c,
+        )
+    response = auth_client.get(
+        f"/api/v1/storage/containers/{c.pk}/label.pdf/"
+    )
+    assert response.status_code == 200
+    content = b"".join(response.streaming_content)
+    assert content[:4] == b"%PDF"

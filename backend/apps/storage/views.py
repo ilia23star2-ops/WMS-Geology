@@ -2,8 +2,12 @@
 ViewSets приложения storage.
 """
 
-from rest_framework import viewsets
+from django.http import FileResponse
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+
+from apps.labels.services import render_container_label
 
 from .catalogs import ContainerComment
 from .models import (
@@ -127,14 +131,7 @@ class PalletViewSet(viewsets.ModelViewSet):
 
 
 class ContainerTypeViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для типов тары.
-
-    Фильтры:
-    - ?laboratory_id=<id> — типы этой лаборатории (включая общие);
-    - ?laboratory_isnull=true — только общие;
-    - ?is_core=true/false.
-    """
+    """CRUD для типов тары."""
 
     serializer_class = ContainerTypeSerializer
     permission_classes = [IsAuthenticated]
@@ -145,7 +142,6 @@ class ContainerTypeViewSet(viewsets.ModelViewSet):
 
         laboratory_id = p.get("laboratory_id")
         if laboratory_id:
-            # Общие (laboratory=NULL) + конкретной лаборатории.
             from django.db.models import Q
             qs = qs.filter(
                 Q(laboratory__isnull=True) | Q(laboratory_id=laboratory_id)
@@ -171,6 +167,8 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=,
              ?status=, ?comment_template_id=
+    Custom action:
+      - GET /storage/containers/{id}/label.pdf — PDF этикетки.
     """
 
     serializer_class = ContainerSerializer
@@ -194,3 +192,31 @@ class ContainerViewSet(viewsets.ModelViewSet):
             qs = qs.filter(comment_template_id=p["comment_template_id"])
 
         return qs
+
+    @action(detail=True, methods=["get"], url_path="label.pdf")
+    def label_pdf(self, request, pk=None):
+        """
+        Возвращает PDF-этикетку тары.
+
+        Если проб нет — генерируется пустой этикетка (с QR и
+        шапкой). Если шрифт не найден — возвращается 500 с
+        понятным сообщением.
+        """
+        container = self.get_object()
+
+        try:
+            buf = render_container_label(container)
+        except FileNotFoundError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        filename = f"label-{container.container_number}.pdf"
+        response = FileResponse(
+            buf,
+            as_attachment=False,
+            filename=filename,
+            content_type="application/pdf",
+        )
+        return response
