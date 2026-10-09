@@ -2,8 +2,10 @@
 Сериализаторы приложения receiving.
 
 - ReceiptSerializer — партия приёмки.
-- ReceiptItemSerializer — строка партии (одна тара).
-- ImportSessionSerializer — загрузка Excel.
+- ReceiptItemSerializer — строка партии.
+- ImportSessionSerializer — сессия импорта.
+- ImportUploadResponseSerializer — ответ на загрузку Excel.
+- ReceiptBriefSerializer — краткая инфо о Receipt.
 """
 
 from rest_framework import serializers
@@ -11,6 +13,9 @@ from rest_framework import serializers
 from .models import ImportSession, Receipt, ReceiptItem
 
 
+# ============================================================
+# Receipt
+# ============================================================
 class ReceiptSerializer(serializers.ModelSerializer):
     """Партия приёмки. Read-only: `laboratory_name`, `site_name`, `items_count`."""
 
@@ -50,6 +55,24 @@ class ReceiptSerializer(serializers.ModelSerializer):
         ]
 
 
+class ReceiptBriefSerializer(serializers.ModelSerializer):
+    """Краткая инфо о Receipt для ответа импорта."""
+
+    site_code = serializers.CharField(
+        source="site.code", read_only=True, default=None,
+    )
+    items_count = serializers.IntegerField(
+        source="items.count", read_only=True,
+    )
+
+    class Meta:
+        model = Receipt
+        fields = ["id", "receipt_number", "site_code", "items_count", "status"]
+
+
+# ============================================================
+# ReceiptItem
+# ============================================================
 class ReceiptItemSerializer(serializers.ModelSerializer):
     """Строка партии (одна тара)."""
 
@@ -92,8 +115,11 @@ class ReceiptItemSerializer(serializers.ModelSerializer):
         ]
 
 
+# ============================================================
+# ImportSession
+# ============================================================
 class ImportSessionSerializer(serializers.ModelSerializer):
-    """Загрузка Excel-файла приёмки."""
+    """Сессия импорта Excel-файла."""
 
     uploaded_by_username = serializers.CharField(
         source="uploaded_by.username", read_only=True, default=None,
@@ -117,3 +143,16 @@ class ImportSessionSerializer(serializers.ModelSerializer):
             "receipt_number",
         ]
         read_only_fields = ["uploaded_at", "parse_errors"]
+
+
+class ImportUploadResponseSerializer(serializers.Serializer):
+    """Ответ на загрузку Excel-файла."""
+
+    import_session_id = serializers.IntegerField()
+    status = serializers.CharField()
+    file_format = serializers.CharField()
+    sheets_count = serializers.IntegerField()
+    rows_count = serializers.IntegerField()
+    containers_count = serializers.IntegerField()
+    parse_errors = serializers.ListField()
+    receipts = ReceiptBriefSerializer(many=True)
