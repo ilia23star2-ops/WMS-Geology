@@ -1,10 +1,8 @@
 """
 Сериализаторы приложения work_orders.
 
-WorkOrderSerializer:
-- `linked_order` — ID парного Н/З.
-- Валидация: нельзя линковать на себя, тип должен отличаться
-  (INCOMING ↔ CODED).
+WorkOrderSerializer — с `site` FK и read-only `site_name`.
+WorkOrderLinkSerializer — для custom action `link`.
 """
 
 from rest_framework import serializers
@@ -13,7 +11,11 @@ from .models import WorkOrder
 
 
 class WorkOrderSerializer(serializers.ModelSerializer):
-    """Наряд-заказ."""
+    """Наряд-заказ. Read-only: `site_name`."""
+
+    site_name = serializers.CharField(
+        source="site.name", read_only=True, default=None,
+    )
 
     class Meta:
         model = WorkOrder
@@ -22,6 +24,8 @@ class WorkOrderSerializer(serializers.ModelSerializer):
             "order_number",
             "order_type",
             "linked_order",
+            "site",
+            "site_name",
             "status",
             "description",
             "created_at",
@@ -34,7 +38,6 @@ class WorkOrderSerializer(serializers.ModelSerializer):
         linked = attrs.get("linked_order")
         order_type = attrs.get("order_type")
 
-        # Для update: если поле не передано — берём из instance.
         if instance is not None:
             if linked is None and "linked_order" not in attrs:
                 linked = instance.linked_order
@@ -44,13 +47,11 @@ class WorkOrderSerializer(serializers.ModelSerializer):
         if linked is None:
             return attrs
 
-        # Нельзя линковать на себя.
         if instance is not None and linked.pk == instance.pk:
             raise serializers.ValidationError(
                 {"linked_order": "Н/З не может ссылаться на себя."}
             )
 
-        # Тип должен отличаться: INCOMING ↔ CODED.
         if linked.order_type == order_type:
             raise serializers.ValidationError(
                 {
