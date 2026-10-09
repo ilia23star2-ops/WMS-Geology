@@ -1,13 +1,12 @@
 """
-Модели приложения "Склад" (v2).
+Модели приложения "Склад" (v3).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
 
-Изменения v2 (этап 1.3):
-- `Container.comment` — произвольный комментарий.
-- `Container.comment_template` — FK на ContainerComment.
-- `Container.status` — добавлено значение `PENDING_PLACEMENT`.
+Изменения v3 (этап 1.3, bundle-8b):
+- `ContainerType.laboratory` — FK (nullable) на Laboratory.
+- Уникальность: `(name, laboratory)` вместо `name`.
 """
 
 from django.db import models
@@ -161,13 +160,7 @@ class Cell(models.Model):
 
 
 class Pallet(models.Model):
-    """
-    Поддон — «тихий» объект.
-
-    Не имеет QR и пользовательского кода. 1 ячейка = 1 поддон
-    (OneToOne). Все данные о хранении — в ячейке; при перемещении
-    поддона меняется только `Pallet.cell`, все тары «уезжают» вместе.
-    """
+    """Поддон — «тихий» объект (OneToOne с Cell)."""
 
     PALLET_TYPE_STANDARD = "STANDARD"
     PALLET_TYPE_CORE = "CORE"
@@ -239,9 +232,24 @@ class Pallet(models.Model):
 
 
 class ContainerType(models.Model):
-    """Справочник типов тары (коробка, ящик, кернобокс)."""
+    """
+    Справочник типов тары.
 
-    name = models.CharField(max_length=100, unique=True)
+    `laboratory = NULL` → общий тип, доступный всем.
+    `laboratory = ЛАБ-А` → только этой лаборатории.
+
+    Уникальность: `(name, laboratory)`.
+    """
+
+    name = models.CharField(max_length=100)
+    laboratory = models.ForeignKey(
+        "samples.Laboratory",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="container_types",
+        help_text="NULL — общий тип, доступный всем лабораториям.",
+    )
     size_class = models.CharField(max_length=10, blank=True, default="")
     max_on_standard_pallet = models.IntegerField(
         default=10,
@@ -256,19 +264,22 @@ class ContainerType(models.Model):
     class Meta:
         verbose_name = "Тип тары"
         verbose_name_plural = "Типы тары"
-        ordering = ["name"]
+        ordering = ["laboratory", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "laboratory"],
+                name="container_type_unique_name_lab",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return self.name
+        if self.laboratory:
+            return f"{self.name} ({self.laboratory.code})"
+        return f"{self.name} (общий)"
 
 
 class Container(models.Model):
-    """
-    Тара — физический контейнер с пробами одного типа исследования.
-
-    Может стоять на поддоне, прямо на полу в комнате, либо быть
-    «в пути» (оба поля NULL).
-    """
+    """Тара — физический контейнер с пробами одного типа исследования."""
 
     STATUS_ACTIVE = "ACTIVE"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"

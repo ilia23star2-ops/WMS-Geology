@@ -1,10 +1,5 @@
 """
 Сериализаторы приложения storage.
-
-Справочники: ContainerCommentSerializer.
-Модели: RoomSerializer, RackSerializer, SectionSerializer, TierSerializer,
-CellSerializer, PalletSerializer, ContainerTypeSerializer,
-ContainerSerializer.
 """
 
 from rest_framework import serializers
@@ -29,6 +24,27 @@ class ContainerCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContainerComment
         fields = ["id", "text", "sort_order", "is_active"]
+
+
+class ContainerTypeSerializer(serializers.ModelSerializer):
+    """Тип тары. Read-only: `laboratory_name`."""
+
+    laboratory_name = serializers.CharField(
+        source="laboratory.name", read_only=True, default=None,
+    )
+
+    class Meta:
+        model = ContainerType
+        fields = [
+            "id",
+            "name",
+            "laboratory",
+            "laboratory_name",
+            "size_class",
+            "max_on_standard_pallet",
+            "is_core",
+            "description",
+        ]
 
 
 # ============================================================
@@ -105,19 +121,6 @@ class PalletSerializer(serializers.ModelSerializer):
                 "Нельзя одновременно указывать cell и floor_room."
             )
         return attrs
-
-
-class ContainerTypeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ContainerType
-        fields = [
-            "id",
-            "name",
-            "size_class",
-            "max_on_standard_pallet",
-            "is_core",
-            "description",
-        ]
 
 
 class ContainerSerializer(serializers.ModelSerializer):
