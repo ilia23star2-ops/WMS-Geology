@@ -3,24 +3,24 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-07
+**Дата обновления:** 2026-10-09
 
 ---
 
 ## Где мы
 
-**Активная серия:** `feature/1.1-backend-api` (закрыта, ждёт merge в `main`)
-**Следующая серия:** `feature/1.2-mobile-init` (планируется)
+**Активная серия:** `feature/1.3-backend-v2` (закрыта, ждёт merge в `main`)
+**Следующая серия:** `feature/2.0-*` (обсуждается)
 
-**Текущий заход:** закрытие серии 1.1, обновление документации.
+**Текущий заход:** закрытие серии 1.3, обновление документации.
 
 **Что делаем:**
-Серия 1.1 завершена. REST API реализован полностью: 8 приложений,
-~60 эндпоинтов, JWT-аутентификация, OpenAPI-схема, 268 тестов.
-Бэкенд готов к подключению мобильного и веб-клиентов.
+Серия 1.3 завершена. Все справочники, FK-миграции, модели приёмки
+и рейсов реализованы. 400 тестов. Backend готов к серии 2.0.
 
 **Ближайшая работа:**
-Серия 1.2 — Flutter-приложение: сканер QR, поиск, инвентаризация.
+Merge `feature/1.3-backend-v2` в `main`. Потом — обсуждение серии 2.0
+(приёмка, портал лабораторий, mobile-разработка).
 
 ---
 
@@ -29,37 +29,25 @@
 ### Инфраструктура
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
-- JWT-аутентификация (`djangorestframework-simplejwt`).
-- OpenAPI 3 (`drf-spectacular`), Swagger UI на `/api/docs/`.
+- JWT, OpenAPI, 10 приложений.
 
-### API (v1)
-- **storage** — 8 ViewSets (Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container).
-- **work_orders** — WorkOrder + custom action `link`.
-- **samples** — Well, Sample, SampleWorkOrder + **фильтр `?work_order=`** с учётом linked_order.
-- **inventory** — сессии, сканы, расхождения + custom `complete`, `resolve`.
-- **picking** — PickList, PickListItem, Shipment + custom `activate`, `complete`, `pick`, `add-from-pick-list`.
-- **movements** — MoveOperation + custom `execute`.
-- **users** — JWT auth: `login`, `refresh`, `logout`, `me`.
+### Backend (400 тестов)
 
-### Модели (15 моделей, 268 тестов)
-
-| Приложение | Модели | Тестов |
-|---|---|---|
-| storage | Room, Rack, Section, Tier, Cell, Pallet, ContainerType, Container | 26 + 19 + 17 |
-| users | Role, UserProfile, AuditLog | 14 + 5 + 12 (auth) |
-| work_orders | WorkOrder | 12 + 15 |
-| samples | Well, Sample, SampleWorkOrder | 18 + 20 |
-| inventory | InventorySession, InventoryScan, InventoryIssue | 21 + 16 |
-| picking | PickList, PickListItem, Shipment, ShipmentItem | 18 + 18 |
-| movements | MoveOperation, MoveOperationItem | 14 + 15 |
-| openapi | — | 7 |
-
-**Всего:** 268 тестов, все зелёные.
+| Приложение | Что внутри |
+|---|---|
+| `storage` | Топология A–D, Pallet, ContainerType (+ laboratory), Container (+ comment, PENDING_PLACEMENT), ContainerComment |
+| `samples` | ResearchType, Site, Laboratory, Well, Sample (FK на тип и участок), SampleWorkOrder |
+| `work_orders` | WorkOrder (self-ref + site) |
+| `receiving` | Receipt, ReceiptItem, ImportSession |
+| `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
+| `movements` | MoveOperation, MoveOperationItem |
+| `inventory` | InventorySession, InventoryScan, InventoryIssue |
+| `users` | Role, UserProfile, AuditLog + JWT auth |
+| `labels` | (задел на серию 2.x) |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`,
-  `TESTING`, `PLAN`, `PROGRESS`, `ISSUES` — актуальны.
-- OpenAPI-схема автогенерируется.
+- `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE` (v4), `API`, `SCENARIOS` (v4),
+  `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES` — актуальны.
 
 ---
 
@@ -67,9 +55,9 @@
 
 ### PostgreSQL
 - **Домашний ПК:** Docker (`docker compose up -d`).
-- **Рабочий ПК:** портативный `pg_ctl`.
-- Порт 5432 на обеих машинах.
-- `wms_user` имеет право `CREATEDB` (для тестов Django).
+- **Рабочий ПК:** портативный `pg_ctl`, запуск вручную.
+- **После `git pull` с миграциями — всегда `migrate`.**
+- `wms_user` имеет право `CREATEDB`.
 
 ### Django
 - Все команды — только через `poetry run python manage.py ...`.
@@ -78,20 +66,26 @@
 - `ProtectedError` при удалении Container с пробами, ContainerType
   с контейнерами, Sample из PickListItem и ShipmentItem.
 - **`poetry lock`** после изменения `pyproject.toml`.
+- **Циклические импорты** — использовать строковые ссылки
+  (`"samples.Site"`, `"samples.Laboratory"`).
+- **Сортировка кириллицы в БД** — не полагаться на порядок `code`;
+  использовать `sort_order`.
+- **`poetry env remove --all && poetry install`** после переезда проекта.
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
 - Pagination — `PageNumberPagination`, `PAGE_SIZE=50`.
-- Формат ошибок DRF — стандартный (`{"field": ["..."]}` и
-  `{"non_field_errors": ["..."]}` для XOR-валидаций).
-- **Ключевой фильтр** `?work_order=` — учитывает linked_order
-  (см. DECISIONS 1.7).
+- **Ключевой фильтр** `?work_order=` — учитывает linked_order (1.7).
+- Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`,
+  `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`.
 
 ### Домен
-- Проба не уникальна по номеру.
+- Проба в системе = **навеска**. Не уникальна по номеру.
 - Одна тара = один тип исследования.
 - `Pallet` — «тихий» объект (OneToOne с Cell, без QR).
 - `WorkOrders.linked_order_id` — self-ref INCOMING ↔ CODED.
+- `Shipment.direction` — `INBOUND` / `OUTBOUND`.
+- `ContainerType.laboratory` — NULL = общий, иначе только этой лаборатории.
 - Керн — поля есть, логика позже.
 
 ### Инструменты
@@ -99,7 +93,7 @@
 - **Домашний ПК:** UCRT64 (MSYS2), SSH `github.com:22`.
 - **Рабочий ПК:** Git Bash (MINGW64), SSH через порт 443.
 - VS Code может дописывать `.vscode/settings.json` — откатывать.
-- Кириллица в пути (`Програмирование`) — оборачивать в кавычки.
+- Кириллица в пути ломает Dart-анализатор.
 
 ---
 
@@ -115,7 +109,7 @@
 ## Правила текущей сессии
 
 - Кодовая фаза.
-- Каждый заход — 1–3 файла кода + тесты (пачки-исключения).
+- Каждый заход — 1–3 файла (пачки-исключения для boilerplate).
 - Файлы выдаются единым блоком.
 - Все Django-команды — через `poetry run`.
 
