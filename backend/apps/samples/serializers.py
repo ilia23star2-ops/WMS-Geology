@@ -1,16 +1,76 @@
 """
 Сериализаторы приложения samples.
 
-- WellSerializer — скважина.
-- SampleSerializer — проба (с удобными read-only полями).
-- SampleWorkOrderSerializer — M:N связь пробы с Н/З.
+Справочники:
+- ResearchTypeSerializer.
+- SiteSerializer.
+- LaboratorySerializer.
+
+Модели:
+- WellSerializer.
+- SampleSerializer.
+- SampleWorkOrderSerializer.
 """
 
 from rest_framework import serializers
 
+from .catalogs import Laboratory, ResearchType, Site
 from .models import Sample, SampleWorkOrder, Well
 
 
+# ============================================================
+# Справочники
+# ============================================================
+class ResearchTypeSerializer(serializers.ModelSerializer):
+    """Тип исследования."""
+
+    class Meta:
+        model = ResearchType
+        fields = [
+            "id",
+            "code",
+            "name",
+            "description",
+            "sort_order",
+            "is_active",
+        ]
+
+
+class SiteSerializer(serializers.ModelSerializer):
+    """Участок."""
+
+    class Meta:
+        model = Site
+        fields = [
+            "id",
+            "code",
+            "name",
+            "match_patterns",
+            "description",
+            "sort_order",
+            "is_active",
+        ]
+
+
+class LaboratorySerializer(serializers.ModelSerializer):
+    """Лаборатория."""
+
+    class Meta:
+        model = Laboratory
+        fields = [
+            "id",
+            "code",
+            "name",
+            "prefixes",
+            "description",
+            "sort_order",
+            "is_active",
+        ]
+
+
+# ============================================================
+# Модели
+# ============================================================
 class WellSerializer(serializers.ModelSerializer):
     """Скважина."""
 
@@ -29,10 +89,10 @@ class WellSerializer(serializers.ModelSerializer):
 
 class SampleSerializer(serializers.ModelSerializer):
     """
-    Проба.
+    Проба (навеска).
 
-    Read-only поля:
-    - `container_number` — номер тары (для удобства мобильного клиента);
+    Read-only:
+    - `container_number` — номер тары;
     - `well_name` — имя скважины;
     - `current_work_order_number` — номер текущего Н/З.
     """

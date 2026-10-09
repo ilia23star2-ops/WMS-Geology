@@ -1,22 +1,18 @@
 """
 Сериализаторы приложения storage.
 
-DRF ModelSerializer для 8 моделей:
-- Room, Rack, Section, Tier — топология;
-- Cell — ячейка (место на ярусе);
-- Pallet — «тихий» поддон (OneToOne с Cell);
-- ContainerType — справочник типов тары;
-- Container — тара.
+Справочники:
+- ContainerCommentSerializer.
 
-Валидация на уровне сериализатора дублирует CHECK-constraints БД:
-- `Pallet`: нельзя одновременно `cell` и `floor_room`;
-- `Container`: нельзя одновременно `pallet` и `floor_room`.
-
-Даёт более понятные сообщения об ошибках (в отличие от IntegrityError).
+Модели:
+- RoomSerializer, RackSerializer, SectionSerializer, TierSerializer.
+- CellSerializer, PalletSerializer, ContainerTypeSerializer,
+  ContainerSerializer.
 """
 
 from rest_framework import serializers
 
+from .catalogs import ContainerComment
 from .models import (
     Cell,
     Container,
@@ -29,41 +25,45 @@ from .models import (
 )
 
 
-class RoomSerializer(serializers.ModelSerializer):
-    """Комната."""
+# ============================================================
+# Справочники
+# ============================================================
+class ContainerCommentSerializer(serializers.ModelSerializer):
+    """Шаблон комментария к таре."""
 
+    class Meta:
+        model = ContainerComment
+        fields = ["id", "text", "sort_order", "is_active"]
+
+
+# ============================================================
+# Топология
+# ============================================================
+class RoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = Room
         fields = ["id", "name", "description"]
 
 
 class RackSerializer(serializers.ModelSerializer):
-    """Стеллаж."""
-
     class Meta:
         model = Rack
         fields = ["id", "room", "code", "description"]
 
 
 class SectionSerializer(serializers.ModelSerializer):
-    """Секция (пролёт)."""
-
     class Meta:
         model = Section
         fields = ["id", "rack", "code", "qr_code", "description"]
 
 
 class TierSerializer(serializers.ModelSerializer):
-    """Ярус (A, B, C, D)."""
-
     class Meta:
         model = Tier
         fields = ["id", "section", "code", "level_number", "description"]
 
 
 class CellSerializer(serializers.ModelSerializer):
-    """Ячейка (место на ярусе, 1 поддон)."""
-
     class Meta:
         model = Cell
         fields = [
@@ -77,9 +77,10 @@ class CellSerializer(serializers.ModelSerializer):
         ]
 
 
+# ============================================================
+# Поддоны и тара
+# ============================================================
 class PalletSerializer(serializers.ModelSerializer):
-    """Поддон — «тихий» объект (OneToOne с Cell)."""
-
     class Meta:
         model = Pallet
         fields = [
@@ -94,7 +95,6 @@ class PalletSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at"]
 
     def validate(self, attrs):
-        """Нельзя одновременно cell и floor_room."""
         cell = (
             attrs.get("cell")
             if "cell" in attrs
@@ -113,8 +113,6 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerTypeSerializer(serializers.ModelSerializer):
-    """Справочник типов тары."""
-
     class Meta:
         model = ContainerType
         fields = [
@@ -128,8 +126,6 @@ class ContainerTypeSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
-    """Тара."""
-
     class Meta:
         model = Container
         fields = [
@@ -146,7 +142,6 @@ class ContainerSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at"]
 
     def validate(self, attrs):
-        """Нельзя одновременно pallet и floor_room."""
         pallet = (
             attrs.get("pallet")
             if "pallet" in attrs
