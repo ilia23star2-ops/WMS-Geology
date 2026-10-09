@@ -1,14 +1,12 @@
 """
 ViewSets приложения samples.
 
-- WellViewSet — CRUD для скважин.
-- SampleViewSet — CRUD для проб + фильтры.
-- SampleWorkOrderViewSet — управление связями.
+Справочники:
+- ResearchTypeViewSet, SiteViewSet, LaboratoryViewSet.
 
-Ключевой фильтр: `?work_order=<order_number>` — находит пробы,
-связанные с указанным Н/З **или** с его парным (`linked_order`).
-Это гарантирует, что фильтр по входящему и по зашифрованному Н/З
-даёт одинаковый набор проб (решение 1.7).
+Модели:
+- WellViewSet, SampleViewSet (с ключевым фильтром по Н/З),
+  SampleWorkOrderViewSet.
 """
 
 from rest_framework import viewsets
@@ -16,14 +14,84 @@ from rest_framework.permissions import IsAuthenticated
 
 from apps.work_orders.models import WorkOrder
 
+from .catalogs import Laboratory, ResearchType, Site
 from .models import Sample, SampleWorkOrder, Well
 from .serializers import (
+    LaboratorySerializer,
+    ResearchTypeSerializer,
     SampleSerializer,
     SampleWorkOrderSerializer,
+    SiteSerializer,
     WellSerializer,
 )
 
 
+# ============================================================
+# Справочники
+# ============================================================
+class ResearchTypeViewSet(viewsets.ModelViewSet):
+    """
+    CRUD для типов исследования.
+
+    Фильтры: ?is_active=
+    """
+
+    serializer_class = ResearchTypeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = ResearchType.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(
+                is_active=is_active.lower() in ("1", "true", "yes")
+            )
+        return qs
+
+
+class SiteViewSet(viewsets.ModelViewSet):
+    """
+    CRUD для участков.
+
+    Фильтры: ?is_active=
+    """
+
+    serializer_class = SiteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Site.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(
+                is_active=is_active.lower() in ("1", "true", "yes")
+            )
+        return qs
+
+
+class LaboratoryViewSet(viewsets.ModelViewSet):
+    """
+    CRUD для лабораторий.
+
+    Фильтры: ?is_active=
+    """
+
+    serializer_class = LaboratorySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Laboratory.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(
+                is_active=is_active.lower() in ("1", "true", "yes")
+            )
+        return qs
+
+
+# ============================================================
+# Модели
+# ============================================================
 class WellViewSet(viewsets.ModelViewSet):
     """CRUD для скважин. Фильтр: ?cluster="""
 
@@ -43,15 +111,9 @@ class SampleViewSet(viewsets.ModelViewSet):
     CRUD для проб.
 
     Фильтры:
-    - `?sample_number=` — точное совпадение;
-    - `?research_type=` — точное совпадение;
-    - `?site=` — точное совпадение;
-    - `?well_id=` — по ID скважины;
-    - `?container_id=` — по ID тары;
-    - `?status=` — по статусу;
-    - `?work_order=<order_number>` — по номеру Н/З (включая парный);
-    - `?show_disposed=true` — показать утилизированные (по умолчанию
-      скрыты, см. DECISIONS 1.24).
+    - sample_number, research_type, site, well_id, container_id, status;
+    - work_order=<order_number> — по номеру Н/З (с linked_order);
+    - show_disposed=true — показать утилизированные.
     """
 
     serializer_class = SampleSerializer
@@ -62,14 +124,13 @@ class SampleViewSet(viewsets.ModelViewSet):
             "container", "well", "current_work_order"
         ).all()
 
-        # --- Скрываем утилизированные по умолчанию ---
+        # Скрываем утилизированные по умолчанию
         show_disposed = self.request.query_params.get("show_disposed")
         if show_disposed is None or show_disposed.lower() not in (
             "1", "true", "yes",
         ):
             qs = qs.exclude(status=Sample.STATUS_DISPOSED)
 
-        # --- Простые фильтры ---
         sample_number = self.request.query_params.get("sample_number")
         if sample_number:
             qs = qs.filter(sample_number=sample_number)
@@ -94,18 +155,14 @@ class SampleViewSet(viewsets.ModelViewSet):
         if status_:
             qs = qs.filter(status=status_)
 
-        # --- Ключевой фильтр: по номеру Н/З (с учётом linked_order) ---
+        # Ключевой фильтр: ?work_order=<order_number> с учётом linked_order
         work_order_number = self.request.query_params.get("work_order")
         if work_order_number:
-            # Находим все Н/З с таким номером (может быть INCOMING
-            # и CODED с одинаковым номером).
             work_order_ids = set(
                 WorkOrder.objects.filter(
                     order_number=work_order_number
                 ).values_list("id", flat=True)
             )
-
-            # Добавляем linked_order всех найденных Н/З.
             linked_ids = set(
                 WorkOrder.objects.filter(
                     id__in=work_order_ids
@@ -113,7 +170,6 @@ class SampleViewSet(viewsets.ModelViewSet):
                     linked_order__isnull=True
                 ).values_list("linked_order_id", flat=True)
             )
-
             all_ids = work_order_ids | linked_ids
             qs = qs.filter(work_order_links__work_order_id__in=all_ids)
 

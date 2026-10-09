@@ -1,21 +1,18 @@
 """
 ViewSets приложения storage.
 
-Все эндпоинты требуют аутентификации (IsAuthenticated из settings).
-Пагинация — PageNumberPagination, PAGE_SIZE=50.
+Справочники:
+- ContainerCommentViewSet.
 
-Фильтры (через query params):
-- Rack: room_id
-- Section: rack_id
-- Tier: section_id
-- Cell: tier_id, is_active
-- Pallet: cell_id, floor_room_id, status
-- Container: pallet_id, floor_room_id, container_type_id, status
+Модели:
+- RoomViewSet, RackViewSet, SectionViewSet, TierViewSet, CellViewSet,
+  PalletViewSet, ContainerTypeViewSet, ContainerViewSet.
 """
 
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from .catalogs import ContainerComment
 from .models import (
     Cell,
     Container,
@@ -28,6 +25,7 @@ from .models import (
 )
 from .serializers import (
     CellSerializer,
+    ContainerCommentSerializer,
     ContainerSerializer,
     ContainerTypeSerializer,
     PalletSerializer,
@@ -36,6 +34,26 @@ from .serializers import (
     SectionSerializer,
     TierSerializer,
 )
+
+
+class ContainerCommentViewSet(viewsets.ModelViewSet):
+    """
+    CRUD для шаблонов комментариев к таре.
+
+    Фильтры: ?is_active=
+    """
+
+    serializer_class = ContainerCommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = ContainerComment.objects.all()
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            qs = qs.filter(
+                is_active=is_active.lower() in ("1", "true", "yes")
+            )
+        return qs
 
 
 class RoomViewSet(viewsets.ModelViewSet):
@@ -137,8 +155,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
     """
     CRUD для тары.
 
-    Фильтры: ?pallet_id=, ?floor_room_id=,
-             ?container_type_id=, ?status=
+    Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=, ?status=
     """
 
     serializer_class = ContainerSerializer
