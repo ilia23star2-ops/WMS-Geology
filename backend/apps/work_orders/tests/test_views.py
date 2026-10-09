@@ -2,23 +2,19 @@
 Тесты API приложения work_orders.
 
 Покрывают:
-- 401 без аутентификации;
-- CRUD (list, create, retrieve, update, delete);
-- фильтры (order_number, order_type, status);
-- custom action `link` (успех, self-link, same type, несуществующий id);
-- валидацию сериализатора (link на себя и same type через PATCH).
+- CRUD;
+- фильтры (order_number, order_type, status, site_id, site_code);
+- custom action link.
 """
 
 import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.samples.catalogs import Site
 from apps.work_orders.models import WorkOrder
 
 
-# ============================================================
-# Фикстуры
-# ============================================================
 @pytest.fixture
 def auth_client(db):
     user = User.objects.create_user(username="wo_user", password="test")
@@ -44,6 +40,11 @@ def coded(db):
     return WorkOrder.objects.create(
         order_number="X-200", order_type=WorkOrder.TYPE_CODED,
     )
+
+
+@pytest.fixture
+def site(db):
+    return Site.objects.create(code="TST", name="Тестовый")
 
 
 # ============================================================
@@ -83,8 +84,7 @@ def test_work_order_retrieve(auth_client, incoming):
 def test_work_order_update(auth_client, incoming):
     response = auth_client.patch(
         f"/api/v1/work-orders/{incoming.pk}/",
-        {"status": "COMPLETED"},
-        format="json",
+        {"status": "COMPLETED"}, format="json",
     )
     assert response.status_code == 200
     incoming.refresh_from_db()
@@ -121,14 +121,39 @@ def test_filter_by_status(auth_client, incoming, coded):
 
 
 # ============================================================
+# Фильтры по site
+# ============================================================
+def test_filter_by_site_id(auth_client, incoming, coded, site):
+    incoming.site = site
+    incoming.save()
+    response = auth_client.get(f"/api/v1/work-orders/?site_id={site.pk}")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_filter_by_site_code(auth_client, incoming, coded, site):
+    incoming.site = site
+    incoming.save()
+    response = auth_client.get("/api/v1/work-orders/?site_code=TST")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+
+
+def test_site_name_in_serializer(auth_client, incoming, site):
+    incoming.site = site
+    incoming.save()
+    response = auth_client.get(f"/api/v1/work-orders/{incoming.pk}/")
+    assert response.status_code == 200
+    assert response.data["site_name"] == "Тестовый"
+
+
+# ============================================================
 # Custom action: link
 # ============================================================
 def test_link_success(auth_client, incoming, coded):
-    """INCOMING можно связать с CODED."""
     response = auth_client.post(
         f"/api/v1/work-orders/{incoming.pk}/link/",
-        {"linked_order_id": coded.pk},
-        format="json",
+        {"linked_order_id": coded.pk}, format="json",
     )
     assert response.status_code == 200
     incoming.refresh_from_db()
@@ -138,8 +163,7 @@ def test_link_success(auth_client, incoming, coded):
 def test_link_self_raises(auth_client, incoming):
     response = auth_client.post(
         f"/api/v1/work-orders/{incoming.pk}/link/",
-        {"linked_order_id": incoming.pk},
-        format="json",
+        {"linked_order_id": incoming.pk}, format="json",
     )
     assert response.status_code == 400
 
@@ -150,8 +174,7 @@ def test_link_same_type_raises(auth_client, incoming):
     )
     response = auth_client.post(
         f"/api/v1/work-orders/{incoming.pk}/link/",
-        {"linked_order_id": other_incoming.pk},
-        format="json",
+        {"linked_order_id": other_incoming.pk}, format="json",
     )
     assert response.status_code == 400
 
@@ -159,30 +182,25 @@ def test_link_same_type_raises(auth_client, incoming):
 def test_link_nonexistent_raises(auth_client, incoming):
     response = auth_client.post(
         f"/api/v1/work-orders/{incoming.pk}/link/",
-        {"linked_order_id": 99999},
-        format="json",
+        {"linked_order_id": 99999}, format="json",
     )
     assert response.status_code == 400
 
 
 def test_link_missing_body_raises(auth_client, incoming):
     response = auth_client.post(
-        f"/api/v1/work-orders/{incoming.pk}/link/",
-        {},
-        format="json",
+        f"/api/v1/work-orders/{incoming.pk}/link/", {}, format="json",
     )
     assert response.status_code == 400
 
 
 # ============================================================
-# Валидация сериализатора через PATCH
+# Валидация сериализатора
 # ============================================================
 def test_serializer_self_link_raises(auth_client, incoming):
-    """PATCH с linked_order=self — ошибка 400."""
     response = auth_client.patch(
         f"/api/v1/work-orders/{incoming.pk}/",
-        {"linked_order": incoming.pk},
-        format="json",
+        {"linked_order": incoming.pk}, format="json",
     )
     assert response.status_code == 400
     assert "linked_order" in response.data
@@ -194,8 +212,7 @@ def test_serializer_same_type_raises(auth_client, incoming):
     )
     response = auth_client.patch(
         f"/api/v1/work-orders/{incoming.pk}/",
-        {"linked_order": other.pk},
-        format="json",
+        {"linked_order": other.pk}, format="json",
     )
     assert response.status_code == 400
     assert "linked_order" in response.data

@@ -1,10 +1,8 @@
 """
 ViewSets приложения work_orders.
 
-- WorkOrderViewSet — CRUD + custom action `link`.
-- `link` (POST /work-orders/{id}/link/):
-  body: {"linked_order_id": X}
-  Связывает текущий Н/З с другим, проверяя тип.
+WorkOrderViewSet — CRUD + custom action `link`.
+Фильтры: ?order_number=, ?order_type=, ?status=, ?site_id=, ?site_code=
 """
 
 from django.shortcuts import get_object_or_404
@@ -21,33 +19,32 @@ class WorkOrderViewSet(viewsets.ModelViewSet):
     """
     CRUD для наряд-заказов.
 
-    Фильтры: ?order_number=, ?order_type=, ?status=
+    Фильтры: ?order_number=, ?order_type=, ?status=, ?site_id=, ?site_code=
     """
 
     serializer_class = WorkOrderSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = WorkOrder.objects.select_related("linked_order").all()
-        order_number = self.request.query_params.get("order_number")
-        if order_number:
-            qs = qs.filter(order_number=order_number)
-        order_type = self.request.query_params.get("order_type")
-        if order_type:
-            qs = qs.filter(order_type=order_type)
-        status_ = self.request.query_params.get("status")
-        if status_:
-            qs = qs.filter(status=status_)
+        qs = WorkOrder.objects.select_related("linked_order", "site").all()
+        p = self.request.query_params
+
+        if p.get("order_number"):
+            qs = qs.filter(order_number=p["order_number"])
+        if p.get("order_type"):
+            qs = qs.filter(order_type=p["order_type"])
+        if p.get("status"):
+            qs = qs.filter(status=p["status"])
+        if p.get("site_id"):
+            qs = qs.filter(site_id=p["site_id"])
+        if p.get("site_code"):
+            qs = qs.filter(site__code=p["site_code"])
+
         return qs
 
     @action(detail=True, methods=["post"])
     def link(self, request, pk=None):
-        """
-        Связать текущий Н/З с другим.
-
-        Body: {"linked_order_id": X}
-        Проверяет, что тип другого Н/З отличается.
-        """
+        """Связать текущий Н/З с другим."""
         work_order = self.get_object()
         serializer = WorkOrderLinkSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

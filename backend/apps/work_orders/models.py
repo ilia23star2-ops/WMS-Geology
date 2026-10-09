@@ -1,21 +1,14 @@
 """
-Модели приложения work_orders.
-
-Наполняются в заходе fix/1.0-bundle-7 (WorkOrder).
-""""""
 Модели приложения "Наряд-заказы".
 
-WorkOrder — наряд-заказ. Бывает двух типов:
+WorkOrder — наряд-заказ. Типы:
 - INCOMING — название до шифровки;
 - CODED — название после шифровки.
 
-Между собой связаны через self-reference `linked_order_id`.
-
-Один входящий Н/З может быть связан с несколькими кодированными
-и наоборот. Связь M:N на уровне Н/З, но реализована как
-self-reference (см. docs/DECISIONS.md 1.3, вариант A).
-
-Соответствует docs/DATABASE.md v1.
+Изменения v2 (этап 1.3):
+- `WorkOrder.site` — FK на `Site` (nullable) — авто-определение участка.
+  Используется строковая ссылка `"samples.Site"`, чтобы избежать
+  циклического импорта (`samples` уже импортирует `work_orders`).
 """
 
 from django.db import models
@@ -56,6 +49,14 @@ class WorkOrder(models.Model):
         blank=True,
         related_name="linked_from",
         help_text="Парный Н/З: для INCOMING — зашифрованный, для CODED — входящий.",
+    )
+    site = models.ForeignKey(
+        "samples.Site",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_orders",
+        help_text="Участок (авто-определение по паттернам Н/З).",
     )
     status = models.CharField(
         max_length=50,
