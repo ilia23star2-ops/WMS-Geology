@@ -1,14 +1,16 @@
 """
 Тесты API приложения receiving.
 
-Покрывают:
-- CRUD Receipt, ReceiptItem, ImportSession;
-- фильтры (status, laboratory_id, site_id, receipt_id);
-- custom actions confirm, cancel.
+20 старых тестов (Receipt, ReceiptItem, ImportSession CRUD) +
+10 новых (upload Excel).
 """
+
+from io import BytesIO
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from openpyxl import Workbook
 from rest_framework.test import APIClient
 
 from apps.receiving.models import ImportSession, Receipt, ReceiptItem
@@ -40,12 +42,15 @@ def laboratory(db):
 
 @pytest.fixture
 def site(db):
-    return Site.objects.create(code="TST", name="Тестовый")
+    return Site.objects.create(
+        code="TST", name="Тестовый", match_patterns=["Тест"],
+    )
 
 
 @pytest.fixture
-def research_type(db):
-    return ResearchType.objects.create(code="ШЛ", name="Шлифы")
+def research_types(db):
+    ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    ResearchType.objects.create(code="ХА", name="Хим")
 
 
 @pytest.fixture
@@ -70,9 +75,33 @@ def work_order(db):
 @pytest.fixture
 def receipt(db, laboratory, site):
     return Receipt.objects.create(
-        receipt_number="ПР-2026-001",
-        laboratory=laboratory,
-        site=site,
+        receipt_number="ПР-2026-001", laboratory=laboratory, site=site,
+    )
+
+
+def _xlsx_bytes(rows: list[list], sheet_name: str = "Тестовый") -> bytes:
+    """Создаёт XLSX в памяти и возвращает bytes."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    for row in rows:
+        ws.append(row)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _upload_file(
+    rows: list[list], sheet_name: str = "Тестовый",
+) -> SimpleUploadedFile:
+    content = _xlsx_bytes(rows, sheet_name=sheet_name)
+    return SimpleUploadedFile(
+        "test.xlsx",
+        content,
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
     )
 
 
@@ -103,7 +132,7 @@ def test_receipt_create_sets_imported_by(auth_client, laboratory, site):
     assert response.data["imported_by"] is not None
 
 
-def test_receipt_retrieve_with_nested(auth_client, receipt, laboratory, site):
+def test_receipt_retrieve_with_nested(auth_client, receipt):
     response = auth_client.get(f"/api/v1/receipts/{receipt.pk}/")
     assert response.status_code == 200
     assert response.data["laboratory_name"] == "Лаборатория 1"
@@ -140,9 +169,7 @@ def test_receipt_list_filter_by_laboratory(
     auth_client, receipt, laboratory,
 ):
     other_lab = Laboratory.objects.create(code="ЛАБ-2", name="Лаборатория 2")
-    Receipt.objects.create(
-        receipt_number="ПР-300", laboratory=other_lab,
-    )
+    Receipt.objects.create(receipt_number="ПР-300", laboratory=other_lab)
     response = auth_client.get(
         f"/api/v1/receipts/?laboratory_id={laboratory.pk}"
     )
@@ -151,7 +178,7 @@ def test_receipt_list_filter_by_laboratory(
 
 
 # ============================================================
-# Custom action: confirm
+# Receipt — confirm / cancel
 # ============================================================
 def test_receipt_confirm_success(auth_client, receipt):
     response = auth_client.post(
@@ -165,7 +192,9 @@ def test_receipt_confirm_success(auth_client, receipt):
 
 
 def test_receipt_confirm_twice_raises(auth_client, receipt):
-    auth_client.post(f"/api/v1/receipts/{receipt.pk}/confirm/", format="json")
+    auth_client.post(
+        f"/api/v1/receipts/{receipt.pk}/confirm/", format="json",
+    )
     response = auth_client.post(
         f"/api/v1/receipts/{receipt.pk}/confirm/", format="json",
     )
@@ -181,9 +210,6 @@ def test_receipt_confirm_cancelled_raises(auth_client, receipt):
     assert response.status_code == 400
 
 
-# ============================================================
-# Custom action: cancel
-# ============================================================
 def test_receipt_cancel_success(auth_client, receipt):
     response = auth_client.post(
         f"/api/v1/receipts/{receipt.pk}/cancel/", format="json",
@@ -194,7 +220,9 @@ def test_receipt_cancel_success(auth_client, receipt):
 
 
 def test_receipt_cancel_twice_raises(auth_client, receipt):
-    auth_client.post(f"/api/v1/receipts/{receipt.pk}/cancel/", format="json")
+    auth_client.post(
+        f"/api/v1/receipts/{receipt.pk}/cancel/", format="json",
+    )
     response = auth_client.post(
         f"/api/v1/receipts/{receipt.pk}/cancel/", format="json",
     )
@@ -229,11 +257,12 @@ def test_receipt_item_create(auth_client, receipt):
 
 
 def test_receipt_item_retrieve_with_nested(
-    auth_client, receipt, container, work_order, research_type, site,
+    auth_client, receipt, container, work_order, research_types, site,
 ):
+    rt = ResearchType.objects.get(code="ШЛ")
     item = ReceiptItem.objects.create(
         receipt=receipt, container=container,
-        work_order=work_order, research_type=research_type, site=site,
+        work_order=work_order, research_type=rt, site=site,
     )
     response = auth_client.get(f"/api/v1/receipt-items/{item.pk}/")
     assert response.status_code == 200
@@ -287,8 +316,6 @@ def test_import_session_create_sets_uploaded_by(auth_client, db):
         {"file": "receipts/example.xlsx", "file_format": "XLSX"},
         format="json",
     )
-    # FileField через JSON требует multipart — используем упрощённую форму.
-    # Проверяем только, что эндпоинт существует.
     assert response.status_code in (201, 400)
 
 
@@ -300,3 +327,121 @@ def test_import_session_list_filter_by_status(auth_client, db):
     response = auth_client.get("/api/v1/import-sessions/?status=PARSED")
     assert response.status_code == 200
     assert response.data["count"] == 1
+
+
+# ============================================================
+# ImportSession — upload (bundle-3)
+# ============================================================
+def test_upload_requires_auth(anon_client, db):
+    response = anon_client.post("/api/v1/import-sessions/upload/")
+    assert response.status_code in (401, 403)
+
+
+def test_upload_no_file(auth_client, db):
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/", {}, format="multipart",
+    )
+    assert response.status_code == 400
+    assert "Файл не передан" in str(response.data)
+
+
+def test_upload_invalid_extension(auth_client, db):
+    f = SimpleUploadedFile("test.txt", b"hello", content_type="text/plain")
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 400
+    assert "xlsx" in str(response.data).lower()
+
+
+def test_upload_success(auth_client, site, research_types):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "ХА", "Дата"],
+        ["Тест001", 5, 3, "2026-10-08"],
+        ["Тест002", 2, None, "2026-10-09"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "APPLIED"
+    assert response.data["sheets_count"] == 1
+    assert response.data["rows_count"] == 2
+    assert response.data["containers_count"] == 10
+    assert len(response.data["parse_errors"]) == 0
+    assert len(response.data["receipts"]) == 1
+    assert response.data["receipts"][0]["site_code"] == "TST"
+
+
+def test_upload_creates_import_session(auth_client, site, research_types):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 200
+    assert ImportSession.objects.count() == 1
+    session = ImportSession.objects.first()
+    assert session.status == ImportSession.STATUS_APPLIED
+    assert session.uploaded_by is not None
+
+
+def test_upload_creates_receipt_and_items(auth_client, site, research_types):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+        ["Тест002", 3, "2026-10-08"],
+    ])
+    auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert Receipt.objects.count() == 1
+    assert ReceiptItem.objects.count() == 2
+
+
+def test_upload_site_not_found(auth_client, research_types):
+    f = _upload_file(
+        [["Наряд", "ШЛ", "Дата"], ["Тест001", 5, "2026-10-08"]],
+        sheet_name="НЕИЗВЕСТНЫЙ",
+    )
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "ERROR"
+    assert len(response.data["parse_errors"]) >= 1
+
+
+def test_upload_research_type_not_found(auth_client, site):
+    ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    f = _upload_file([
+        ["Наряд", "ШЛ", "НЕИЗВ", "Дата"],
+        ["Тест001", 5, 3, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "PARSED"
+    assert len(response.data["parse_errors"]) >= 1
+
+
+def test_upload_work_orders_linked_to_site(auth_client, site, research_types):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    wo = WorkOrder.objects.get(order_number="Тест001")
+    assert wo.site == site

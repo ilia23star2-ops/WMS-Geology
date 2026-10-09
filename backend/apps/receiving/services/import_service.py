@@ -141,16 +141,21 @@ def apply_import(
     Применяет импорт: создаёт Receipt/ReceiptItem, обновляет
     ImportSession.
 
-    Возвращает (Receipts, errors).
+    Учитывает **и** ошибки парсера (`parsed.errors`), **и** ошибки
+    сервиса (build_errors).
+
+    Возвращает (Receipts, all_errors).
     """
-    receipts, errors = build_receipt_from_parsed(
+    parser_errors = list(parsed.errors)
+    receipts, build_errors = build_receipt_from_parsed(
         parsed=parsed,
         import_session=import_session,
         laboratory=laboratory,
     )
+    all_errors = parser_errors + build_errors
 
-    import_session.parse_errors = errors
-    if receipts and not errors:
+    import_session.parse_errors = all_errors
+    if receipts and not all_errors:
         import_session.status = ImportSession.STATUS_APPLIED
         import_session.receipt = receipts[0]
     elif receipts:
@@ -160,4 +165,4 @@ def apply_import(
         import_session.status = ImportSession.STATUS_ERROR
     import_session.save(update_fields=["parse_errors", "status", "receipt"])
 
-    return receipts, errors
+    return receipts, all_errors
