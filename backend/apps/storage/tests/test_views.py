@@ -352,3 +352,72 @@ def test_container_type_create(auth_client, db):
     )
     assert response.status_code == 201
     assert response.data["is_core"] is True
+
+# ============================================================
+# ContainerType — лаборатория (bundle-8b)
+# ============================================================
+def test_container_type_create_with_laboratory(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    response = auth_client.post(
+        "/api/v1/storage/container-types/",
+        {
+            "name": "Коробка лаборатории",
+            "laboratory": lab.pk,
+            "max_on_standard_pallet": 8,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["laboratory"] == lab.pk
+    assert response.data["laboratory_name"] == "Лаборатория 1"
+
+
+def test_container_type_create_common(auth_client, db):
+    response = auth_client.post(
+        "/api/v1/storage/container-types/",
+        {"name": "Общая коробка"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["laboratory"] is None
+    assert response.data["laboratory_name"] is None
+
+
+def test_container_type_filter_by_laboratory_id(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    other_lab = Laboratory.objects.create(code="ЛАБ-2", name="Лаборатория 2")
+
+    ContainerType.objects.create(name="Общая")  # NULL
+    ContainerType.objects.create(name="Лаба 1", laboratory=lab)
+    ContainerType.objects.create(name="Лаба 2", laboratory=other_lab)
+
+    # Должны быть: Общая + Лаба 1
+    response = auth_client.get(
+        f"/api/v1/storage/container-types/?laboratory_id={lab.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 2
+
+
+def test_container_type_filter_laboratory_isnull_true(auth_client, db):
+    from apps.samples.catalogs import Laboratory
+    lab = Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
+    ContainerType.objects.create(name="Общая")
+    ContainerType.objects.create(name="Лаба 1", laboratory=lab)
+
+    response = auth_client.get(
+        "/api/v1/storage/container-types/?laboratory_isnull=true"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["name"] == "Общая"
+
+
+def test_container_type_filter_is_core(auth_client, db):
+    ContainerType.objects.create(name="Обычная", is_core=False)
+    ContainerType.objects.create(name="Керн", is_core=True)
+    response = auth_client.get("/api/v1/storage/container-types/?is_core=true")
+    assert response.status_code == 200
+    assert response.data["count"] == 1
