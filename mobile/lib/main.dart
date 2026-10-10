@@ -1,4 +1,16 @@
+/// Точка входа мобильного приложения.
+///
+/// - `MultiProvider` — регистрирует `AuthProvider`.
+/// - `AuthGate` — переключает экраны: спиннер (при инициализации),
+///   login или home.
+library;
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'providers/auth_provider.dart';
+import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() {
   runApp(const WmsGeologyApp());
@@ -9,53 +21,46 @@ class WmsGeologyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'WMS Geology',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E3A5F),
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider()..initialize(),
         ),
-        useMaterial3: true,
+      ],
+      child: MaterialApp(
+        title: 'WMS Geology',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1E3A5F),
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ),
+        home: const AuthGate(),
       ),
-      home: const InitialScreen(),
     );
   }
 }
 
-class InitialScreen extends StatelessWidget {
-  const InitialScreen({super.key});
+/// Переключатель экранов по состоянию аутентификации.
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('WMS Geology'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.inventory_2_outlined, size: 96),
-              SizedBox(height: 24),
-              Text(
-                'WMS Geology',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Мобильный клиент — начальная версия',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        if (auth.isInitializing) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (auth.isAuthenticated) {
+          return const HomeScreen();
+        }
+        return const LoginScreen();
+      },
     );
   }
 }

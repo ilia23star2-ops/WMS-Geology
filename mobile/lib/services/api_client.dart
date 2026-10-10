@@ -5,9 +5,11 @@
 /// - добавляет JWT access-токен в заголовок `Authorization`;
 /// - трансформирует ошибки сервера в `ApiException`.
 ///
-/// Хранение токена — через `TokenStorage` (см. `auth_service.dart`,
-/// появится в bundle-3). Сейчас — абстракция `TokenProvider`,
-/// которую инжектирует `AuthService`.
+/// Хранение токена — через `TokenStorage` (см. `auth_service.dart`).
+///
+/// ВАЖНО: `post` и `patch` явно ставят `Content-Type: application/json`.
+/// Без этого Dio отправляет `Map` как `form-urlencoded`, и DRF
+/// отвечает HTML (Browsable API), а не JSON.
 library;
 
 import 'package:dio/dio.dart';
@@ -67,6 +69,15 @@ class ApiClient {
   final TokenProvider? tokenProvider;
   final TokenRefresher? tokenRefresher;
 
+  /// Общие опции запроса — гарантируют JSON и на вход, и на выход.
+  static final Options _jsonOptions = Options(
+    contentType: Headers.jsonContentType,
+    responseType: ResponseType.json,
+    headers: {
+      'Accept': 'application/json',
+    },
+  );
+
   void _setupInterceptors() {
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -86,7 +97,6 @@ class ApiClient {
           if (error.response?.statusCode == 401 && refresher != null) {
             final newToken = await refresher();
             if (newToken != null && newToken.isNotEmpty) {
-              // Повторяем исходный запрос с новым токеном.
               final opts = error.requestOptions;
               opts.headers['Authorization'] = 'Bearer $newToken';
               try {
@@ -110,7 +120,11 @@ class ApiClient {
     Map<String, dynamic>? queryParameters,
   }) async {
     try {
-      return await dio.get<T>(path, queryParameters: queryParameters);
+      return await dio.get<T>(
+        path,
+        queryParameters: queryParameters,
+        options: _jsonOptions,
+      );
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -121,7 +135,11 @@ class ApiClient {
     Object? data,
   }) async {
     try {
-      return await dio.post<T>(path, data: data);
+      return await dio.post<T>(
+        path,
+        data: data,
+        options: _jsonOptions,
+      );
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -132,7 +150,11 @@ class ApiClient {
     Object? data,
   }) async {
     try {
-      return await dio.patch<T>(path, data: data);
+      return await dio.patch<T>(
+        path,
+        data: data,
+        options: _jsonOptions,
+      );
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -140,7 +162,7 @@ class ApiClient {
 
   Future<Response<T>> delete<T>(String path) async {
     try {
-      return await dio.delete<T>(path);
+      return await dio.delete<T>(path, options: _jsonOptions);
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -151,21 +173,17 @@ class ApiClient {
     final response = e.response;
     final statusCode = response?.statusCode;
 
-    // Извлекаем сообщение из ответа DRF, если возможно.
     String message = 'Ошибка сети';
     Map<String, dynamic>? details;
 
     if (response?.data is Map<String, dynamic>) {
       final data = response!.data as Map<String, dynamic>;
       details = data;
-      // DRF возвращает `{"field": ["error1", "error2"]}` или
-      // `{"detail": "..."}` или `{"error": "..."}`.
       if (data['detail'] is String) {
         message = data['detail'] as String;
       } else if (data['error'] is String) {
         message = data['error'] as String;
       } else {
-        // Собираем первое поле с ошибкой.
         for (final entry in data.entries) {
           if (entry.value is List && (entry.value as List).isNotEmpty) {
             message = '${entry.key}: ${(entry.value as List).first}';

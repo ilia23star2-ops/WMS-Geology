@@ -15,7 +15,7 @@ class AppConfig {
   // Если поле НЕ пустое — используется вместо автоматического
   // определения. Установи сюда IP хост-машины при работе на реальном
   // устройстве. Пример: '192.168.1.100'.
-  static const String? _apiHostOverride = null;
+    static const String? _apiHostOverride = '192.168.0.77';
 
   /// Базовый URL API v1.
   static String get apiBaseUrl {
