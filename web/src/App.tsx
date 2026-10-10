@@ -8,6 +8,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
@@ -52,10 +53,7 @@ function AppRoutes() {
             <Route element={<ProtectedRoute />}>
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />
-                    <Route
-                        path="/containers"
-                        element={<PlaceholderPage title="Тара" />}
-                    />
+                    <Route path="/containers" element={<ContainersPage />} />
                     <Route path="/samples" element={<PlaceholderPage title="Пробы" />} />
                     <Route path="/print" element={<PlaceholderPage title="Печать" />} />
                     <Route
