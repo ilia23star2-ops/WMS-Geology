@@ -21,6 +21,10 @@ from apps.labels.services.label_service import (
     FONT_PATH,
     HEIGHTS_MM,
     MAX_CONTINUATIONS,
+    QR_GRID_GAP_MM,
+    QR_GRID_MARGIN_MM,
+    QR_GRID_SIZE_MM,
+    QR_SIZE_MM,
     WIDTHS_MM,
     _choose_size,
     _column_width_mm,
@@ -28,6 +32,8 @@ from apps.labels.services.label_service import (
     _make_measurer,
     _pack_on_sheets,
     _paginate,
+    _qr_grid_capacity,
+    _qr_grid_dimensions,
     _rows_count,
     _split_columns,
     _text_width_mm,
@@ -36,6 +42,7 @@ from apps.labels.services.label_service import (
     _working_width_mm,
     count_pdf_pages,
     render_batch_labels_pdf,
+    render_batch_qr_pdf,
     render_container_label,
 )
 from apps.samples.catalogs import ResearchType, Site
@@ -389,3 +396,75 @@ def test_batch_two_large_two_sheets(db, container_type, research_type):
     data = render_batch_labels_pdf(batch).read()
     assert data[:4] == b"%PDF"
     assert count_pdf_pages(data) >= 2
+
+# ============================================================
+# QR-сетка (4d-3)
+# ============================================================
+def test_qr_grid_dimensions_8x11():
+    """На A4 при QR 25 мм, зазоре 1 мм, отступе 1 мм — 8 × 11."""
+    cols, rows = _qr_grid_dimensions()
+    assert cols == 8
+    assert rows == 11
+
+
+def test_qr_grid_capacity_88():
+    """Ёмкость листа — 88 QR-кодов."""
+    assert _qr_grid_capacity() == 88
+
+
+def test_qr_grid_size_matches_label_qr():
+    """QR в сетке — того же размера, что на этикетке."""
+    assert QR_GRID_SIZE_MM == QR_SIZE_MM
+    assert QR_GRID_SIZE_MM == 25
+
+
+def _make_batch_with_containers(container_type, n: int):
+    """Создаёт партию с N тарами."""
+    batch = PrintBatch.objects.create(
+        batch_number=f"ПЕЧ-QR-{n:04d}",
+    )
+    last = None
+    for i in range(1, n + 1):
+        c = Container.objects.create(
+            container_number=f"T-QR-{i:04d}",
+            container_type=container_type,
+        )
+        PrintBatchItem.objects.create(batch=batch, container=c, position=i)
+        last = c
+    return batch, last
+
+
+def test_qr_batch_empty_returns_pdf(db):
+    """Пустая партия — валидный PDF."""
+    batch = PrintBatch.objects.create(batch_number="ПЕЧ-QR-EMPTY")
+    data = render_batch_qr_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+
+
+def test_qr_batch_one_container_one_page(db, container_type):
+    """1 тара — 1 страница, 1 QR."""
+    batch, _ = _make_batch_with_containers(container_type, 1)
+    data = render_batch_qr_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+    assert count_pdf_pages(data) == 1
+
+
+def test_qr_batch_fits_88_one_page(db, container_type):
+    """88 тар (ёмкость) — 1 страница."""
+    batch, _ = _make_batch_with_containers(container_type, 88)
+    data = render_batch_qr_pdf(batch).read()
+    assert count_pdf_pages(data) == 1
+
+
+def test_qr_batch_overflow_89_two_pages(db, container_type):
+    """89 тар — 2 страницы."""
+    batch, _ = _make_batch_with_containers(container_type, 89)
+    data = render_batch_qr_pdf(batch).read()
+    assert count_pdf_pages(data) == 2
+
+
+def test_qr_batch_200_three_pages(db, container_type):
+    """200 тар — 3 страницы (88 + 88 + 24)."""
+    batch, _ = _make_batch_with_containers(container_type, 200)
+    data = render_batch_qr_pdf(batch).read()
+    assert count_pdf_pages(data) == 3

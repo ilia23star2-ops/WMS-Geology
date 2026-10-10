@@ -3,6 +3,7 @@
 from .label_service import (
     count_pdf_pages,
     render_batch_labels_pdf,
+    render_batch_qr_pdf,
     render_container_label,
 )
 from .print_batch_service import generate_batch_number
@@ -15,5 +16,6 @@ __all__ = [
     "generate_qr_svg",
     "make_payload",
     "render_batch_labels_pdf",
+    "render_batch_qr_pdf",
     "render_container_label",
 ]
