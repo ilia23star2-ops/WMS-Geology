@@ -1,45 +1,30 @@
-// Тесты виджетов WMS Geology Mobile.
+// Смок-тесты UI.
 //
-// Базовые smoke-тесты: приложение запускается, показывает название,
-// иконку, приветственный текст.
+// Полноценные UI-тесты в этом заходе не делаем (RULES.md §12.3 —
+// UI юнит-тестами не покрывается). Здесь только проверка, что
+// экран логина рендерится с ключевыми элементами.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:wms_geology_mobile/main.dart';
+import 'package:provider/provider.dart';
+import 'package:wms_geology_mobile/providers/auth_provider.dart';
+import 'package:wms_geology_mobile/screens/login_screen.dart';
 
 void main() {
-  group('WmsGeologyApp', () {
-    testWidgets('запускается и показывает начальный экран', (tester) async {
-      await tester.pumpWidget(const WmsGeologyApp());
+  testWidgets('LoginScreen отображает заголовок, поля и кнопку', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(),
+        child: const MaterialApp(home: LoginScreen()),
+      ),
+    );
 
-      expect(find.byType(MaterialApp), findsOneWidget);
-      expect(find.byType(InitialScreen), findsOneWidget);
-    });
-
-    testWidgets('показывает заголовок «WMS Geology»', (tester) async {
-      await tester.pumpWidget(const WmsGeologyApp());
-      await tester.pumpAndSettle();
-
-      // В AppBar и в центре — два вхождения.
-      expect(find.text('WMS Geology'), findsNWidgets(2));
-    });
-
-    testWidgets('показывает иконку inventory_2_outlined', (tester) async {
-      await tester.pumpWidget(const WmsGeologyApp());
-      await tester.pumpAndSettle();
-
-      expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
-    });
-
-    testWidgets('показывает подпись «Мобильный клиент»', (tester) async {
-      await tester.pumpWidget(const WmsGeologyApp());
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Мобильный клиент — начальная версия'),
-        findsOneWidget,
-      );
-    });
+    expect(find.text('WMS Geology'), findsOneWidget);
+    expect(find.text('Вход в систему'), findsOneWidget);
+    expect(find.text('Логин'), findsOneWidget);
+    expect(find.text('Пароль'), findsOneWidget);
+    expect(find.text('Войти'), findsOneWidget);
   });
 }
