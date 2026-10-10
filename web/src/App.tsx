@@ -8,10 +8,10 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import CatalogsPage from "./pages/CatalogsPage";
 import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
-import PlaceholderPage from "./pages/PlaceholderPage";
 import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
 import PrintBatchesPage from "./pages/PrintBatchesPage";
 import SamplesPage from "./pages/SamplesPage";
@@ -60,10 +60,7 @@ function AppRoutes() {
                     <Route path="/samples" element={<SamplesPage />} />
                     <Route path="/print" element={<PrintBatchesPage />} />
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />
-                    <Route
-                        path="/catalogs"
-                        element={<PlaceholderPage title="Справочники" />}
-                    />
+                    <Route path="/catalogs" element={<CatalogsPage />} />
                 </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
