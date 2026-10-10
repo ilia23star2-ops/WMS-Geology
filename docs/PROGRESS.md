@@ -5,6 +5,64 @@
 
 ---
 
+## Серия `feature/2.x-mobile` (в работе)
+
+**Дата:** 2026-10-10 — (в работе)
+**Ветка:** `feature/2.x-mobile` (активная).
+**Контекст:** Flutter-приложение для Android-планшетов. Стек:
+Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
+`flutter_secure_storage` + `mobile_scanner`.
+
+Создана через `git merge feature/1.2-mobile-init` — переиспользованы
+заходы серии 1.2 (init + API-клиент).
+
+### Что закрыто
+
+- ✅ **`bundle-1a` / `1b`** — Flutter init (из серии 1.2).
+- ✅ **`bundle-2`** — API-клиент Dio + JWT (из серии 1.2).
+- ✅ **`bundle-3a`** — TokenStorage (`flutter_secure_storage`),
+  AuthService (`login`/`logout`/`refresh`/`fetchMe`), модель `User`.
+- ✅ **`bundle-3b`** — UI: `AuthProvider` (ChangeNotifier), экран
+  логина, главная-заглушка, `AuthGate` в `main.dart`.
+  Плюс — фикс `ApiClient`: `Content-Type: application/json` для
+  `post`/`patch` (иначе Dio шлёт `form-urlencoded`, DRF отдаёт HTML).
+- ✅ **`bundle-4a`** — парсер QR (`parseQrPayload`), модель
+  `Container`, `ContainerService`.
+- ✅ **`bundle-4b-1`** — разрешение камеры в `AndroidManifest.xml`,
+  публичные геттеры `apiClient` (AuthService) и `service`
+  (AuthProvider), `Provider<ContainerService>` в `main.dart`.
+- ✅ **`bundle-4b-2`** — экран сканера (`mobile_scanner`),
+  `ContainerProvider`, `ContainerDetailScreen`, кнопка
+  «Сканировать QR» на главной.
+- ✅ **`bundle-5`** — список проб в карточке тары. Модель `Sample`,
+  `SampleService` (`GET /samples/?container_id=`), pull-to-refresh.
+
+### Что осталось
+
+- ⬜ **`bundle-6`** — экран приёмки (сканирование тары, добавление
+  проб, сохранение).
+- ⬜ **`bundle-7`** — поиск проб (текст + фильтры).
+- ⬜ **`bundle-8`** — инвентаризация.
+- ⬜ **`bundle-9`** — нижнее меню / drawer с разделами.
+
+### Метрики (промежуточные)
+
+- Заходов закрыто: 8.
+- «Не норм» на первом прогоне: 5 (NDK не установлен, IP без кавычек
+  в `config.dart`, `_qrPrefix` в тексте ошибок, конфликт имён
+  `Container` Flutter vs модель, `DJANGO_ALLOWED_HOSTS`).
+- Откатов: 0.
+- **Итог: 32 юнит-теста mobile.**
+
+### Инфраструктура
+
+- NDK **28.2.13676358** — установлен.
+- Android SDK Platform 36 — установлен.
+- `config.dart` — `_apiHostOverride = '<IP домашнего ПК>'` (в git).
+- `.env` (backend) — `DJANGO_ALLOWED_HOSTS=*` (не в git).
+
+---
+
 ## Серия `feature/2.x-web`
 
 **Дата:** 2026-10-10
@@ -161,7 +219,8 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
 ## Серия `feature/1.2-mobile-init`
 
 **Дата:** 2026-10-08
-**Ветка:** `feature/1.2-mobile-init` (на паузе).
+**Ветка:** `feature/1.2-mobile-init` (влита в `2.x-mobile` через
+merge, 2026-10-10).
 **Контекст:** Инициализация Flutter-проекта.
 
 ### Что закрыто
@@ -171,15 +230,6 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
 - ✅ **`bundle-1b`** — `widget_test.dart` под `WmsGeologyApp`.
 - ✅ **`bundle-2`** — API-клиент: `config.dart`, `ApiClient`
   с JWT-интерцептором, `ApiException`.
-
-### Что осталось
-
-- ⬜ bundle-3: `AuthService` (login/refresh/logout).
-- ⬜ bundle-4: Экран логина.
-- ⬜ bundle-5: Сканер QR.
-- ⬜ bundle-6: Поиск проб.
-- ⬜ bundle-7: Инвентаризация.
-- ⬜ bundle-8: Виртуальный вид секции.
 
 ### Метрики
 
