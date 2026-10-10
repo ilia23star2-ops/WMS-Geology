@@ -1,14 +1,9 @@
 /**
- * Корневой компонент: роутинг + bootstrap auth.
- *
- * Пока идёт первичная проверка токена (isBootstrapping) —
- * показываем спиннер. Это защищает от race condition:
- * ProtectedRoute не рендерится до окончания bootstrap.
- *
- * Защищённые роуты обёрнуты в MainLayout (sidebar + header).
+ * Корневой компонент: роутинг + bootstrap auth + QueryClient.
  */
 import { useEffect } from "react";
 import { Box, CircularProgress } from "@mui/material";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import MainLayout from "./components/layout/MainLayout";
@@ -17,6 +12,16 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import { useAuthStore } from "./stores/authStore";
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 30_000,
+            refetchOnWindowFocus: false,
+            retry: 1,
+        },
+    },
+});
 
 function AppRoutes() {
     const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -66,8 +71,10 @@ function AppRoutes() {
 
 export default function App() {
     return (
-        <BrowserRouter>
-            <AppRoutes />
-        </BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+            <BrowserRouter>
+                <AppRoutes />
+            </BrowserRouter>
+        </QueryClientProvider>
     );
 }
