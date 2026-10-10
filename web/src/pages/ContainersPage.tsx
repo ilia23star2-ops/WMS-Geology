@@ -1,7 +1,8 @@
 /**
- * Реестр тары: DataGrid + фильтры + пагинация.
+ * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
  *
- * Server-side: backend отдаёт 50 на страницу, `?page=` с 1.
+ * При выборе тар появляется кнопка «В партию печати (N)» —
+ * открывает диалог создания/добавления в партию.
  */
 import { useMemo, useState } from "react";
 import {
@@ -21,7 +22,15 @@ import {
     Typography,
 } from "@mui/material";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
-import { DataGrid, type GridColDef, type GridPaginationModel } from "@mui/x-data-grid";
+import PrintIcon from "@mui/icons-material/Print";
+import {
+    DataGrid,
+    type GridColDef,
+    type GridPaginationModel,
+    type GridRowId,
+    type GridRowSelectionModel,
+} from "@mui/x-data-grid";
+import { useNavigate } from "react-router-dom";
 
 import {
     CONTAINER_STATUS_LABELS,
@@ -32,6 +41,7 @@ import {
     type ContainerFilters,
     type ContainerStatus,
 } from "../api";
+import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
 
 const PAGE_SIZE = 50;
 
@@ -56,13 +66,21 @@ function formatDate(value: string): string {
     }
 }
 
+function emptySelection(): GridRowSelectionModel {
+    return { type: "include", ids: new Set<GridRowId>() };
+}
+
 export default function ContainersPage() {
+    const navigate = useNavigate();
     const [filters, setFilters] = useState<ContainerFilters>({});
     const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
         page: 0,
         pageSize: PAGE_SIZE,
     });
+    const [selection, setSelection] =
+        useState<GridRowSelectionModel>(emptySelection());
     const [pdfError, setPdfError] = useState<string | null>(null);
+    const [dialogOpen, setDialogOpen] = useState(false);
 
     const { data, isLoading, isError } = useContainers({
         page: paginationModel.page + 1,
@@ -78,12 +96,13 @@ export default function ContainersPage() {
         return map;
     }, [containerTypes.data]);
 
+    const selectedIds = useMemo(
+        () => Array.from(selection.ids).map((id) => Number(id)),
+        [selection],
+    );
+
     const columns: GridColDef<Container>[] = [
-        {
-            field: "id",
-            headerName: "ID",
-            width: 80,
-        },
+        { field: "id", headerName: "ID", width: 80 },
         {
             field: "container_number",
             headerName: "Номер",
@@ -157,9 +176,36 @@ export default function ContainersPage() {
 
     return (
         <Box>
-            <Typography variant="h2" component="h1" gutterBottom>
-                Тара
-            </Typography>
+            <Box
+                sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    mb: 2,
+                }}
+            >
+                <Typography variant="h2" component="h1">
+                    Тара
+                </Typography>
+                {selectedIds.length > 0 && (
+                    <Stack
+                        direction="row"
+                        spacing={2}
+                        sx={{ alignItems: "center" }}
+                    >
+                        <Typography variant="body1" color="text.secondary">
+                            Выбрано: {selectedIds.length}
+                        </Typography>
+                        <IconButton
+                            color="primary"
+                            onClick={() => setDialogOpen(true)}
+                            title="В партию печати"
+                        >
+                            <PrintIcon />
+                        </IconButton>
+                    </Stack>
+                )}
+            </Box>
 
             <Card sx={{ mb: 2 }}>
                 <CardContent>
@@ -175,7 +221,8 @@ export default function ContainersPage() {
                                         const value = e.target.value as ContainerStatus | "";
                                         setFilters((prev) => ({
                                             ...prev,
-                                            status: value === "" ? undefined : (value as ContainerStatus),
+                                            status:
+                                                value === "" ? undefined : (value as ContainerStatus),
                                         }));
                                         setPaginationModel((m) => ({ ...m, page: 0 }));
                                     }}
@@ -238,6 +285,9 @@ export default function ContainersPage() {
                         paginationModel={paginationModel}
                         onPaginationModelChange={setPaginationModel}
                         pageSizeOptions={[PAGE_SIZE]}
+                        checkboxSelection
+                        rowSelectionModel={selection}
+                        onRowSelectionModelChange={setSelection}
                         disableRowSelectionOnClick
                         disableColumnFilter
                         disableColumnSelector
@@ -251,6 +301,16 @@ export default function ContainersPage() {
                     <Typography color="error">Ошибка загрузки тары.</Typography>
                 </Stack>
             )}
+
+            <AddToPrintBatchDialog
+                open={dialogOpen}
+                containerIds={selectedIds}
+                onClose={() => setDialogOpen(false)}
+                onSuccess={(batchId) => {
+                    setSelection(emptySelection());
+                    navigate(`/print/${batchId}`);
+                }}
+            />
 
             <Snackbar
                 open={pdfError !== null}
