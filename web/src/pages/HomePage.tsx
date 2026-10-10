@@ -1,32 +1,28 @@
 /**
- * Домашняя страница (заглушка). После bundle-4 — дашборд.
+ * Домашняя страница — дашборд (пока заглушка).
  */
-import { Box, Button, Container, Stack, Typography } from "@mui/material";
+import { Box, Card, CardContent, Typography } from "@mui/material";
 
 import { useAuthStore } from "../stores/authStore";
 
 export default function HomePage() {
     const user = useAuthStore((s) => s.user);
-    const logout = useAuthStore((s) => s.logout);
 
     return (
-        <Container maxWidth="md">
-            <Box sx={{ mt: 8 }}>
-                <Stack spacing={2}>
-                    <Typography variant="h1" component="h1">
-                        WMS Geology
+        <Box>
+            <Typography variant="h2" component="h1" gutterBottom>
+                Дашборд
+            </Typography>
+            <Card>
+                <CardContent>
+                    <Typography variant="body1" gutterBottom>
+                        Привет, {user?.full_name || user?.username}!
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
-                        Привет, {user?.full_name || user?.username}!{" "}
                         {user?.role ? `Роль: ${user.role}.` : "Роль не назначена."}
                     </Typography>
-                    <Box>
-                        <Button variant="outlined" onClick={() => void logout()}>
-                            Выйти
-                        </Button>
-                    </Box>
-                </Stack>
-            </Box>
-        </Container>
+                </CardContent>
+            </Card>
+        </Box>
     );
 }
