@@ -5,6 +5,7 @@
 
 **Шаблон:** ai-development-template v1.0
 **Дата заполнения:** 2026-10-07
+**Дата обновления:** 2026-10-10
 
 ---
 
@@ -36,8 +37,13 @@ Android-приложение для планшетов. QR-коды как ос�
 **Основная ветка:** `main`
 
 **Архивные ветки (не удаляем, `RULES.md` §7):**
-- `feature/1.0-backend-init` (архив, влита в `main` 2026-10-07)
-- `feature/1.0a-topology-v2` (архив, влита в `main` 2026-10-07)
+- `feature/1.0-backend-init` (архив, 2026-10-07)
+- `feature/1.0a-topology-v2` (архив, 2026-10-07)
+- `feature/1.1-backend-api` (архив, 2026-10-07)
+- `feature/1.2-mobile-init` (на паузе, 2026-10-08)
+- `feature/1.3-backend-v2` (архив, 2026-10-09)
+- `feature/2.0-excel-parser` (архив, 2026-10-09)
+- `feature/2.1-label-generator` (архив, 2026-10-10)
 
 **Активные имена веток:**
 - `feature/X.Y-<имя>` — долгоживущая серия
@@ -62,18 +68,40 @@ Android-приложение для планшетов. QR-коды как ос�
 - **Фреймворк (бэкенд):** Django 5.2 + Django REST Framework
 - **БД:** PostgreSQL 16+ (см. §БД — два окружения)
 - **Язык (мобильное):** Dart (Flutter)
-- **Язык (веб):** TypeScript / React
-- **Сборщик:** Poetry, pub, npm
+- **Язык (веб):** TypeScript / React 18+
+- **Сборщик:** Poetry (backend), npm (web), pub (mobile)
 
-### Зависимости (ключевые)
+### Backend (ключевые зависимости)
 
 - `psycopg[binary]` — драйвер PostgreSQL.
 - `djangorestframework` — REST API.
+- `drf-spectacular` — OpenAPI 3.
+- `djangorestframework-simplejwt` — JWT.
 - `django-environ` — чтение `.env`.
 - `qrcode` — генерация QR.
 - `pillow` — работа с изображениями для QR.
-- `mobile_scanner` — сканирование QR (Flutter, позже).
-- `google_ml_kit` — OCR старых этикеток (Flutter, позже).
+- `openpyxl` — парсинг Excel-приёмки.
+- `fpdf2` — генерация PDF-этикеток.
+
+### Web (ключевые зависимости)
+
+- **Vite** — сборщик, dev-сервер.
+- **React 18+** — UI.
+- **TypeScript** — язык.
+- **React Router v6** — навигация.
+- **TanStack Query** — серверное состояние.
+- **MUI (Material UI)** — компоненты, тема от `#1E3A5F`.
+- **Zustand** — клиентское состояние (auth).
+- **axios** — HTTP-клиент, JWT-интерцептор.
+- **Vitest** — тесты.
+- **ESLint + Prettier** — код-стайл.
+
+### Mobile (ключевые зависимости)
+
+- `mobile_scanner` — сканирование QR.
+- `google_ml_kit` — OCR старых этикеток.
+- `dio` / `http` — HTTP-клиент.
+- `provider` / `riverpod` — управление состоянием.
 
 ### Окружение
 
@@ -89,71 +117,66 @@ Android-приложение для планшетов. QR-коды как ос�
 ### Git
 
 Все операции — только в терминале. Создание ветки пачки:
-git checkout feature/X.Y-xxx
-git pull
-git checkout -b fix/X.Y-bundle
-git push -u origin fix/X.Y-bundle
 
-text
+    git checkout feature/X.Y-xxx
+    git pull
+    git checkout -b fix/X.Y-bundle
+    git push -u origin fix/X.Y-bundle
 
 Закрытие захода:
-git add .
-git commit -m "X.Y-bundle — <краткое>"
-git push
-git checkout feature/X.Y-xxx
-git pull
-git merge --no-ff fix/X.Y-bundle -m "Merge fix/X.Y-bundle"
-git push
-git branch -d fix/X.Y-bundle
-git push origin --delete fix/X.Y-bundle
 
-text
+    git add .
+    git commit -m "X.Y-bundle — <краткое>"
+    git push
+    git checkout feature/X.Y-xxx
+    git pull
+    git merge --no-ff fix/X.Y-bundle -m "Merge fix/X.Y-bundle"
+    git push
+    git branch -d fix/X.Y-bundle
+    git push origin --delete fix/X.Y-bundle
 
 ### Сборка
 
 - Backend: `cd backend && poetry install`
-- Web: `cd web && npm install` (позже)
-- Mobile: `cd mobile && flutter pub get` (позже)
+- Web: `cd web && npm install`
+- Mobile: `cd mobile && flutter pub get`
 
 ### Тесты
 
 - Backend: `cd backend && poetry run pytest -v`
 - Проверка миграций: `cd backend && poetry run python manage.py makemigrations --check --dry-run`
-- Web: `cd web && npm test` (позже)
-- Mobile: `cd mobile && flutter test` (позже)
+- Web: `cd web && npm test`
+- Mobile: `cd mobile && flutter test`
 
 ### Запуск
 
 - Backend: `cd backend && poetry run python manage.py runserver`
-- Web: `cd web && npm run dev` (позже)
-- Mobile: `cd mobile && flutter run` (позже)
+- Web: `cd web && npm run dev` (порт 5173, proxy `/api` → `:8000`)
+- Mobile: `cd mobile && flutter run`
 
 ### База данных
 
 Зависит от машины (см. §БД).
 
 **Домашний ПК (Docker):**
-docker compose up -d # Запустить PostgreSQL
-docker compose ps # Статус
-docker compose logs -f postgres # Логи
-docker compose down # Стоп (данные сохраняются)
-docker compose down -v # Стоп + удалить данные (ОСТОРОЖНО!)
 
-text
+    docker compose up -d            # Запустить PostgreSQL
+    docker compose ps               # Статус
+    docker compose logs -f postgres # Логи
+    docker compose down             # Стоп (данные сохраняются)
+    docker compose down -v          # Стоп + удалить данные (ОСТОРОЖНО!)
 
 **Рабочий ПК (портативный PG):**
-pg_ctl.exe -D "D:/Dev/pgsql/pgdata" -l "D:/Dev/pgsql/pgdata/logfile.log" start
-pg_ctl.exe -D "D:/Dev/pgsql/pgdata" status
-pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop
 
-text
+    pg_ctl.exe -D "D:/Dev/pgsql/pgdata" -l "D:/Dev/pgsql/pgdata/logfile.log" start
+    pg_ctl.exe -D "D:/Dev/pgsql/pgdata" status
+    pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop
 
 **Миграции и seeds (любая машина):**
-cd backend
-poetry run python manage.py migrate
-poetry run python manage.py seed_roles
 
-text
+    cd backend
+    poetry run python manage.py migrate
+    poetry run python manage.py seed_roles
 
 ---
 
@@ -173,7 +196,7 @@ text
 
 | Параметр | Рабочий ПК | Домашний ПК |
 |---|---|---|
-| Путь проекта | `D:\Dev\projects\WMS-Geology` | `C:\Users\Илья\Desktop\Програмирование\WMS-Geology` |
+| Путь проекта | `D:\Dev\projects\WMS-Geology` | `C:\Projert\WMS-Geology` |
 | Терминал | Git Bash (MINGW64) | UCRT64 (MSYS2) |
 | Python | 3.14 (`D:\Dev\python`) | 3.14 (user install) |
 | Poetry | 2.5.1 | 2.5.1 |
@@ -219,19 +242,23 @@ text
 | 0.1-foundation | ✅ | Проектные доки |
 | 0.2-prep-code | ✅ | Структура, `.env.example`, CI |
 | 1.0-backend-init | ✅ | Django, 15 моделей, 78 тестов |
-| 1.0a-topology-v2 | ✅ | Модели v2, picking, movements, **128 тестов** |
-| **1.1-backend-api** | 🟡 текущая | API-эндпоинты по `docs/API.md` |
-| 1.2-mobile-init | ⬜ | Flutter: сканер, поиск |
-| 1.3-web-init | ⬜ | React: дашборд, реестр |
-| 2.0-label-generator | ⬜ | Генератор этикеток (Уровень 2) |
-| 2.1-migration | ⬜ | Миграция старых этикеток (OCR) |
-| 2.2-sorting-assistant | ⬜ | Помощник сортировки (bin packing) |
+| 1.0a-topology-v2 | ✅ | Модели v2, picking, movements, 128 тестов |
+| 1.1-backend-api | ✅ | API-эндпоинты, JWT, OpenAPI, 268 тестов |
+| 1.2-mobile-init | ⏸ | Flutter init + API-клиент (на паузе) |
+| 1.3-backend-v2 | ✅ | Справочники, приёмка, рейсы, 400 тестов |
+| 2.0-excel-parser | ✅ | Парсер Excel-приёмки, 433 теста |
+| 2.1-label-generator | ✅ | QR, PDF-этикетки, партии печати, 552 теста |
+| **2.x-web** | 🟡 **текущая** | React: дашборд, реестры, печать |
+| 2.x-mobile | ⬜ | Flutter: приёмка, сканер |
+| 2.x-lab-portal | ⬜ | Портал лабораторий |
+| 2.x-sorting | ⬜ | Помощник сортировки |
+| 3.x-migration | ⬜ | Миграция старых этикеток (OCR) |
 
 ### Внешние интеграции
 
 Лаборатории — источники данных. Формат обмена на первом
-этапе — **Уровень 1 (наклейка поверх)**. Уровень 2 (генератор
-этикеток как сервис) — серия 2.0.
+этапе — **Уровень 1 (наклейка поверх)**. Уровень 2 (портал
+лабораторий) — серия 2.x-lab-portal.
 
 ### QR-стратегия
 
@@ -241,6 +268,7 @@ text
 - На поддонах и пробах — **нет**.
 - Существующие этикетки не переклеиваются.
 - Старый ID → `Sample.legacy_data` (JSONB).
+- Payload: `WMSG:<TYPE>:<id>` (внутренний ID, не номер).
 
 ### Домен (ключевое)
 
@@ -256,6 +284,8 @@ text
 - Ярусы — A, B, C, D (снизу вверх).
 - `Container` удаляется только если пуст (`PROTECT` от `Sample`).
 - Утилизация — **soft-delete** (`status = DISPOSED`).
+- `PrintBatch.status` — soft через `CANCELLED`.
+- `PrintBatchItem.container` — `PROTECT`.
 
 ### БД — два окружения
 
@@ -276,25 +306,24 @@ text
 **Рабочий ПК:** Git Bash (MINGW64).
 **Домашний ПК:** UCRT64 (MSYS2).
 
-Различия:
-- Git Bash — `MINGW64`, пути `/c/Users/...`.
-- UCRT64 — `MSYS2`, пути `/c/Users/...` (то же), но окружение MSYS2.
-
 **На обеих машинах:** `~` = домашняя папка; кириллицу в путях
 оборачивать в кавычки.
+
+**Особенность MSYS2:** `manage.py shell -c "..."` ломается —
+использовать временный скрипт или одной строкой в REPL.
 
 ---
 
 ## Проектные доки
 
-| Файл | Шаблон | Дата |
+| Файл | Версия / дата | Примечание |
 |---|---|---|
-| `DATABASE.md` | Схема данных (v2) | 2026-10-07 |
-| `API.md` | API-контракты | 2026-10-07 |
-| `SCENARIOS.md` | Сценарии (v2) | 2026-10-07 |
-| `TEMPLATES-PROJECT.md` | Дополнения к шаблонам | 2026-10-07 |
-| `UI.md` | Дизайн-система | (серия 1.3) |
-| `INTEGRATIONS.md` | Внешние интеграции | (серия 2.0) |
+| `DATABASE.md` | v5 (2026-10-10) | + PrintBatch, PrintBatchItem |
+| `API.md` | 2026-10-10 | + labels/print-batches |
+| `SCENARIOS.md` | v4 | |
+| `UI.md` | v2 (2026-10-10) | Дизайн-система, MUI |
+| `TEMPLATES-PROJECT.md` | 2026-10-07 | Дополнения к шаблонам |
+| `INTEGRATIONS.md` | (серия 2.x-lab-portal) | Внешние интеграции |
 
 ---
 
@@ -313,3 +342,6 @@ text
 9. **`.vscode/settings.json`** при появлении в `git status` — откатывать.
 10. **Docker/PostgreSQL** — на домашнем через Docker Compose, на рабочем
     портативный. Не запускать оба на одной машине одновременно.
+11. **Web-команды** — `cd web && npm ...`. Не смешивать с backend.
+12. **Web: файлы** — компоненты, страницы, хуки. Не копировать логику
+    из backend, использовать API.
