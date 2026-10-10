@@ -3,7 +3,7 @@
 /// URL API зависит от того, где запускается приложение:
 /// - Android-эмулятор: localhost хост-машины доступен как `10.0.2.2`.
 /// - Реальное устройство (USB-отладка): нужно указать IP хост-машины
-///   в локальной сети (например, `192.168.1.100`).
+///   в локальной сети (например, `192.168.0.77`).
 /// - Windows/Chrome (для быстрого теста): `localhost`.
 ///
 /// Для реального устройства обязательно поменяй `_apiHostOverride`
@@ -15,12 +15,17 @@ class AppConfig {
   // Если поле НЕ пустое — используется вместо автоматического
   // определения. Установи сюда IP хост-машины при работе на реальном
   // устройстве. Пример: '192.168.1.100'.
-    static const String? _apiHostOverride = '192.168.0.77';
+  //
+  // Тип `String?` оставлен намеренно: на эмуляторе значение может
+  // быть null (тогда берётся 10.0.2.2).
+  // ignore: unnecessary_nullable_for_final_variable_declarations
+  static const String? _apiHostOverride = '192.168.0.77';
 
   /// Базовый URL API v1.
   static String get apiBaseUrl {
-    if (_apiHostOverride != null && _apiHostOverride!.isNotEmpty) {
-      return 'http://$_apiHostOverride:8000/api/v1';
+    final override = _apiHostOverride;
+    if (override != null && override.isNotEmpty) {
+      return 'http://$override:8000/api/v1';
     }
     return 'http://10.0.2.2:8000/api/v1';
   }
