@@ -12,6 +12,7 @@ import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import SamplesPage from "./pages/SamplesPage";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient({
@@ -54,7 +55,7 @@ function AppRoutes() {
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />
                     <Route path="/containers" element={<ContainersPage />} />
-                    <Route path="/samples" element={<PlaceholderPage title="Пробы" />} />
+                    <Route path="/samples" element={<SamplesPage />} />
                     <Route path="/print" element={<PlaceholderPage title="Печать" />} />
                     <Route
                         path="/catalogs"
