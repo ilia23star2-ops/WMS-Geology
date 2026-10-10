@@ -9,22 +9,25 @@
 
 ## Где мы
 
-**Активная серия:** `feature/2.1-label-generator`.
-**Следующая серия:** `feature/2.x-web` или `feature/2.x-mobile` (обсуждается).
+**Активная серия:** нет. `feature/2.1-label-generator` закрыта и влита
+в `main`. Ждёт merge `main` → origin (сделано).
 
-**Текущий заход:** раскладка этикеток v4d завершена (bundle-4d-1).
-Что осталось в 2.1: QR-сетка (`4d-3`), API печати (`4d-4`).
+**Следующая серия:** обсуждается. Кандидаты:
+- `feature/2.x-mobile` — Flutter: приёмка, сканер, инвентаризация.
+- `feature/2.x-web` — React: дашборд, реестр, отчёты.
+- `feature/2.x-lab-portal` — портал лабораторий (Уровень 2).
+- `feature/2.x-sorting` — помощник сортировки.
 
-**Что делаем:**
-Генератор этикеток работает: QR 25 мм, сетка размеров (ширина ×
-высота), авто-ширина колонок, упаковка на A4, пунктир реза,
-продолжения на второй этикетке. 531 тест зелёный.
+**Текущий заход:** docs-пачка после закрытия серии 2.1.
+
+**Что готово:**
+Backend содержит весь функционал генератора этикеток:
+QR-сервис, PDF-этикетки, QR-сетку, партии печати (`PrintBatch`),
+API корзины и печати. **552 теста.**
 
 **Ближайшая работа:**
-- `4d-3` — раскладка для режима `QR_ONLY` (сетка 25×25 мм).
-- `4d-4` — API `GET /print-batches/{id}/pdf/` + `mark-printed`
-  (гибрид: авто при скачивании + ручной override).
-- Docs-пачка: актуализация `DECISIONS`, `DATABASE`, `API`, `ISSUES`.
+Обсуждение следующей серии. Backend готов к интеграции с mobile
+или web.
 
 ---
 
@@ -33,25 +36,25 @@
 ### Инфраструктура
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
-- JWT, OpenAPI, 11 приложений.
+- JWT, OpenAPI, 10 приложений.
 
-### Backend (531 тест)
+### Backend (552 теста)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология A–D, Pallet, ContainerType, Container, ContainerComment |
+| `storage` | Топология A–D, Pallet, ContainerType, Container, ContainerComment, QR-этикетка (PDF) |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample, SampleWorkOrder |
 | `work_orders` | WorkOrder (self-ref + site) |
-| `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер |
+| `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер + сервис импорта |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
 | `inventory` | InventorySession, InventoryScan, InventoryIssue |
 | `users` | Role, UserProfile, AuditLog + JWT auth |
-| `labels` | QR-сервис, PDF-этикетки, `PrintBatch`, `PrintBatchItem` |
+| `labels` | QR-сервис, PDF-этикетки, QR-сетка, `PrintBatch` + `PrintBatchItem`, API корзины и печати |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE` (v4 → v5), `API`,
-  `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (57 решений), `DATABASE` (v5),
+  `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -80,7 +83,8 @@
 - **Ключевой фильтр** `?work_order=` — учитывает linked_order.
 - Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`,
   `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`,
-  `add-containers`, `remove-container`, `mark-ready`.
+  `add-containers`, `remove-container`, `mark-ready`, `pdf`,
+  `mark-printed`.
 
 ### Домен
 - Проба в системе = **навеска**. Не уникальна по номеру.
@@ -90,6 +94,7 @@
 - `Shipment.direction` — `INBOUND` / `OUTBOUND`.
 - `ContainerType.laboratory` — NULL = общий.
 - `PrintBatch.status` — soft через `CANCELLED`.
+- `PrintBatchItem.container` — `PROTECT`.
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.
@@ -98,6 +103,12 @@
 - Авто-ширина колонок списка, шрифт 10 pt везде.
 - Продолжения: вторая этикетка без шапки, только список.
 - Лист A4: 1 в ряд, от левого верхнего угла, не разрывается.
+- **QR-сетка:** 8 × 11 = 88 QR 25×25 на A4, общие линии реза.
+- В QR — внутренний ID тары (`WMSG:CONTAINER:94`), не номер.
+- **Печать партии: гибрид.** `GET /pdf/` при `READY` автоматически
+  ставит `PRINTED`, `printed_at`, `printed_by`. Повторное скачивание
+  не переписывает первую печать. Ручной override —
+  `POST /mark-printed/`.
 - Шрифт `DejaVuSans.ttf` — в `static/fonts/`, не в git.
 
 ### Инструменты
@@ -107,7 +118,7 @@
 - VS Code может дописывать `.vscode/settings.json` — откатывать.
 - Кириллица в пути ломает Dart-анализатор.
 - **UCRT64 (MSYS2)** ломает `manage.py shell -c "..."` — использовать
-  временный скрипт.
+  временный скрипт или одной строкой.
 
 ---
 
