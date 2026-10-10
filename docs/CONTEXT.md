@@ -9,25 +9,24 @@
 
 ## Где мы
 
-**Активная серия:** нет. `feature/2.1-label-generator` закрыта и влита
-в `main`. Ждёт merge `main` → origin (сделано).
+**Активная серия:** нет. `feature/2.x-web` закрыта и влита в `main`.
 
 **Следующая серия:** обсуждается. Кандидаты:
 - `feature/2.x-mobile` — Flutter: приёмка, сканер, инвентаризация.
-- `feature/2.x-web` — React: дашборд, реестр, отчёты.
 - `feature/2.x-lab-portal` — портал лабораторий (Уровень 2).
+- `feature/2.x-lifecycle` — пересмотр статусов и жизненного цикла
+  тары и проб (требует обсуждения с заказчиком).
 - `feature/2.x-sorting` — помощник сортировки.
 
-**Текущий заход:** docs-пачка после закрытия серии 2.1.
+**Текущий заход:** docs-пачка после закрытия серии 2.x-web.
 
 **Что готово:**
-Backend содержит весь функционал генератора этикеток:
-QR-сервис, PDF-этикетки, QR-сетку, партии печати (`PrintBatch`),
-API корзины и печати. **552 теста.**
+Backend — 552 теста. Web-приложение (React) — 9 заходов, все
+разделы работают: логин, layout, главная, тара, пробы, печать,
+справочники.
 
 **Ближайшая работа:**
-Обсуждение следующей серии. Backend готов к интеграции с mobile
-или web.
+Обсуждение следующей серии. Web-интерфейс готов к использованию.
 
 ---
 
@@ -37,6 +36,7 @@ API корзины и печати. **552 теста.**
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
 - JWT, OpenAPI, 10 приложений.
+- Node 20+, Vite 8, React 19, MUI 9.
 
 ### Backend (552 теста)
 
@@ -52,9 +52,21 @@ API корзины и печати. **552 теста.**
 | `users` | Role, UserProfile, AuditLog + JWT auth |
 | `labels` | QR-сервис, PDF-этикетки, QR-сетка, `PrintBatch` + `PrintBatchItem`, API корзины и печати |
 
+### Web (React)
+
+| Раздел | Что внутри |
+|---|---|
+| Аутентификация | Zustand-стор, login-форма, protected routes, JWT-интерцептор с авто-refresh |
+| Layout | MUI sidebar + header, адаптив (drawer на мобильном) |
+| Главная | 4 карточки со счётчиками (Тара / Пробы / Ожидает размещения / Партии печати) |
+| Тара | DataGrid, фильтры (статус, тип), PDF-этикетка, выбор в партию печати |
+| Пробы | DataGrid, фильтры (номер, тип, участок, статус), «Показать утилизированные» |
+| Печать | Список партий, детали, add/remove тар, PDF (этикетки / QR-сетка) |
+| Справочники | Типы исследования, участки, лаборатории (только просмотр) |
+
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS` (57 решений), `DATABASE` (v5),
-  `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+  `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -85,6 +97,9 @@ API корзины и печати. **552 теста.**
   `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`,
   `add-containers`, `remove-container`, `mark-ready`, `pdf`,
   `mark-printed`.
+- **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`,
+  остальные приложения — **без префикса** (`/api/v1/samples/...`,
+  `/api/v1/research-types/...`, `/api/v1/work-orders/...`).
 
 ### Домен
 - Проба в системе = **навеска**. Не уникальна по номеру.
@@ -111,6 +126,24 @@ API корзины и печати. **552 теста.**
   `POST /mark-printed/`.
 - Шрифт `DejaVuSans.ttf` — в `static/fonts/`, не в git.
 
+### Web
+- **Vite proxy:** `/api/*` → `http://localhost:8000`. Backend должен
+  быть запущен отдельно.
+- **MUI X v9:** `GridRowSelectionModel = { type, ids: Set<GridRowId> }`,
+  не массив. Импорт `GridRowId`.
+- **MUI X v9:** `DataGrid` с `paginationMode="server"` требует
+  `rowCount` и `paginationModel`.
+- **MUI 9:** `Grid size={{ xs, sm, md }}` — новый синтаксис (не
+  `Grid item xs`).
+- **MUI 9:** `Stack alignItems` через `sx`, не проп (TS ругается).
+- **React Router v7:** API совместим с v6.
+- **Zustand:** при F5 состояние сбрасывается — race condition
+  закрыт флагом `isBootstrapping` (см. `authStore.ts`).
+- **Vite build:** warning «chunks > 500 kB» — ожидаемо (MUI +
+  DataGrid). Code-splitting отложен (ТД-21).
+- **URL справочников:** `/research-types/`, `/sites/`,
+  `/laboratories/` — **без префикса** `/samples/`.
+
 ### Инструменты
 - Git — только терминал.
 - **Домашний ПК:** UCRT64 (MSYS2), SSH `github.com:22`.
@@ -119,6 +152,8 @@ API корзины и печати. **552 теста.**
 - Кириллица в пути ломает Dart-анализатор.
 - **UCRT64 (MSYS2)** ломает `manage.py shell -c "..."` — использовать
   временный скрипт или одной строкой.
+- **`cat > file << 'EOF'`** — надёжный способ заменить файл в
+  MSYS2-терминале (Ctrl+V в REPL ломается).
 
 ---
 
@@ -137,6 +172,7 @@ API корзины и печати. **552 теста.**
 - Каждый заход — 1–3 файла (пачки-исключения для boilerplate).
 - Файлы выдаются единым блоком.
 - Все Django-команды — через `poetry run`.
+- Все web-команды — `cd web && npm ...`.
 
 ---
 

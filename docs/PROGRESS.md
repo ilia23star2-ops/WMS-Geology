@@ -5,6 +5,53 @@
 
 ---
 
+## Серия `feature/2.x-web`
+
+**Дата:** 2026-10-10
+**Ветка:** `feature/2.x-web` (влита в `main`, архив).
+**Контекст:** React-приложение. Стек: Vite 8 + React 19 + TypeScript +
+MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
+
+### Что закрыто
+
+- ✅ **`bundle-1a`** — инициализация: `package.json`, `vite.config.ts`,
+  `tsconfig.json`, `tsconfig.node.json`, `index.html`, `.gitignore`.
+- ✅ **`bundle-1b`** — ESLint (flat config), Prettier, MUI-тема
+  (seed `#1E3A5F`), `main.tsx`, `App.tsx`, `vite-env.d.ts`.
+- ✅ **`bundle-2`** — API-клиент: `axios`, JWT-интерцептор с
+  авто-refresh, `tokenStorage` (localStorage), `auth.ts`, тесты.
+- ✅ **`bundle-3`** — auth: Zustand-стор, login-форма MUI,
+  `ProtectedRoute`, race condition при F5 закрыт `isBootstrapping`.
+- ✅ **`bundle-4`** — layout: MUI sidebar (Drawer) + header,
+  адаптив (мобильный temporary drawer), активный пункт — primary.
+- ✅ **`bundle-5`** — главная: 4 карточки (Тара / Пробы / Ожидает
+  размещения / Партии печати), TanStack Query provider.
+- ✅ **`bundle-6`** — реестр тары: DataGrid, фильтры (статус, тип),
+  пагинация, PDF-этикетка в строке.
+- ✅ **`bundle-7`** — реестр проб: DataGrid, фильтры (номер, тип,
+  участок, статус), «Показать утилизированные». Справочники
+  (research-types, sites) подключены.
+- ✅ **`bundle-8a`** — партии печати: список, детали, add/remove
+  тар через диалог, mark-ready / mark-printed / cancel,
+  скачивание PDF (этикетки / QR-сетка).
+- ✅ **`bundle-8b`** — интеграция в реестр тары: чекбоксы, bulk-кнопка
+  «В партию печати» (создать новую / добавить в черновик).
+- ✅ **`bundle-9`** — справочники: типы исследования, участки,
+  лаборатории (просмотр, 3 вкладки). Редактирование — Django Admin.
+
+### Метрики
+
+- Заходов закрыто: 10 (bundle-1 разделён на 1a / 1b, bundle-8
+  на 8a / 8b).
+- «Не норм» на первом прогоне: 4 (типы GridRowSelectionModel в v9,
+  Alert неиспользуемый, Stack alignItems, URL справочников
+  без префикса `/samples/`).
+- Откатов: 0.
+- **Backend: 552 теста (без изменений).**
+- **Web: 6 юнит-тестов (tokenStorage + authStore).**
+
+---
+
 ## Серия `feature/2.1-label-generator`
 
 **Дата:** 2026-10-09 — 2026-10-10
@@ -36,7 +83,7 @@
 - ✅ **`bundle-4d-3`** — QR-сетка `QR_ONLY`:
   - 8 × 11 = 88 QR 25×25 на A4;
   - зазор 1 мм, отступ от края 1 мм;
-  - общие пунктирные линии реза (одна между соседними QR).
+  - общие пунктирные линии реза.
 - ✅ **`bundle-4d-4`** — API печати партии:
   - `GET /labels/print-batches/{id}/pdf/` — генерирует PDF,
     автоматически переводит `READY → PRINTED`;
@@ -47,8 +94,7 @@
 ### Метрики
 
 - Заходов закрыто: 7.
-- «Не норм» на первом прогоне: 4 (шрифт отсутствовал, префетч-кэш,
-  тесты по константам, ALLOWED_HOSTS в standalone-скрипте).
+- «Не норм» на первом прогоне: 4.
 - Откатов: 0.
 - **Итог: 552 теста (было 433 → +119).**
 
