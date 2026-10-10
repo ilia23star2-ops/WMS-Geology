@@ -1,12 +1,7 @@
 /**
  * Боковое меню (Drawer).
  *
- * Десктоп (md+): постоянный Drawer.
- * Мобильный (< md): временный (temporary) Drawer, открывается
- * кнопкой-гамбургером в Header.
- *
- * Активный пункт: явная подсветка через sx — primary.main + белый
- * текст, потому что MUI default (action.selected) слишком бледный.
+ * Активный пункт: подсветка primary.main + белый текст.
  */
 import {
     Box,
@@ -18,7 +13,7 @@ import {
     Toolbar,
     Typography,
 } from "@mui/material";
-import DashboardIcon from "@mui/icons-material/Dashboard";
+import HomeIcon from "@mui/icons-material/Home";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import BiotechIcon from "@mui/icons-material/Biotech";
 import PrintIcon from "@mui/icons-material/Print";
@@ -35,7 +30,7 @@ interface MenuItem {
 }
 
 const MENU: MenuItem[] = [
-    { label: "Дашборд", path: "/", icon: <DashboardIcon /> },
+    { label: "Главная", path: "/", icon: <HomeIcon /> },
     { label: "Тара", path: "/containers", icon: <Inventory2Icon /> },
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
     { label: "Печать", path: "/print", icon: <PrintIcon /> },
@@ -100,7 +95,6 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             component="nav"
             sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}
         >
-            {/* Мобильный temporary Drawer */}
             <Drawer
                 variant="temporary"
                 open={mobileOpen}
@@ -117,7 +111,6 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                 <DrawerContent />
             </Drawer>
 
-            {/* Десктопный постоянный Drawer */}
             <Drawer
                 variant="permanent"
                 open
