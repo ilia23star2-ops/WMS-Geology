@@ -68,6 +68,7 @@ build/
 *.ipr
 *.iws
 .idea/
+generated_plugin_registrant.dart
 
 # --- Android ---
 *.apk
@@ -84,6 +85,16 @@ proguard/
 captures/
 .externalNativeBuild/
 .cxx/
+GeneratedPluginRegistrant.java
+
+# --- iOS ---
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
 
 # --- IDE ---
 .vscode/*
@@ -112,3 +123,5 @@ docker-compose.override.yml
 *.key
 secrets/
 .env.local
+# Шрифты для PDF-этикеток — не коммитим
+backend/apps/labels/static/fonts/

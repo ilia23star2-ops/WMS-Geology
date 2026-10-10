@@ -21,6 +21,7 @@ urlpatterns = [
     # API v1
     path("api/v1/", include("apps.users.urls")),
     path("api/v1/storage/", include("apps.storage.urls")),
+    path("api/v1/labels/", include("apps.labels.urls")),
     path("api/v1/", include("apps.work_orders.urls")),
     path("api/v1/", include("apps.samples.urls")),
     path("api/v1/", include("apps.inventory.urls")),

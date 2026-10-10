@@ -5,10 +5,79 @@
 
 ---
 
+## Серия `feature/2.1-label-generator`
+
+**Дата:** 2026-10-09 — (в работе)
+**Ветка:** `feature/2.1-label-generator` (активная).
+**Контекст:** Генератор этикеток тары. QR, PDF, партии печати,
+раскладка на A4.
+
+### Что закрыто
+
+- ✅ **`bundle-1`** — QR-сервис: `generate_qr_png`, `generate_qr_svg`,
+  `make_payload` (payload `WMSG:<TYPE>:<id>`).
+- ✅ **`bundle-2`** — PDF-этикетка через fpdf2, шрифт `DejaVuSans.ttf`
+  (в `.gitignore`, ставится локально).
+- ✅ **`bundle-3`** — API `GET /storage/containers/{id}/label.pdf/`.
+- ✅ **`bundle-4a`** — модели `PrintBatch` + `PrintBatchItem`,
+  миграция, тесты.
+- ✅ **`bundle-4b`** — API партии печати: сериализаторы, ViewSet,
+  actions (`add-containers`, `remove-container`, `mark-ready`,
+  `cancel`), сервис генерации `batch_number`.
+- ✅ **`bundle-4c-1` (переименован в `4d-1`)** — раскладка этикеток:
+  - сетка ширин `[110, 130, 150, 180, 210]` мм;
+  - сетка высот `[37, 49, 74, 99, 148]` мм (делители A4);
+  - шапка 28 мм: QR 25×25 справа, 4 строки слева (Уч / Н/З / Исл / №);
+  - авто-ширина колонки по самому длинному номеру пробы;
+  - список проб колонками, шрифт 10 pt единый;
+  - чекбоксы в строках;
+  - пунктирный периметр + рамка таблицы;
+  - упаковка на A4: от левого верхнего угла, стопкой, не разрывается;
+  - продолжения: вторая этикетка без шапки, до 3 штук.
+
+### Что осталось
+
+- ⬜ `4d-3` — раскладка для режима `QR_ONLY` (сетка 25×25).
+- ⬜ `4d-4` — API `GET /print-batches/{id}/pdf/` + `mark-printed`
+  (гибрид: авто при скачивании + ручной override).
+
+### Метрики
+
+- Заходов закрыто: 6.
+- «Не норм» на первом прогоне: 4 (шрифт отсутствовал, префетч-кэш,
+  тесты по константам).
+- Откатов: 0.
+- **Итог: 531 тест (было 433 → +98).**
+
+---
+
+## Серия `feature/2.0-excel-parser`
+
+**Дата:** 2026-10-09
+**Ветка:** `feature/2.0-excel-parser` (влита в `main`, архив).
+**Контекст:** Парсер Excel-приёмки (формат лабораторий, решение 1.49).
+
+### Что закрыто
+
+- ✅ **`bundle-1`** — парсер `.xlsx` (`openpyxl`), структура листов
+  (лист = участок, строка = Н/З, столбцы = ТИ).
+- ✅ **`bundle-2`** — сервис импорта: разбор файла → предзаполнение
+  `Receipt` + `ReceiptItem`.
+- ✅ **`bundle-3`** — API `POST /receiving/import-sessions/upload/`.
+
+### Метрики
+
+- Заходов: 3.
+- «Не норм» на первом прогоне: 0.
+- Откатов: 0.
+- **Итог: 433 теста (было 400 → +33).**
+
+---
+
 ## Серия `feature/1.3-backend-v2`
 
 **Дата:** 2026-10-08 — 2026-10-09
-**Ветка:** `feature/1.3-backend-v2` (закрывается, вливается в `main`).
+**Ветка:** влита в `main`, архив.
 **Контекст:** Справочники, FK-миграции Sample, Container/WorkOrder,
 модели приёмки, Shipment-расширение, ContainerType.laboratory.
 
@@ -19,8 +88,7 @@
 - ✅ **`bundle-2`** — тесты справочников + сериализаторы.
 - ✅ **`bundle-3`** — API справочников.
 - ✅ **`bundle-3a`** — восстановление тестов views.
-- ✅ **`bundle-4`** — seeds: `seed_catalogs`,
-  `seed_container_comments`.
+- ✅ **`bundle-4`** — seeds: `seed_catalogs`, `seed_container_comments`.
 - ✅ **`bundle-5`** — Sample: FK на `ResearchType` и `Site`.
 - ✅ **`bundle-5a`** — восстановление тестов.
 - ✅ **`bundle-6a`** — Container: `comment`, `comment_template`,
@@ -29,17 +97,16 @@
 - ✅ **`bundle-7a`** — модели приёмки: `Receipt`, `ReceiptItem`,
   `ImportSession`.
 - ✅ **`bundle-7b`** — API приёмки.
-- ✅ **`bundle-8a`** — Shipment: `direction`, статусы,
-  лаборатория, рейс.
+- ✅ **`bundle-8a`** — Shipment: `direction`, статусы, лаборатория,
+  рейс.
 - ✅ **`bundle-8b`** — ContainerType: `laboratory`.
 
 ### Метрики
 
 - Заходов: 13.
-- «Не норм» на первом прогоне: 2 (сортировка кириллицы,
-  фантом `mobile/android/`).
+- «Не норм» на первом прогоне: 2 (сортировка кириллицы, фантом
+  `mobile/android/`).
 - Откатов: 0.
-- Правил нарушено: 0.
 - **Итог: 400 тестов (было 268 → +132).**
 
 ---
@@ -48,13 +115,13 @@
 
 **Дата:** 2026-10-08
 **Ветка:** `feature/1.2-mobile-init` (на паузе).
-**Контекст:** Инициализация Flutter-проекта. Приостановлена
-для серии 1.3 (backend).
+**Контекст:** Инициализация Flutter-проекта. Приостановлена для
+backend-серий.
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — Flutter init + структура проекта,
-  `main.dart`, `pubspec.yaml`, README.
+- ✅ **`bundle-1`** — Flutter init + структура проекта, `main.dart`,
+  `pubspec.yaml`, README.
 - ✅ **`bundle-1b`** — `widget_test.dart` под `WmsGeologyApp`.
 - ✅ **`bundle-2`** — API-клиент: `config.dart`, `ApiClient`
   с JWT-интерцептором, `ApiException`.
@@ -110,14 +177,12 @@
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — storage v2: `ContainerType`,
-  `Section.qr_code`, `Cell.cell_type`, `Pallet` OneToOne,
-  `Container.container_type`, `position_on_pallet`.
-- ✅ **`bundle-2`** — samples (soft-delete) + inventory
-  (`raw_barcode`, `InventoryIssue`).
-- ✅ **`bundle-3`** — `picking` (`PickList`, `PickListItem`,
-  `Shipment`, `ShipmentItem`) + `movements`
-  (`MoveOperation`, `MoveOperationItem`).
+- ✅ **`bundle-1`** — storage v2: `ContainerType`, `Section.qr_code`,
+  `Cell.cell_type`, `Pallet` OneToOne, `Container.container_type`,
+  `position_on_pallet`.
+- ✅ **`bundle-2`** — samples (soft-delete) + inventory (`raw_barcode`,
+  `InventoryIssue`).
+- ✅ **`bundle-3`** — `picking` + `movements`.
 
 ### Метрики
 
@@ -137,8 +202,7 @@
 ### Что закрыто
 
 - ✅ **`bundle-1`** — Poetry init.
-- ✅ **`bundle-2`** — Django skeleton: `manage.py`, settings,
-  urls, wsgi, asgi.
+- ✅ **`bundle-2`** — Django skeleton: `manage.py`, settings, urls.
 - ✅ **`bundle-3`** — приложения storage, samples, work_orders.
 - ✅ **`bundle-4`** — приложения inventory, labels, users.
 - ✅ **`bundle-5`** — модели storage (v1) + 19 тестов.
@@ -185,8 +249,8 @@
 
 ### Что закрыто
 
-- ✅ **`Стартовые доки`** — README, LICENSE, .gitignore,
-  PROJECT, CONTEXT, DECISIONS.
+- ✅ **`Стартовые доки`** — README, LICENSE, .gitignore, PROJECT,
+  CONTEXT, DECISIONS.
 - ✅ **`DATABASE.md`** (v1).
 - ✅ **`API.md`**.
 - ✅ **`SCENARIOS.md`** (v1).
