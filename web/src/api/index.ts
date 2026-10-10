@@ -41,6 +41,29 @@ export {
 } from "./catalogs";
 export type { Laboratory, ResearchType, Site } from "./catalogs";
 
+export {
+    PRINT_BATCH_STATUS_LABELS,
+    PRINT_TYPE_LABELS,
+    downloadBatchPdf,
+    fetchPrintBatch,
+    fetchPrintBatches,
+    useAddContainers,
+    useCancelBatch,
+    useCreatePrintBatch,
+    useMarkPrinted,
+    useMarkReady,
+    usePrintBatch,
+    usePrintBatches,
+    useRemoveContainer,
+} from "./printBatches";
+export type {
+    PrintBatch,
+    PrintBatchItem,
+    PrintBatchStatus,
+    PrintBatchesListParams,
+    PrintType,
+} from "./printBatches";
+
 export type {
     ApiError,
     LoginPayload,
