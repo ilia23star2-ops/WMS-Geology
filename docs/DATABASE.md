@@ -5,20 +5,27 @@
 - **СУБД:** PostgreSQL 16+ (портативный / Docker).
 - **Кодировка:** UTF-8.
 - **Временная зона:** UTC (хранение), локальная (отображение).
-- **Версия схемы:** 4.
+- **Версия схемы:** 5.
 - **Миграции:** Django migrations в `backend/apps/*/migrations/`.
 
 ## История версий
 
 - **v1** — базовые модели (серия 1.0).
-- **v2** — топология A–D, «тихий» Pallet, ContainerType (серия 1.0a).
-- **v3** — справочники, структура номера пробы, приёмка (серия 1.3).
+- **v2** — топология A–D, «тихий» Pallet, ContainerType (1.0a).
+- **v3** — справочники, структура номера пробы, приёмка (1.3).
 - **v4** — Портал лабораторий: `Shipment.direction`, расширенные
   статусы, `ContainerType.laboratory_id`, `Receipt.shipment_id`.
+- **v5** — Партии печати: `PrintBatches`, `PrintBatchItems` (2.1).
+
+## Изменения v4 → v5
+
+Решения **1.48, 1.55, 1.56, 1.57** из `docs/DECISIONS.md`:
+
+- Новые таблицы: `PrintBatches`, `PrintBatchItems`.
 
 ## Изменения v3 → v4
 
-Решения **1.52** из `docs/DECISIONS.md`:
+Решения **1.52**:
 
 - `ContainerType.laboratory_id` (FK, nullable).
 - `Shipment.direction` (`INBOUND` / `OUTBOUND`).
@@ -352,16 +359,47 @@ RETURNED / CANCELLED / LOST`.
 
 ---
 
-### Отложено (серия 2.0+)
+### Партии печати (v5)
 
-#### `PrintBatches`, `PrintBatchItems`
+#### `PrintBatches`
 
-Для массовой печати этикеток и QR (решение 1.48).
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | BIGSERIAL PK | |
+| `batch_number` | VARCHAR(100) UNIQUE | `ПЕЧ-2026-001` |
+| `print_type` | VARCHAR(20) | `LABELS` / `QR_ONLY` |
+| `status` | VARCHAR(20) | `DRAFT / READY / PRINTED / CANCELLED` |
+| `created_by_id` | INT FK → User NULL | |
+| `printed_at` | TIMESTAMPTZ NULL | |
+| `printed_by_id` | INT FK → User NULL | |
+| `total_items` | INT DEFAULT 0 | снимок на момент печати |
+| `total_pages` | INT DEFAULT 0 | снимок на момент печати |
+| `comment` | TEXT | |
+| `created_at` | TIMESTAMPTZ | |
+| `updated_at` | TIMESTAMPTZ | |
+
+**Soft-delete:** отмена через `status = CANCELLED`.
+
+#### `PrintBatchItems`
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | BIGSERIAL PK | |
+| `batch_id` | INT FK → PrintBatches (CASCADE) | |
+| `container_id` | INT FK → Containers (PROTECT) | |
+| `position` | INT DEFAULT 0 | порядок в партии |
+| `created_at` | TIMESTAMPTZ | |
+
+**Уникальность:** `(batch_id, container_id)`.
+
+---
+
+### Отложено (серия 2.x+)
 
 #### `SampleDecryption`
 
-Таблица соответствия шифрованных и нешифрованных проб (решение 1.42).
-Пока не создаём — есть `Sample.legacy_data` (JSONB).
+Таблица соответствия шифрованных и нешифрованных проб
+(решение 1.42). Пока не создаём — есть `Sample.legacy_data` (JSONB).
 
 ---
 
@@ -376,25 +414,6 @@ RETURNED / CANCELLED / LOST`.
 - **CASCADE / PROTECT / SET_NULL:** явно указано у каждого FK.
 - **Справочники:** `PROTECT` на FK из реальных данных.
 
-## План миграций v4
-
-### Шаг 1: `ContainerTypes.laboratory_id`
-
-1. Добавить `laboratory_id` (FK, nullable).
-2. Существующие типы — `NULL` (общие).
-
-### Шаг 2: `Shipments` — расширение
-
-1. Добавить `direction` (default `OUTBOUND` для существующих).
-2. Добавить `laboratory_id`, `site_id`, `shipment_date`,
-   `driver_name`, `vehicle_number`, `assembled_at`, `sent_at`,
-   `received_at`, `cancelled_at`, `cancelled_by_id`, `cancel_reason`.
-3. Изменить `status` — добавить новые значения.
-
-### Шаг 3: `Receipts.shipment_id`
-
-1. Добавить `shipment_id` (FK, nullable).
-
 ## Бэкапы
 
 Без изменений.
@@ -402,4 +421,4 @@ RETURNED / CANCELLED / LOST`.
 ## Что НЕ хранится
 
 - Расшифровка проб (до появления ЛИМС-выгрузки).
-- Печатные корзины (до серии 2.0).
+- Сгенерированные PDF-этикетки (генерируются на лету).
