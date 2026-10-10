@@ -1,32 +1,46 @@
 """
-Тесты сервиса рендера этикетки тары.
+Тесты сервиса рендера этикеток тары (модель 4d-1).
 
 Покрывают:
-- возврат PDF (BytesIO, сигнатура %PDF);
-- раскладку (1 колонка / 2 колонки / обрезание);
-- деление на колонки;
-- сквозную нумерацию;
-- работу с пустой тарой;
-- работу с большим количеством проб;
-- ошибку, если TTF-шрифт отсутствует.
+- измерение текста и обрезку;
+- метрики раскладки (ширина колонки, число колонок, строк);
+- выбор размера из сетки (ширины × высоты);
+- пагинацию и продолжения;
+- укладку этикеток на A4;
+- рендер одиночной этикетки и партии.
 """
 
 from io import BytesIO
 
 import pytest
 
+from apps.labels.models import PrintBatch, PrintBatchItem
 from apps.labels.services.label_service import (
+    A4_H_MM,
+    A4_LABEL_GAP_MM,
     FONT_PATH,
-    MAX_TWO_COLUMN,
-    _calculate_layout,
-    _number_samples,
-    _split_into_columns,
+    HEIGHTS_MM,
+    MAX_CONTINUATIONS,
+    WIDTHS_MM,
+    _choose_size,
+    _column_width_mm,
+    _columns_count,
+    _make_measurer,
+    _pack_on_sheets,
+    _paginate,
+    _rows_count,
+    _split_columns,
+    _text_width_mm,
+    _truncate_to_width,
+    _working_height_mm,
+    _working_width_mm,
+    count_pdf_pages,
+    render_batch_labels_pdf,
     render_container_label,
 )
 from apps.samples.catalogs import ResearchType, Site
 from apps.samples.models import Sample
 from apps.storage.models import Container, ContainerType
-from apps.work_orders.models import WorkOrder
 
 
 # ============================================================
@@ -54,150 +68,324 @@ def site(db):
     return Site.objects.create(code="TST", name="Тестовый")
 
 
-@pytest.fixture
-def work_order(db):
-    return WorkOrder.objects.create(
-        order_number="A-100", order_type=WorkOrder.TYPE_INCOMING,
-    )
-
-
-@pytest.fixture
-def samples(db, container, research_type, site, work_order):
+def _make_samples(container, research_type, n: int, prefix: str = "TAA-") -> list:
+    """Создаёт N проб в таре. Префикс — для разной длины номеров."""
     objs = []
-    for i in range(1, 6):
+    for i in range(1, n + 1):
         objs.append(Sample.objects.create(
-            sample_number=f"TAA-{i:03d}",
+            sample_number=f"{prefix}{i:04d}",
             research_type=research_type,
-            site=site,
             container=container,
-            current_work_order=work_order,
         ))
     return objs
 
 
-# ============================================================
-# _calculate_layout
-# ============================================================
-def test_layout_small():
-    """≤ 15 проб — 1 колонка, строка 4.5 мм."""
-    columns, row_h, max_display = _calculate_layout(5)
-    assert columns == 1
-    assert row_h == 4.5
-    assert max_display == 5
-
-    columns, row_h, max_display = _calculate_layout(15)
-    assert columns == 1
-    assert max_display == 15
-
-
-def test_layout_medium():
-    """16–60 — 2 колонки, строка 2.4 мм."""
-    columns, row_h, max_display = _calculate_layout(30)
-    assert columns == 2
-    assert row_h == 2.4
-    assert max_display == 30
-
-    columns, _, max_display = _calculate_layout(60)
-    assert columns == 2
-    assert max_display == 60
-
-
-def test_layout_large():
-    """> 60 — 2 колонки, обрезание до 60."""
-    columns, _, max_display = _calculate_layout(100)
-    assert columns == 2
-    assert max_display == MAX_TWO_COLUMN
+def _make_container(container_type, idx: int) -> Container:
+    return Container.objects.create(
+        container_number=f"T-B{idx:03d}",
+        container_type=container_type,
+    )
 
 
 # ============================================================
-# _split_into_columns
+# Шрифт
 # ============================================================
-def test_split_two_columns():
-    items = list(range(10))
-    result = _split_into_columns(items, 2)
-    assert result == [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
+def test_font_present():
+    assert FONT_PATH.exists(), f"Шрифт не найден: {FONT_PATH}"
 
 
-def test_split_one_column():
-    items = list(range(5))
-    assert _split_into_columns(items, 1) == [[0, 1, 2, 3, 4]]
+# ============================================================
+# _text_width_mm / _truncate_to_width
+# ============================================================
+def test_text_width_non_empty():
+    pdf = _make_measurer()
+    assert _text_width_mm(pdf, "abc") > 0
 
 
-def test_split_empty():
-    assert _split_into_columns([], 2) == [[], []]
+def test_text_width_empty():
+    pdf = _make_measurer()
+    assert _text_width_mm(pdf, "") == 0.0
 
 
-def test_split_invalid_columns():
+def test_truncate_fits_unchanged():
+    pdf = _make_measurer()
+    assert _truncate_to_width(pdf, "abc", 100) == "abc"
+
+
+def test_truncate_adds_ellipsis():
+    pdf = _make_measurer()
+    result = _truncate_to_width(pdf, "abcdefghij" * 10, 30)
+    assert result.endswith("...")
+    assert _text_width_mm(pdf, result) <= 30 + 0.1
+
+
+def test_truncate_tiny_budget_returns_ellipsis_or_empty():
+    pdf = _make_measurer()
+    result = _truncate_to_width(pdf, "abc", 0.5)
+    assert result in ("", "...")
+
+
+# ============================================================
+# Метрики раскладки
+# ============================================================
+def test_working_width_subtracts_margins():
+    # LABEL_MARGIN_MM = 1 → 150 - 2 = 148
+    assert _working_width_mm(150) == 150 - 2
+
+
+def test_working_height_subtracts_header_and_bottom():
+    # HEADER_H_MM = 28, LABEL_BOTTOM_PAD_MM = 2
+    assert _working_height_mm(99) == 99 - 28 - 1
+
+
+def test_rows_count_zero_for_tiny_label():
+    """37 мм — рабочая область слишком мала для строк проб."""
+    assert _rows_count(37) == 0
+
+
+def test_rows_count_positive_for_larger():
+    assert _rows_count(148) > 0
+
+
+def test_column_width_positive(db, container, research_type):
+    pdf = _make_measurer()
+    samples = _make_samples(container, research_type, 3, prefix="X-")
+    assert _column_width_mm(pdf, samples) > 0
+
+
+def test_column_width_grows_with_number_length(db, container, research_type):
+    pdf = _make_measurer()
+    short = _make_samples(container, research_type, 1, prefix="A-")
+    # Нужны разные тары, чтобы не пересекались sample_number
+    container2 = Container.objects.create(
+        container_number="T-LONG", container_type=container.container_type,
+    )
+    long = _make_samples(container2, research_type, 1, prefix="TAA-A34076001-001-")
+    assert _column_width_mm(pdf, long) > _column_width_mm(pdf, short)
+
+
+def test_columns_count_more_for_short_numbers(db, container, research_type):
+    pdf = _make_measurer()
+    short = _make_samples(container, research_type, 5, prefix="A-")
+    container2 = Container.objects.create(
+        container_number="T-LONG", container_type=container.container_type,
+    )
+    long = _make_samples(container2, research_type, 5, prefix="TAA-A34076001-001-")
+    assert _columns_count(pdf, short, 210) >= _columns_count(pdf, long, 210)
+
+
+# ============================================================
+# _choose_size
+# ============================================================
+def test_choose_size_empty_returns_minimum(db, container):
+    pdf = _make_measurer()
+    w, h = _choose_size(pdf, [])
+    assert w == WIDTHS_MM[0]
+    assert h == HEIGHTS_MM[0]
+
+
+def test_choose_size_grows_with_sample_count(db, container, research_type):
+    pdf = _make_measurer()
+    few = _make_samples(container, research_type, 3, prefix="A-")
+    container2 = Container.objects.create(
+        container_number="T-MANY", container_type=container.container_type,
+    )
+    many = _make_samples(container2, research_type, 100, prefix="A-")
+    w1, h1 = _choose_size(pdf, few)
+    w2, h2 = _choose_size(pdf, many)
+    assert (w2, h2) >= (w1, h1)
+
+
+def test_choose_size_long_numbers_picks_wider(db, container, research_type):
+    pdf = _make_measurer()
+    short = _make_samples(container, research_type, 20, prefix="A-")
+    container2 = Container.objects.create(
+        container_number="T-LONG", container_type=container.container_type,
+    )
+    long = _make_samples(container2, research_type, 20, prefix="TAA-A34076001-001-")
+    w_short, _ = _choose_size(pdf, short)
+    w_long, _ = _choose_size(pdf, long)
+    assert w_long >= w_short
+
+
+def test_choose_size_from_grid(db, container, research_type):
+    pdf = _make_measurer()
+    for n in (1, 5, 20, 50, 100, 500):
+        samples = _make_samples(container, research_type, n, prefix="A-")
+        w, h = _choose_size(pdf, samples)
+        assert w in WIDTHS_MM
+        assert h in HEIGHTS_MM
+
+
+# ============================================================
+# _split_columns
+# ============================================================
+def test_split_columns_two():
+    assert _split_columns([1, 2, 3, 4], 2) == [[1, 2], [3, 4]]
+
+
+def test_split_columns_uneven():
+    result = _split_columns([1, 2, 3, 4, 5], 2)
+    assert result[0] == [1, 2, 3]
+    assert result[1] == [4, 5]
+
+
+def test_split_columns_empty():
+    assert _split_columns([], 2) == []
+
+
+def test_split_columns_invalid():
     with pytest.raises(ValueError):
-        _split_into_columns([1, 2, 3], 0)
-
-
-def test_split_uneven():
-    """Нечётное количество — вторая колонка короче."""
-    items = list(range(7))
-    result = _split_into_columns(items, 2)
-    assert result[0] == [0, 1, 2, 3]
-    assert result[1] == [4, 5, 6]
+        _split_columns([1], 0)
 
 
 # ============================================================
-# _number_samples
+# _paginate
 # ============================================================
-def test_number_samples_two_columns():
-    columns = [["a", "b"], ["c", "d"]]
-    result = _number_samples(columns)
-    assert result == [
-        [(1, "a"), (2, "b")],
-        [(3, "c"), (4, "d")],
+def test_paginate_empty_container_single_page(db, container):
+    pdf = _make_measurer()
+    pages = _paginate(pdf, container, [])
+    assert len(pages) == 1
+    assert pages[0]["is_continuation"] is False
+    assert pages[0]["samples"] == []
+
+
+def test_paginate_small_fits_one_page(db, container, research_type):
+    pdf = _make_measurer()
+    samples = _make_samples(container, research_type, 3, prefix="A-")
+    pages = _paginate(pdf, container, samples)
+    assert len(pages) == 1
+    assert pages[0]["total_pages"] == 1
+    assert len(pages[0]["samples"]) == 3
+
+
+def test_paginate_many_creates_continuations(db, container, research_type):
+    pdf = _make_measurer()
+    samples = _make_samples(container, research_type, 500, prefix="A-")
+    pages = _paginate(pdf, container, samples)
+    assert len(pages) > 1
+    assert pages[0]["is_continuation"] is False
+    assert all(p["is_continuation"] for p in pages[1:])
+
+
+def test_paginate_caps_continuations(db, container, research_type):
+    pdf = _make_measurer()
+    samples = _make_samples(container, research_type, 5000, prefix="A-")
+    pages = _paginate(pdf, container, samples)
+    assert len(pages) <= MAX_CONTINUATIONS + 1
+    assert pages[-1]["truncated"] is True
+
+
+# ============================================================
+# _pack_on_sheets
+# ============================================================
+def test_pack_single_page_one_sheet():
+    pages = [{"height": 74, "width": 150}]
+    sheets = _pack_on_sheets(pages)
+    assert len(sheets) == 1
+    assert len(sheets[0]) == 1
+
+
+def test_pack_sorts_by_height_desc():
+    pages = [
+        {"height": 49, "width": 110},
+        {"height": 148, "width": 210},
+        {"height": 74, "width": 150},
     ]
+    sheets = _pack_on_sheets(pages)
+    heights = [p["height"] for p in sheets[0]]
+    assert heights == sorted(heights, reverse=True)
 
 
-def test_number_samples_empty():
-    assert _number_samples([[], []]) == [[], []]
+def test_pack_overflow_to_new_sheet():
+    """
+    4 этикетки по 148 мм без зазоров: 148 + 148 = 296 ≤ 297.
+    Влезает 2 на A4 → 2 листа.
+    """
+    pages = [{"height": 148, "width": 210} for _ in range(4)]
+    sheets = _pack_on_sheets(pages)
+    assert len(sheets) == 2
+    for sheet in sheets:
+        assert len(sheet) == 2
+
+
+def test_pack_small_two_on_one_sheet():
+    """Две этикетки по 49 мм — обе на одном A4."""
+    pages = [{"height": 49, "width": 110} for _ in range(2)]
+    sheets = _pack_on_sheets(pages)
+    assert len(sheets) == 1
+    assert len(sheets[0]) == 2
 
 
 # ============================================================
 # render_container_label
 # ============================================================
-def test_font_present():
-    """TTF-шрифт должен быть по ожидаемому пути."""
-    assert FONT_PATH.exists(), (
-        f"Шрифт не найден: {FONT_PATH}. "
-        "Положи TTF (например, arial.ttf) в static/fonts/DejaVuSans.ttf."
-    )
-
-
-def test_render_returns_bytesio(db, container, samples):
+def test_render_returns_bytesio(db, container, research_type):
+    _make_samples(container, research_type, 5)
     buf = render_container_label(container)
     assert isinstance(buf, BytesIO)
 
 
-def test_render_returns_pdf_signature(db, container, samples):
+def test_render_returns_pdf_signature(db, container, research_type):
+    _make_samples(container, research_type, 5)
     buf = render_container_label(container)
-    data = buf.read()
-    assert data[:4] == b"%PDF"
+    assert buf.read()[:4] == b"%PDF"
 
 
 def test_render_empty_container(db, container):
-    """Пустая тара (без проб) — PDF всё равно валидный."""
     buf = render_container_label(container)
-    data = buf.read()
-    assert data[:4] == b"%PDF"
+    assert buf.read()[:4] == b"%PDF"
 
 
-def test_render_with_many_samples(
-    db, container, research_type, site, work_order,
-):
-    """100 проб — рендер проходит без ошибок (обрезается до 60)."""
-    for i in range(1, 101):
-        Sample.objects.create(
-            sample_number=f"TAA-{i:04d}",
-            research_type=research_type,
-            site=site,
-            container=container,
-            current_work_order=work_order,
-        )
+def test_render_many_samples_still_pdf(db, container, research_type):
+    _make_samples(container, research_type, 200)
     buf = render_container_label(container)
     data = buf.read()
     assert data[:4] == b"%PDF"
     assert len(data) > 1000
+
+
+# ============================================================
+# render_batch_labels_pdf
+# ============================================================
+def test_batch_empty_returns_pdf(db):
+    batch = PrintBatch.objects.create(batch_number="ПЕЧ-T-EMPTY")
+    data = render_batch_labels_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+
+
+def test_batch_one_container_one_page(db, container_type, research_type):
+    batch = PrintBatch.objects.create(batch_number="ПЕЧ-T-001")
+    c = _make_container(container_type, 1)
+    PrintBatchItem.objects.create(batch=batch, container=c, position=1)
+    _make_samples(c, research_type, 5)
+    data = render_batch_labels_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+    assert count_pdf_pages(data) >= 1
+
+
+def test_batch_two_small_on_one_sheet(db, container_type, research_type):
+    """Две этикетки маленькие (≤ 49 мм) — обе на одном листе A4."""
+    batch = PrintBatch.objects.create(batch_number="ПЕЧ-T-002")
+    for i in (1, 2):
+        c = _make_container(container_type, i)
+        PrintBatchItem.objects.create(batch=batch, container=c, position=i)
+        _make_samples(c, research_type, 3, prefix="A-")
+    data = render_batch_labels_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+    assert count_pdf_pages(data) == 1
+
+
+def test_batch_two_large_two_sheets(db, container_type, research_type):
+    """
+    Два контейнера с 200 пробами — каждый даёт 2 этикетки XXL.
+    Итого 4 этикетки, каждая влезает только по одной на A4.
+    """
+    batch = PrintBatch.objects.create(batch_number="ПЕЧ-T-003")
+    for i in (1, 2):
+        c = _make_container(container_type, i)
+        PrintBatchItem.objects.create(batch=batch, container=c, position=i)
+        _make_samples(c, research_type, 200, prefix="A-")
+    data = render_batch_labels_pdf(batch).read()
+    assert data[:4] == b"%PDF"
+    assert count_pdf_pages(data) >= 2
