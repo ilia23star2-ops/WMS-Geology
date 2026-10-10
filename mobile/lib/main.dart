@@ -1,6 +1,7 @@
 /// Точка входа мобильного приложения.
 ///
-/// - `MultiProvider` — регистрирует `AuthProvider`.
+/// - `MultiProvider` — регистрирует `AuthProvider` и
+///   `ContainerService`.
 /// - `AuthGate` — переключает экраны: спиннер (при инициализации),
 ///   login или home.
 library;
@@ -11,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'services/container_service.dart';
 
 void main() {
   runApp(const WmsGeologyApp());
@@ -25,6 +27,11 @@ class WmsGeologyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(
           create: (_) => AuthProvider()..initialize(),
+        ),
+        Provider<ContainerService>(
+          create: (ctx) => ContainerService(
+            ctx.read<AuthProvider>().service.apiClient,
+          ),
         ),
       ],
       child: MaterialApp(

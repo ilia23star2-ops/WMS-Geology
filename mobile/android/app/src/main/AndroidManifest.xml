@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Камера — для сканера QR-кодов. required="false" — приложение
+         можно ставить и на устройства без камеры (планшет с внешним
+         сканером или для тестов). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
         android:label="wms_geology_mobile"
         android:name="${applicationName}"

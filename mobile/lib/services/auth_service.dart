@@ -9,6 +9,9 @@
 /// `ApiClient` получает `tokenProvider` (читает access из хранилища)
 /// и `tokenRefresher` (наш refreshAccess), поэтому 401 автоматом
 /// обновляет токен и повторяет запрос.
+///
+/// `apiClient` — публичный геттер: другие сервисы (ContainerService
+/// и пр.) используют тот же клиент с JWT и авто-refresh.
 library;
 
 import 'package:dio/dio.dart';
@@ -32,6 +35,11 @@ class AuthService {
   final TokenStorage _storage;
   final Dio _plainDio;
   late final ApiClient _client;
+
+  /// Публичный доступ к `ApiClient` — используется другими
+  /// сервисами (ContainerService и пр.), чтобы использовать тот же
+  /// клиент с JWT и авто-refresh.
+  ApiClient get apiClient => _client;
 
   /// Логин. При успехе сохраняет токены и возвращает пользователя.
   Future<User> login(String username, String password) async {

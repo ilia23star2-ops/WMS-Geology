@@ -4,6 +4,9 @@
 /// - `isInitializing` — первичная проверка токена при старте.
 /// - `isLoading` — идёт запрос login/logout.
 /// - `error` — сообщение об ошибке логина.
+///
+/// `service` — публичный геттер: нужен в `main.dart` для получения
+/// `ApiClient`, чтобы создать `ContainerService`.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -27,6 +30,9 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _user != null;
   String? get error => _error;
+
+  /// Публичный доступ к `AuthService` — для получения `ApiClient`.
+  AuthService get service => _service;
 
   /// Первичная загрузка: если есть токен — тянем пользователя.
   Future<void> initialize() async {
