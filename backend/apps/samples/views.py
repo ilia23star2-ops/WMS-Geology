@@ -5,8 +5,13 @@ ViewSets приложения samples.
 Модели: WellViewSet, SampleViewSet, SampleWorkOrderViewSet.
 """
 
+from collections import OrderedDict
+
+from django.db.models import Count
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from apps.work_orders.models import WorkOrder
 
@@ -15,10 +20,12 @@ from .models import Sample, SampleWorkOrder, Well
 from .serializers import (
     LaboratorySerializer,
     ResearchTypeSerializer,
+    SampleGroupSerializer,
     SampleSerializer,
     SampleWorkOrderSerializer,
     SiteSerializer,
     WellSerializer,
+    compute_sample_location,
 )
 
 
@@ -88,17 +95,9 @@ class SampleViewSet(viewsets.ModelViewSet):
     """
     CRUD для проб.
 
-    Фильтры:
-    - `q` — частичный поиск по `sample_number` (icontains);
-    - `sample_number` — частичный поиск (icontains);
-    - `research_type` — ID типа исследования;
-    - `research_type_code` — код типа (ШЛ, ХА);
-    - `site` — ID участка;
-    - `site_code` — код участка (TST);
-    - `well_id`, `container_id`, `status`;
-    - `work_order=<order_number>` — по номеру Н/З (с linked_order);
-    - `no_work_order=true` — пробы без Н/З;
-    - `show_disposed=true` — показать утилизированные.
+    Фильтры (см. get_queryset).
+    Custom actions:
+    - GET /samples/grouped/ — сгруппированный список.
     """
 
     serializer_class = SampleSerializer
@@ -122,12 +121,10 @@ class SampleViewSet(viewsets.ModelViewSet):
 
         p = self.request.query_params
 
-        # Частичный поиск по номеру пробы.
         q = p.get("q")
         if q:
             qs = qs.filter(sample_number__icontains=q)
         elif p.get("sample_number"):
-            # Оставлено для обратной совместимости; тоже icontains.
             qs = qs.filter(sample_number__icontains=p["sample_number"])
 
         if p.get("research_type"):
@@ -145,13 +142,14 @@ class SampleViewSet(viewsets.ModelViewSet):
         if p.get("status"):
             qs = qs.filter(status=p["status"])
 
-        # Пробы без Н/З — отдельная группа в UI.
         no_work_order = p.get("no_work_order")
         if no_work_order is not None and no_work_order.lower() in (
             "1", "true", "yes",
         ):
             qs = qs.filter(current_work_order__isnull=True)
 
+        # Фильтр по Н/З (с учётом linked_order) — единственный случай,
+        # когда нужен `.distinct()` из-за JOIN на work_order_links.
         work_order_number = p.get("work_order")
         if work_order_number:
             work_order_ids = set(
@@ -167,9 +165,158 @@ class SampleViewSet(viewsets.ModelViewSet):
                 ).values_list("linked_order_id", flat=True)
             )
             all_ids = work_order_ids | linked_ids
-            qs = qs.filter(work_order_links__work_order_id__in=all_ids)
+            qs = qs.filter(
+                work_order_links__work_order_id__in=all_ids,
+            ).distinct()
 
-        return qs.distinct()
+        return qs
+
+    # ------------------------------------------------------------
+    # Группированный список
+    # ------------------------------------------------------------
+    @action(detail=False, methods=["get"], url_path="grouped")
+    def grouped(self, request):
+        """
+        Сгруппированный список проб.
+
+        Группа = (Н/З, тип исследования). Внутри — тары с пробами.
+
+        Сортировка:
+        - сначала группы с Н/З, по `order_number` (алфавит);
+        - внутри одного Н/З — по коду типа исследования;
+        - пробы без Н/З — в конце, по коду типа.
+
+        Пагинация — по 20 групп.
+
+        Реализация — Python-группировка. Для больших БД (100 тыс.
+        проб) может потребовать оптимизации; на текущих объёмах
+        (до 10 тыс.) работает быстро.
+        """
+        per_page = 20
+        qs = self.get_queryset()
+
+        # Загружаем пробы с сортировкой: сначала по Н/З, потом по типу,
+        # потом по таре, потом по номеру пробы.
+        # Пробы без Н/З окажутся в конце (null сортируется последним
+        # в PostgreSQL при ASC).
+        samples = list(
+            qs.select_related(
+                "container",
+                "container__pallet",
+                "container__pallet__cell",
+                "container__floor_room",
+                "current_work_order",
+                "research_type",
+            ).order_by(
+                "current_work_order__order_number",
+                "research_type__code",
+                "container__container_number",
+                "sample_number",
+            )
+        )
+
+        if not samples:
+            return Response({
+                "count": 0,
+                "next": None,
+                "previous": None,
+                "page_size": per_page,
+                "results": [],
+            })
+
+        # Группировка.
+        groups_map: "OrderedDict[tuple, dict]" = OrderedDict()
+        for s in samples:
+            key = (s.current_work_order_id, s.research_type_id)
+            if key not in groups_map:
+                groups_map[key] = {
+                    "work_order": s.current_work_order,
+                    "research_type": s.research_type,
+                    "containers": OrderedDict(),
+                    "total_samples": 0,
+                }
+            g = groups_map[key]
+            g["total_samples"] += 1
+
+            cid = s.container_id
+            if cid not in g["containers"]:
+                g["containers"][cid] = {
+                    "container": s.container,
+                    "samples": [],
+                }
+            g["containers"][cid]["samples"].append(s)
+
+        groups_list = list(groups_map.values())
+
+        # Пагинация по группам.
+        try:
+            page = int(request.query_params.get("page", 1))
+        except (TypeError, ValueError):
+            page = 1
+        if page < 1:
+            page = 1
+
+        total = len(groups_list)
+        start = (page - 1) * per_page
+        end = start + per_page
+        page_groups = groups_list[start:end]
+
+        # Формируем ответ.
+        results = []
+        for g in page_groups:
+            containers_data = []
+            for cdata in g["containers"].values():
+                c = cdata["container"]
+                containers_data.append({
+                    "container": {
+                        "id": c.id,
+                        "number": c.container_number,
+                        "status": c.status,
+                    },
+                    "location": compute_sample_location(c),
+                    "samples": [
+                        {
+                            "id": s.id,
+                            "sample_number": s.sample_number,
+                            "status": s.status,
+                            "updated_at": s.updated_at,
+                        }
+                        for s in cdata["samples"]
+                    ],
+                })
+
+            wo = g["work_order"]
+            rt = g["research_type"]
+            results.append({
+                "work_order": (
+                    {
+                        "id": wo.id,
+                        "number": wo.order_number,
+                        "type": wo.order_type,
+                    }
+                    if wo is not None
+                    else None
+                ),
+                "research_type": {
+                    "id": rt.id,
+                    "code": rt.code,
+                    "name": rt.name,
+                },
+                "total_samples": g["total_samples"],
+                "containers": containers_data,
+            })
+
+        base_url = request.build_absolute_uri(request.path)
+        next_url = f"{base_url}?page={page + 1}" if end < total else None
+        prev_url = f"{base_url}?page={page - 1}" if page > 1 else None
+
+        return Response({
+            "count": total,
+            "next": next_url,
+            "previous": prev_url,
+            "page_size": per_page,
+            "results": SampleGroupSerializer(results, many=True).data,
+        })
 
 
 class SampleWorkOrderViewSet(viewsets.ModelViewSet):
