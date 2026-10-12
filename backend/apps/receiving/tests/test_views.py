@@ -2,7 +2,7 @@
 Тесты API приложения receiving.
 
 20 старых тестов (Receipt, ReceiptItem, ImportSession CRUD) +
-10 новых (upload Excel).
+10 тестов upload (базовые) + 9 новых (bundle-6b: date + duplicate).
 """
 
 from io import BytesIO
@@ -349,7 +349,7 @@ def test_upload_invalid_extension(auth_client, db):
     f = SimpleUploadedFile("test.txt", b"hello", content_type="text/plain")
     response = auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert response.status_code == 400
     assert "xlsx" in str(response.data).lower()
@@ -359,11 +359,11 @@ def test_upload_success(auth_client, site, research_types):
     f = _upload_file([
         ["Наряд", "ШЛ", "ХА", "Дата"],
         ["Тест001", 5, 3, "2026-10-08"],
-        ["Тест002", 2, None, "2026-10-09"],
+        ["Тест002", 2, None, "2026-10-08"],
     ])
     response = auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert response.status_code == 200, response.data
     assert response.data["status"] == "APPLIED"
@@ -382,7 +382,7 @@ def test_upload_creates_import_session(auth_client, site, research_types):
     ])
     response = auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert response.status_code == 200
     assert ImportSession.objects.count() == 1
@@ -399,7 +399,7 @@ def test_upload_creates_receipt_and_items(auth_client, site, research_types):
     ])
     auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert Receipt.objects.count() == 1
     assert ReceiptItem.objects.count() == 2
@@ -412,7 +412,7 @@ def test_upload_site_not_found(auth_client, research_types):
     )
     response = auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert response.status_code == 200
     assert response.data["status"] == "ERROR"
@@ -427,7 +427,7 @@ def test_upload_research_type_not_found(auth_client, site):
     ])
     response = auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     assert response.status_code == 200
     assert response.data["status"] == "PARSED"
@@ -441,7 +441,203 @@ def test_upload_work_orders_linked_to_site(auth_client, site, research_types):
     ])
     auth_client.post(
         "/api/v1/import-sessions/upload/",
-        {"file": f}, format="multipart",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
     )
     wo = WorkOrder.objects.get(order_number="Тест001")
     assert wo.site == site
+
+
+# ============================================================
+# ImportSession — upload: target_date (bundle-6b)
+# ============================================================
+def test_upload_no_target_date(auth_client, site, research_types):
+    """Без `target_date` — 400."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f}, format="multipart",
+    )
+    assert response.status_code == 400
+    assert "target_date" in str(response.data)
+
+
+def test_upload_invalid_target_date(auth_client, site, research_types):
+    """Кривой формат `target_date` — 400."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f, "target_date": "не-дата"}, format="multipart",
+    )
+    assert response.status_code == 400
+
+
+def test_upload_russian_date_format(auth_client, site, research_types):
+    """Русский формат `ДД.ММ.ГГГГ` работает."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "08.10.2026"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f, "target_date": "08.10.2026"}, format="multipart",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "APPLIED"
+    receipt = Receipt.objects.first()
+    assert receipt.expected_date.isoformat() == "2026-10-08"
+
+
+def test_upload_filters_rows_by_date(auth_client, site, research_types):
+    """Строки с другой датой игнорируются."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+        ["Тест002", 3, "2026-10-09"],
+        ["Тест003", 2, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
+    )
+    assert response.status_code == 200
+    # В файле 3 строки (rows_count = 3), но обработаны только 2 (Тест001, Тест003).
+    assert response.data["rows_count"] == 3
+    assert Receipt.objects.count() == 1
+    receipt = Receipt.objects.first()
+    assert receipt.expected_date.isoformat() == "2026-10-08"
+    assert receipt.items.count() == 2
+
+    work_orders = set(
+        receipt.items.values_list(
+            "expected_work_order_number", flat=True,
+        )
+    )
+    assert work_orders == {"Тест001", "Тест003"}
+
+
+def test_upload_no_rows_for_target_date(auth_client, site, research_types):
+    """Если строк за указанную дату нет — status=ERROR."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f, "target_date": "2026-10-20"}, format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "ERROR"
+
+
+# ============================================================
+# ImportSession — upload: дубликат (bundle-6b)
+# ============================================================
+def test_upload_invalid_duplicate_action(auth_client, site, research_types):
+    """Недопустимое `duplicate_action` — 400."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {
+            "file": f,
+            "target_date": "2026-10-08",
+            "duplicate_action": "invalid",
+        },
+        format="multipart",
+    )
+    assert response.status_code == 400
+
+
+def test_upload_duplicate_cancel(auth_client, site, research_types):
+    """Дубликат с `cancel` (по умолчанию) — 409, старый Receipt целый."""
+    from datetime import date
+    existing = Receipt.objects.create(
+        receipt_number="EXISTING-001",
+        site=site,
+        expected_date=date(2026, 10, 8),
+    )
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {"file": f, "target_date": "2026-10-08"}, format="multipart",
+    )
+    assert response.status_code == 409
+    assert response.data["error"] == "DUPLICATE_DATE"
+    assert response.data["existing_receipt_id"] == existing.pk
+    assert response.data["existing_receipt_number"] == "EXISTING-001"
+    assert response.data["expected_date"] == "2026-10-08"
+
+    # Старый Receipt не тронут.
+    assert Receipt.objects.filter(pk=existing.pk).exists()
+    assert Receipt.objects.count() == 1
+
+
+def test_upload_duplicate_overwrite(auth_client, site, research_types):
+    """`overwrite` — старый удалён, создан новый."""
+    from datetime import date
+    existing = Receipt.objects.create(
+        receipt_number="EXISTING-OLD",
+        site=site,
+        expected_date=date(2026, 10, 8),
+    )
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {
+            "file": f,
+            "target_date": "2026-10-08",
+            "duplicate_action": "overwrite",
+        },
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "APPLIED"
+    assert not Receipt.objects.filter(pk=existing.pk).exists()
+    assert Receipt.objects.count() == 1
+    new_receipt = Receipt.objects.first()
+    assert new_receipt.expected_date.isoformat() == "2026-10-08"
+
+
+def test_upload_duplicate_create(auth_client, site, research_types):
+    """`create` — создаётся второй Receipt с той же датой."""
+    from datetime import date
+    Receipt.objects.create(
+        receipt_number="EXISTING-001",
+        site=site,
+        expected_date=date(2026, 10, 8),
+    )
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["Тест001", 5, "2026-10-08"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/upload/",
+        {
+            "file": f,
+            "target_date": "2026-10-08",
+            "duplicate_action": "create",
+        },
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "APPLIED"
+    assert Receipt.objects.filter(
+        expected_date=date(2026, 10, 8),
+    ).count() == 2
