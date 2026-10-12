@@ -6,6 +6,7 @@ ViewSets приложения receiving.
 - ImportSessionViewSet — CRUD + custom action `upload`.
 """
 
+from datetime import date, datetime
 from io import BytesIO
 
 from django.core.files.base import ContentFile
@@ -27,6 +28,41 @@ from .serializers import (
     ReceiptSerializer,
 )
 from .services import apply_import
+
+
+# ============================================================
+# Вспомогательные
+# ============================================================
+def _parse_target_date(value) -> date | None:
+    """
+    Парсинг даты из строки.
+
+    Поддерживаемые форматы:
+    - ISO: `YYYY-MM-DD` (`2026-10-12`);
+    - русский: `DD.MM.YYYY` (`12.10.2026`).
+
+    :returns: `date` или None, если распарсить не удалось.
+    """
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+DUPLICATE_ACTIONS = {"cancel", "overwrite", "create"}
 
 
 # ============================================================
@@ -127,6 +163,13 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
     Фильтры: ?status=
     Custom action:
       - POST /import-sessions/upload/ — загрузить Excel-файл.
+
+    Обязательные form-поля `upload`:
+    - `file` (.xlsx / .xlsm);
+    - `target_date` (`2026-10-12` или `12.10.2026`).
+
+    Опциональное:
+    - `duplicate_action` — `cancel` (по умолчанию) / `overwrite` / `create`.
     """
 
     serializer_class = ImportSessionSerializer
@@ -156,10 +199,18 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
 
         Form-data:
         - `file` — обязательный, .xlsx / .xlsm.
+        - `target_date` — обязательный, ISO (`2026-10-12`) или
+          русский (`12.10.2026`).
+        - `duplicate_action` — `cancel` (по умолчанию) / `overwrite` /
+          `create`.
 
-        Возвращает:
-        - import_session_id, status, counts, parse_errors, receipts.
+        Ответ:
+        - 200 — успех, `import_session_id`, `status`, counts, receipts.
+        - 400 — ошибка валидации (нет файла / нет даты / плохая дата /
+          неподдерживаемый формат).
+        - 409 — `DUPLICATE_DATE` (партия за эту дату уже существует).
         """
+        # 1. Файл.
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response(
@@ -178,18 +229,47 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Читаем содержимое ДО сохранения файла (иначе указатель
-        # окажется в конце и read() вернёт пусто).
+        # 2. Дата привоза.
+        raw_date = request.data.get("target_date")
+        target_date = _parse_target_date(raw_date)
+        if target_date is None:
+            return Response(
+                {
+                    "error": (
+                        "Поле `target_date` обязательно. "
+                        "Форматы: `2026-10-12` или `12.10.2026`."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3. Действие при дубликате.
+        duplicate_action = (
+            request.data.get("duplicate_action") or "cancel"
+        ).strip().lower()
+        if duplicate_action not in DUPLICATE_ACTIONS:
+            return Response(
+                {
+                    "error": (
+                        f"Недопустимое `duplicate_action`: "
+                        f"{duplicate_action}. Допустимые: "
+                        f"{sorted(DUPLICATE_ACTIONS)}."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 4. Читаем содержимое ДО сохранения файла.
         content = file_obj.read()
 
-        # Создаём ImportSession с копией файла.
+        # 5. Создаём ImportSession.
         import_session = ImportSession.objects.create(
             file=ContentFile(content, name=file_obj.name),
             file_format=ImportSession.FILE_FORMAT_XLSX,
             uploaded_by=request.user,
         )
 
-        # Парсим.
+        # 6. Парсим.
         try:
             parsed = parse_excel(
                 BytesIO(content),
@@ -211,10 +291,23 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Применяем.
-        receipts, errors = apply_import(parsed, import_session)
+        # 7. Применяем.
+        receipts, errors = apply_import(
+            parsed,
+            import_session,
+            target_date=target_date,
+            duplicate_action=duplicate_action,
+        )
 
-        # Формируем ответ.
+        # 8. Проверяем на DUPLICATE_DATE — это 409, а не 200.
+        duplicate_error = next(
+            (e for e in errors if e.get("error") == "DUPLICATE_DATE"),
+            None,
+        )
+        if duplicate_error is not None:
+            return Response(duplicate_error, status=status.HTTP_409_CONFLICT)
+
+        # 9. Успех / частичный успех.
         import_session.refresh_from_db()
         response_data = {
             "import_session_id": import_session.pk,
