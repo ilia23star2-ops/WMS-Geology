@@ -3,15 +3,22 @@
 
 Логика:
 - Для каждого ParsedSheet создаётся один Receipt.
+- Если задан `target_date` — импортируются только строки этой даты,
+  `Receipt.expected_date = target_date`.
+- Проверка дубликата: если Receipt с такой `expected_date` уже есть,
+  поведение зависит от `duplicate_action`:
+    - `cancel` (по умолчанию) — вернуть ошибку, ничего не создавать;
+    - `overwrite` — удалить существующий Receipt, создать новый;
+    - `create` — создать ещё один Receipt (несколько за одну дату).
 - Site определяется по sheet_name через `Site.match_patterns`.
 - WorkOrder — get_or_create по order_number + order_type.
 - ResearchType — по коду.
 - На каждую (work_order, research_type) создаётся ReceiptItem
   с `expected_samples_count = containers_count`.
-
-Сервис не занимается файлами и парсингом. Он принимает уже
-готовый `ParsedWorkbook` и создаёт объекты в БД.
 """
+
+from dataclasses import replace
+from datetime import date
 
 from django.db import transaction
 
@@ -21,11 +28,14 @@ from apps.samples.catalogs import ResearchType, Site
 from apps.work_orders.models import WorkOrder
 
 
+# ============================================================
+# Вспомогательные
+# ============================================================
 def _detect_site(name: str) -> Site | None:
     """
     Определяет участок по названию листа/строки.
 
-    Ищем точное совпадение `Site.code` или `Site.name`, а затем —
+    Сначала — точное совпадение `Site.code` или `Site.name`, затем —
     по паттернам `match_patterns`.
     """
     if not name:
@@ -62,17 +72,37 @@ def _get_or_create_work_order(
     return wo
 
 
+def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
+    """
+    Оставляет только строки с указанной датой.
+
+    Листы без подходящих строк отбрасываются. Ошибки парсера
+    сохраняются (они не привязаны к дате).
+    """
+    new_sheets = []
+    for sheet in parsed.sheets:
+        rows = [r for r in sheet.rows if r.date == target]
+        if rows:
+            new_sheets.append(replace(sheet, rows=rows))
+    return ParsedWorkbook(sheets=new_sheets, errors=list(parsed.errors))
+
+
+# ============================================================
+# Создание Receipt + ReceiptItem
+# ============================================================
 def build_receipt_from_parsed(
     parsed: ParsedWorkbook,
     import_session: ImportSession,
     laboratory=None,
+    expected_date: date | None = None,
 ) -> tuple[list[Receipt], list[dict]]:
     """
     Создаёт по одному Receipt на каждый ParsedSheet.
 
     :param parsed: результат парсинга.
     :param import_session: сессия импорта (для обратной ссылки).
-    :param laboratory: лаборатория (опц.).
+    :param laboratory: лаборатория (опц., временно не используется).
+    :param expected_date: дата привоза (сохраняется в Receipt).
     :returns: (список Receipt, список ошибок).
     """
     created_receipts: list[Receipt] = []
@@ -91,6 +121,7 @@ def build_receipt_from_parsed(
             receipt_number=f"ИМП-{import_session.pk}-{sheet_index}",
             laboratory=laboratory,
             site=site,
+            expected_date=expected_date,
             status=Receipt.STATUS_EXPECTED,
             comment=f"Импорт из файла {import_session.file.name}",
         )
@@ -131,26 +162,76 @@ def build_receipt_from_parsed(
     return created_receipts, errors
 
 
+# ============================================================
+# Применение импорта
+# ============================================================
+def _make_duplicate_error(
+    target_date: date,
+    existing: Receipt,
+) -> dict:
+    """Стандартная структура ошибки-дубликата."""
+    return {
+        "error": "DUPLICATE_DATE",
+        "message": (
+            f"Партия за {target_date.strftime('%d.%m.%Y')} уже существует. "
+            f"Выберите: перезаписать / создать новую / отмена."
+        ),
+        "existing_receipt_id": existing.pk,
+        "existing_receipt_number": existing.receipt_number,
+        "expected_date": target_date.isoformat(),
+    }
+
+
 @transaction.atomic
 def apply_import(
     parsed: ParsedWorkbook,
     import_session: ImportSession,
+    target_date: date | None = None,
+    duplicate_action: str = "cancel",
     laboratory=None,
 ) -> tuple[list[Receipt], list[dict]]:
     """
     Применяет импорт: создаёт Receipt/ReceiptItem, обновляет
     ImportSession.
 
-    Учитывает **и** ошибки парсера (`parsed.errors`), **и** ошибки
-    сервиса (build_errors).
-
-    Возвращает (Receipts, all_errors).
+    :param target_date: если задан — берутся только строки с этой
+        датой, `Receipt.expected_date = target_date`.
+    :param duplicate_action: 'cancel' | 'overwrite' | 'create'.
+        Только при `target_date != None`.
+    :returns: (Receipts, all_errors).
     """
     parser_errors = list(parsed.errors)
+
+    # 1. Фильтр по дате.
+    if target_date is not None:
+        parsed = _filter_by_date(parsed, target_date)
+
+    # 2. Проверка дубликата.
+    duplicate_error: dict | None = None
+    if target_date is not None:
+        existing = Receipt.objects.filter(
+            expected_date=target_date,
+        ).first()
+        if existing:
+            if duplicate_action == "cancel":
+                duplicate_error = _make_duplicate_error(target_date, existing)
+                all_errors = parser_errors + [duplicate_error]
+                import_session.parse_errors = all_errors
+                import_session.status = ImportSession.STATUS_ERROR
+                import_session.save(
+                    update_fields=["parse_errors", "status"],
+                )
+                return [], all_errors
+            elif duplicate_action == "overwrite":
+                existing.delete()
+            # 'create' — просто продолжаем, создадим ещё один.
+
+    # 3. Создание Receipt/ReceiptItem.
     receipts, build_errors = build_receipt_from_parsed(
         parsed=parsed,
         import_session=import_session,
         laboratory=laboratory,
+        expected_date=target_date,
     )
     all_errors = parser_errors + build_errors
 
