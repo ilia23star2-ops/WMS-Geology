@@ -9,24 +9,26 @@
 
 ## Где мы
 
-**Активная серия:** нет. `feature/2.x-web` закрыта и влита в `main`.
+**Активная серия:** `feature/2.x-mobile` — Flutter-приложение.
 
-**Следующая серия:** обсуждается. Кандидаты:
-- `feature/2.x-mobile` — Flutter: приёмка, сканер, инвентаризация.
-- `feature/2.x-lab-portal` — портал лабораторий (Уровень 2).
-- `feature/2.x-lifecycle` — пересмотр статусов и жизненного цикла
-  тары и проб (требует обсуждения с заказчиком).
-- `feature/2.x-sorting` — помощник сортировки.
+**Следующая серия:** `feature/2.x-lab-portal` или `feature/2.x-lifecycle`
+(обсуждается).
 
-**Текущий заход:** docs-пачка после закрытия серии 2.x-web.
+**Текущий заход:** docs-пачка после 8 заходов mobile.
 
-**Что готово:**
-Backend — 552 теста. Web-приложение (React) — 9 заходов, все
-разделы работают: логин, layout, главная, тара, пробы, печать,
-справочники.
+**Что готово (mobile):**
+- Логин, logout, refresh токенов.
+- Сканер QR, карточка тары.
+- Список проб внутри тары (номер, тип, Н/З, статус).
 
-**Ближайшая работа:**
-Обсуждение следующей серии. Web-интерфейс готов к использованию.
+**Что готово (web):**
+React-приложение: логин, layout, главная, тара, пробы, печать,
+справочники. Серия закрыта 2026-10-10.
+
+**Backend:** 552 теста.
+
+**Ближайшая работа:** продолжение mobile-серии:
+- приёмка, поиск проб, инвентаризация.
 
 ---
 
@@ -36,7 +38,8 @@ Backend — 552 теста. Web-приложение (React) — 9 заходо�
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
 - JWT, OpenAPI, 10 приложений.
-- Node 20+, Vite 8, React 19, MUI 9.
+- Node 20+, Vite 8, React 19, MUI 9 (web).
+- Flutter 3.47, Dart 3.13 (mobile).
 
 ### Backend (552 теста)
 
@@ -52,17 +55,27 @@ Backend — 552 теста. Web-приложение (React) — 9 заходо�
 | `users` | Role, UserProfile, AuditLog + JWT auth |
 | `labels` | QR-сервис, PDF-этикетки, QR-сетка, `PrintBatch` + `PrintBatchItem`, API корзины и печати |
 
-### Web (React)
+### Web (React, 6 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|
 | Аутентификация | Zustand-стор, login-форма, protected routes, JWT-интерцептор с авто-refresh |
-| Layout | MUI sidebar + header, адаптив (drawer на мобильном) |
-| Главная | 4 карточки со счётчиками (Тара / Пробы / Ожидает размещения / Партии печати) |
-| Тара | DataGrid, фильтры (статус, тип), PDF-этикетка, выбор в партию печати |
-| Пробы | DataGrid, фильтры (номер, тип, участок, статус), «Показать утилизированные» |
-| Печать | Список партий, детали, add/remove тар, PDF (этикетки / QR-сетка) |
-| Справочники | Типы исследования, участки, лаборатории (только просмотр) |
+| Layout | MUI sidebar + header, адаптив |
+| Главная | 4 карточки со счётчиками |
+| Тара | DataGrid, фильтры, PDF-этикетка, выбор в партию печати |
+| Пробы | DataGrid, фильтры, «Показать утилизированные» |
+| Печать | Список партий, детали, add/remove тар, PDF |
+| Справочники | Типы исследования, участки, лаборатории (просмотр) |
+
+### Mobile (Flutter, 32 юнит-теста)
+
+| Раздел | Что внутри |
+|---|---|
+| Аутентификация | `AuthProvider` (ChangeNotifier), login-форма, `TokenStorage` на `flutter_secure_storage` |
+| API | `ApiClient` (Dio), JWT-интерцептор с авто-refresh, `ContainerService`, `SampleService` |
+| Главная | Приветствие + кнопка «Сканировать QR» + выход |
+| Сканер | `mobile_scanner`, прицел, обработка payload `WMSG:<TYPE>:<ID>` |
+| Карточка тары | Поля тары + список проб внутри (с pull-to-refresh) |
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS` (57 решений), `DATABASE` (v5),
@@ -133,27 +146,51 @@ Backend — 552 теста. Web-приложение (React) — 9 заходо�
   не массив. Импорт `GridRowId`.
 - **MUI X v9:** `DataGrid` с `paginationMode="server"` требует
   `rowCount` и `paginationModel`.
-- **MUI 9:** `Grid size={{ xs, sm, md }}` — новый синтаксис (не
-  `Grid item xs`).
+- **MUI 9:** `Grid size={{ xs, sm, md }}` — новый синтаксис.
 - **MUI 9:** `Stack alignItems` через `sx`, не проп (TS ругается).
 - **React Router v7:** API совместим с v6.
 - **Zustand:** при F5 состояние сбрасывается — race condition
-  закрыт флагом `isBootstrapping` (см. `authStore.ts`).
-- **Vite build:** warning «chunks > 500 kB» — ожидаемо (MUI +
-  DataGrid). Code-splitting отложен (ТД-21).
+  закрыт флагом `isBootstrapping`.
+- **Vite build:** warning «chunks > 500 kB» — ожидаемо.
+  Code-splitting отложен (ТД-21).
 - **URL справочников:** `/research-types/`, `/sites/`,
   `/laboratories/` — **без префикса** `/samples/`.
+
+### Mobile
+- **URL API:** `config.dart`, `_apiHostOverride` — **в git**.
+  При смене сети — править. На эмуляторе — `null` (идёт на `10.0.2.2`).
+- **Backend должен слушать `0.0.0.0:8000`** (не `localhost`), иначе
+  телефон/планшет не подключится.
+- **`DJANGO_ALLOWED_HOSTS`** в `.env` должен включать IP машины
+  (или `*` для dev). `.env` — **не в git**.
+- **Dio + `post`/`patch`:** обязательно `Content-Type: application/json`.
+  Без этого Dio шлёт `form-urlencoded`, DRF отдаёт HTML — `Map` не
+  парсится. Решено в `ApiClient._jsonOptions`.
+- **`flutter_secure_storage`:** используется для JWT-токенов
+  (Android Keystore).
+- **`mobile_scanner`:** `DetectionSpeed.noDuplicates` — иначе поток
+  даёт сотни повторов при одном скане.
+- **Конфликт имён `Container`:** Flutter-виджет vs наша модель.
+  Решение: `import 'package:flutter/material.dart' hide Container;`.
+- **NDK 28.2.13676358** — обязателен для Flutter 3.47. Установлен в
+  `C:\Android\Sdk\ndk\`. При переустановке — Android Studio →
+  SDK Tools → NDK (Side by side).
+- **Android SDK Platform 36** — обязателен. Установлен.
+- **Кириллица в пути** проекта ломает Dart-анализатор.
+- **`flutter pub get`** после каждого `pubspec.yaml`.
 
 ### Инструменты
 - Git — только терминал.
 - **Домашний ПК:** UCRT64 (MSYS2), SSH `github.com:22`.
 - **Рабочий ПК:** Git Bash (MINGW64), SSH через порт 443.
 - VS Code может дописывать `.vscode/settings.json` — откатывать.
-- Кириллица в пути ломает Dart-анализатор.
 - **UCRT64 (MSYS2)** ломает `manage.py shell -c "..."` — использовать
   временный скрипт или одной строкой.
 - **`cat > file << 'EOF'`** — надёжный способ заменить файл в
   MSYS2-терминале (Ctrl+V в REPL ломается).
+- **`ipconfig`** в MSYS2 ломается на кодировке — использовать
+  `powershell -Command "(Get-NetIPAddress ...).IPAddress"` или
+  `ipconfig | iconv -f CP866 -t UTF-8 | grep -a "IPv4"`.
 
 ---
 
@@ -173,6 +210,7 @@ Backend — 552 теста. Web-приложение (React) — 9 заходо�
 - Файлы выдаются единым блоком.
 - Все Django-команды — через `poetry run`.
 - Все web-команды — `cd web && npm ...`.
+- Все mobile-команды — `cd mobile && flutter ...`.
 
 ---
 
