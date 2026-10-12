@@ -5,10 +5,10 @@
 
 ---
 
-## Серия `feature/2.x-mobile` (в работе)
+## Серия `feature/2.x-mobile`
 
-**Дата:** 2026-10-10 — (в работе)
-**Ветка:** `feature/2.x-mobile` (активная).
+**Дата:** 2026-10-10 — 2026-10-12
+**Ветка:** `feature/2.x-mobile` (влита в `main`, архив).
 **Контекст:** Flutter-приложение для Android-планшетов. Стек:
 Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
 `flutter_secure_storage` + `mobile_scanner`.
@@ -25,7 +25,7 @@ Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
 - ✅ **`bundle-3b`** — UI: `AuthProvider` (ChangeNotifier), экран
   логина, главная-заглушка, `AuthGate` в `main.dart`.
   Плюс — фикс `ApiClient`: `Content-Type: application/json` для
-  `post`/`patch` (иначе Dio шлёт `form-urlencoded`, DRF отдаёт HTML).
+  `post`/`patch`.
 - ✅ **`bundle-4a`** — парсер QR (`parseQrPayload`), модель
   `Container`, `ContainerService`.
 - ✅ **`bundle-4b-1`** — разрешение камеры в `AndroidManifest.xml`,
@@ -36,16 +36,17 @@ Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
   «Сканировать QR» на главной.
 - ✅ **`bundle-5`** — список проб в карточке тары. Модель `Sample`,
   `SampleService` (`GET /samples/?container_id=`), pull-to-refresh.
+- ✅ **`docs/2.x-mobile-update`** — CONTEXT, PLAN, PROGRESS:
+  зафиксирована mobile-серия в работе.
 
-### Что осталось
+### Что осталось (перенесено в будущие серии)
 
-- ⬜ **`bundle-6`** — экран приёмки (сканирование тары, добавление
-  проб, сохранение).
-- ⬜ **`bundle-7`** — поиск проб (текст + фильтры).
-- ⬜ **`bundle-8`** — инвентаризация.
-- ⬜ **`bundle-9`** — нижнее меню / drawer с разделами.
+- ⬜ Приёмка в mobile — **отменена**, переносится в web (`2.x-web-v2`).
+- ⬜ Поиск проб в mobile — по требованию (после web).
+- ⬜ Инвентаризация в mobile — по требованию.
+- ⬜ Нижнее меню / drawer — по требованию.
 
-### Метрики (промежуточные)
+### Метрики
 
 - Заходов закрыто: 8.
 - «Не норм» на первом прогоне: 5 (NDK не установлен, IP без кавычек
@@ -96,6 +97,7 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
   «В партию печати» (создать новую / добавить в черновик).
 - ✅ **`bundle-9`** — справочники: типы исследования, участки,
   лаборатории (просмотр, 3 вкладки). Редактирование — Django Admin.
+- ✅ **`docs/2.x-web-closed`** — CONTEXT, PLAN, PROGRESS.
 
 ### Метрики
 
@@ -121,33 +123,19 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
 
 - ✅ **`bundle-1`** — QR-сервис: `generate_qr_png`, `generate_qr_svg`,
   `make_payload` (payload `WMSG:<TYPE>:<id>`).
-- ✅ **`bundle-2`** — PDF-этикетка через fpdf2, шрифт `DejaVuSans.ttf`
-  (в `.gitignore`, ставится локально).
+- ✅ **`bundle-2`** — PDF-этикетка через fpdf2, шрифт `DejaVuSans.ttf`.
 - ✅ **`bundle-3`** — API `GET /storage/containers/{id}/label.pdf/`.
 - ✅ **`bundle-4a`** — модели `PrintBatch` + `PrintBatchItem`,
   миграция, тесты.
 - ✅ **`bundle-4b`** — API партии печати: сериализаторы, ViewSet,
   actions (`add-containers`, `remove-container`, `mark-ready`,
   `cancel`), сервис генерации `batch_number`.
-- ✅ **`bundle-4d-1`** — раскладка этикеток:
-  - сетка ширин `[110, 130, 150, 180, 210]` мм;
-  - сетка высот `[37, 49, 74, 99, 148]` мм (делители A4);
-  - шапка 28 мм: QR 25×25 справа, 4 строки слева;
-  - авто-ширина колонки по самому длинному номеру пробы;
-  - список проб колонками, шрифт 10 pt;
-  - чекбоксы, рамка таблицы, пунктирный периметр;
-  - упаковка на A4: от левого верхнего угла, стопкой;
-  - продолжения: вторая этикетка без шапки, до 3 штук.
-- ✅ **`bundle-4d-3`** — QR-сетка `QR_ONLY`:
-  - 8 × 11 = 88 QR 25×25 на A4;
-  - зазор 1 мм, отступ от края 1 мм;
-  - общие пунктирные линии реза.
-- ✅ **`bundle-4d-4`** — API печати партии:
-  - `GET /labels/print-batches/{id}/pdf/` — генерирует PDF,
-    автоматически переводит `READY → PRINTED`;
-  - `POST /labels/print-batches/{id}/mark-printed/` — ручной override;
-  - повторное скачивание не переписывает первую печать;
-  - `total_pages`, `total_items` заполняются.
+- ✅ **`bundle-4d-1`** — раскладка этикеток (сетка размеров,
+  шапка 28 мм, авто-колонки, A4, продолжения).
+- ✅ **`bundle-4d-3`** — QR-сетка `QR_ONLY`: 8 × 11 = 88 QR 25×25
+  на A4, общие линии реза.
+- ✅ **`bundle-4d-4`** — API печати партии (гибрид `pdf` +
+  `mark-printed`).
 
 ### Метрики
 

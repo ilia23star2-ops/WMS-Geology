@@ -3,32 +3,55 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-10
+**Дата обновления:** 2026-10-12
 
 ---
 
 ## Где мы
 
-**Активная серия:** `feature/2.x-mobile` — Flutter-приложение.
+**Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
 **Следующая серия:** `feature/2.x-lab-portal` или `feature/2.x-lifecycle`
 (обсуждается).
 
-**Текущий заход:** docs-пачка после 8 заходов mobile.
+**Текущий заход:** старт `2.x-web-v2` — приёмка + ручной ввод + поиск.
+
+**Что готово (web):**
+- Логин, layout, главная, тара, пробы, печать, справочники (серия `2.x-web`).
+- **Нужно добавить:** приёмка, ручной ввод тары с пробами, расширенный поиск.
 
 **Что готово (mobile):**
 - Логин, logout, refresh токенов.
-- Сканер QR, карточка тары.
-- Список проб внутри тары (номер, тип, Н/З, статус).
-
-**Что готово (web):**
-React-приложение: логин, layout, главная, тара, пробы, печать,
-справочники. Серия закрыта 2026-10-10.
+- Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
 **Backend:** 552 теста.
 
-**Ближайшая работа:** продолжение mobile-серии:
-- приёмка, поиск проб, инвентаризация.
+**Ближайшая работа:** `2.x-web-v2` — заходы:
+- Backend: `current_location` в `SampleSerializer`, фильтры (`?q=`,
+  `?container_id=`, `?work_order=`, `?well_id=`), `grouped` action.
+- Web: компонент `SamplesGroupedList` + реестр проб.
+- Backend + Web: форма «Создание тары с пробами».
+- Web: список `Receipt` + импорт Excel.
+
+---
+
+## Стратегия разработки
+
+> **Web — основной клиент. Mobile — по требованию.**
+
+1. **Web-фичи — первый приоритет.** Всё, что можно сделать и проверить
+   в браузере, делается на web.
+2. **Mobile — по требованию.** Если web-фича требует проверки на
+   устройстве (сканирование QR, работа с камерой, физические манипуляции
+   у машины) — **ставим web на паузу**, доводим mobile до минимума,
+   проверяем, возвращаемся к web.
+3. **Mobile не «на паузе до конца web»**, а «доводим по требованию».
+
+**Роли и права — после.** Пока всё работает и тестируется всеми, права
+настраивать не надо.
+
+**Receipt** — только для Excel и акта приёмки. Оцифровка / ручной ввод
+идут через `Container` + `Sample` напрямую.
 
 ---
 
@@ -38,8 +61,8 @@ React-приложение: логин, layout, главная, тара, про
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний ПК) / портативный (рабочий).
 - JWT, OpenAPI, 10 приложений.
-- Node 20+, Vite 8, React 19, MUI 9 (web).
-- Flutter 3.47, Dart 3.13 (mobile).
+- Node 20+, Vite 8, React 19, MUI 9.
+- Flutter 3.47 + Dart 3.13.
 
 ### Backend (552 теста)
 
@@ -67,15 +90,17 @@ React-приложение: логин, layout, главная, тара, про
 | Печать | Список партий, детали, add/remove тар, PDF |
 | Справочники | Типы исследования, участки, лаборатории (просмотр) |
 
+**Чего нет:** приёмка, ручной ввод тары, расширенный поиск.
+
 ### Mobile (Flutter, 32 юнит-теста)
 
 | Раздел | Что внутри |
 |---|---|
-| Аутентификация | `AuthProvider` (ChangeNotifier), login-форма, `TokenStorage` на `flutter_secure_storage` |
+| Аутентификация | `AuthProvider` (ChangeNotifier), login, `TokenStorage` на `flutter_secure_storage` |
 | API | `ApiClient` (Dio), JWT-интерцептор с авто-refresh, `ContainerService`, `SampleService` |
 | Главная | Приветствие + кнопка «Сканировать QR» + выход |
 | Сканер | `mobile_scanner`, прицел, обработка payload `WMSG:<TYPE>:<ID>` |
-| Карточка тары | Поля тары + список проб внутри (с pull-to-refresh) |
+| Карточка тары | Поля тары + список проб внутри (pull-to-refresh) |
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS` (57 решений), `DATABASE` (v5),
@@ -164,18 +189,13 @@ React-приложение: логин, layout, главная, тара, про
 - **`DJANGO_ALLOWED_HOSTS`** в `.env` должен включать IP машины
   (или `*` для dev). `.env` — **не в git**.
 - **Dio + `post`/`patch`:** обязательно `Content-Type: application/json`.
-  Без этого Dio шлёт `form-urlencoded`, DRF отдаёт HTML — `Map` не
-  парсится. Решено в `ApiClient._jsonOptions`.
 - **`flutter_secure_storage`:** используется для JWT-токенов
   (Android Keystore).
-- **`mobile_scanner`:** `DetectionSpeed.noDuplicates` — иначе поток
-  даёт сотни повторов при одном скане.
+- **`mobile_scanner`:** `DetectionSpeed.noDuplicates`.
 - **Конфликт имён `Container`:** Flutter-виджет vs наша модель.
   Решение: `import 'package:flutter/material.dart' hide Container;`.
-- **NDK 28.2.13676358** — обязателен для Flutter 3.47. Установлен в
-  `C:\Android\Sdk\ndk\`. При переустановке — Android Studio →
-  SDK Tools → NDK (Side by side).
-- **Android SDK Platform 36** — обязателен. Установлен.
+- **NDK 28.2.13676358** — обязателен для Flutter 3.47.
+- **Android SDK Platform 36** — обязателен.
 - **Кириллица в пути** проекта ломает Dart-анализатор.
 - **`flutter pub get`** после каждого `pubspec.yaml`.
 
