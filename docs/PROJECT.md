@@ -5,7 +5,7 @@
 
 **Шаблон:** ai-development-template v1.0
 **Дата заполнения:** 2026-10-07
-**Дата обновления:** 2026-10-10
+**Дата обновления:** 2026-10-12
 
 ---
 
@@ -37,13 +37,15 @@ Android-приложение для планшетов. QR-коды как ос�
 **Основная ветка:** `main`
 
 **Архивные ветки (не удаляем, `RULES.md` §7):**
-- `feature/1.0-backend-init` (архив, 2026-10-07)
-- `feature/1.0a-topology-v2` (архив, 2026-10-07)
-- `feature/1.1-backend-api` (архив, 2026-10-07)
-- `feature/1.2-mobile-init` (на паузе, 2026-10-08)
-- `feature/1.3-backend-v2` (архив, 2026-10-09)
-- `feature/2.0-excel-parser` (архив, 2026-10-09)
-- `feature/2.1-label-generator` (архив, 2026-10-10)
+- `feature/1.0-backend-init` (2026-10-07)
+- `feature/1.0a-topology-v2` (2026-10-07)
+- `feature/1.1-backend-api` (2026-10-07)
+- `feature/1.2-mobile-init` (влита в `2.x-mobile`)
+- `feature/1.3-backend-v2` (2026-10-09)
+- `feature/2.0-excel-parser` (2026-10-09)
+- `feature/2.1-label-generator` (2026-10-10)
+- `feature/2.x-web` (2026-10-10)
+- `feature/2.x-mobile` (2026-10-12)
 
 **Активные имена веток:**
 - `feature/X.Y-<имя>` — долгоживущая серия
@@ -67,8 +69,8 @@ Android-приложение для планшетов. QR-коды как ос�
 - **Язык (бэкенд):** Python 3.14 (целевой 3.12+)
 - **Фреймворк (бэкенд):** Django 5.2 + Django REST Framework
 - **БД:** PostgreSQL 16+ (см. §БД — два окружения)
-- **Язык (мобильное):** Dart (Flutter)
-- **Язык (веб):** TypeScript / React 18+
+- **Язык (мобильное):** Dart 3.13+ / Flutter 3.47+
+- **Язык (веб):** TypeScript / React 19
 - **Сборщик:** Poetry (backend), npm (web), pub (mobile)
 
 ### Backend (ключевые зависимости)
@@ -79,19 +81,19 @@ Android-приложение для планшетов. QR-коды как ос�
 - `djangorestframework-simplejwt` — JWT.
 - `django-environ` — чтение `.env`.
 - `qrcode` — генерация QR.
-- `pillow` — работа с изображениями для QR.
+- `pillow` — изображения для QR.
 - `openpyxl` — парсинг Excel-приёмки.
 - `fpdf2` — генерация PDF-этикеток.
 
 ### Web (ключевые зависимости)
 
-- **Vite** — сборщик, dev-сервер.
-- **React 18+** — UI.
+- **Vite 8** — сборщик, dev-сервер.
+- **React 19** — UI.
 - **TypeScript** — язык.
-- **React Router v6** — навигация.
-- **TanStack Query** — серверное состояние.
-- **MUI (Material UI)** — компоненты, тема от `#1E3A5F`.
-- **Zustand** — клиентское состояние (auth).
+- **React Router 7** — навигация.
+- **TanStack Query 5** — серверное состояние.
+- **MUI 9** — компоненты, тема от `#1E3A5F`.
+- **Zustand 5** — клиентское состояние (auth).
 - **axios** — HTTP-клиент, JWT-интерцептор.
 - **Vitest** — тесты.
 - **ESLint + Prettier** — код-стайл.
@@ -99,9 +101,10 @@ Android-приложение для планшетов. QR-коды как ос�
 ### Mobile (ключевые зависимости)
 
 - `mobile_scanner` — сканирование QR.
-- `google_ml_kit` — OCR старых этикеток.
-- `dio` / `http` — HTTP-клиент.
-- `provider` / `riverpod` — управление состоянием.
+- `google_ml_kit` — OCR старых этикеток (позже).
+- `dio` — HTTP-клиент.
+- `provider` — управление состоянием.
+- `flutter_secure_storage` — хранение JWT.
 
 ### Окружение
 
@@ -135,24 +138,72 @@ Android-приложение для планшетов. QR-коды как ос�
     git branch -d fix/X.Y-bundle
     git push origin --delete fix/X.Y-bundle
 
-### Сборка
+### Backend
 
-- Backend: `cd backend && poetry install`
-- Web: `cd web && npm install`
-- Mobile: `cd mobile && flutter pub get`
+**Установка и запуск:**
 
-### Тесты
+    cd backend
+    poetry install
+    poetry run python manage.py migrate
+    poetry run python manage.py runserver            # http://127.0.0.1:8000/
+    poetry run python manage.py runserver 0.0.0.0:8000  # доступ по IP (mobile)
 
-- Backend: `cd backend && poetry run pytest -v`
-- Проверка миграций: `cd backend && poetry run python manage.py makemigrations --check --dry-run`
-- Web: `cd web && npm test`
-- Mobile: `cd mobile && flutter test`
+**Тесты:**
 
-### Запуск
+    cd backend
+    poetry run pytest -v
+    poetry run pytest -q
+    poetry run pytest apps/<app>/tests/test_<file>.py -v
 
-- Backend: `cd backend && poetry run python manage.py runserver`
-- Web: `cd web && npm run dev` (порт 5173, proxy `/api` → `:8000`)
-- Mobile: `cd mobile && flutter run`
+**Проверки:**
+
+    poetry run python manage.py check
+    poetry run python manage.py makemigrations --check --dry-run
+
+**Seeds:**
+
+    poetry run python manage.py seed_roles
+    poetry run python manage.py seed_catalogs
+    poetry run python manage.py seed_container_comments
+
+**Shell (осторожно в MSYS2 — использовать одной строкой или временный скрипт):**
+
+    poetry run python manage.py shell
+
+### Web
+
+**Установка и запуск:**
+
+    cd web
+    npm install
+    npm run dev            # http://localhost:5173/, proxy /api → :8000
+    npm run build          # production-сборка
+    npm run preview        # просмотр production
+
+**Тесты и линт:**
+
+    npm test               # Vitest (single run)
+    npm run test:watch     # Vitest (watch)
+    npm run lint           # ESLint
+    npm run format         # Prettier
+
+### Mobile
+
+**Установка и запуск:**
+
+    cd mobile
+    flutter pub get
+    flutter run            # на подключённом устройстве / эмуляторе
+    flutter devices        # список устройств
+
+**Проверки:**
+
+    flutter analyze
+    flutter test
+    flutter clean          # очистка сборки
+
+**Backend для mobile** должен слушать `0.0.0.0:8000`, а `config.dart`
+(`_apiHostOverride`) — содержать IP домашнего ПК.
 
 ### База данных
 
@@ -172,11 +223,27 @@ Android-приложение для планшетов. QR-коды как ос�
     pg_ctl.exe -D "D:/Dev/pgsql/pgdata" status
     pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop
 
-**Миграции и seeds (любая машина):**
+### Алиасы (`~/.bashrc`)
 
-    cd backend
-    poetry run python manage.py migrate
-    poetry run python manage.py seed_roles
+**Общие (обе машины):**
+
+    alias wmsroot='cd <путь к проекту>'
+    alias wmsbe='cd <путь к проекту>/backend'
+    alias wmstest='cd <путь к проекту>/backend && poetry run pytest -q'
+    alias wmsmig='cd <путь к проекту>/backend && poetry run python manage.py migrate'
+
+**Рабочий ПК:**
+
+    alias pgstart='/d/Dev/pgsql/pgsql/bin/pg_ctl.exe -D "D:/Dev/pgsql/pgdata" -l "D:/Dev/pgsql/pgdata/logfile.log" start'
+    alias pgstop='/d/Dev/pgsql/pgsql/bin/pg_ctl.exe -D "D:/Dev/pgsql/pgdata" stop'
+    alias pgstatus='/d/Dev/pgsql/pgsql/bin/pg_ctl.exe -D "D:/Dev/pgsql/pgdata" status'
+    export PATH="/d/Dev/nodejs/node:$PATH"
+
+**Домашний ПК:**
+
+    alias wmsdb='cd <путь к проекту> && docker compose up -d'
+    alias wmsdbstop='cd <путь к проекту> && docker compose down'
+    alias wmsdbps='cd <путь к проекту> && docker compose ps'
 
 ---
 
@@ -200,6 +267,7 @@ Android-приложение для планшетов. QR-коды как ос�
 | Терминал | Git Bash (MINGW64) | UCRT64 (MSYS2) |
 | Python | 3.14 (`D:\Dev\python`) | 3.14 (user install) |
 | Poetry | 2.5.1 | 2.5.1 |
+| Node.js | 24.x (`D:\Dev\nodejs\node`) | 24.x |
 | **PostgreSQL** | **Портативный** (`D:\Dev\pgsql\`) | **Docker Compose** |
 | SSH к GitHub | `ssh.github.com:443` | `github.com:22` |
 | Права админа | ❌ нет | ✅ есть |
@@ -244,15 +312,18 @@ Android-приложение для планшетов. QR-коды как ос�
 | 1.0-backend-init | ✅ | Django, 15 моделей, 78 тестов |
 | 1.0a-topology-v2 | ✅ | Модели v2, picking, movements, 128 тестов |
 | 1.1-backend-api | ✅ | API-эндпоинты, JWT, OpenAPI, 268 тестов |
-| 1.2-mobile-init | ⏸ | Flutter init + API-клиент (на паузе) |
+| 1.2-mobile-init | ✅ | Flutter init + API-клиент (влита в `2.x-mobile`) |
 | 1.3-backend-v2 | ✅ | Справочники, приёмка, рейсы, 400 тестов |
 | 2.0-excel-parser | ✅ | Парсер Excel-приёмки, 433 теста |
 | 2.1-label-generator | ✅ | QR, PDF-этикетки, партии печати, 552 теста |
-| **2.x-web** | 🟡 **текущая** | React: дашборд, реестры, печать |
-| 2.x-mobile | ⬜ | Flutter: приёмка, сканер |
+| 2.x-web | ✅ | React: логин, реестры, печать, справочники, 552 теста |
+| 2.x-mobile | ✅ | Flutter: auth, сканер QR, карточка тары, 32 теста |
+| **2.x-web-v2** | 🟡 **текущая** | Приёмка, поиск, ручной ввод, 575 тестов |
 | 2.x-lab-portal | ⬜ | Портал лабораторий |
+| 2.x-lifecycle | ⬜ | Пересмотр статусов Container / Sample |
 | 2.x-sorting | ⬜ | Помощник сортировки |
 | 3.x-migration | ⬜ | Миграция старых этикеток (OCR) |
+| 3.x-deploy | ⬜ | Сборка web + backend в installer |
 
 ### Внешние интеграции
 
@@ -287,6 +358,20 @@ Android-приложение для планшетов. QR-коды как ос�
 - `PrintBatch.status` — soft через `CANCELLED`.
 - `PrintBatchItem.container` — `PROTECT`.
 
+### Стратегия разработки
+
+> **Web — основной клиент. Mobile — по требованию.**
+
+1. **Web-фичи — первый приоритет.** Всё, что можно проверить в
+   браузере, делается на web.
+2. **Mobile — по требованию.** Если web-фича требует проверки на
+   устройстве (сканирование QR, камера, физические манипуляции) —
+   web ставится на паузу, mobile доводится до минимума, проверяется,
+   возвращаемся к web.
+3. **Роли и права — после.** Пока всё тестируется всеми.
+4. **`Receipt`** — только для Excel и акта приёмки. Оцифровка и ручной
+   ввод идут через `Container` + `Sample` напрямую.
+
 ### БД — два окружения
 
 **Домашний ПК — Docker:**
@@ -309,8 +394,12 @@ Android-приложение для планшетов. QR-коды как ос�
 **На обеих машинах:** `~` = домашняя папка; кириллицу в путях
 оборачивать в кавычки.
 
-**Особенность MSYS2:** `manage.py shell -c "..."` ломается —
-использовать временный скрипт или одной строкой в REPL.
+**Особенности MSYS2:**
+- `manage.py shell -c "..."` ломается — использовать одной строкой
+  или временный скрипт.
+- `ipconfig` ломается на кодировке — использовать `powershell` или
+  `ipconfig | iconv -f CP866 -t UTF-8 | grep -a "IPv4"`.
+- `cat > file << 'EOF'` — надёжный способ заменить файл.
 
 ---
 
@@ -319,7 +408,7 @@ Android-приложение для планшетов. QR-коды как ос�
 | Файл | Версия / дата | Примечание |
 |---|---|---|
 | `DATABASE.md` | v5 (2026-10-10) | + PrintBatch, PrintBatchItem |
-| `API.md` | 2026-10-10 | + labels/print-batches |
+| `API.md` | 2026-10-12 | + grouped, bulk-create, current_location |
 | `SCENARIOS.md` | v4 | |
 | `UI.md` | v2 (2026-10-10) | Дизайн-система, MUI |
 | `TEMPLATES-PROJECT.md` | 2026-10-07 | Дополнения к шаблонам |
@@ -345,3 +434,5 @@ Android-приложение для планшетов. QR-коды как ос�
 11. **Web-команды** — `cd web && npm ...`. Не смешивать с backend.
 12. **Web: файлы** — компоненты, страницы, хуки. Не копировать логику
     из backend, использовать API.
+13. **Mobile-команды** — `cd mobile && flutter ...`. Backend для mobile
+    должен слушать `0.0.0.0:8000`.
