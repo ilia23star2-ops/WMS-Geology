@@ -89,14 +89,16 @@ class SampleViewSet(viewsets.ModelViewSet):
     CRUD для проб.
 
     Фильтры:
-    - sample_number — точное совпадение;
-    - research_type — ID типа исследования;
-    - research_type_code — код типа (ШЛ, ХА);
-    - site — ID участка;
-    - site_code — код участка (TST);
-    - well_id, container_id, status;
-    - work_order=<order_number> — по номеру Н/З (с linked_order);
-    - show_disposed=true — показать утилизированные.
+    - `q` — частичный поиск по `sample_number` (icontains);
+    - `sample_number` — частичный поиск (icontains);
+    - `research_type` — ID типа исследования;
+    - `research_type_code` — код типа (ШЛ, ХА);
+    - `site` — ID участка;
+    - `site_code` — код участка (TST);
+    - `well_id`, `container_id`, `status`;
+    - `work_order=<order_number>` — по номеру Н/З (с linked_order);
+    - `no_work_order=true` — пробы без Н/З;
+    - `show_disposed=true` — показать утилизированные.
     """
 
     serializer_class = SampleSerializer
@@ -104,8 +106,14 @@ class SampleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Sample.objects.select_related(
-            "container", "well", "current_work_order",
-            "research_type", "site",
+            "container",
+            "container__pallet",
+            "container__pallet__cell",
+            "container__floor_room",
+            "well",
+            "current_work_order",
+            "research_type",
+            "site",
         ).all()
 
         show_disposed = self.request.query_params.get("show_disposed")
@@ -114,8 +122,14 @@ class SampleViewSet(viewsets.ModelViewSet):
 
         p = self.request.query_params
 
-        if p.get("sample_number"):
-            qs = qs.filter(sample_number=p["sample_number"])
+        # Частичный поиск по номеру пробы.
+        q = p.get("q")
+        if q:
+            qs = qs.filter(sample_number__icontains=q)
+        elif p.get("sample_number"):
+            # Оставлено для обратной совместимости; тоже icontains.
+            qs = qs.filter(sample_number__icontains=p["sample_number"])
+
         if p.get("research_type"):
             qs = qs.filter(research_type_id=p["research_type"])
         if p.get("research_type_code"):
@@ -130,6 +144,13 @@ class SampleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(container_id=p["container_id"])
         if p.get("status"):
             qs = qs.filter(status=p["status"])
+
+        # Пробы без Н/З — отдельная группа в UI.
+        no_work_order = p.get("no_work_order")
+        if no_work_order is not None and no_work_order.lower() in (
+            "1", "true", "yes",
+        ):
+            qs = qs.filter(current_work_order__isnull=True)
 
         work_order_number = p.get("work_order")
         if work_order_number:
