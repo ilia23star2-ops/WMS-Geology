@@ -6,6 +6,7 @@ from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from apps.labels.services import render_container_label
 
@@ -21,6 +22,7 @@ from .models import (
     Tier,
 )
 from .serializers import (
+    BulkCreateSerializer,
     CellSerializer,
     ContainerCommentSerializer,
     ContainerSerializer,
@@ -31,6 +33,7 @@ from .serializers import (
     SectionSerializer,
     TierSerializer,
 )
+from .services import bulk_create_containers_with_samples
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
@@ -167,8 +170,10 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=,
              ?status=, ?comment_template_id=
-    Custom action:
-      - GET /storage/containers/{id}/label.pdf — PDF этикетки.
+    Custom actions:
+      - GET  /storage/containers/{id}/label.pdf/ — PDF этикетки.
+      - POST /storage/containers/bulk-create/    — создание партии тары
+        с пробами (оцифровка / ручной ввод).
     """
 
     serializer_class = ContainerSerializer
@@ -197,10 +202,6 @@ class ContainerViewSet(viewsets.ModelViewSet):
     def label_pdf(self, request, pk=None):
         """
         Возвращает PDF-этикетку тары.
-
-        Если проб нет — генерируется пустой этикетка (с QR и
-        шапкой). Если шрифт не найден — возвращается 500 с
-        понятным сообщением.
         """
         container = self.get_object()
 
@@ -220,3 +221,41 @@ class ContainerViewSet(viewsets.ModelViewSet):
             content_type="application/pdf",
         )
         return response
+
+    @action(detail=False, methods=["post"], url_path="bulk-create")
+    def bulk_create(self, request):
+        """
+        Создать партию тары с пробами (bulk).
+
+        Запрос — `BulkCreateSerializer`. Если какая-то тара уже
+        существует, весь запрос отклоняется (400).
+        """
+        ser = BulkCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        try:
+            containers = bulk_create_containers_with_samples(
+                work_order_coded=data["work_order_coded"],
+                work_order_incoming=data.get("work_order_incoming", ""),
+                research_type_id=data["research_type_id"],
+                site_id=data.get("site_id"),
+                containers_data=data["containers"],
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        total_samples = sum(c.samples.count() for c in containers)
+        return Response(
+            {
+                "created_containers": ContainerSerializer(
+                    containers, many=True, context={"request": request},
+                ).data,
+                "total_containers": len(containers),
+                "total_samples": total_samples,
+            },
+            status=status.HTTP_201_CREATED,
+        )
