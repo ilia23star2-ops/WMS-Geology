@@ -13,7 +13,8 @@
 |---|---|---|
 | `POST` | `/auth/login` | Логин → access/refresh токены |
 | `POST` | `/auth/refresh` | Обновление access-токена |
-| `POST` | `/auth/logout` | Logout |
+| `POST` | `/auth/logout` | Logout (blacklist refresh) |
+| `GET` | `/auth/me` | Текущий пользователь |
 
 ---
 
@@ -23,49 +24,102 @@
 |---|---|---|
 | `GET` | `/samples` | Список с фильтрами |
 | `GET` | `/samples/{id}` | Одна проба |
-| `POST` | `/samples` | Создать пробу (при приёмке) |
+| `POST` | `/samples` | Создать пробу |
 | `PATCH` | `/samples/{id}` | Обновить |
 | `DELETE` | `/samples/{id}` | Удалить (только admin) |
+| `GET` | `/samples/grouped/` | Сгруппированный список (Н/З + тип → тара) |
 
 **Фильтры `GET /samples`:**
-- `sample_number` — номер пробы
-- `research_type` — тип исследования
-- `work_order` — номер Н/З (входящий **или** зашифрованный)
-- `work_order_id` — ID Н/З
-- `site` — участок
-- `well_id` — скважина
-- `container_id` — тара
-- `status` — статус
-- `page`, `per_page` — пагинация
+- `q` — частичный поиск по номеру (`icontains`);
+- `sample_number` — частичный поиск (`icontains`);
+- `research_type` — ID типа исследования;
+- `research_type_code` — код типа (ШЛ, ХА);
+- `work_order` — номер Н/З (входящий **или** зашифрованный);
+- `site`, `site_code` — участок;
+- `well_id`, `container_id`, `status`;
+- `no_work_order=true` — пробы без Н/З;
+- `show_disposed=true` — показать утилизированные;
+- `page`, `per_page` — пагинация.
 
-**Пример `GET /samples?sample_number=12345`:**
+**Пример `GET /samples?q=34076001`:**
 
     {
       "count": 3,
+      "next": null,
+      "previous": null,
       "results": [
         {
-          "sample_id": 1,
-          "sample_number": "12345",
-          "research_type": "Шлифы",
-          "container": {"container_id": 10, "container_number": "T-001"},
-          "current_location": "Комната 1 / Стеллаж A / Пролёт 1 / Ярус 2 / Ячейка 1",
-          "current_work_order": {"work_order_id": 11, "order_number": "Х-456", "order_type": "CODED"}
+          "id": 1,
+          "sample_number": "TAA-A34076001-001",
+          "research_type": 1,
+          "research_type_name": "Шлифы",
+          "container": 10,
+          "container_number": "T-001",
+          "current_work_order": 11,
+          "current_work_order_number": "TST0001",
+          "status": "IN_STORAGE",
+          "current_location": "Комната 1 / Стеллаж A / Пролёт 1 / Ярус 2 / Ячейка 1"
         }
       ]
     }
 
+**`current_location`** — вычисляемое поле:
+- тара на поддоне в ячейке → `cell.full_address`;
+- тара на полу в комнате → `На полу: <комната>`;
+- тара без места → `Место не указано`.
+
 **Пример `POST /samples`:**
 
     {
-      "sample_number": "12345",
-      "research_type": "Шлифы",
-      "container_id": 10,
-      "well_id": 5,
+      "sample_number": "TAA-A34076001-001",
+      "research_type": 1,
+      "container": 10,
+      "well": 5,
       "depth_from": 120.5,
       "depth_to": 121.0,
-      "site": "Участок-1",
-      "current_work_order_id": 11
+      "site": 1,
+      "current_work_order": 11
     }
+
+### `GET /samples/grouped/`
+
+Сгруппированный список проб. Группа = `(Н/З, тип исследования)`.
+Внутри — тары с пробами. Пагинация — **по группам** (20 на страницу).
+
+**Порядок групп:** по алфавиту `work_order.order_number`; пробы
+без Н/З — **в конце**; внутри одного Н/З — по коду типа.
+
+**Формат ответа:**
+
+    {
+      "count": 120,
+      "next": "http://.../api/v1/samples/grouped/?page=2",
+      "previous": null,
+      "page_size": 20,
+      "results": [
+        {
+          "work_order": {"id": 5, "number": "TST0001", "type": "CODED"},
+          "research_type": {"id": 1, "code": "ШЛ", "name": "Шлифы"},
+          "total_samples": 31,
+          "containers": [
+            {
+              "container": {"id": 10, "number": "T-001", "status": "ACTIVE"},
+              "location": "Комната 1 / A / S1 / A / 5",
+              "samples": [
+                {
+                  "id": 1,
+                  "sample_number": "TAA-A34076001-001",
+                  "status": "IN_STORAGE",
+                  "updated_at": "2026-10-12T10:00:00Z"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+
+Все фильтры `GET /samples` работают и для `grouped`.
 
 ---
 
@@ -106,11 +160,74 @@
 | `POST` | `/storage/containers` | Создать |
 | `PATCH` | `/storage/containers/{id}` | Переместить / обновить |
 | `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
+| `POST` | `/storage/containers/bulk-create/` | Создать N тар с пробами (один запрос) |
 | `GET` | `/storage/pallets` | Список |
 | `POST` | `/storage/pallets` | Создать |
 
 **Фильтры контейнеров:** `pallet_id`, `floor_room_id`,
 `container_type_id`, `status`, `comment_template_id`.
+
+### `POST /storage/containers/bulk-create/`
+
+Создание партии тары с пробами (для оцифровки и ручной приёмки).
+
+**Тело запроса:**
+
+    {
+      "work_order_coded": "TST0001",
+      "work_order_incoming": "02-Тест001",
+      "research_type_id": 1,
+      "site_id": 1,
+      "containers": [
+        {
+          "container_number": "T-BULK-001",
+          "container_type_id": 1,
+          "sample_groups": [
+            {
+              "prefix": "TAA-A",
+              "middle": "34076",
+              "sequence_from": 1,
+              "sequence_to": 5,
+              "sequence_digits": 3,
+              "well_name": null
+            },
+            {
+              "prefix": "TST",
+              "middle": "124",
+              "sequence_from": 1,
+              "sequence_to": 3,
+              "well_name": "124"
+            }
+          ]
+        }
+      ]
+    }
+
+**Логика:**
+- Найти или создать `WorkOrder` (CODED) по `work_order_coded`.
+- Если задан `work_order_incoming` — найти/создать INCOMING
+  и связать `linked_order` в обе стороны.
+- Для каждой тары: создать `Container` со статусом `PENDING_PLACEMENT`.
+- Для каждой группы проб: если задан `well_name` — найти/создать `Well`;
+  сгенерировать полные номера (prefix + middle + sequence) и создать `Sample`.
+
+**Формат полного номера:**
+- шифрованная: `TAA-A` + `34076` + `001` = `TAA-A34076001`;
+- нешифрованная: `TST` + `124` + `001` = `TST124001`.
+
+**Ответ (201 Created):**
+
+    {
+      "created_containers": [ {...ContainerSerializer...} ],
+      "total_containers": 1,
+      "total_samples": 8
+    }
+
+**Ошибки:**
+- 400 — номер тары уже существует в системе;
+- 400 — `research_type_id` / `site_id` не найдены;
+- 400 — `sequence_from > sequence_to`;
+- 400 — диапазон > 1000 проб в одной группе.
 
 ---
 
@@ -122,10 +239,12 @@
 | `GET` | `/labels/print-batches/{id}` | Одна партия с items |
 | `POST` | `/labels/print-batches` | Создать черновик |
 | `PATCH` | `/labels/print-batches/{id}` | Изменить (только DRAFT) |
-| `POST` | `/labels/print-batches/{id}/add-containers/` | Добавить тары в корзину |
+| `POST` | `/labels/print-batches/{id}/add-containers/` | Добавить тары |
 | `POST` | `/labels/print-batches/{id}/remove-container/` | Убрать тару |
 | `POST` | `/labels/print-batches/{id}/mark-ready/` | DRAFT → READY |
 | `POST` | `/labels/print-batches/{id}/cancel/` | Отмена (soft) |
+| `GET` | `/labels/print-batches/{id}/pdf/` | PDF (READY → PRINTED авто) |
+| `POST` | `/labels/print-batches/{id}/mark-printed/` | Ручная пометка PRINTED |
 
 **Ограничения:**
 - `PUT`, `DELETE` — запрещены (405).
@@ -133,14 +252,6 @@
 - Отменить можно `DRAFT` и `READY`, нельзя `PRINTED` и `CANCELLED`.
 
 **Фильтры:** `?status=`, `?print_type=`.
-
-**Пример `POST /print-batches/{id}/add-containers/`:**
-
-    {
-      "container_ids": [10, 11, 12]
-    }
-
-Ответ — та же партия с обновлёнными `items` и `total_items`.
 
 ---
 
@@ -182,15 +293,6 @@
 | `POST` | `/inventory/sessions/{id}/scan` | Скан в сессии |
 | `POST` | `/inventory/sessions/{id}/complete` | Завершить |
 | `GET` | `/inventory/sessions/{id}/report` | Отчёт по расхождениям |
-
----
-
-## Поиск (общий)
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `GET` | `/search?q=` | Универсальный поиск |
-| `GET` | `/search?sample_number=&work_order=&research_type=&site=` | Точный фильтр |
 
 ---
 
@@ -237,5 +339,7 @@
 
 - Версионирование API в URL или заголовке? → сейчас в URL.
 - Лимит `per_page`? → предложить 200.
-- PDF партии печати — эндпоинт `GET /print-batches/{id}/pdf/`
-  (серия 2.1, bundle-4d-4).
+- Глобальный `/search` — пока не реализован. Используются фильтры
+  `GET /samples?q=` и `?work_order=`.
+- `POST /receiving/items/{id}/fill/` — заполнение заготовки приёмки
+  (для Excel-сценария) — в разработке.
