@@ -60,7 +60,8 @@ class SampleSerializer(serializers.ModelSerializer):
     - `well_name`;
     - `current_work_order_number`;
     - `research_type_name` — полное имя типа;
-    - `site_name` — полное имя участка.
+    - `site_name` — полное имя участка;
+    - `current_location` — адрес хранения (вычисляется).
     """
 
     container_number = serializers.CharField(
@@ -80,6 +81,7 @@ class SampleSerializer(serializers.ModelSerializer):
     site_name = serializers.CharField(
         source="site.name", read_only=True, default=None,
     )
+    current_location = serializers.SerializerMethodField()
 
     class Meta:
         model = Sample
@@ -104,12 +106,35 @@ class SampleSerializer(serializers.ModelSerializer):
             "disposed_at",
             "disposed_by",
             "disposal_reason",
+            "current_location",
             "created_at",
             "updated_at",
         ]
         read_only_fields = [
             "created_at", "updated_at", "disposed_at", "disposed_by",
         ]
+
+    def get_current_location(self, obj: Sample) -> str:
+        """
+        Адрес хранения пробы.
+
+        Логика:
+        - тара на поддоне в ячейке → `cell.full_address`;
+        - тара на полу в комнате → «На полу: <комната>»;
+        - тара без места → «Место не указано».
+        """
+        container = obj.container
+        if container is None:
+            return "—"
+
+        pallet = container.pallet
+        if pallet is not None and pallet.cell is not None:
+            return pallet.cell.full_address
+
+        if container.floor_room is not None:
+            return f"На полу: {container.floor_room.name}"
+
+        return "Место не указано"
 
 
 class SampleWorkOrderSerializer(serializers.ModelSerializer):
