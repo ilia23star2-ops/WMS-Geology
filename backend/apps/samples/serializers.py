@@ -3,12 +3,37 @@
 
 Справочники: ResearchTypeSerializer, SiteSerializer, LaboratorySerializer.
 Модели: WellSerializer, SampleSerializer, SampleWorkOrderSerializer.
+Группировка: SampleGroupSerializer и вспомогательные.
 """
 
 from rest_framework import serializers
 
 from .catalogs import Laboratory, ResearchType, Site
 from .models import Sample, SampleWorkOrder, Well
+
+
+# ============================================================
+# Вспомогательные
+# ============================================================
+def compute_sample_location(container) -> str:
+    """
+    Адрес хранения тары для отображения в UI.
+
+    - тара на поддоне в ячейке → `cell.full_address`;
+    - тара на полу в комнате → «На полу: <комната>»;
+    - иначе → «Место не указано».
+    """
+    if container is None:
+        return "—"
+
+    pallet = container.pallet
+    if pallet is not None and pallet.cell is not None:
+        return pallet.cell.full_address
+
+    if container.floor_room is not None:
+        return f"На полу: {container.floor_room.name}"
+
+    return "Место не указано"
 
 
 # ============================================================
@@ -59,8 +84,8 @@ class SampleSerializer(serializers.ModelSerializer):
     - `container_number`;
     - `well_name`;
     - `current_work_order_number`;
-    - `research_type_name` — полное имя типа;
-    - `site_name` — полное имя участка;
+    - `research_type_name`;
+    - `site_name`;
     - `current_location` — адрес хранения (вычисляется).
     """
 
@@ -115,26 +140,7 @@ class SampleSerializer(serializers.ModelSerializer):
         ]
 
     def get_current_location(self, obj: Sample) -> str:
-        """
-        Адрес хранения пробы.
-
-        Логика:
-        - тара на поддоне в ячейке → `cell.full_address`;
-        - тара на полу в комнате → «На полу: <комната>»;
-        - тара без места → «Место не указано».
-        """
-        container = obj.container
-        if container is None:
-            return "—"
-
-        pallet = container.pallet
-        if pallet is not None and pallet.cell is not None:
-            return pallet.cell.full_address
-
-        if container.floor_room is not None:
-            return f"На полу: {container.floor_room.name}"
-
-        return "Место не указано"
+        return compute_sample_location(obj.container)
 
 
 class SampleWorkOrderSerializer(serializers.ModelSerializer):
@@ -142,3 +148,60 @@ class SampleWorkOrderSerializer(serializers.ModelSerializer):
         model = SampleWorkOrder
         fields = ["id", "sample", "work_order", "linked_at"]
         read_only_fields = ["linked_at"]
+
+
+# ============================================================
+# Группировка проб (для action `grouped`)
+# ============================================================
+class GroupedWorkOrderSerializer(serializers.Serializer):
+    """Н/З в группированном ответе. Может быть None."""
+
+    id = serializers.IntegerField()
+    number = serializers.CharField()
+    type = serializers.CharField()
+
+
+class GroupedResearchTypeSerializer(serializers.Serializer):
+    """Тип исследования в группированном ответе."""
+
+    id = serializers.IntegerField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+
+
+class GroupedContainerBriefSerializer(serializers.Serializer):
+    """Краткая инфа о таре внутри группы."""
+
+    id = serializers.IntegerField()
+    number = serializers.CharField()
+    status = serializers.CharField()
+
+
+class GroupedSampleBriefSerializer(serializers.Serializer):
+    """Проба в группированном ответе."""
+
+    id = serializers.IntegerField()
+    sample_number = serializers.CharField()
+    status = serializers.CharField()
+    updated_at = serializers.DateTimeField()
+
+
+class GroupedContainerSerializer(serializers.Serializer):
+    """Тара с пробами и адресом хранения."""
+
+    container = GroupedContainerBriefSerializer()
+    location = serializers.CharField()
+    samples = GroupedSampleBriefSerializer(many=True)
+
+
+class SampleGroupSerializer(serializers.Serializer):
+    """
+    Одна группа проб: (Н/З, тип исследования).
+
+    `work_order` может быть None — группа «Без Н/З».
+    """
+
+    work_order = GroupedWorkOrderSerializer(allow_null=True)
+    research_type = GroupedResearchTypeSerializer()
+    total_samples = serializers.IntegerField()
+    containers = GroupedContainerSerializer(many=True)
