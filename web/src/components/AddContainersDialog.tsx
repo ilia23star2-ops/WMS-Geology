@@ -75,7 +75,7 @@ export default function AddContainersDialog({
         if (!q) return filtered;
         return filtered.filter(
             (c) =>
-                c.container_number.toLowerCase().includes(q) ||
+                (c.container_number ?? "").toLowerCase().includes(q) ||
                 String(c.id).includes(q),
         );
     }, [data, excluded, search]);

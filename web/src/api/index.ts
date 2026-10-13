@@ -8,11 +8,16 @@ export { login, logout, fetchMe } from "./auth";
 
 export {
     CONTAINER_STATUS_LABELS,
+    bulkCreateContainers,
     downloadLabelPdf,
     fetchContainers,
+    useBulkCreateContainers,
     useContainers,
 } from "./containers";
 export type {
+    BulkCreateContainerItem,
+    BulkCreateContainersRequest,
+    BulkCreateContainersResponse,
     Container,
     ContainerFilters,
     ContainerStatus,

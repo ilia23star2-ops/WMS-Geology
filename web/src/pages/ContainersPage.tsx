@@ -1,12 +1,13 @@
 /**
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
  *
- * При выборе тар появляется кнопка «В партию печати (N)» —
- * открывает диалог создания/добавления в партию.
+ * - Кнопка «Создать тару» → диалог создания заготовок.
+ * - При выборе тар — кнопка «В партию печати (N)».
  */
 import { useMemo, useState } from "react";
 import {
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
@@ -21,6 +22,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import PrintIcon from "@mui/icons-material/Print";
 import {
@@ -42,6 +44,7 @@ import {
     type ContainerStatus,
 } from "../api";
 import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
+import CreateContainersDialog from "../components/CreateContainersDialog";
 
 const PAGE_SIZE = 50;
 
@@ -81,6 +84,8 @@ export default function ContainersPage() {
         useState<GridRowSelectionModel>(emptySelection());
     const [pdfError, setPdfError] = useState<string | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [createMessage, setCreateMessage] = useState<string | null>(null);
 
     const { data, isLoading, isError } = useContainers({
         page: paginationModel.page + 1,
@@ -108,6 +113,17 @@ export default function ContainersPage() {
             headerName: "Номер",
             flex: 1,
             minWidth: 140,
+            renderCell: (params) => {
+                if (params.value) return params.value;
+                return (
+                    <Chip
+                        label="Заготовка"
+                        color="warning"
+                        size="small"
+                        variant="outlined"
+                    />
+                );
+            },
         },
         {
             field: "container_type",
@@ -162,7 +178,7 @@ export default function ContainersPage() {
                                 await downloadLabelPdf(params.row.id);
                             } catch {
                                 setPdfError(
-                                    `Не удалось сформировать PDF для тары ${params.row.container_number}.`,
+                                    `Не удалось сформировать PDF для тары ${params.row.container_number ?? `#${params.row.id}`}.`,
                                 );
                             }
                         }}
@@ -187,24 +203,33 @@ export default function ContainersPage() {
                 <Typography variant="h2" component="h1">
                     Тара
                 </Typography>
-                {selectedIds.length > 0 && (
-                    <Stack
-                        direction="row"
-                        spacing={2}
-                        sx={{ alignItems: "center" }}
+                <Stack
+                    direction="row"
+                    spacing={2}
+                    sx={{ alignItems: "center" }}
+                >
+                    {selectedIds.length > 0 && (
+                        <>
+                            <Typography variant="body1" color="text.secondary">
+                                Выбрано: {selectedIds.length}
+                            </Typography>
+                            <IconButton
+                                color="primary"
+                                onClick={() => setDialogOpen(true)}
+                                title="В партию печати"
+                            >
+                                <PrintIcon />
+                            </IconButton>
+                        </>
+                    )}
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setCreateDialogOpen(true)}
                     >
-                        <Typography variant="body1" color="text.secondary">
-                            Выбрано: {selectedIds.length}
-                        </Typography>
-                        <IconButton
-                            color="primary"
-                            onClick={() => setDialogOpen(true)}
-                            title="В партию печати"
-                        >
-                            <PrintIcon />
-                        </IconButton>
-                    </Stack>
-                )}
+                        Создать тару
+                    </Button>
+                </Stack>
             </Box>
 
             <Card sx={{ mb: 2 }}>
@@ -302,6 +327,16 @@ export default function ContainersPage() {
                 </Stack>
             )}
 
+            <CreateContainersDialog
+                open={createDialogOpen}
+                onClose={() => setCreateDialogOpen(false)}
+                onSuccess={(count) => {
+                    setCreateMessage(
+                        `Создано тар: ${count}. Заполните их пробами из реестра.`,
+                    );
+                }}
+            />
+
             <AddToPrintBatchDialog
                 open={dialogOpen}
                 containerIds={selectedIds}
@@ -317,6 +352,13 @@ export default function ContainersPage() {
                 autoHideDuration={6000}
                 onClose={() => setPdfError(null)}
                 message={pdfError ?? ""}
+            />
+
+            <Snackbar
+                open={createMessage !== null}
+                autoHideDuration={6000}
+                onClose={() => setCreateMessage(null)}
+                message={createMessage ?? ""}
             />
         </Box>
     );

@@ -1,5 +1,5 @@
 /**
- * Хук списка тары.
+ * Хуки списка тары.
  *
  * Server-side пагинация: backend отдаёт фиксированные 50 на
  * страницу (PAGE_SIZE в settings). `?page=` — с 1.
@@ -9,7 +9,12 @@
  * `ISSUED`. Модель статусов будет пересмотрена в отдельной серии
  * (`2.x-container-lifecycle`, см. PLAN.md).
  */
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "./client";
 import type { PaginatedResponse } from "./types";
@@ -29,7 +34,7 @@ export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
 
 export interface Container {
     id: number;
-    container_number: string;
+    container_number: string | null;
     container_type: number;
     qr_code: string | null;
     pallet: number | null;
@@ -39,6 +44,12 @@ export interface Container {
     comment: string;
     comment_template: number | null;
     comment_template_text: string | null;
+    draft_site: number | null;
+    draft_site_name: string | null;
+    draft_research_type: number | null;
+    draft_research_type_name: string | null;
+    draft_work_order_coded: string;
+    draft_work_order_incoming: string;
     created_at: string;
 }
 
@@ -92,4 +103,53 @@ export async function downloadLabelPdf(containerId: number): Promise<void> {
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// ============================================================
+// Bulk create — создание партии тары-заготовок
+// ============================================================
+
+/**
+ * Элемент тела запроса bulk-create.
+ *
+ * `container_number` — опционален: заготовка создаётся без номера
+ * (см. DECISIONS 1.60). Номер присваивается позже, на шаге
+ * `fill-samples`.
+ */
+export interface BulkCreateContainerItem {
+    container_number?: string | null;
+    container_type_id: number;
+}
+
+export interface BulkCreateContainersRequest {
+    containers: BulkCreateContainerItem[];
+    draft_site_id?: number | null;
+    draft_research_type_id?: number | null;
+    draft_work_order_coded?: string;
+    draft_work_order_incoming?: string;
+}
+
+export interface BulkCreateContainersResponse {
+    created_containers: Container[];
+    total_containers: number;
+}
+
+export async function bulkCreateContainers(
+    payload: BulkCreateContainersRequest,
+): Promise<BulkCreateContainersResponse> {
+    const { data } = await apiClient.post<BulkCreateContainersResponse>(
+        "/storage/containers/bulk-create/",
+        payload,
+    );
+    return data;
+}
+
+export function useBulkCreateContainers() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: bulkCreateContainers,
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+        },
+    });
 }
