@@ -7,9 +7,13 @@
 - связь linked_order в обе стороны;
 - Well создаётся для нешифрованных, переиспользуется;
 - синхронизацию статуса проб со статусом тары;
+- присвоение container_number (если был NULL);
+- сохранение существующего container_number;
+- обнуление draft-полей;
 - правило «одна тара = один тип исследования»;
 - ошибки: несуществующий research_type / site,
-  sequence_from > sequence_to, тара не найдена.
+  sequence_from > sequence_to, тара не найдена,
+  конфликт container_number.
 """
 
 import pytest
@@ -39,6 +43,16 @@ def container_type(db):
 def container(db, container_type):
     return Container.objects.create(
         container_number="T-FILL-001",
+        container_type=container_type,
+        status=Container.STATUS_PENDING_PLACEMENT,
+    )
+
+
+@pytest.fixture
+def draft_container(db, container_type):
+    """Тара-заготовка без номера, с draft-полями."""
+    return Container.objects.create(
+        container_number=None,
         container_type=container_type,
         status=Container.STATUS_PENDING_PLACEMENT,
     )
@@ -107,11 +121,9 @@ def test_fill_samples_success(auth_client, container, research_type, site):
     assert Sample.objects.count() == 5
     assert container.samples.count() == 5
 
-    # Шифрованные — без Well.
     s_coded = Sample.objects.get(sample_number="TAA-A34076001")
     assert s_coded.well is None
 
-    # Нешифрованные — с Well «124».
     s_plain = Sample.objects.get(sample_number="TST124001")
     assert s_plain.well is not None
     assert s_plain.well.well_name == "124"
@@ -200,6 +212,97 @@ def test_fill_samples_active_container(
     assert Sample.objects.filter(
         status=Sample.STATUS_IN_STORAGE,
     ).count() == 5
+
+
+# ============================================================
+# container_number: присвоение и сохранение
+# ============================================================
+@pytest.mark.django_db
+def test_fill_samples_assigns_container_number(
+    auth_client, draft_container, research_type, site,
+):
+    """Заготовка без номера → номер присваивается из запроса."""
+    payload = _payload(
+        research_type, site, container_number="T-ASSIGNED-001",
+    )
+    response = auth_client.post(_url(draft_container), payload, format="json")
+    assert response.status_code == 201
+    assert response.data["container_number"] == "T-ASSIGNED-001"
+
+    draft_container.refresh_from_db()
+    assert draft_container.container_number == "T-ASSIGNED-001"
+
+
+@pytest.mark.django_db
+def test_fill_samples_keeps_number_null_when_not_provided(
+    auth_client, draft_container, research_type, site,
+):
+    """Номер не передан → остаётся NULL."""
+    response = auth_client.post(
+        _url(draft_container), _payload(research_type, site), format="json",
+    )
+    assert response.status_code == 201
+    assert response.data["container_number"] is None
+
+    draft_container.refresh_from_db()
+    assert draft_container.container_number is None
+
+
+@pytest.mark.django_db
+def test_fill_samples_does_not_overwrite_existing_number(
+    auth_client, container, research_type, site,
+):
+    """Существующий номер не перезаписывается."""
+    payload = _payload(
+        research_type, site, container_number="T-NEW-NAME",
+    )
+    response = auth_client.post(_url(container), payload, format="json")
+    assert response.status_code == 201
+    assert response.data["container_number"] == "T-FILL-001"
+
+    container.refresh_from_db()
+    assert container.container_number == "T-FILL-001"
+
+
+@pytest.mark.django_db
+def test_fill_samples_number_conflict(
+    auth_client, draft_container, container, research_type, site,
+):
+    """Попытка присвоить уже занятый номер → 400."""
+    payload = _payload(
+        research_type, site, container_number=container.container_number,
+    )
+    response = auth_client.post(_url(draft_container), payload, format="json")
+    assert response.status_code == 400
+
+
+# ============================================================
+# Draft-поля: обнуление
+# ============================================================
+@pytest.mark.django_db
+def test_fill_samples_clears_draft_fields(
+    auth_client, container_type, research_type, site,
+):
+    """Draft-поля обнуляются после успешного заполнения."""
+    container = Container.objects.create(
+        container_number=None,
+        container_type=container_type,
+        status=Container.STATUS_PENDING_PLACEMENT,
+        draft_site=site,
+        draft_research_type=research_type,
+        draft_work_order_coded="OLD-CODED",
+        draft_work_order_incoming="OLD-INCOMING",
+    )
+    response = auth_client.post(
+        _url(container), _payload(research_type, site), format="json",
+    )
+    assert response.status_code == 201
+
+    container.refresh_from_db()
+    assert container.draft_site_id is None
+    assert container.draft_research_type_id is None
+    assert container.draft_work_order_coded == ""
+    assert container.draft_work_order_incoming == ""
 
 
 # ============================================================

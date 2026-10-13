@@ -3,12 +3,14 @@
 
 Разделены на две функции (bundle-7a-2):
 
-1. `bulk_create_containers` — только тары со статусом
-   `PENDING_PLACEMENT`. Никаких проб и Н/З.
+1. `bulk_create_containers` — создание N тар-заготовок без проб.
+   Draft-поля (участок, ТИ, Н/З) сохраняются для последующего
+   заполнения. `container_number` опционален: тара может быть
+   создана без номера (сценарий «заготовка»).
 
 2. `fill_container_with_samples` — заполнение существующей тары
-   пробами. Тут же наряд-заказы (CODED + опц. INCOMING),
-   скважины и пробы.
+   пробами. Присваивает `container_number` (если был NULL),
+   создаёт Н/З, `Well`, `Sample`. Обнуляет draft-поля.
 
 Обе — атомарные, явные вызовы, без Django signals.
 """
@@ -23,24 +25,54 @@ from apps.work_orders.models import WorkOrder
 
 
 @transaction.atomic
-def bulk_create_containers(*, containers_data: list[dict]) -> list[Container]:
+def bulk_create_containers(
+    *,
+    containers_data: list[dict],
+    draft_site_id: int | None = None,
+    draft_research_type_id: int | None = None,
+    draft_work_order_coded: str = "",
+    draft_work_order_incoming: str = "",
+) -> list[Container]:
     """
-    Создать N тар без проб.
+    Создать N тар-заготовок без проб.
 
     Все тары получают статус `PENDING_PLACEMENT` — место определяется
     отдельным шагом (решение 1.47).
 
+    Draft-поля (`draft_site`, `draft_research_type`,
+    `draft_work_order_coded`, `draft_work_order_incoming`) —
+    общие для всей партии. Сохраняются на таре, чтобы форма
+    заполнения пробами была предзаполнена.
+
+    `container_number` в каждом элементе `containers_data` опционален.
+    Если не указан (или пустая строка) — тара создаётся без номера.
+
     :param containers_data: список словарей
-        `{"container_number": str, "container_type_id": int}`.
+        `{"container_number": str | None, "container_type_id": int}`.
     :returns: список созданных `Container`.
     :raises: `ValueError` при ошибке в данных.
     """
+    # Валидация draft-полей (если заданы).
+    if draft_site_id is not None:
+        if not Site.objects.filter(pk=draft_site_id).exists():
+            raise ValueError(f"Участок #{draft_site_id} не найден.")
+
+    if draft_research_type_id is not None:
+        if not ResearchType.objects.filter(pk=draft_research_type_id).exists():
+            raise ValueError(
+                f"Тип исследования #{draft_research_type_id} не найден."
+            )
+
     created: list[Container] = []
     for cdata in containers_data:
         container = Container.objects.create(
-            container_number=cdata["container_number"],
+            container_number=cdata.get("container_number") or None,
             container_type_id=cdata["container_type_id"],
             status=Container.STATUS_PENDING_PLACEMENT,
+            draft_site_id=draft_site_id,
+            draft_research_type_id=draft_research_type_id,
+            draft_work_order_coded=draft_work_order_coded or "",
+            draft_work_order_incoming=draft_work_order_incoming or "",
         )
         created.append(container)
     return created
@@ -54,6 +86,7 @@ def fill_container_with_samples(
     work_order_incoming: str = "",
     research_type_id: int,
     site_id: int | None = None,
+    container_number: str | None = None,
     sample_groups: list[dict],
 ) -> list[Sample]:
     """
@@ -67,12 +100,15 @@ def fill_container_with_samples(
       и связать `linked_order` в обе стороны;
     - `well_name` в группе — найти или создать `Well`
       (для нешифрованных);
+    - `container_number` — если задан и у тары номер ещё не присвоен,
+      присвоить (с проверкой уникальности);
+    - draft-поля тары обнуляются после успешного заполнения;
     - статус проб синхронизируется со статусом тары
       через `sync_sample_status_for_container`.
 
     :returns: список созданных `Sample`.
     :raises: `ValueError` при ошибке (не найдены справочники,
-        конфликт типа исследования).
+        конфликт типа исследования, конфликт номера тары).
     """
     rt = ResearchType.objects.filter(pk=research_type_id).first()
     if rt is None:
@@ -93,6 +129,16 @@ def fill_container_with_samples(
         site = Site.objects.filter(pk=site_id).first()
         if site is None:
             raise ValueError(f"Участок #{site_id} не найден.")
+
+    # Проверка присваиваемого номера тары.
+    new_number = (container_number or "").strip() or None
+    if new_number and not container.container_number:
+        if Container.objects.filter(container_number=new_number).exclude(
+            pk=container.pk,
+        ).exists():
+            raise ValueError(
+                f"Тара с номером {new_number} уже существует."
+            )
 
     # 1. CODED Н/З.
     wo_coded, _ = WorkOrder.objects.get_or_create(
@@ -148,7 +194,29 @@ def fill_container_with_samples(
             )
             created.append(sample)
 
-    # Синхронизируем статус проб со статусом тары.
+    # 4. Обновить тару: container_number + обнулить draft-поля.
+    update_fields: list[str] = []
+    if new_number and not container.container_number:
+        container.container_number = new_number
+        update_fields.append("container_number")
+
+    if container.draft_site_id:
+        container.draft_site = None
+        update_fields.append("draft_site")
+    if container.draft_research_type_id:
+        container.draft_research_type = None
+        update_fields.append("draft_research_type")
+    if container.draft_work_order_coded:
+        container.draft_work_order_coded = ""
+        update_fields.append("draft_work_order_coded")
+    if container.draft_work_order_incoming:
+        container.draft_work_order_incoming = ""
+        update_fields.append("draft_work_order_incoming")
+
+    if update_fields:
+        container.save(update_fields=update_fields)
+
+    # 5. Синхронизируем статус проб со статусом тары.
     sync_sample_status_for_container(container)
 
     return created

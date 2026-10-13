@@ -1,5 +1,5 @@
 """
-Модели приложения "Склад" (v3).
+Модели приложения "Склад" (v4).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
@@ -7,6 +7,15 @@
 Изменения v3 (этап 1.3, bundle-8b):
 - `ContainerType.laboratory` — FK (nullable) на Laboratory.
 - Уникальность: `(name, laboratory)` вместо `name`.
+
+Изменения v4 (серия 2.x-web-v2, bundle-7a-2b):
+- `Container.container_number` — nullable. Тара-заготовка создаётся
+  без номера, номер присваивается на шаге заполнения пробами.
+- +4 draft-поля: `draft_site`, `draft_research_type`,
+  `draft_work_order_coded`, `draft_work_order_incoming` —
+  предзаполняются при создании тары-заготовки, используются
+  для предзаполнения формы fill-samples, обнуляются после
+  успешного заполнения.
 """
 
 from django.db import models
@@ -279,7 +288,15 @@ class ContainerType(models.Model):
 
 
 class Container(models.Model):
-    """Тара — физический контейнер с пробами одного типа исследования."""
+    """
+    Тара — физический контейнер с пробами одного типа исследования.
+
+    Жизненный цикл:
+    1. Создание заготовки (`container_number = NULL`) — bulk-create.
+       Заполняются draft-поля.
+    2. Заполнение пробами (`container_number` присваивается) —
+       fill-samples. Draft-поля обнуляются.
+    """
 
     STATUS_ACTIVE = "ACTIVE"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
@@ -292,7 +309,16 @@ class Container(models.Model):
         (STATUS_ISSUED, "Выдана"),
     ]
 
-    container_number = models.CharField(max_length=100, unique=True)
+    container_number = models.CharField(
+        max_length=100,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "Номер тары. NULL — заготовка, номер ещё не присвоен "
+            "(заполняется на шаге заполнения пробами)."
+        ),
+    )
     container_type = models.ForeignKey(
         ContainerType,
         on_delete=models.PROTECT,
@@ -340,6 +366,39 @@ class Container(models.Model):
         related_name="containers",
         help_text="Шаблон комментария (если выбран из списка).",
     )
+
+    # Draft-поля: заполняются при создании тары-заготовки
+    # (bulk-create). Используются для предзаполнения формы
+    # fill-samples. Обнуляются после успешного заполнения.
+    draft_site = models.ForeignKey(
+        "samples.Site",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="draft_site_containers",
+        help_text="Участок (черновик до заполнения пробами).",
+    )
+    draft_research_type = models.ForeignKey(
+        "samples.ResearchType",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="draft_rt_containers",
+        help_text="Тип исследования (черновик).",
+    )
+    draft_work_order_coded = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Зашифрованный Н/З (черновик).",
+    )
+    draft_work_order_incoming = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Входящий Н/З (черновик).",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -354,4 +413,4 @@ class Container(models.Model):
         ]
 
     def __str__(self) -> str:
-        return self.container_number
+        return self.container_number or f"Черновик #{self.pk}"
