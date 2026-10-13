@@ -160,7 +160,7 @@
 | `POST` | `/storage/containers` | Создать одну |
 | `PATCH` | `/storage/containers/{id}` | Переместить / обновить |
 | `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
-| `POST` | `/storage/containers/bulk-create/` | Создать N тар (без проб) |
+| `POST` | `/storage/containers/bulk-create/` | Создать N тар-заготовок (без проб) |
 | `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить тару пробами |
 | `GET` | `/storage/pallets` | Список поддонов |
 | `POST` | `/storage/pallets` | Создать поддон |
@@ -170,8 +170,12 @@
 
 ### `POST /storage/containers/bulk-create/`
 
-Создать партию тары **без проб**. Пробы добавляются отдельным
-запросом — `fill-samples` (см. ниже).
+Создать партию тары-заготовок **без проб**. Пробы добавляются
+отдельным запросом — `fill-samples` (см. ниже).
+
+Draft-поля (участок, ТИ, Н/З) — общие для всей партии, сохраняются
+на каждой таре. Используются для предзаполнения формы fill-samples,
+обнуляются после успешного заполнения.
 
 **Тело запроса:**
 
@@ -182,15 +186,21 @@
           "container_type_id": 1
         },
         {
-          "container_number": "T-BULK-002",
           "container_type_id": 1
         }
-      ]
+      ],
+      "draft_site_id": 1,
+      "draft_research_type_id": 1,
+      "draft_work_order_coded": "TST0001",
+      "draft_work_order_incoming": "02-Тест001"
     }
 
 **Логика:**
 - Каждая тара создаётся со статусом `PENDING_PLACEMENT`.
-- Пробы — отдельным шагом.
+- `container_number` **опционален**: если не указан (или пустая
+  строка) — тара создаётся без номера (заготовка). Номер
+  присваивается на шаге `fill-samples`.
+- Draft-поля сохраняются на каждой таре.
 - `status` в теле запроса **не принимается**.
 
 **Ответ (201 Created):**
@@ -200,9 +210,15 @@
       "total_containers": 2
     }
 
+`ContainerSerializer` дополнительно возвращает:
+`draft_site`, `draft_site_name`, `draft_research_type`,
+`draft_research_type_name`, `draft_work_order_coded`,
+`draft_work_order_incoming`.
+
 **Ошибки:**
 - 400 — номер тары уже существует в системе;
 - 400 — `container_type_id` не найден;
+- 400 — `draft_site_id` / `draft_research_type_id` не найдены;
 - 400 — номера тар в запросе не уникальны;
 - 400 — список `containers` пуст.
 
@@ -213,6 +229,7 @@
 **Тело запроса:**
 
     {
+      "container_number": "T-FILL-001",
       "work_order_coded": "TST0001",
       "work_order_incoming": "02-Тест001",
       "research_type_id": 1,
@@ -245,6 +262,10 @@
 - Повторное заполнение **тем же** ТИ — разрешено.
 - Для каждой группы проб: если задан `well_name` — найти/создать
   `Well`; сгенерировать полные номера и создать `Sample`.
+- **`container_number`** — опционален. Если задан и у тары номер
+  ещё не присвоен — присваивается (с проверкой уникальности).
+  Если у тары уже есть номер — не перезаписывается.
+- **Draft-поля тары обнуляются** после успешного заполнения.
 - Статус проб синхронизируется со статусом тары
   (`ACTIVE → IN_STORAGE`, `PENDING_PLACEMENT → PENDING_PLACEMENT`,
   `IN_TRANSIT → IN_TRANSIT`, `ISSUED → ISSUED`).
@@ -257,6 +278,7 @@
 
     {
       "container_id": 10,
+      "container_number": "T-FILL-001",
       "created_samples": [
         {"id": 1, "sample_number": "TAA-A34076001", "status": "PENDING_PLACEMENT"},
         {"id": 2, "sample_number": "TAA-A34076002", "status": "PENDING_PLACEMENT"}
@@ -269,7 +291,8 @@
 - 400 — `research_type_id` / `site_id` не найдены;
 - 400 — `sequence_from > sequence_to`;
 - 400 — диапазон > 1000 проб в одной группе;
-- 400 — в таре уже есть пробы другого типа исследования.
+- 400 — в таре уже есть пробы другого типа исследования;
+- 400 — присваиваемый `container_number` уже занят другой тарой.
 
 ---
 
