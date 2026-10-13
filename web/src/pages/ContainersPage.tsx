@@ -2,6 +2,8 @@
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
  *
  * - Кнопка «Создать тару» → диалог создания заготовок.
+ * - Клик по строке заготовки (container_number = null) → форма
+ *   заполнения пробами.
  * - При выборе тар — кнопка «В партию печати (N)».
  */
 import { useMemo, useState } from "react";
@@ -45,6 +47,7 @@ import {
 } from "../api";
 import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
+import FillContainerDialog from "../components/FillContainerDialog";
 
 const PAGE_SIZE = 50;
 
@@ -86,6 +89,8 @@ export default function ContainersPage() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [createMessage, setCreateMessage] = useState<string | null>(null);
+    const [fillContainer, setFillContainer] = useState<Container | null>(null);
+    const [fillMessage, setFillMessage] = useState<string | null>(null);
 
     const { data, isLoading, isError } = useContainers({
         page: paginationModel.page + 1,
@@ -189,6 +194,13 @@ export default function ContainersPage() {
             ),
         },
     ];
+
+    function handleRowClick(row: Container) {
+        // Клик по заготовке → открываем форму заполнения.
+        if (!row.container_number) {
+            setFillContainer(row);
+        }
+    }
 
     return (
         <Box>
@@ -317,6 +329,12 @@ export default function ContainersPage() {
                         disableColumnFilter
                         disableColumnSelector
                         disableDensitySelector
+                        onRowClick={(params) => handleRowClick(params.row)}
+                        sx={{
+                            "& .MuiDataGrid-row": {
+                                cursor: "pointer",
+                            },
+                        }}
                     />
                 </Box>
             </Card>
@@ -333,6 +351,17 @@ export default function ContainersPage() {
                 onSuccess={(count) => {
                     setCreateMessage(
                         `Создано тар: ${count}. Заполните их пробами из реестра.`,
+                    );
+                }}
+            />
+
+            <FillContainerDialog
+                open={fillContainer !== null}
+                container={fillContainer}
+                onClose={() => setFillContainer(null)}
+                onSuccess={(totalSamples) => {
+                    setFillMessage(
+                        `В тару добавлено проб: ${totalSamples}.`,
                     );
                 }}
             />
@@ -359,6 +388,13 @@ export default function ContainersPage() {
                 autoHideDuration={6000}
                 onClose={() => setCreateMessage(null)}
                 message={createMessage ?? ""}
+            />
+
+            <Snackbar
+                open={fillMessage !== null}
+                autoHideDuration={6000}
+                onClose={() => setFillMessage(null)}
+                message={fillMessage ?? ""}
             />
         </Box>
     );
