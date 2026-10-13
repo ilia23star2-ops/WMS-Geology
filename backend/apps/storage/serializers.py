@@ -124,10 +124,16 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
-    """Тара. Read-only: `comment_template_text`."""
+    """Тара. Read-only: `comment_template_text`, `draft_*_name`."""
 
     comment_template_text = serializers.CharField(
         source="comment_template.text", read_only=True, default=None,
+    )
+    draft_site_name = serializers.CharField(
+        source="draft_site.name", read_only=True, default=None,
+    )
+    draft_research_type_name = serializers.CharField(
+        source="draft_research_type.name", read_only=True, default=None,
     )
 
     class Meta:
@@ -144,6 +150,12 @@ class ContainerSerializer(serializers.ModelSerializer):
             "comment",
             "comment_template",
             "comment_template_text",
+            "draft_site",
+            "draft_site_name",
+            "draft_research_type",
+            "draft_research_type_name",
+            "draft_work_order_coded",
+            "draft_work_order_incoming",
             "created_at",
         ]
         read_only_fields = ["created_at"]
@@ -167,13 +179,30 @@ class ContainerSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# Bulk create — создание тары без проб
+# Bulk create — создание тары-заготовки
 # ============================================================
 class BulkContainerSerializer(serializers.Serializer):
-    """Одна тара без проб (для POST /bulk-create/)."""
+    """
+    Одна тара-заготовка (для POST /bulk-create/).
 
-    container_number = serializers.CharField(max_length=100)
+    `container_number` опционален: если не указан, тара создаётся
+    без номера (номер присваивается на шаге fill-samples).
+    """
+
+    container_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default=None,
+    )
     container_type_id = serializers.IntegerField(min_value=1)
+
+    def validate_container_number(self, value):
+        if value is None:
+            return None
+        value = (value or "").strip()
+        return value or None
 
     def validate_container_type_id(self, value):
         if not ContainerType.objects.filter(pk=value).exists():
@@ -184,25 +213,69 @@ class BulkContainerSerializer(serializers.Serializer):
 
 
 class BulkCreateSerializer(serializers.Serializer):
-    """Запрос на создание N тар без проб."""
+    """
+    Запрос на создание N тар-заготовок.
+
+    Draft-поля общие для всей партии: сохраняются на каждой таре,
+    используются для предзаполнения формы fill-samples.
+    """
 
     containers = BulkContainerSerializer(many=True, allow_empty=False)
+    draft_site_id = serializers.IntegerField(
+        min_value=1, required=False, allow_null=True, default=None,
+    )
+    draft_research_type_id = serializers.IntegerField(
+        min_value=1, required=False, allow_null=True, default=None,
+    )
+    draft_work_order_coded = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default="",
+    )
+    draft_work_order_incoming = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default="",
+    )
+
+    def validate_draft_site_id(self, value):
+        if value is None:
+            return None
+        from apps.samples.catalogs import Site
+        if not Site.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(
+                f"Участок #{value} не найден."
+            )
+        return value
+
+    def validate_draft_research_type_id(self, value):
+        if value is None:
+            return None
+        from apps.samples.catalogs import ResearchType
+        if not ResearchType.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(
+                f"Тип исследования #{value} не найден."
+            )
+        return value
 
     def validate_containers(self, value):
-        nums = [c["container_number"] for c in value]
+        # Уникальность непустых номеров в запросе.
+        nums = [
+            c["container_number"]
+            for c in value
+            if c.get("container_number")
+        ]
         if len(set(nums)) != len(nums):
             raise serializers.ValidationError(
                 "Номера тары в запросе не уникальны."
             )
-        existing = sorted(
-            Container.objects.filter(
-                container_number__in=nums,
-            ).values_list("container_number", flat=True)
-        )
-        if existing:
-            raise serializers.ValidationError(
-                f"Тара уже существует в системе: {existing}."
+        # Проверка коллизий с существующими.
+        if nums:
+            existing = sorted(
+                Container.objects.filter(
+                    container_number__in=nums,
+                ).values_list("container_number", flat=True)
             )
+            if existing:
+                raise serializers.ValidationError(
+                    f"Тара уже существует в системе: {existing}."
+                )
         return value
 
 
@@ -254,9 +327,17 @@ class FillSamplesSerializer(serializers.Serializer):
     """
     Запрос на заполнение существующей тары пробами.
 
-    Общие для всех групп: Н/З (входящий + текущий), ТИ, участок.
+    `container_number` опционален: если у тары номер ещё не присвоен
+    (заготовка) — присваивается. Если присвоен — не перезаписывается.
     """
 
+    container_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default=None,
+    )
     work_order_coded = serializers.CharField(max_length=100)
     work_order_incoming = serializers.CharField(
         max_length=100, required=False, allow_blank=True, default="",
@@ -266,6 +347,12 @@ class FillSamplesSerializer(serializers.Serializer):
         min_value=1, required=False, allow_null=True, default=None,
     )
     sample_groups = BulkSampleGroupSerializer(many=True, allow_empty=False)
+
+    def validate_container_number(self, value):
+        if value is None:
+            return None
+        value = (value or "").strip()
+        return value or None
 
     def validate_work_order_coded(self, value):
         value = value.strip()

@@ -175,9 +175,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
     Custom actions:
       - GET  /storage/containers/{id}/label.pdf/     — PDF этикетки.
       - POST /storage/containers/bulk-create/        — создание партии
-        тары (без проб).
+        тары-заготовок (без проб).
       - POST /storage/containers/{id}/fill-samples/  — заполнение
-        существующей тары пробами.
+        тары пробами (с присвоением номера).
     """
 
     serializer_class = ContainerSerializer
@@ -185,7 +185,8 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Container.objects.select_related(
-            "pallet", "floor_room", "container_type", "comment_template"
+            "pallet", "floor_room", "container_type", "comment_template",
+            "draft_site", "draft_research_type",
         ).all()
         p = self.request.query_params
 
@@ -217,7 +218,8 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        filename = f"label-{container.container_number}.pdf"
+        number = container.container_number or f"draft-{container.pk}"
+        filename = f"label-{number}.pdf"
         response = FileResponse(
             buf,
             as_attachment=False,
@@ -229,18 +231,24 @@ class ContainerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="bulk-create")
     def bulk_create(self, request):
         """
-        Создать партию тары (без проб).
+        Создать партию тары-заготовок (без проб).
 
-        Все тары получают статус `PENDING_PLACEMENT`.
-        Пробы добавляются отдельно —
-        `POST /storage/containers/{id}/fill-samples/`.
+        Draft-поля (участок, ТИ, Н/З) сохраняются на каждой таре.
+        `container_number` опционален.
         """
         ser = BulkCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        data = ser.validated_data
 
         try:
             containers = bulk_create_containers(
-                containers_data=ser.validated_data["containers"],
+                containers_data=data["containers"],
+                draft_site_id=data.get("draft_site_id"),
+                draft_research_type_id=data.get("draft_research_type_id"),
+                draft_work_order_coded=data.get("draft_work_order_coded", ""),
+                draft_work_order_incoming=data.get(
+                    "draft_work_order_incoming", "",
+                ),
             )
         except ValueError as exc:
             return Response(
@@ -263,8 +271,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
         """
         Заполнить существующую тару пробами.
 
-        Одна тара = один тип исследования. При попытке добавить
-        пробы другого ТИ — 400.
+        Присваивает `container_number`, если у тары он ещё не задан.
+        Обнуляет draft-поля.
+        Одна тара = один тип исследования.
         """
         container = self.get_object()
         ser = FillSamplesSerializer(data=request.data)
@@ -274,6 +283,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
         try:
             samples = fill_container_with_samples(
                 container=container,
+                container_number=data.get("container_number"),
                 work_order_coded=data["work_order_coded"],
                 work_order_incoming=data.get("work_order_incoming", ""),
                 research_type_id=data["research_type_id"],
@@ -286,9 +296,11 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        container.refresh_from_db()
         return Response(
             {
                 "container_id": container.pk,
+                "container_number": container.container_number,
                 "created_samples": [
                     {
                         "id": s.pk,
