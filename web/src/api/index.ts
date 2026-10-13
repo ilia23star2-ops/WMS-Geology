@@ -19,6 +19,14 @@ export type {
     ContainersListParams,
 } from "./containers";
 
+export { useCreateContainers } from "./bulkCreate";
+export type {
+    BulkContainer,
+    BulkCreatePayload,
+    BulkCreateResponse,
+    BulkSampleGroup,
+} from "./bulkCreate";
+
 export { fetchContainerTypes, useContainerTypes } from "./containerTypes";
 export type { ContainerType } from "./containerTypes";
 

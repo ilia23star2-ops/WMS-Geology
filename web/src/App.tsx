@@ -10,6 +10,7 @@ import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CatalogsPage from "./pages/CatalogsPage";
 import ContainersPage from "./pages/ContainersPage";
+import CreateContainersPage from "./pages/CreateContainersPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
@@ -57,6 +58,10 @@ function AppRoutes() {
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />
                     <Route path="/containers" element={<ContainersPage />} />
+                    <Route
+                        path="/containers/create"
+                        element={<CreateContainersPage />}
+                    />
                     <Route path="/samples" element={<SamplesPage />} />
                     <Route path="/print" element={<PrintBatchesPage />} />
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />

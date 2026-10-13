@@ -1,12 +1,14 @@
 /**
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
  *
- * При выборе тар появляется кнопка «В партию печати (N)» —
- * открывает диалог создания/добавления в партию.
+ * Кнопка «Создать тару» — переход на форму создания партии.
+ * При выборе тар — кнопка «В партию печати (N)».
  */
 import { useMemo, useState } from "react";
 import {
+    Alert,
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
@@ -21,6 +23,7 @@ import {
     Tooltip,
     Typography,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import PrintIcon from "@mui/icons-material/Print";
 import {
@@ -30,7 +33,7 @@ import {
     type GridRowId,
     type GridRowSelectionModel,
 } from "@mui/x-data-grid";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
     CONTAINER_STATUS_LABELS,
@@ -55,6 +58,13 @@ const STATUS_COLORS: Record<
     ISSUED: "default",
 };
 
+interface LocationState {
+    created?: {
+        total_containers: number;
+        total_samples: number;
+    };
+}
+
 function formatDate(value: string): string {
     try {
         return new Date(value).toLocaleString("ru-RU", {
@@ -72,6 +82,10 @@ function emptySelection(): GridRowSelectionModel {
 
 export default function ContainersPage() {
     const navigate = useNavigate();
+    const location = useLocation();
+    const state = location.state as LocationState | null;
+    const created = state?.created;
+
     const [filters, setFilters] = useState<ContainerFilters>({});
     const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
         page: 0,
@@ -187,25 +201,41 @@ export default function ContainersPage() {
                 <Typography variant="h2" component="h1">
                     Тара
                 </Typography>
-                {selectedIds.length > 0 && (
-                    <Stack
-                        direction="row"
-                        spacing={2}
-                        sx={{ alignItems: "center" }}
+                <Stack
+                    direction="row"
+                    spacing={2}
+                    sx={{ alignItems: "center" }}
+                >
+                    {selectedIds.length > 0 && (
+                        <>
+                            <Typography variant="body1" color="text.secondary">
+                                Выбрано: {selectedIds.length}
+                            </Typography>
+                            <IconButton
+                                color="primary"
+                                onClick={() => setDialogOpen(true)}
+                                title="В партию печати"
+                            >
+                                <PrintIcon />
+                            </IconButton>
+                        </>
+                    )}
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => navigate("/containers/create")}
                     >
-                        <Typography variant="body1" color="text.secondary">
-                            Выбрано: {selectedIds.length}
-                        </Typography>
-                        <IconButton
-                            color="primary"
-                            onClick={() => setDialogOpen(true)}
-                            title="В партию печати"
-                        >
-                            <PrintIcon />
-                        </IconButton>
-                    </Stack>
-                )}
+                        Создать тару
+                    </Button>
+                </Stack>
             </Box>
+
+            {created && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                    Создано тар: {created.total_containers}, проб:{" "}
+                    {created.total_samples}.
+                </Alert>
+            )}
 
             <Card sx={{ mb: 2 }}>
                 <CardContent>
