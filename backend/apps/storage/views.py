@@ -27,13 +27,14 @@ from .serializers import (
     ContainerCommentSerializer,
     ContainerSerializer,
     ContainerTypeSerializer,
+    FillSamplesSerializer,
     PalletSerializer,
     RackSerializer,
     RoomSerializer,
     SectionSerializer,
     TierSerializer,
 )
-from .services import bulk_create_containers_with_samples
+from .services import bulk_create_containers, fill_container_with_samples
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
@@ -170,10 +171,13 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=,
              ?status=, ?comment_template_id=
+
     Custom actions:
-      - GET  /storage/containers/{id}/label.pdf/ — PDF этикетки.
-      - POST /storage/containers/bulk-create/    — создание партии тары
-        с пробами (оцифровка / ручной ввод).
+      - GET  /storage/containers/{id}/label.pdf/     — PDF этикетки.
+      - POST /storage/containers/bulk-create/        — создание партии
+        тары (без проб).
+      - POST /storage/containers/{id}/fill-samples/  — заполнение
+        существующей тары пробами.
     """
 
     serializer_class = ContainerSerializer
@@ -225,22 +229,18 @@ class ContainerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="bulk-create")
     def bulk_create(self, request):
         """
-        Создать партию тары с пробами (bulk).
+        Создать партию тары (без проб).
 
-        Запрос — `BulkCreateSerializer`. Если какая-то тара уже
-        существует, весь запрос отклоняется (400).
+        Все тары получают статус `PENDING_PLACEMENT`.
+        Пробы добавляются отдельно —
+        `POST /storage/containers/{id}/fill-samples/`.
         """
         ser = BulkCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        data = ser.validated_data
 
         try:
-            containers = bulk_create_containers_with_samples(
-                work_order_coded=data["work_order_coded"],
-                work_order_incoming=data.get("work_order_incoming", ""),
-                research_type_id=data["research_type_id"],
-                site_id=data.get("site_id"),
-                containers_data=data["containers"],
+            containers = bulk_create_containers(
+                containers_data=ser.validated_data["containers"],
             )
         except ValueError as exc:
             return Response(
@@ -248,14 +248,56 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        total_samples = sum(c.samples.count() for c in containers)
         return Response(
             {
                 "created_containers": ContainerSerializer(
                     containers, many=True, context={"request": request},
                 ).data,
                 "total_containers": len(containers),
-                "total_samples": total_samples,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="fill-samples")
+    def fill_samples(self, request, pk=None):
+        """
+        Заполнить существующую тару пробами.
+
+        Одна тара = один тип исследования. При попытке добавить
+        пробы другого ТИ — 400.
+        """
+        container = self.get_object()
+        ser = FillSamplesSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        try:
+            samples = fill_container_with_samples(
+                container=container,
+                work_order_coded=data["work_order_coded"],
+                work_order_incoming=data.get("work_order_incoming", ""),
+                research_type_id=data["research_type_id"],
+                site_id=data.get("site_id"),
+                sample_groups=data["sample_groups"],
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "container_id": container.pk,
+                "created_samples": [
+                    {
+                        "id": s.pk,
+                        "sample_number": s.sample_number,
+                        "status": s.status,
+                    }
+                    for s in samples
+                ],
+                "total_samples": len(samples),
             },
             status=status.HTTP_201_CREATED,
         )

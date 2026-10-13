@@ -167,7 +167,47 @@ class ContainerSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# Bulk create — создание тары с пробами
+# Bulk create — создание тары без проб
+# ============================================================
+class BulkContainerSerializer(serializers.Serializer):
+    """Одна тара без проб (для POST /bulk-create/)."""
+
+    container_number = serializers.CharField(max_length=100)
+    container_type_id = serializers.IntegerField(min_value=1)
+
+    def validate_container_type_id(self, value):
+        if not ContainerType.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(
+                f"Тип тары #{value} не найден."
+            )
+        return value
+
+
+class BulkCreateSerializer(serializers.Serializer):
+    """Запрос на создание N тар без проб."""
+
+    containers = BulkContainerSerializer(many=True, allow_empty=False)
+
+    def validate_containers(self, value):
+        nums = [c["container_number"] for c in value]
+        if len(set(nums)) != len(nums):
+            raise serializers.ValidationError(
+                "Номера тары в запросе не уникальны."
+            )
+        existing = sorted(
+            Container.objects.filter(
+                container_number__in=nums,
+            ).values_list("container_number", flat=True)
+        )
+        if existing:
+            raise serializers.ValidationError(
+                f"Тара уже существует в системе: {existing}."
+            )
+        return value
+
+
+# ============================================================
+# Fill samples — заполнение существующей тары пробами
 # ============================================================
 class BulkSampleGroupSerializer(serializers.Serializer):
     """
@@ -176,8 +216,8 @@ class BulkSampleGroupSerializer(serializers.Serializer):
     Полный номер пробы = `prefix` + `middle` + `sequence`.
 
     Примеры:
-    - шифрованная:  TAA-A + 34076 + 001 = TAA-A34076001
-    - нешифрованная: TST  + 124   + 001 = TST124001
+    - шифрованная:   TAA-A + 34076 + 001 = TAA-A34076001
+    - нешифрованная: TST   + 124   + 001 = TST124001
 
     `well_name`:
     - задан — создаём/используем `Well` (для нешифрованных);
@@ -209,39 +249,12 @@ class BulkSampleGroupSerializer(serializers.Serializer):
             )
         return attrs
 
-    def build_sample_numbers(self) -> list[str]:
-        """Список полных номеров проб для этого диапазона."""
-        prefix = self.validated_data["prefix"]
-        middle = self.validated_data["middle"]
-        digits = self.validated_data["sequence_digits"]
-        start = self.validated_data["sequence_from"]
-        end = self.validated_data["sequence_to"]
-        return [
-            f"{prefix}{middle}{i:0{digits}d}"
-            for i in range(start, end + 1)
-        ]
 
-
-class BulkContainerSerializer(serializers.Serializer):
-    """Одна тара с пробами."""
-
-    container_number = serializers.CharField(max_length=100)
-    container_type_id = serializers.IntegerField(min_value=1)
-    sample_groups = BulkSampleGroupSerializer(many=True, allow_empty=False)
-
-    def validate_container_type_id(self, value):
-        if not ContainerType.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Тип тары #{value} не найден."
-            )
-        return value
-
-
-class BulkCreateSerializer(serializers.Serializer):
+class FillSamplesSerializer(serializers.Serializer):
     """
-    Запрос на создание N тар с пробами.
+    Запрос на заполнение существующей тары пробами.
 
-    Один запрос = партия. Н/З (входящий + текущий) общие для всех тар.
+    Общие для всех групп: Н/З (входящий + текущий), ТИ, участок.
     """
 
     work_order_coded = serializers.CharField(max_length=100)
@@ -252,7 +265,7 @@ class BulkCreateSerializer(serializers.Serializer):
     site_id = serializers.IntegerField(
         min_value=1, required=False, allow_null=True, default=None,
     )
-    containers = BulkContainerSerializer(many=True, allow_empty=False)
+    sample_groups = BulkSampleGroupSerializer(many=True, allow_empty=False)
 
     def validate_work_order_coded(self, value):
         value = value.strip()
@@ -277,22 +290,5 @@ class BulkCreateSerializer(serializers.Serializer):
         if not Site.objects.filter(pk=value).exists():
             raise serializers.ValidationError(
                 f"Участок #{value} не найден."
-            )
-        return value
-
-    def validate_containers(self, value):
-        nums = [c["container_number"] for c in value]
-        if len(set(nums)) != len(nums):
-            raise serializers.ValidationError(
-                "Номера тары в запросе не уникальны."
-            )
-        existing = sorted(
-            Container.objects.filter(
-                container_number__in=nums,
-            ).values_list("container_number", flat=True)
-        )
-        if existing:
-            raise serializers.ValidationError(
-                f"Тара уже существует в системе: {existing}."
             )
         return value
