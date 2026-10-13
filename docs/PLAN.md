@@ -30,22 +30,24 @@ web).
 
 **План серии:**
 
-| # | Заход | Что делает | Файлов | Статус |
-|---|---|---|---|---|
-| 1 | `bundle-1` — backend | `current_location` в `SampleSerializer` + фильтры `?q=`, `?no_work_order=` | 2–3 | ✅ |
-| 2 | `bundle-2` — backend | `grouped` action в `SampleViewSet` | 2 | ✅ |
-| 5 | `bundle-5` — backend | `POST /storage/containers/bulk-create/` (тара + пробы) | 2–3 | ✅ заменён 7a-1/7a-2 |
-| 6a | `bundle-6a` — backend | фильтр по дате в Excel-импорте, `expected_date` | 2 | ✅ |
-| 6b | `bundle-6b` — backend | `target_date` + `duplicate_action` + 409 | 2 | ✅ |
-| 7a-1 | `bundle-7a-1` — backend | `Sample.STATUS_PENDING_PLACEMENT` + sync-сервис | 3 | ✅ |
-| 7a-2 | `bundle-7a-2` — backend | разделение bulk-create + fill-samples | 6 | ✅ |
-| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» | 2–3 | 🟡 следующий |
-| 7a-4 | `bundle-7a-4` — web | форма «Заполнить пробами» | 2–3 | ⬜ |
-| 3 | `bundle-3` — web | компонент `SamplesGroupedList` | 1–2 | ⬜ отложено |
-| 4 | `bundle-4` — web | реестр проб (замена DataGrid) | 2–3 | ⬜ отложено |
-| — | `bundle-7` — web | форма создания тары (WIP, неверный UX) | — | ❌ отменён |
+| # | Заход | Что делает | Статус |
+|---|---|---|---|
+| 1 | `bundle-1` — backend | `current_location` + фильтры `?q=`, `?no_work_order=` | ✅ |
+| 2 | `bundle-2` — backend | `grouped` action | ✅ |
+| 5 | `bundle-5` — backend | `bulk-create` (тара + пробы) | ✅ заменён 7a-1/7a-2 |
+| 6a | `bundle-6a` — backend | фильтр даты в Excel-импорте, `expected_date` | ✅ |
+| 6b | `bundle-6b` — backend | `target_date` + `duplicate_action` + 409 | ✅ |
+| 7a-1 | `bundle-7a-1` — backend | `Sample.STATUS_PENDING_PLACEMENT` + sync-сервис | ✅ |
+| 7a-2 | `bundle-7a-2` — backend | разделение bulk-create + fill-samples | ✅ |
+| 7a-2b | `bundle-7a-2b` — backend | Container draft-поля + nullable number | ✅ |
+| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» (заготовки) | 🟡 следующий |
+| 7a-4 | `bundle-7a-4` — web | форма «Заполнить тару пробами» | ⬜ |
+| 7a-5 | `bundle-7a-5` — web | предпросмотр: 3 вкладки + партия печати | ⬜ |
+| 3 | `bundle-3` — web | компонент `SamplesGroupedList` | ⬜ отложено |
+| 4 | `bundle-4` — web | реестр проб (замена DataGrid) | ⬜ отложено |
+| — | `bundle-7` — web | форма создания тары (WIP, неверный UX) | ❌ отменён |
 
-**Следующая подсерия — `2.x-receiving` (часть той же серии):**
+**Следующая подсерия — `2.x-receiving`:**
 
 | Заход | Что делает |
 |---|---|
@@ -65,11 +67,11 @@ React Router 7 + axios + Vitest.
 | # | Серия | Что делает | Заходов |
 |---|---|---|---|
 | 1 | `feature/2.x-lab-portal` | Портал лабораторий (веб, Уровень 2) | 5–7 |
-| 2 | `feature/2.x-lifecycle` | Пересмотр статусов Container и Sample (см. «Требует обсуждения») | 5–7 |
+| 2 | `feature/2.x-lifecycle` | Пересмотр статусов Container и Sample | 5–7 |
 | 3 | `feature/2.x-sorting` | Помощник сортировки | 3–4 |
 | 4 | `feature/3.x-migration` | Миграция старых этикеток (OCR) | 4–5 |
 | 5 | `feature/3.x-lims` | Прямая интеграция с ЛИМС (Уровень 3) | 5–7 |
-| 6 | `feature/3.x-deploy` | Сборка web + backend в единый installer / десктоп | 3–5 |
+| 6 | `feature/3.x-deploy` | Сборка web + backend в единый installer | 3–5 |
 
 ---
 
@@ -87,10 +89,8 @@ React Router 7 + axios + Vitest.
 - Нужен ли `MOVING` (внутреннее перемещение)?
 
 **2. Статусы пробы.**
-- `IN_STORAGE` («В хранении»), `IN_TRANSIT` («В пути»),
-  `ISSUED` («Выдана»), `CONSUMED` («Израсходована»),
-  `DISPOSED` («Утилизирована»), `PENDING_DECRYPTION`,
-  `PENDING_PLACEMENT` («Ожидает размещения»).
+- `IN_STORAGE`, `IN_TRANSIT`, `ISSUED`, `CONSUMED`, `DISPOSED`,
+  `PENDING_DECRYPTION`, `PENDING_PLACEMENT`.
 - Что значит каждый? Семантика размыта.
 
 **3. Отправка в лабораторию.**
@@ -176,6 +176,7 @@ React Router 7 + axios + Vitest.
 | ТД-24 | Mobile: `config.dart` с IP в git — сломается при смене сети | средний | перед сборкой релиза |
 | ТД-25 | Mobile: не задокументирован минимум NDK 28.2.13676358 в README | низкий | при рефакторинге доков |
 | ТД-26 | `TESTING.md` устарел — описывает проектную фазу | средний | перед прод |
+| ТД-27 | `Container.container_number = NULL` — фильтр `?status=PENDING_PLACEMENT` в web | низкий | 7a-3 |
 
 ---
 
@@ -197,7 +198,7 @@ React Router 7 + axios + Vitest.
 | `feature/1.0-backend-init` | 2026-10-07 | влита в `main`, архив |
 | `feature/1.0a-topology-v2` | 2026-10-07 | влита в `main`, архив |
 | `feature/1.1-backend-api` | 2026-10-07 | влита в `main`, архив |
-| `feature/1.2-mobile-init` | 2026-10-08 | влита в `2.x-mobile` через merge |
+| `feature/1.2-mobile-init` | 2026-10-08 | влита в `2.x-mobile` |
 | `feature/1.3-backend-v2` | 2026-10-09 | влита в `main`, архив |
 | `feature/2.0-excel-parser` | 2026-10-09 | влита в `main`, архив |
 | `feature/2.1-label-generator` | 2026-10-10 | влита в `main`, архив |

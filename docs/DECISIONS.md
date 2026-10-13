@@ -457,6 +457,8 @@
 - `Receipt.shipment` → `"picking.Shipment"`.
 - `ReceiptItem.research_type` → `"samples.ResearchType"`.
 - `PrintBatchItem.container` → `"storage.Container"`.
+- `Container.draft_site`, `Container.draft_research_type` →
+  `"samples.Site"`, `"samples.ResearchType"`.
 
 **Причина:**
 - `samples` импортирует `work_orders` (Sample → WorkOrder).
@@ -616,6 +618,36 @@ Django signals **не используются**.
 
 ---
 
+### 1.60. 2026-10-13 — Container: draft-поля + nullable `container_number`
+
+**Решение:**
+- `Container.container_number` → **nullable** + `UNIQUE`
+  (много NULL разрешено).
+- +4 draft-поля: `draft_site` (FK → Site, SET_NULL),
+  `draft_research_type` (FK → ResearchType, SET_NULL),
+  `draft_work_order_coded` (CharField(100), default ""),
+  `draft_work_order_incoming` (CharField(100), default "").
+
+**Жизненный цикл тары:**
+1. **Заготовка.** Создаётся через `bulk-create`.
+   `container_number = NULL`. Draft-поля заполнены.
+   Статус — `PENDING_PLACEMENT`.
+2. **Заполнение.** Через `fill-samples`. `container_number`
+   присваивается (опционально). Draft-поля обнуляются.
+   Создаются `Sample`, `WorkOrder`, `Well`.
+
+**Причина:**
+- Кладовщик вводит данные шапки (участок, Н/З, ТИ, тип тары)
+  на шаге создания — это «заказ на тару».
+- Номер тары известен позже — когда тара физически маркируется.
+- Единый эндпоинт не позволял этого — потребовалось разделение.
+
+**Где:** `backend/apps/storage/models.py`,
+`migrations/0005_*`, `bulk_create.py`, `serializers.py`, `views.py`.
+**Статус:** ✅ действует.
+
+---
+
 ## 2. Что не делаем и почему
 
 - **Не используем `SampleParts`.** Разделение — вне WMS.
@@ -647,6 +679,9 @@ Django signals **не используются**.
 - **Не разрываем этикетку между листами A4.**
 - **Не используем A5 как лист печати** — отложено (2.x).
 - **Не используем Django signals для sync-логики** (см. 1.58).
+- **Не создаём тару с обязательным `container_number` на шаге
+  bulk-create** — заготовка создаётся без номера, номер
+  присваивается на шаге fill-samples (см. 1.60).
 
 ---
 
@@ -665,6 +700,7 @@ Django signals **не используются**.
 | **Участок (Site)** | Место отбора проб. |
 | **Лаборатория (Laboratory)** | Откуда пришла проба. |
 | **Тара (Container)** | Физический контейнер. |
+| **Тара-заготовка** | Container без `container_number`, с draft-полями. Создана через bulk-create. |
 | **Тип тары (ContainerType)** | Общий или для конкретной лаборатории. |
 | **Поддон (Pallet)** | «Тихий» объект. OneToOne с ячейкой. |
 | **Ячейка (Cell)** | Место на ярусе. 1 поддон. |
@@ -734,3 +770,5 @@ Django signals **не используются**.
 - «**Рейс**» — не одна тара.
 - «**`ContainerType.laboratory = NULL`**» — не «без лаборатории»,
   а «общий тип, доступный всем».
+- «**Тара-заготовка**» — не «пустая тара физически». Это Container
+  без `container_number`, ожидающий заполнения пробами.

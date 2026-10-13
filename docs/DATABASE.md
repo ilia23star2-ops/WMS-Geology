@@ -5,7 +5,7 @@
 - **СУБД:** PostgreSQL 16+ (портативный / Docker).
 - **Кодировка:** UTF-8.
 - **Временная зона:** UTC (хранение), локальная (отображение).
-- **Версия схемы:** 5.
+- **Версия схемы:** 6.
 - **Миграции:** Django migrations в `backend/apps/*/migrations/`.
 
 ## История версий
@@ -16,6 +16,18 @@
 - **v4** — Портал лабораторий: `Shipment.direction`, расширенные
   статусы, `ContainerType.laboratory_id`, `Receipt.shipment_id`.
 - **v5** — Партии печати: `PrintBatches`, `PrintBatchItems` (2.1).
+- **v6** — Container draft-поля + nullable `container_number`
+  (2.x-web-v2, bundle-7a-2b).
+
+## Изменения v5 → v6
+
+Решения **1.60** из `docs/DECISIONS.md`:
+
+- `Containers.container_number` — стал nullable (заготовки без номера).
+- +4 draft-поля: `draft_site_id` (FK → Sites, SET_NULL),
+  `draft_research_type_id` (FK → ResearchTypes, SET_NULL),
+  `draft_work_order_coded` (VARCHAR(100), default ""),
+  `draft_work_order_incoming` (VARCHAR(100), default "").
 
 ## Изменения v4 → v5
 
@@ -158,7 +170,7 @@
 | Поле | Тип | Описание |
 |---|---|---|
 | `id` | SERIAL PK | |
-| `container_number` | VARCHAR(100) UNIQUE | |
+| `container_number` | VARCHAR(100) UNIQUE NULL | NULL = заготовка без номера |
 | `container_type_id` | INT FK → ContainerTypes (PROTECT) | |
 | `qr_code` | TEXT UNIQUE NULL | `WMSG:CONTAINER:<id>` |
 | `pallet_id` | INT FK → Pallets NULL | |
@@ -167,9 +179,18 @@
 | `comment` | TEXT | |
 | `comment_template_id` | INT FK → ContainerComments NULL | |
 | `status` | VARCHAR(50) | `ACTIVE / PENDING_PLACEMENT / IN_TRANSIT / ISSUED` |
+| `draft_site_id` | INT FK → Sites NULL | участок (черновик до заполнения) |
+| `draft_research_type_id` | INT FK → ResearchTypes NULL | ТИ (черновик) |
+| `draft_work_order_coded` | VARCHAR(100) DEFAULT "" | Н/З coded (черновик) |
+| `draft_work_order_incoming` | VARCHAR(100) DEFAULT "" | Н/З входящий (черновик) |
 | `created_at` | TIMESTAMPTZ | |
 
 **CHECK:** `pallet_id` и `floor_room_id` не заданы одновременно.
+
+**Draft-поля** заполняются при создании тары-заготовки
+(`POST /storage/containers/bulk-create/`). Используются для
+предзаполнения формы `fill-samples`. Обнуляются после успешного
+заполнения тары пробами.
 
 ---
 
@@ -212,7 +233,7 @@
 | `site_id` | INT FK → Sites NULL | |
 | `container_id` | INT FK → Containers (PROTECT) NOT NULL | |
 | `current_work_order_id` | INT FK → WorkOrders NULL | |
-| `status` | VARCHAR(50) | `IN_STORAGE / IN_TRANSIT / ISSUED / CONSUMED / DISPOSED / PENDING_DECRYPTION` |
+| `status` | VARCHAR(50) | `IN_STORAGE / IN_TRANSIT / ISSUED / CONSUMED / DISPOSED / PENDING_DECRYPTION / PENDING_PLACEMENT` |
 | `receipt_item_id` | INT FK → ReceiptItems NULL | |
 | `qr_code` | TEXT UNIQUE NULL | |
 | `legacy_data` | JSONB NULL | |

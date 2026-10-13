@@ -13,8 +13,8 @@
 
 **Текущий заход:** `bundle-7a-3` — web: форма «Создать тару».
 
-**Предыдущий заход:** `bundle-7a-2` — backend: разделение
-`bulk-create` на два эндпоинта (закрыт 2026-10-13).
+**Предыдущий заход:** `bundle-7a-2b` — backend: Container draft-поля
++ nullable `container_number` (закрыт 2026-10-13).
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`,
@@ -22,29 +22,35 @@
 - `GET /samples/grouped/` — группировка по Н/З + тип.
 - `Sample.STATUS_PENDING_PLACEMENT` + сервис
   `sync_sample_status_for_container`.
-- `POST /storage/containers/bulk-create/` — только тары.
-- `POST /storage/containers/{id}/fill-samples/` — пробы для тары.
+- `POST /storage/containers/bulk-create/` — только тары
+  (заготовки, `container_number` опционален, draft-поля).
+- `POST /storage/containers/{id}/fill-samples/` — пробы для тары
+  (присваивает `container_number`, обнуляет draft-поля).
 - Excel-импорт: `target_date` (обязательно), `duplicate_action`
   (cancel/overwrite/create), 409 на дубликат.
 
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники
   (серия `2.x-web`).
-- **Нужно добавить:** форма «Создать тару» (7a-3), форма
-  «Заполнить пробами» (7a-4), экран приёмки, расширенный поиск.
+
+**Что нужно добавить (web):**
+- Форма «Создать тару» (7a-3).
+- Форма «Заполнить тару пробами» (7a-4).
+- Экран приёмки рейсов (2.x-receiving).
+- Расширенный поиск.
 
 **Что готово (mobile):**
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
-**Backend:** 614 тестов.
+**Backend:** 623 теста.
 
 **Ближайшая работа:**
-- `bundle-7a-3` — web: форма «Создать тару» (Н/З + чекбокс вх.
-  Н/З + кол-во + тип исследования + участок + кнопка «Импорт
-  Excel»).
-- `bundle-7a-4` — web: форма «Заполнить пробами» (единая строка
-  ввода с автодополнением).
+- `bundle-7a-3` — web: форма «Создать тару» (Участок + Н/З +
+  чекбокс вх. Н/З + ТИ + Тип тары + Кол-во → N заготовок).
+- `bundle-7a-4` — web: форма «Заполнить тару» (шапка read-only,
+  номер тары, строки проб, кнопки «Добавить пробы» / редактор
+  диапазона / предпросмотр 3 вкладки).
 - Серия `2.x-receiving` — экран приёмки рейсов, PDF-акт.
 
 ---
@@ -53,19 +59,11 @@
 
 > **Web — основной клиент. Mobile — по требованию.**
 
-1. **Web-фичи — первый приоритет.** Всё, что можно сделать и проверить
-   в браузере, делается на web.
-2. **Mobile — по требованию.** Если web-фича требует проверки на
-   устройстве (сканирование QR, работа с камерой, физические манипуляции
-   у машины) — **ставим web на паузу**, доводим mobile до минимума,
-   проверяем, возвращаемся к web.
-3. **Mobile не «на паузе до конца web»**, а «доводим по требованию».
-
-**Роли и права — после.** Пока всё работает и тестируется всеми, права
-настраивать не надо.
-
-**Receipt** — только для Excel и акта приёмки. Оцифровка / ручной ввод
-идут через `Container` + `Sample` напрямую.
+1. **Web-фичи — первый приоритет.**
+2. **Mobile — по требованию** (если web-фича требует проверки
+   на устройстве — сканер, камера).
+3. **Роли и права — после.**
+4. **`Receipt`** — только для Excel и акта приёмки.
 
 ---
 
@@ -78,11 +76,11 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (614 тестов)
+### Backend (623 теста)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология A–D, Pallet, ContainerType, Container, ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
+| `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number), ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site) |
 | `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер + сервис импорта |
@@ -111,14 +109,14 @@
 
 | Раздел | Что внутри |
 |---|---|
-| Аутентификация | `AuthProvider` (ChangeNotifier), login, `TokenStorage` на `flutter_secure_storage` |
-| API | `ApiClient` (Dio), JWT-интерцептор с авто-refresh, `ContainerService`, `SampleService` |
+| Аутентификация | `AuthProvider`, login, `TokenStorage` на `flutter_secure_storage` |
+| API | `ApiClient` (Dio), JWT-интерцептор, `ContainerService`, `SampleService` |
 | Главная | Приветствие + кнопка «Сканировать QR» + выход |
-| Сканер | `mobile_scanner`, прицел, обработка payload `WMSG:<TYPE>:<ID>` |
+| Сканер | `mobile_scanner`, прицел, payload `WMSG:<TYPE>:<ID>` |
 | Карточка тары | Поля тары + список проб внутри (pull-to-refresh) |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (59 решений), `DATABASE` (v5),
+- `PROJECT`, `CONTEXT`, `DECISIONS` (60 решений), `DATABASE` (v6),
   `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`,
   `ISSUES`.
 
@@ -169,6 +167,8 @@
 - `PrintBatchItem.container` — `PROTECT`.
 - **Sample.STATUS_PENDING_PLACEMENT** синхронизируется со
   статусом тары через `sync_sample_status_for_container`.
+- **Тара-заготовка**: `container_number = NULL`, draft-поля
+  заполнены. После `fill-samples` — номер присвоен, draft обнулён.
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.
