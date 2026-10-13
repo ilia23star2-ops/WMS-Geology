@@ -11,8 +11,10 @@ export {
     bulkCreateContainers,
     downloadLabelPdf,
     fetchContainers,
+    fillContainerWithSamples,
     useBulkCreateContainers,
     useContainers,
+    useFillSamples,
 } from "./containers";
 export type {
     BulkCreateContainerItem,
@@ -22,6 +24,9 @@ export type {
     ContainerFilters,
     ContainerStatus,
     ContainersListParams,
+    FillSamplesGroup,
+    FillSamplesRequest,
+    FillSamplesResponse,
 } from "./containers";
 
 export { fetchContainerTypes, useContainerTypes } from "./containerTypes";
