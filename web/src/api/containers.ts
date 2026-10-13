@@ -153,3 +153,59 @@ export function useBulkCreateContainers() {
         },
     });
 }
+
+// ============================================================
+// Fill samples — заполнение существующей тары пробами
+// ============================================================
+
+export interface FillSamplesGroup {
+    prefix: string;
+    middle: string;
+    sequence_from: number;
+    sequence_to: number;
+    sequence_digits: number;
+    well_name: string | null;
+}
+
+export interface FillSamplesRequest {
+    container_number?: string | null;
+    work_order_coded: string;
+    work_order_incoming?: string;
+    research_type_id: number;
+    site_id?: number | null;
+    sample_groups: FillSamplesGroup[];
+}
+
+export interface FillSamplesResponse {
+    container_id: number;
+    container_number: string | null;
+    created_samples: Array<{
+        id: number;
+        sample_number: string;
+        status: string;
+    }>;
+    total_samples: number;
+}
+
+export async function fillContainerWithSamples(
+    containerId: number,
+    payload: FillSamplesRequest,
+): Promise<FillSamplesResponse> {
+    const { data } = await apiClient.post<FillSamplesResponse>(
+        `/storage/containers/${containerId}/fill-samples/`,
+        payload,
+    );
+    return data;
+}
+
+export function useFillSamples(containerId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: FillSamplesRequest) =>
+            fillContainerWithSamples(containerId, payload),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({ queryKey: ["samples"] });
+        },
+    });
+}
