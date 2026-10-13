@@ -8,6 +8,10 @@
 Изменения v3:
 - `Sample.research_type` — FK на `ResearchType` (было CharField).
 - `Sample.site` — FK на `Site` (было CharField).
+
+Изменения 2.x-web-v2 (bundle-7a-1):
+- Добавлен `Sample.STATUS_PENDING_PLACEMENT` — синхронизируется
+  со статусом тары `Container.STATUS_PENDING_PLACEMENT`.
 """
 
 from django.conf import settings
@@ -51,6 +55,7 @@ class Sample(models.Model):
     STATUS_CONSUMED = "CONSUMED"
     STATUS_DISPOSED = "DISPOSED"
     STATUS_PENDING_DECRYPTION = "PENDING_DECRYPTION"
+    STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
@@ -58,6 +63,7 @@ class Sample(models.Model):
         (STATUS_CONSUMED, "Израсходована"),
         (STATUS_DISPOSED, "Утилизирована"),
         (STATUS_PENDING_DECRYPTION, "Ожидает расшифровки"),
+        (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
     ]
 
     sample_number = models.CharField(
