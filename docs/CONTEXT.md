@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-12
+**Дата обновления:** 2026-10-13
 
 ---
 
@@ -11,27 +11,41 @@
 
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
-**Следующая серия:** `feature/2.x-lab-portal` или `feature/2.x-lifecycle`
-(обсуждается).
+**Текущий заход:** `bundle-7a-3` — web: форма «Создать тару».
 
-**Текущий заход:** старт `2.x-web-v2` — приёмка + ручной ввод + поиск.
+**Предыдущий заход:** `bundle-7a-2` — backend: разделение
+`bulk-create` на два эндпоинта (закрыт 2026-10-13).
+
+**Что готово (backend, серия 2.x-web-v2):**
+- `current_location` в `SampleSerializer` + фильтры (`?q=`,
+  `?no_work_order=`).
+- `GET /samples/grouped/` — группировка по Н/З + тип.
+- `Sample.STATUS_PENDING_PLACEMENT` + сервис
+  `sync_sample_status_for_container`.
+- `POST /storage/containers/bulk-create/` — только тары.
+- `POST /storage/containers/{id}/fill-samples/` — пробы для тары.
+- Excel-импорт: `target_date` (обязательно), `duplicate_action`
+  (cancel/overwrite/create), 409 на дубликат.
 
 **Что готово (web):**
-- Логин, layout, главная, тара, пробы, печать, справочники (серия `2.x-web`).
-- **Нужно добавить:** приёмка, ручной ввод тары с пробами, расширенный поиск.
+- Логин, layout, главная, тара, пробы, печать, справочники
+  (серия `2.x-web`).
+- **Нужно добавить:** форма «Создать тару» (7a-3), форма
+  «Заполнить пробами» (7a-4), экран приёмки, расширенный поиск.
 
 **Что готово (mobile):**
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
-**Backend:** 552 теста.
+**Backend:** 614 тестов.
 
-**Ближайшая работа:** `2.x-web-v2` — заходы:
-- Backend: `current_location` в `SampleSerializer`, фильтры (`?q=`,
-  `?container_id=`, `?work_order=`, `?well_id=`), `grouped` action.
-- Web: компонент `SamplesGroupedList` + реестр проб.
-- Backend + Web: форма «Создание тары с пробами».
-- Web: список `Receipt` + импорт Excel.
+**Ближайшая работа:**
+- `bundle-7a-3` — web: форма «Создать тару» (Н/З + чекбокс вх.
+  Н/З + кол-во + тип исследования + участок + кнопка «Импорт
+  Excel»).
+- `bundle-7a-4` — web: форма «Заполнить пробами» (единая строка
+  ввода с автодополнением).
+- Серия `2.x-receiving` — экран приёмки рейсов, PDF-акт.
 
 ---
 
@@ -64,12 +78,12 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (552 теста)
+### Backend (614 тестов)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология A–D, Pallet, ContainerType, Container, ContainerComment, QR-этикетка (PDF) |
-| `samples` | ResearchType, Site, Laboratory, Well, Sample, SampleWorkOrder |
+| `storage` | Топология A–D, Pallet, ContainerType, Container, ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
+| `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site) |
 | `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер + сервис импорта |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
@@ -90,7 +104,8 @@
 | Печать | Список партий, детали, add/remove тар, PDF |
 | Справочники | Типы исследования, участки, лаборатории (просмотр) |
 
-**Чего нет:** приёмка, ручной ввод тары, расширенный поиск.
+**Чего нет:** форма «Создать тару», форма «Заполнить пробами»,
+экран приёмки, расширенный поиск.
 
 ### Mobile (Flutter, 32 юнит-теста)
 
@@ -103,8 +118,9 @@
 | Карточка тары | Поля тары + список проб внутри (pull-to-refresh) |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (57 решений), `DATABASE` (v5),
-  `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (59 решений), `DATABASE` (v5),
+  `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`,
+  `ISSUES`.
 
 ---
 
@@ -126,6 +142,9 @@
 - **Циклические импорты** — использовать строковые ссылки.
 - **Сортировка кириллицы в БД** — использовать `sort_order`.
 - **`poetry env remove --all && poetry install`** после переезда проекта.
+- **`apps/storage/services/` — пакет**, не модуль
+  (`__init__.py` + `bulk_create.py`).
+- **Django signals для sync-логики — не используем** (см. 1.58).
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
@@ -134,7 +153,7 @@
 - Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`,
   `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`,
   `add-containers`, `remove-container`, `mark-ready`, `pdf`,
-  `mark-printed`.
+  `mark-printed`, `bulk-create`, `fill-samples`.
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`,
   остальные приложения — **без префикса** (`/api/v1/samples/...`,
   `/api/v1/research-types/...`, `/api/v1/work-orders/...`).
@@ -148,6 +167,8 @@
 - `ContainerType.laboratory` — NULL = общий.
 - `PrintBatch.status` — soft через `CANCELLED`.
 - `PrintBatchItem.container` — `PROTECT`.
+- **Sample.STATUS_PENDING_PLACEMENT** синхронизируется со
+  статусом тары через `sync_sample_status_for_container`.
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.
@@ -180,6 +201,8 @@
   Code-splitting отложен (ТД-21).
 - **URL справочников:** `/research-types/`, `/sites/`,
   `/laboratories/` — **без префикса** `/samples/`.
+- **Ветка `fix/2.x-web-v2-bundle-7`** — WIP, не мержить, форма
+  создания тары будет переделана.
 
 ### Mobile
 - **URL API:** `config.dart`, `_apiHostOverride` — **в git**.
@@ -211,6 +234,8 @@
 - **`ipconfig`** в MSYS2 ломается на кодировке — использовать
   `powershell -Command "(Get-NetIPAddress ...).IPAddress"` или
   `ipconfig | iconv -f CP866 -t UTF-8 | grep -a "IPv4"`.
+- **Пути git-команд из `backend/`** — без префикса `backend/`
+  (терминал уже в `backend/`).
 
 ---
 
@@ -220,6 +245,7 @@
 - `TEMPLATES.md` — базовые шаблоны.
 - Утверждённые решения в `DECISIONS.md`.
 - Файл `.env` (только `.env.example`).
+- Ветка `fix/2.x-web-v2-bundle-7` (WIP) — не мержить, не удалять.
 
 ---
 
@@ -231,6 +257,7 @@
 - Все Django-команды — через `poetry run`.
 - Все web-команды — `cd web && npm ...`.
 - Все mobile-команды — `cd mobile && flutter ...`.
+- Docs — отдельной пачкой.
 
 ---
 

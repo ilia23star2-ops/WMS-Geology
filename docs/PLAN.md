@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-10-12
+**Дата обновления:** 2026-10-13
 
 ---
 
@@ -25,21 +25,33 @@
 
 ## Ближайший план
 
-**Активная серия:** `feature/2.x-web-v2` (React, продолжение web).
+**Активная серия:** `feature/2.x-web-v2` (React + backend, продолжение
+web).
 
-**План серии (приоритет — А, сверху важнее):**
+**План серии:**
 
-| # | Заход | Что делает | Файлов |
-|---|---|---|---|
-| 1 | `bundle-1` — backend: serializer | `current_location` в `SampleSerializer`, фильтры `?q=` icontains, `?container_id=`, `?work_order=`, `?well_id=`, `?no_work_order=` | 2–3 |
-| 2 | `bundle-2` — backend: grouped | `grouped` action в `SampleViewSet` (пагинация по группам) | 2 |
-| 3 | `bundle-3` — web: `SamplesGroupedList` | Компонент: сворачиваемые группы Н/З + тип → тара + место | 1–2 |
-| 4 | `bundle-4` — web: реестр проб | Замена DataGrid, расширенные фильтры, группа «Без Н/З» | 2–3 |
-| 5 | `bundle-5` — backend: bulk create | Пакетное создание `Container` + `Sample` | 2–3 |
-| 6 | `bundle-6` — web: форма тары | «Создание тары с пробами» (Партия → Группа → Скважины) | 2–3 |
-| 7 | `bundle-7` — web: интеграция | Кнопки «Создать тару» на `/containers`, `/samples` | 2 |
-| 8 | `bundle-8` — web: `Receipt` list | Список партий приёмки + запуск формы заполнения | 2 |
-| 9 | `bundle-9` — web: Excel-import | Загрузка Excel, парсинг, показ результата | 1–2 |
+| # | Заход | Что делает | Файлов | Статус |
+|---|---|---|---|---|
+| 1 | `bundle-1` — backend | `current_location` в `SampleSerializer` + фильтры `?q=`, `?no_work_order=` | 2–3 | ✅ |
+| 2 | `bundle-2` — backend | `grouped` action в `SampleViewSet` | 2 | ✅ |
+| 5 | `bundle-5` — backend | `POST /storage/containers/bulk-create/` (тара + пробы) | 2–3 | ✅ заменён 7a-1/7a-2 |
+| 6a | `bundle-6a` — backend | фильтр по дате в Excel-импорте, `expected_date` | 2 | ✅ |
+| 6b | `bundle-6b` — backend | `target_date` + `duplicate_action` + 409 | 2 | ✅ |
+| 7a-1 | `bundle-7a-1` — backend | `Sample.STATUS_PENDING_PLACEMENT` + sync-сервис | 3 | ✅ |
+| 7a-2 | `bundle-7a-2` — backend | разделение bulk-create + fill-samples | 6 | ✅ |
+| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» | 2–3 | 🟡 следующий |
+| 7a-4 | `bundle-7a-4` — web | форма «Заполнить пробами» | 2–3 | ⬜ |
+| 3 | `bundle-3` — web | компонент `SamplesGroupedList` | 1–2 | ⬜ отложено |
+| 4 | `bundle-4` — web | реестр проб (замена DataGrid) | 2–3 | ⬜ отложено |
+| — | `bundle-7` — web | форма создания тары (WIP, неверный UX) | — | ❌ отменён |
+
+**Следующая подсерия — `2.x-receiving` (часть той же серии):**
+
+| Заход | Что делает |
+|---|---|
+| `receiving-1` — backend | Excel-импорт → `Shipment INBOUND` + `Container IN_TRANSIT` + `Receipt` |
+| `receiving-2` — web | вкладка «Приёмка»: список рейсов, детали, чекбоксы, сканер |
+| `receiving-3` — web | «Завершить приёмку» + PDF «Акт приёмки» |
 
 Легенда: ⬜ не начат · 🟡 в работе · ✅ закрыт · ❌ отменён
 
@@ -77,7 +89,8 @@ React Router 7 + axios + Vitest.
 **2. Статусы пробы.**
 - `IN_STORAGE` («В хранении»), `IN_TRANSIT` («В пути»),
   `ISSUED` («Выдана»), `CONSUMED` («Израсходована»),
-  `DISPOSED` («Утилизирована»), `PENDING_DECRYPTION`.
+  `DISPOSED` («Утилизирована»), `PENDING_DECRYPTION`,
+  `PENDING_PLACEMENT` («Ожидает размещения»).
 - Что значит каждый? Семантика размыта.
 
 **3. Отправка в лабораторию.**
@@ -159,9 +172,10 @@ React Router 7 + axios + Vitest.
 | ТД-20 | `django-cors-headers` в web-режиме | ✅ объединён с ТД-13 | — |
 | ТД-21 | Web: code-splitting (chunks > 500 kB) | средний | `2.x-web-v2` или при жалобах |
 | ТД-22 | Web: глобальный поиск (`/search`) | низкий | когда появится API |
-| ТД-23 | Web: экран приёмки и отправки | высокий | 2.x-web-v2 |
+| ТД-23 | Web: экран приёмки и отправки | высокий | 2.x-receiving |
 | ТД-24 | Mobile: `config.dart` с IP в git — сломается при смене сети | средний | перед сборкой релиза |
 | ТД-25 | Mobile: не задокументирован минимум NDK 28.2.13676358 в README | низкий | при рефакторинге доков |
+| ТД-26 | `TESTING.md` устарел — описывает проектную фазу | средний | перед прод |
 
 ---
 

@@ -157,19 +157,58 @@
 |---|---|---|
 | `GET` | `/storage/containers` | Список |
 | `GET` | `/storage/containers/{id}` | Одна тара + пробы внутри |
-| `POST` | `/storage/containers` | Создать |
+| `POST` | `/storage/containers` | Создать одну |
 | `PATCH` | `/storage/containers/{id}` | Переместить / обновить |
 | `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
-| `POST` | `/storage/containers/bulk-create/` | Создать N тар с пробами (один запрос) |
-| `GET` | `/storage/pallets` | Список |
-| `POST` | `/storage/pallets` | Создать |
+| `POST` | `/storage/containers/bulk-create/` | Создать N тар (без проб) |
+| `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить тару пробами |
+| `GET` | `/storage/pallets` | Список поддонов |
+| `POST` | `/storage/pallets` | Создать поддон |
 
 **Фильтры контейнеров:** `pallet_id`, `floor_room_id`,
 `container_type_id`, `status`, `comment_template_id`.
 
 ### `POST /storage/containers/bulk-create/`
 
-Создание партии тары с пробами (для оцифровки и ручной приёмки).
+Создать партию тары **без проб**. Пробы добавляются отдельным
+запросом — `fill-samples` (см. ниже).
+
+**Тело запроса:**
+
+    {
+      "containers": [
+        {
+          "container_number": "T-BULK-001",
+          "container_type_id": 1
+        },
+        {
+          "container_number": "T-BULK-002",
+          "container_type_id": 1
+        }
+      ]
+    }
+
+**Логика:**
+- Каждая тара создаётся со статусом `PENDING_PLACEMENT`.
+- Пробы — отдельным шагом.
+- `status` в теле запроса **не принимается**.
+
+**Ответ (201 Created):**
+
+    {
+      "created_containers": [ {...ContainerSerializer...} ],
+      "total_containers": 2
+    }
+
+**Ошибки:**
+- 400 — номер тары уже существует в системе;
+- 400 — `container_type_id` не найден;
+- 400 — номера тар в запросе не уникальны;
+- 400 — список `containers` пуст.
+
+### `POST /storage/containers/{id}/fill-samples/`
+
+Заполнить существующую тару пробами.
 
 **Тело запроса:**
 
@@ -178,27 +217,21 @@
       "work_order_incoming": "02-Тест001",
       "research_type_id": 1,
       "site_id": 1,
-      "containers": [
+      "sample_groups": [
         {
-          "container_number": "T-BULK-001",
-          "container_type_id": 1,
-          "sample_groups": [
-            {
-              "prefix": "TAA-A",
-              "middle": "34076",
-              "sequence_from": 1,
-              "sequence_to": 5,
-              "sequence_digits": 3,
-              "well_name": null
-            },
-            {
-              "prefix": "TST",
-              "middle": "124",
-              "sequence_from": 1,
-              "sequence_to": 3,
-              "well_name": "124"
-            }
-          ]
+          "prefix": "TAA-A",
+          "middle": "34076",
+          "sequence_from": 1,
+          "sequence_to": 5,
+          "sequence_digits": 3,
+          "well_name": null
+        },
+        {
+          "prefix": "TST",
+          "middle": "124",
+          "sequence_from": 1,
+          "sequence_to": 3,
+          "well_name": "124"
         }
       ]
     }
@@ -207,9 +240,14 @@
 - Найти или создать `WorkOrder` (CODED) по `work_order_coded`.
 - Если задан `work_order_incoming` — найти/создать INCOMING
   и связать `linked_order` в обе стороны.
-- Для каждой тары: создать `Container` со статусом `PENDING_PLACEMENT`.
-- Для каждой группы проб: если задан `well_name` — найти/создать `Well`;
-  сгенерировать полные номера (prefix + middle + sequence) и создать `Sample`.
+- **Одна тара = один тип исследования.** При попытке добавить
+  пробы другого ТИ в тару, где уже есть пробы — 400.
+- Повторное заполнение **тем же** ТИ — разрешено.
+- Для каждой группы проб: если задан `well_name` — найти/создать
+  `Well`; сгенерировать полные номера и создать `Sample`.
+- Статус проб синхронизируется со статусом тары
+  (`ACTIVE → IN_STORAGE`, `PENDING_PLACEMENT → PENDING_PLACEMENT`,
+  `IN_TRANSIT → IN_TRANSIT`, `ISSUED → ISSUED`).
 
 **Формат полного номера:**
 - шифрованная: `TAA-A` + `34076` + `001` = `TAA-A34076001`;
@@ -218,16 +256,20 @@
 **Ответ (201 Created):**
 
     {
-      "created_containers": [ {...ContainerSerializer...} ],
-      "total_containers": 1,
-      "total_samples": 8
+      "container_id": 10,
+      "created_samples": [
+        {"id": 1, "sample_number": "TAA-A34076001", "status": "PENDING_PLACEMENT"},
+        {"id": 2, "sample_number": "TAA-A34076002", "status": "PENDING_PLACEMENT"}
+      ],
+      "total_samples": 2
     }
 
 **Ошибки:**
-- 400 — номер тары уже существует в системе;
+- 404 — тара не найдена;
 - 400 — `research_type_id` / `site_id` не найдены;
 - 400 — `sequence_from > sequence_to`;
-- 400 — диапазон > 1000 проб в одной группе.
+- 400 — диапазон > 1000 проб в одной группе;
+- 400 — в таре уже есть пробы другого типа исследования.
 
 ---
 
