@@ -215,6 +215,15 @@ class Shipment(models.Model):
             ),
         ]
 
+    @property
+    def containers_count(self) -> int:
+        """
+        Количество тар рейса — суммарно по связанным ReceiptItem.
+
+        Через `receipts` (обратная связь от `Receipt.shipment`).
+        """
+        return sum(r.items.count() for r in self.receipts.all())
+
     def __str__(self) -> str:
         return f"{self.shipment_number} ({self.get_status_display()})"
 
@@ -247,15 +256,6 @@ class ShipmentItem(models.Model):
                 name="shipment_item_unique",
             ),
         ]
-
-    @property
-    def containers_count(self) -> int:
-        """
-        Количество тар рейса — суммарно по связанным `ReceiptItem`.
-
-        Через `receipts` (обратная связь от `Receipt.shipment`).
-        """
-        return sum(r.items.count() for r in self.receipts.all())
 
     def __str__(self) -> str:
         return f"{self.shipment.shipment_number} → {self.sample}"
