@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-10-13
+**Дата обновления:** 2026-10-14
 
 ---
 
@@ -40,12 +40,17 @@ web).
 | 7a-1 | `bundle-7a-1` — backend | `Sample.STATUS_PENDING_PLACEMENT` + sync-сервис | ✅ |
 | 7a-2 | `bundle-7a-2` — backend | разделение bulk-create + fill-samples | ✅ |
 | 7a-2b | `bundle-7a-2b` — backend | Container draft-поля + nullable number | ✅ |
-| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» (заготовки) | 🟡 следующий |
-| 7a-4 | `bundle-7a-4` — web | форма «Заполнить тару пробами» | ⬜ |
-| 7a-5 | `bundle-7a-5` — web | предпросмотр: 3 вкладки + партия печати | ⬜ |
+| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» (заготовки) | ✅ |
+| 7a-4ab | `bundle-7a-4ab` — web | парсер проб + `useFillSamples` | ✅ |
+| 7a-4c-1 | `bundle-7a-4c-1` — web | форма «Заполнить тару пробами» | ✅ |
+| 7a-4c-2a | `bundle-7a-4c-2a` — web | `useContainer`, `container_id` фильтр, `fetchLabelPdfUrl` | ✅ |
+| 7a-4c-2b | `bundle-7a-4c-2b` — web | `ContainerPreviewDialog` (3 вкладки) | ✅ |
+| 7a-4c-2c | `bundle-7a-4c-2c` — web | интеграция preview после fill-samples | ✅ |
 | 3 | `bundle-3` — web | компонент `SamplesGroupedList` | ⬜ отложено |
 | 4 | `bundle-4` — web | реестр проб (замена DataGrid) | ⬜ отложено |
 | — | `bundle-7` — web | форма создания тары (WIP, неверный UX) | ❌ отменён |
+
+**Серия 7a закрыта полностью (2026-10-14).**
 
 **Следующая подсерия — `2.x-receiving`:**
 
@@ -176,7 +181,13 @@ React Router 7 + axios + Vitest.
 | ТД-24 | Mobile: `config.dart` с IP в git — сломается при смене сети | средний | перед сборкой релиза |
 | ТД-25 | Mobile: не задокументирован минимум NDK 28.2.13676358 в README | низкий | при рефакторинге доков |
 | ТД-26 | `TESTING.md` устарел — описывает проектную фазу | средний | перед прод |
-| ТД-27 | `Container.container_number = NULL` — фильтр `?status=PENDING_PLACEMENT` в web | низкий | 7a-3 |
+| ТД-27 | `Container.container_number = NULL` — фильтр `?status=PENDING_PLACEMENT` в web | ✅ закрыт | 7a-3 |
+| ТД-28 | Web: `parseSampleInput` — fallback-эвристика regex, если префикс не в справочниках | низкий | когда появится реальная нужда |
+| ТД-29 | Web: `FillContainerDialog` — hint со списком допустимых префиксов из справочников | низкий | при доработке UX |
+| ТД-30 | Web: предпросмотр этикетки **до** сохранения тары | низкий | если попросят |
+
+**Источник ТД-28/29:** пачка `7a-4c-1`, 2026-10-14 (обсуждение с заказчиком).
+**Источник ТД-30:** пачка `7a-4c-2b`, 2026-10-14.
 
 ---
 
