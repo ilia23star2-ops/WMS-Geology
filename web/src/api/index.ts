@@ -77,6 +77,52 @@ export type {
     PrintType,
 } from "./printBatches";
 
+// Рейсы и приёмка.
+export {
+    SHIPMENT_DIRECTION_LABELS,
+    SHIPMENT_STATUS_LABELS,
+    fetchShipment,
+    fetchShipments,
+    useShipment,
+    useShipments,
+} from "./shipments";
+export type {
+    Shipment,
+    ShipmentDirection,
+    ShipmentFilters,
+    ShipmentsListParams,
+    ShipmentStatus,
+} from "./shipments";
+
+export {
+    RECEIPT_ITEM_STATUS_LABELS,
+    RECEIPT_STATUS_LABELS,
+    fetchReceipt,
+    fetchReceiptItems,
+    fetchReceipts,
+    useReceipt,
+    useReceiptItems,
+    useReceipts,
+} from "./receipts";
+export type {
+    Receipt,
+    ReceiptFilters,
+    ReceiptItem,
+    ReceiptItemStatus,
+    ReceiptItemsListParams,
+    ReceiptStatus,
+    ReceiptsListParams,
+} from "./receipts";
+
+export { importShipment, useImportShipment } from "./importSessions";
+export type {
+    ImportError,
+    ImportQuestion,
+    ImportQuestionReason,
+    ImportShipmentRequest,
+    ImportShipmentResponse,
+} from "./importSessions";
+
 export type {
     ApiError,
     LoginPayload,
