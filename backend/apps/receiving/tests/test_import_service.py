@@ -10,7 +10,9 @@
 
 Изменения (receiving-1a):
 - `ParsedRow.date` → `ParsedCell.dates` (список дат).
-  Тесты, использующие даты, обновлены под новый формат.
+
+Изменения (receiving-1a-2):
+- У `ParsedCell` обязательное поле `container_type_name`.
 """
 
 from datetime import date
@@ -63,14 +65,26 @@ def _make_parsed(
             ParsedRow(
                 work_order_number="Тест001",
                 cells=[
-                    ParsedCell(research_type_code="ШЛ", containers_count=5),
-                    ParsedCell(research_type_code="ХА", containers_count=3),
+                    ParsedCell(
+                        research_type_code="ШЛ",
+                        containers_count=5,
+                        container_type_name="Ящики",
+                    ),
+                    ParsedCell(
+                        research_type_code="ХА",
+                        containers_count=3,
+                        container_type_name="Ящики",
+                    ),
                 ],
             ),
             ParsedRow(
                 work_order_number="Тест002",
                 cells=[
-                    ParsedCell(research_type_code="ШЛ", containers_count=2),
+                    ParsedCell(
+                        research_type_code="ШЛ",
+                        containers_count=2,
+                        container_type_name="Ящики",
+                    ),
                 ],
             ),
         ]
@@ -90,12 +104,11 @@ def test_build_receipt_success(db, session, site, research_types):
     receipt = receipts[0]
     assert receipt.site == site
     assert receipt.status == Receipt.STATUS_EXPECTED
-    assert receipt.expected_date is None  # не задан
+    assert receipt.expected_date is None
     assert receipt.items.count() == 3
 
 
 def test_build_receipt_with_expected_date(db, session, site, research_types):
-    """Параметр expected_date сохраняется в Receipt."""
     parsed = _make_parsed()
     target = date(2026, 10, 12)
     receipts, _ = build_receipt_from_parsed(
@@ -166,7 +179,6 @@ def test_build_receipt_item_fields(db, session, site, research_types):
 # Фильтр по дате
 # ============================================================
 def test_apply_import_filter_by_date(db, session, site, research_types):
-    """Строки с неподходящей датой отбрасываются."""
     rows = [
         ParsedRow(
             work_order_number="Тест001",
@@ -174,6 +186,7 @@ def test_apply_import_filter_by_date(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -184,6 +197,7 @@ def test_apply_import_filter_by_date(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=3,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 13)],
                 ),
             ],
@@ -198,14 +212,12 @@ def test_apply_import_filter_by_date(db, session, site, research_types):
     assert len(receipts) == 1
     assert receipts[0].expected_date == date(2026, 10, 12)
 
-    # Только строки за 12.10.
     items = receipts[0].items.all()
     assert items.count() == 1
     assert items.first().expected_work_order_number == "Тест001"
 
 
 def test_apply_import_date_not_found(db, session, site, research_types):
-    """Нет строк с указанной датой → status=ERROR, Receipt не создан."""
     rows = [
         ParsedRow(
             work_order_number="Тест001",
@@ -213,6 +225,7 @@ def test_apply_import_date_not_found(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -229,7 +242,6 @@ def test_apply_import_date_not_found(db, session, site, research_types):
 
 
 def test_apply_import_filter_across_sheets(db, session, research_types):
-    """Фильтр применяется к каждому листу."""
     Site.objects.create(code="TST", name="Тестовый")
     Site.objects.create(code="СЕВ", name="Северный")
 
@@ -240,6 +252,7 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=1,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -252,6 +265,7 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=2,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -262,6 +276,7 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=3,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 13)],
                 ),
             ],
@@ -280,7 +295,6 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
     assert len(receipts) == 2
 
     total_items = sum(r.items.count() for r in receipts)
-    # Тест: 1 строка; Север: 1 строка (S-2 за 13.10 отброшена).
     assert total_items == 2
 
 
@@ -288,7 +302,6 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
 # Дубликат
 # ============================================================
 def test_apply_import_duplicate_cancel(db, session, site, research_types):
-    """Существующий Receipt с той же датой → cancel, ничего не создаём."""
     Receipt.objects.create(
         receipt_number="EXISTING-001",
         site=site,
@@ -302,6 +315,7 @@ def test_apply_import_duplicate_cancel(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -321,14 +335,12 @@ def test_apply_import_duplicate_cancel(db, session, site, research_types):
     session.refresh_from_db()
     assert session.status == ImportSession.STATUS_ERROR
 
-    # Существующий Receipt не тронут.
     assert Receipt.objects.filter(
         receipt_number="EXISTING-001",
     ).exists()
 
 
 def test_apply_import_duplicate_overwrite(db, session, site, research_types):
-    """Overwrite: старый Receipt удалён, создан новый."""
     old = Receipt.objects.create(
         receipt_number="EXISTING-OLD",
         site=site,
@@ -342,6 +354,7 @@ def test_apply_import_duplicate_overwrite(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -360,7 +373,6 @@ def test_apply_import_duplicate_overwrite(db, session, site, research_types):
 
 
 def test_apply_import_duplicate_create(db, session, site, research_types):
-    """Create: два Receipt с одной и той же датой."""
     Receipt.objects.create(
         receipt_number="EXISTING-001",
         site=site,
@@ -374,6 +386,7 @@ def test_apply_import_duplicate_create(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -393,10 +406,9 @@ def test_apply_import_duplicate_create(db, session, site, research_types):
 
 
 # ============================================================
-# Без target_date — обратная совместимость
+# Без target_date
 # ============================================================
 def test_apply_import_without_target_date(db, session, site, research_types):
-    """Без target_date — импортируются все строки (как раньше)."""
     rows = [
         ParsedRow(
             work_order_number="Тест001",
@@ -404,6 +416,7 @@ def test_apply_import_without_target_date(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=5,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 12)],
                 ),
             ],
@@ -414,6 +427,7 @@ def test_apply_import_without_target_date(db, session, site, research_types):
                 ParsedCell(
                     research_type_code="ШЛ",
                     containers_count=3,
+                    container_type_name="Ящики",
                     dates=[date(2026, 10, 13)],
                 ),
             ],
@@ -424,7 +438,7 @@ def test_apply_import_without_target_date(db, session, site, research_types):
     receipts, errors = apply_import(parsed, session)
     assert errors == []
     assert len(receipts) == 1
-    assert receipts[0].expected_date is None  # не задан
+    assert receipts[0].expected_date is None
     assert receipts[0].items.count() == 2
 
 
@@ -474,5 +488,4 @@ def test_apply_import_idempotent_work_orders(db, session, site, research_types):
 
     session2 = ImportSession.objects.create(file="imports/test2.xlsx")
     apply_import(parsed, session2)
-    # Н/З не дублируются.
     assert WorkOrder.objects.count() == count_after_first
