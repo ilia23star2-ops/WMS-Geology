@@ -88,7 +88,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
     items_count = serializers.IntegerField(
         source="items.count", read_only=True,
     )
-
+    containers_count = serializers.IntegerField(read_only=True)
     class Meta:
         model = Shipment
         fields = [
@@ -114,6 +114,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "cancelled_by_username",
             "cancel_reason",
             "items_count",
+            "containers_count",
             "note",
         ]
         read_only_fields = [
