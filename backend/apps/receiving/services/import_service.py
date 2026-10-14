@@ -74,16 +74,25 @@ def _get_or_create_work_order(
 
 def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
     """
-    Оставляет только строки с указанной датой.
+    Оставляет только ячейки с указанной датой.
 
-    Листы без подходящих строк отбрасываются. Ошибки парсера
+    Ячейка без дат — пропускается (непонятно, к какой дате).
+    Ячейка с несколькими датами — берётся, если target входит
+    в список (спорный случай, фиксируется в errors на уровне
+    сервиса — TODO receiving-1b).
+
+    Листы без подходящих ячеек отбрасываются. Ошибки парсера
     сохраняются (они не привязаны к дате).
     """
     new_sheets = []
     for sheet in parsed.sheets:
-        rows = [r for r in sheet.rows if r.date == target]
-        if rows:
-            new_sheets.append(replace(sheet, rows=rows))
+        new_rows = []
+        for row in sheet.rows:
+            kept_cells = [c for c in row.cells if target in c.dates]
+            if kept_cells:
+                new_rows.append(replace(row, cells=kept_cells))
+        if new_rows:
+            new_sheets.append(replace(sheet, rows=new_rows))
     return ParsedWorkbook(sheets=new_sheets, errors=list(parsed.errors))
 
 

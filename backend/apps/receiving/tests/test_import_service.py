@@ -7,6 +7,10 @@
 - установку `expected_date`;
 - обработку дубликата (`cancel` / `overwrite` / `create`);
 - ошибки (нет участка, нет типа исследования).
+
+Изменения (receiving-1a):
+- `ParsedRow.date` → `ParsedCell.dates` (список дат).
+  Тесты, использующие даты, обновлены под новый формат.
 """
 
 from datetime import date
@@ -166,13 +170,23 @@ def test_apply_import_filter_by_date(db, session, site, research_types):
     rows = [
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
         ParsedRow(
             work_order_number="Тест002",
-            date=date(2026, 10, 13),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=3)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=3,
+                    dates=[date(2026, 10, 13)],
+                ),
+            ],
         ),
     ]
     parsed = _make_parsed(rows=rows)
@@ -195,8 +209,13 @@ def test_apply_import_date_not_found(db, session, site, research_types):
     rows = [
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
     ]
     parsed = _make_parsed(rows=rows)
@@ -217,20 +236,35 @@ def test_apply_import_filter_across_sheets(db, session, research_types):
     rows_tst = [
         ParsedRow(
             work_order_number="T-1",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=1)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=1,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
     ]
     rows_sev = [
         ParsedRow(
             work_order_number="S-1",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=2)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=2,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
         ParsedRow(
             work_order_number="S-2",
-            date=date(2026, 10, 13),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=3)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=3,
+                    dates=[date(2026, 10, 13)],
+                ),
+            ],
         ),
     ]
 
@@ -264,8 +298,13 @@ def test_apply_import_duplicate_cancel(db, session, site, research_types):
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
     ])
 
@@ -299,8 +338,13 @@ def test_apply_import_duplicate_overwrite(db, session, site, research_types):
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
     ])
 
@@ -326,8 +370,13 @@ def test_apply_import_duplicate_create(db, session, site, research_types):
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
     ])
 
@@ -351,13 +400,23 @@ def test_apply_import_without_target_date(db, session, site, research_types):
     rows = [
         ParsedRow(
             work_order_number="Тест001",
-            date=date(2026, 10, 12),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=5)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=5,
+                    dates=[date(2026, 10, 12)],
+                ),
+            ],
         ),
         ParsedRow(
             work_order_number="Тест002",
-            date=date(2026, 10, 13),
-            cells=[ParsedCell(research_type_code="ШЛ", containers_count=3)],
+            cells=[
+                ParsedCell(
+                    research_type_code="ШЛ",
+                    containers_count=3,
+                    dates=[date(2026, 10, 13)],
+                ),
+            ],
         ),
     ]
     parsed = _make_parsed(rows=rows)
