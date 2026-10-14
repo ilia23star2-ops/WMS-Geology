@@ -156,3 +156,16 @@ class ImportUploadResponseSerializer(serializers.Serializer):
     containers_count = serializers.IntegerField()
     parse_errors = serializers.ListField()
     receipts = ReceiptBriefSerializer(many=True)
+
+class ShipmentImportResponseSerializer(serializers.Serializer):
+    """Ответ на импорт рейса (`POST /import-sessions/import-shipment/`)."""
+
+    import_session_id = serializers.IntegerField()
+    status = serializers.CharField()
+    shipment_id = serializers.IntegerField(allow_null=True)
+    shipment_number = serializers.CharField(allow_null=True)
+    receipt_id = serializers.IntegerField(allow_null=True)
+    receipt_number = serializers.CharField(allow_null=True)
+    containers_count = serializers.IntegerField()
+    questions_count = serializers.IntegerField()
+    parse_errors = serializers.ListField()
