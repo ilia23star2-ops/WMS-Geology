@@ -16,6 +16,7 @@ import {
 import HomeIcon from "@mui/icons-material/Home";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import BiotechIcon from "@mui/icons-material/Biotech";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import PrintIcon from "@mui/icons-material/Print";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import { type ReactElement } from "react";
@@ -33,6 +34,7 @@ const MENU: MenuItem[] = [
     { label: "Главная", path: "/", icon: <HomeIcon /> },
     { label: "Тара", path: "/containers", icon: <Inventory2Icon /> },
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
+    { label: "Приёмка", path: "/receiving", icon: <LocalShippingIcon /> },
     { label: "Печать", path: "/print", icon: <PrintIcon /> },
     { label: "Справочники", path: "/catalogs", icon: <MenuBookIcon /> },
 ];
