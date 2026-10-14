@@ -60,6 +60,7 @@ export interface Shipment {
     cancelled_by_username: string | null;
     cancel_reason: string;
     items_count: number;
+    containers_count: number;
     note: string;
 }
 
