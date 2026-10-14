@@ -48,6 +48,7 @@ import {
 import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import FillContainerDialog from "../components/FillContainerDialog";
+import ContainerPreviewDialog from "../components/ContainerPreviewDialog";
 
 const PAGE_SIZE = 50;
 
@@ -91,6 +92,7 @@ export default function ContainersPage() {
     const [createMessage, setCreateMessage] = useState<string | null>(null);
     const [fillContainer, setFillContainer] = useState<Container | null>(null);
     const [fillMessage, setFillMessage] = useState<string | null>(null);
+    const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
 
     const { data, isLoading, isError } = useContainers({
         page: paginationModel.page + 1,
@@ -359,11 +361,19 @@ export default function ContainersPage() {
                 open={fillContainer !== null}
                 container={fillContainer}
                 onClose={() => setFillContainer(null)}
-                onSuccess={(totalSamples) => {
+                onSuccess={(containerId, totalSamples) => {
                     setFillMessage(
                         `В тару добавлено проб: ${totalSamples}.`,
                     );
+                    setFillContainer(null);
+                    setPreviewContainerId(containerId);
                 }}
+            />
+
+            <ContainerPreviewDialog
+                open={previewContainerId !== null}
+                containerId={previewContainerId}
+                onClose={() => setPreviewContainerId(null)}
             />
 
             <AddToPrintBatchDialog
