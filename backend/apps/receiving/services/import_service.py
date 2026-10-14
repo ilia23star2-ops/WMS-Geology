@@ -1,20 +1,17 @@
 """
-Сервис импорта: ParsedWorkbook → Receipt + ReceiptItems.
+Сервис импорта.
 
-Логика:
-- Для каждого ParsedSheet создаётся один Receipt.
-- Если задан `target_date` — импортируются только строки этой даты,
-  `Receipt.expected_date = target_date`.
-- Проверка дубликата: если Receipt с такой `expected_date` уже есть,
-  поведение зависит от `duplicate_action`:
-    - `cancel` (по умолчанию) — вернуть ошибку, ничего не создавать;
-    - `overwrite` — удалить существующий Receipt, создать новый;
-    - `create` — создать ещё один Receipt (несколько за одну дату).
-- Site определяется по sheet_name через `Site.match_patterns`.
-- WorkOrder — get_or_create по order_number + order_type.
-- ResearchType — по коду.
-- На каждую (work_order, research_type) создаётся ReceiptItem
-  с `expected_samples_count = containers_count`.
+Старое (не тронуто, используется для `POST /import-sessions/upload/`):
+- `build_receipt_from_parsed` — Receipt + ReceiptItem (без Container).
+- `apply_import` — с фильтром по дате, дубликатом, статусами.
+
+Новое (receiving-1b, `POST /import-shipment/`):
+- `apply_shipment_import` — рейс целиком:
+  Shipment (INBOUND, SENT) + Receipt (site=None) +
+  ReceiptItem на каждую тару + пустой Container
+  (status=IN_TRANSIT, draft-поля).
+- Спорные ячейки (несколько дат, нет дат, target не совпал)
+  уходят в `ImportSession.parse_errors` с `code=NEEDS_CONFIRMATION`.
 """
 
 from dataclasses import replace
@@ -22,22 +19,19 @@ from datetime import date
 
 from django.db import transaction
 
+from apps.picking.models import Shipment
 from apps.receiving.models import ImportSession, Receipt, ReceiptItem
 from apps.receiving.parsers import ParsedWorkbook
 from apps.samples.catalogs import ResearchType, Site
+from apps.storage.models import Container, ContainerType
 from apps.work_orders.models import WorkOrder
 
 
 # ============================================================
-# Вспомогательные
+# Вспомогательные (общие для старого и нового импорта)
 # ============================================================
 def _detect_site(name: str) -> Site | None:
-    """
-    Определяет участок по названию листа/строки.
-
-    Сначала — точное совпадение `Site.code` или `Site.name`, затем —
-    по паттернам `match_patterns`.
-    """
+    """Определяет участок по названию листа/строки."""
     if not name:
         return None
     exact = (
@@ -59,8 +53,7 @@ def _get_or_create_work_order(
     site: Site | None,
     order_type: str = WorkOrder.TYPE_INCOMING,
 ) -> WorkOrder:
-    """get_or_create WorkOrder. Если найден — при необходимости
-    обновляем site."""
+    """get_or_create WorkOrder. Если найден — обновляем site при NULL."""
     wo, created = WorkOrder.objects.get_or_create(
         order_number=order_number,
         order_type=order_type,
@@ -81,8 +74,7 @@ def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
     в список (спорный случай, фиксируется в errors на уровне
     сервиса — TODO receiving-1b).
 
-    Листы без подходящих ячеек отбрасываются. Ошибки парсера
-    сохраняются (они не привязаны к дате).
+    Листы без подходящих ячеек отбрасываются.
     """
     new_sheets = []
     for sheet in parsed.sheets:
@@ -97,7 +89,7 @@ def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
 
 
 # ============================================================
-# Создание Receipt + ReceiptItem
+# СТАРЫЙ импорт: Receipt + ReceiptItem (без Container)
 # ============================================================
 def build_receipt_from_parsed(
     parsed: ParsedWorkbook,
@@ -105,15 +97,7 @@ def build_receipt_from_parsed(
     laboratory=None,
     expected_date: date | None = None,
 ) -> tuple[list[Receipt], list[dict]]:
-    """
-    Создаёт по одному Receipt на каждый ParsedSheet.
-
-    :param parsed: результат парсинга.
-    :param import_session: сессия импорта (для обратной ссылки).
-    :param laboratory: лаборатория (опц., временно не используется).
-    :param expected_date: дата привоза (сохраняется в Receipt).
-    :returns: (список Receipt, список ошибок).
-    """
+    """Создаёт по одному Receipt на каждый ParsedSheet."""
     created_receipts: list[Receipt] = []
     errors: list[dict] = []
 
@@ -172,7 +156,7 @@ def build_receipt_from_parsed(
 
 
 # ============================================================
-# Применение импорта
+# СТАРЫЙ импорт: применение
 # ============================================================
 def _make_duplicate_error(
     target_date: date,
@@ -199,24 +183,12 @@ def apply_import(
     duplicate_action: str = "cancel",
     laboratory=None,
 ) -> tuple[list[Receipt], list[dict]]:
-    """
-    Применяет импорт: создаёт Receipt/ReceiptItem, обновляет
-    ImportSession.
-
-    :param target_date: если задан — берутся только строки с этой
-        датой, `Receipt.expected_date = target_date`.
-    :param duplicate_action: 'cancel' | 'overwrite' | 'create'.
-        Только при `target_date != None`.
-    :returns: (Receipts, all_errors).
-    """
+    """Применяет СТАРЫЙ импорт: Receipt/ReceiptItem без Container."""
     parser_errors = list(parsed.errors)
 
-    # 1. Фильтр по дате.
     if target_date is not None:
         parsed = _filter_by_date(parsed, target_date)
 
-    # 2. Проверка дубликата.
-    duplicate_error: dict | None = None
     if target_date is not None:
         existing = Receipt.objects.filter(
             expected_date=target_date,
@@ -233,9 +205,7 @@ def apply_import(
                 return [], all_errors
             elif duplicate_action == "overwrite":
                 existing.delete()
-            # 'create' — просто продолжаем, создадим ещё один.
 
-    # 3. Создание Receipt/ReceiptItem.
     receipts, build_errors = build_receipt_from_parsed(
         parsed=parsed,
         import_session=import_session,
@@ -256,3 +226,266 @@ def apply_import(
     import_session.save(update_fields=["parse_errors", "status", "receipt"])
 
     return receipts, all_errors
+
+
+# ============================================================
+# НОВЫЙ импорт: Shipment + Receipt + ReceiptItem + Container
+# ============================================================
+def _generate_shipment_number(target_year: int) -> str:
+    """
+    Генерирует `Р-{year}-{NNN}` (3 цифры, от 001). Пропускает занятые.
+    """
+    prefix = f"Р-{target_year}-"
+    last = (
+        Shipment.objects
+        .filter(shipment_number__startswith=prefix)
+        .order_by("-shipment_number")
+        .values_list("shipment_number", flat=True)
+        .first()
+    )
+    if last is None:
+        n = 1
+    else:
+        try:
+            n = int(last.rsplit("-", 1)[-1]) + 1
+        except (ValueError, IndexError):
+            n = 1
+
+    for _ in range(1000):
+        candidate = f"{prefix}{n:03d}"
+        if not Shipment.objects.filter(
+            shipment_number=candidate,
+        ).exists():
+            return candidate
+        n += 1
+    raise RuntimeError("Не удалось сгенерировать номер рейса.")
+
+
+def _get_or_create_container_type(name: str) -> ContainerType:
+    """get_or_create типа тары по имени (laboratory=NULL)."""
+    ct, _ = ContainerType.objects.get_or_create(
+        name=name,
+        laboratory=None,
+    )
+    return ct
+
+
+def _collect_pending_questions(
+    parsed: ParsedWorkbook,
+    target_date: date,
+) -> list[dict]:
+    """
+    Собирает «вопросы» по спорным ячейкам:
+
+    - `no_dates` — в ячейке нет ни одной даты;
+    - `multi_date_match` — в ячейке несколько дат, target входит;
+    - `target_date_not_matched` — в ячейке есть даты, но target
+      не входит.
+
+    Все вопросы кладутся в `parse_errors` с
+    `code=NEEDS_CONFIRMATION`.
+    """
+    questions: list[dict] = []
+    for sheet in parsed.sheets:
+        for row in sheet.rows:
+            for cell in row.cells:
+                dates = cell.dates
+                base = {
+                    "code": "NEEDS_CONFIRMATION",
+                    "sheet": sheet.sheet_name,
+                    "work_order": row.work_order_number,
+                    "research_type": cell.research_type_code,
+                    "container_type": cell.container_type_name,
+                    "containers_count": cell.containers_count,
+                }
+                if not dates:
+                    questions.append({
+                        **base,
+                        "reason": "no_dates",
+                        "raw_dates": [],
+                        "message": (
+                            f"Ячейка без даты. Н/З {row.work_order_number}, "
+                            f"тип {cell.research_type_code}, "
+                            f"{cell.container_type_name} × "
+                            f"{cell.containers_count}. "
+                            f"Уточните дату."
+                        ),
+                    })
+                elif len(dates) > 1 and target_date in dates:
+                    questions.append({
+                        **base,
+                        "reason": "multi_date_match",
+                        "raw_dates": [d.isoformat() for d in dates],
+                        "target_date": target_date.isoformat(),
+                        "message": (
+                            f"В ячейке несколько дат, включая "
+                            f"{target_date.strftime('%d.%m.%Y')}. "
+                            f"Н/З {row.work_order_number}, тип "
+                            f"{cell.research_type_code}, "
+                            f"{cell.container_type_name} × "
+                            f"{cell.containers_count}. "
+                            f"Нужно уточнить, сколько именно тар "
+                            f"приходит в эту дату."
+                        ),
+                    })
+                elif target_date not in dates:
+                    questions.append({
+                        **base,
+                        "reason": "target_date_not_matched",
+                        "raw_dates": [d.isoformat() for d in dates],
+                        "target_date": target_date.isoformat(),
+                        "message": (
+                            f"В ячейке нет {target_date.strftime('%d.%m.%Y')}. "
+                            f"Н/З {row.work_order_number}, тип "
+                            f"{cell.research_type_code}, "
+                            f"{cell.container_type_name} × "
+                            f"{cell.containers_count}. "
+                            f"Ячейка пропущена — уточните вручную."
+                        ),
+                    })
+    return questions
+
+
+@transaction.atomic
+def apply_shipment_import(
+    parsed: ParsedWorkbook,
+    import_session: ImportSession,
+    *,
+    target_date: date,
+    laboratory=None,
+    shipment_number: str | None = None,
+    sent_by=None,
+) -> tuple[Shipment | None, list[dict]]:
+    """
+    Создаёт рейс целиком:
+
+    1. `Shipment` (direction=INBOUND, status=SENT, site=None).
+    2. `Receipt` (site=None, shipment=shipment).
+    3. По одной `ReceiptItem` на каждую тару (expected_samples_count=1).
+    4. По одному пустому `Container` (status=IN_TRANSIT, draft-поля,
+       container_number=None).
+    5. Спорные ячейки → в `parse_errors` с
+       `code=NEEDS_CONFIRMATION`.
+
+    :param target_date: обязательна.
+    :param shipment_number: если не задан — генерируется.
+    :returns: (Shipment | None, errors).
+    """
+    # 1. Вопросы — по ИСХОДНОМУ parsed (до фильтра по дате).
+    questions = _collect_pending_questions(parsed, target_date)
+    parser_errors = list(parsed.errors)
+
+    # 2. Фильтр по дате.
+    filtered = _filter_by_date(parsed, target_date)
+
+    # 3. СУХОЙ ПРОГОН: собираем, что надо создать.
+    #    Только Resolvable-элементы (site + research_type найдены).
+    to_create: list[tuple[Site, str, ResearchType, str, int]] = []
+    build_errors: list[dict] = []
+
+    for sheet in filtered.sheets:
+        site = _detect_site(sheet.sheet_name)
+        if site is None:
+            build_errors.append({
+                "sheet": sheet.sheet_name,
+                "error": f"Участок не найден: {sheet.sheet_name}",
+            })
+            continue
+
+        for row in sheet.rows:
+            for cell in row.cells:
+                rt = ResearchType.objects.filter(
+                    code__iexact=cell.research_type_code,
+                ).first()
+                if rt is None:
+                    build_errors.append({
+                        "sheet": sheet.sheet_name,
+                        "work_order": row.work_order_number,
+                        "error": (
+                            f"Тип исследования не найден: "
+                            f"{cell.research_type_code}"
+                        ),
+                    })
+                    continue
+                to_create.append((
+                    site,
+                    row.work_order_number,
+                    rt,
+                    cell.container_type_name,
+                    cell.containers_count,
+                ))
+
+    all_errors = parser_errors + build_errors + questions
+
+    # 4. Если создавать нечего — сессия в ERROR, рейс не создаём.
+    if not to_create:
+        import_session.parse_errors = all_errors
+        import_session.status = ImportSession.STATUS_ERROR
+        import_session.save(update_fields=["parse_errors", "status"])
+        return None, all_errors
+
+    # 5. Запись в одной транзакции.
+    with transaction.atomic():
+        if not shipment_number:
+            shipment_number = _generate_shipment_number(target_date.year)
+
+        shipment = Shipment.objects.create(
+            shipment_number=shipment_number,
+            direction=Shipment.DIRECTION_INBOUND,
+            laboratory=laboratory,
+            site=None,
+            shipment_date=target_date,
+            status=Shipment.STATUS_SENT,
+            sent_by=sent_by,
+            note=f"Импорт из файла {import_session.file.name}",
+        )
+
+        receipt = Receipt.objects.create(
+            receipt_number=f"ПР-{shipment.pk}",
+            laboratory=laboratory,
+            site=None,
+            shipment=shipment,
+            expected_date=target_date,
+            status=Receipt.STATUS_EXPECTED,
+            comment=f"Импорт из файла {import_session.file.name}",
+        )
+
+        for site, wo_number, rt, ct_name, count in to_create:
+            wo = _get_or_create_work_order(wo_number, site)
+            ct = _get_or_create_container_type(ct_name)
+
+            for _ in range(count):
+                container = Container.objects.create(
+                    container_number=None,
+                    container_type=ct,
+                    status=Container.STATUS_IN_TRANSIT,
+                    draft_site=site,
+                    draft_research_type=rt,
+                    draft_work_order_coded=wo_number,
+                    draft_work_order_incoming="",
+                )
+                ReceiptItem.objects.create(
+                    receipt=receipt,
+                    container=container,
+                    expected_container_number="",
+                    expected_work_order_number=wo_number,
+                    expected_research_type_code=rt.code,
+                    expected_site_code=site.code,
+                    expected_samples_count=1,
+                    work_order=wo,
+                    research_type=rt,
+                    site=site,
+                    status=ReceiptItem.STATUS_EXPECTED,
+                )
+
+    # 6. Обновление сессии — вне транзакции записи.
+    import_session.parse_errors = all_errors
+    import_session.receipt = receipt
+    import_session.status = (
+        ImportSession.STATUS_APPLIED
+        if not all_errors
+        else ImportSession.STATUS_PARSED
+    )
+    import_session.save(update_fields=["parse_errors", "status", "receipt"])
+
+    return shipment, all_errors
