@@ -18,7 +18,8 @@ export type SampleStatus =
     | "ISSUED"
     | "CONSUMED"
     | "DISPOSED"
-    | "PENDING_DECRYPTION";
+    | "PENDING_DECRYPTION"
+    | "PENDING_PLACEMENT";
 
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
     IN_STORAGE: "В хранении",
@@ -27,6 +28,7 @@ export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
     CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
     PENDING_DECRYPTION: "Ожидает расшифровки",
+    PENDING_PLACEMENT: "Ожидает размещения",
 };
 
 export interface Sample {
@@ -41,7 +43,7 @@ export interface Sample {
     site: number | null;
     site_name: string | null;
     container: number;
-    container_number: string;
+    container_number: string | null;
     current_work_order: number | null;
     current_work_order_number: string | null;
     status: SampleStatus;
@@ -61,6 +63,7 @@ export interface SampleFilters {
     status?: SampleStatus;
     work_order?: string;
     show_disposed?: boolean;
+    container_id?: number;
 }
 
 export interface SamplesListParams {
@@ -80,6 +83,7 @@ export async function fetchSamples(
     if (f.status) query.status = f.status;
     if (f.work_order) query.work_order = f.work_order;
     if (f.show_disposed) query.show_disposed = "true";
+    if (f.container_id !== undefined) query.container_id = f.container_id;
 
     const { data } = await apiClient.get<PaginatedResponse<Sample>>(
         "/samples/",

@@ -91,6 +91,27 @@ export function useContainers(params: ContainersListParams) {
 }
 
 /**
+ * Одна тара по id. Используется для предпросмотра после
+ * заполнения: `useFillSamples` инвалидирует `["containers"]`,
+ * а этот запрос подтягивает обновлённую тару (с номером).
+ */
+export async function fetchContainer(id: number): Promise<Container> {
+    const { data } = await apiClient.get<Container>(
+        `/storage/containers/${id}/`,
+    );
+    return data;
+}
+
+export function useContainer(id: number | null) {
+    return useQuery({
+        queryKey: ["container", id],
+        queryFn: () => fetchContainer(id as number),
+        enabled: typeof id === "number" && !Number.isNaN(id),
+        staleTime: 10_000,
+    });
+}
+
+/**
  * Скачивает PDF-этикетку тары через авторизованный запрос.
  * Открывает blob в новой вкладке.
  */
@@ -105,17 +126,26 @@ export async function downloadLabelPdf(containerId: number): Promise<void> {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+/**
+ * Скачивает PDF-этикетку тары и возвращает object URL
+ * (для встраивания в `<iframe>`).
+ * Вызывающий код отвечает за `URL.revokeObjectURL`.
+ */
+export async function fetchLabelPdfUrl(
+    containerId: number,
+): Promise<string> {
+    const { data } = await apiClient.get(
+        `/storage/containers/${containerId}/label.pdf/`,
+        { responseType: "blob" },
+    );
+    const blob = new Blob([data as BlobPart], { type: "application/pdf" });
+    return URL.createObjectURL(blob);
+}
+
 // ============================================================
 // Bulk create — создание партии тары-заготовок
 // ============================================================
 
-/**
- * Элемент тела запроса bulk-create.
- *
- * `container_number` — опционален: заготовка создаётся без номера
- * (см. DECISIONS 1.60). Номер присваивается позже, на шаге
- * `fill-samples`.
- */
 export interface BulkCreateContainerItem {
     container_number?: string | null;
     container_type_id: number;
@@ -205,6 +235,9 @@ export function useFillSamples(containerId: number) {
             fillContainerWithSamples(containerId, payload),
         onSuccess: () => {
             void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({
+                queryKey: ["container", containerId],
+            });
             void queryClient.invalidateQueries({ queryKey: ["samples"] });
         },
     });
