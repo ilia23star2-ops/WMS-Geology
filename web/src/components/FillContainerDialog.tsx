@@ -54,7 +54,7 @@ interface FillContainerDialogProps {
     open: boolean;
     container: Container | null;
     onClose: () => void;
-    onSuccess: (totalSamples: number) => void;
+    onSuccess: (containerId: number, totalSamples: number) => void;
 }
 
 /**
@@ -217,7 +217,7 @@ export default function FillContainerDialog({
                 site_id: siteId,
                 sample_groups: sampleGroups,
             });
-            onSuccess(result.total_samples);
+            onSuccess(container.id, result.total_samples);
             reset();
             onClose();
         } catch {
