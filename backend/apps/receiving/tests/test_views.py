@@ -663,3 +663,222 @@ def test_upload_duplicate_create(auth_client, site, research_types):
     assert Receipt.objects.filter(
         expected_date=date(2026, 10, 8),
     ).count() == 2
+
+# ============================================================
+# ImportSession — import-shipment (receiving-1c)
+# ============================================================
+def test_import_shipment_requires_auth(anon_client, db):
+    response = anon_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+    )
+    assert response.status_code in (401, 403)
+
+
+def test_import_shipment_no_file(auth_client, db):
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert "Файл не передан" in str(response.data)
+
+
+def test_import_shipment_invalid_extension(auth_client, db):
+    f = SimpleUploadedFile("test.txt", b"hello", content_type="text/plain")
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert "xlsx" in str(response.data).lower()
+
+
+def test_import_shipment_no_target_date(auth_client, db):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 5, "2026-10-14"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f},
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert "target_date" in str(response.data)
+
+
+def test_import_shipment_success(auth_client, site, research_types):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "ХА", "Дата"],
+        ["", "Ящики", "Ящики", ""],
+        ["Тест001", 3, 2, "2026-10-14"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["status"] == "APPLIED"
+    assert response.data["shipment_id"] is not None
+    assert response.data["shipment_number"].startswith("Р-2026-")
+    assert response.data["receipt_id"] is not None
+    assert response.data["containers_count"] == 5
+    assert response.data["questions_count"] == 0
+
+
+def test_import_shipment_creates_objects(
+    auth_client, site, research_types,
+):
+    from apps.picking.models import Shipment
+    from apps.storage.models import Container
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 3, "2026-10-14"],
+    ])
+    auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+
+    assert Shipment.objects.count() == 1
+    shipment = Shipment.objects.first()
+    assert shipment.direction == "INBOUND"
+    assert shipment.status == "SENT"
+
+    assert Container.objects.count() == 3
+    assert all(
+        c.status == Container.STATUS_IN_TRANSIT
+        for c in Container.objects.all()
+    )
+
+
+def test_import_shipment_with_custom_number(
+    auth_client, site, research_types,
+):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 1, "2026-10-14"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {
+            "file": f,
+            "target_date": "2026-10-14",
+            "shipment_number": "Р-2026-TEST",
+        },
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["shipment_number"] == "Р-2026-TEST"
+
+
+def test_import_shipment_questions_reported(
+    auth_client, site, research_types,
+):
+    """Спорные ячейки → questions_count > 0, status=PARSED."""
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 3, "13.08,14.10.2026"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "PARSED"
+    assert response.data["questions_count"] == 1
+
+
+def test_import_shipment_nothing_to_create(
+    auth_client, site, research_types,
+):
+    """Все ячейки не попали в target_date → status=ERROR, ничего."""
+    from apps.picking.models import Shipment
+    from apps.storage.models import Container
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 3, "2026-01-01"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "ERROR"
+    assert response.data["shipment_id"] is None
+    assert Shipment.objects.count() == 0
+    assert Container.objects.count() == 0
+
+
+def test_import_shipment_site_not_found(
+    auth_client, research_types,
+):
+    f = _upload_file(
+        [
+            ["Наряд", "ШЛ", "Дата"],
+            ["", "Ящики", ""],
+            ["Тест001", 3, "2026-10-14"],
+        ],
+        sheet_name="НЕИЗВЕСТНЫЙ",
+    )
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "2026-10-14"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "ERROR"
+    assert response.data["shipment_id"] is None
+
+
+def test_import_shipment_russian_date(
+    auth_client, site, research_types,
+):
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 1, "14.10.2026"],
+    ])
+    response = auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {"file": f, "target_date": "14.10.2026"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    assert response.data["status"] == "APPLIED"
+
+
+def test_import_shipment_laboratory_set(
+    auth_client, site, research_types, laboratory,
+):
+    from apps.picking.models import Shipment
+
+    f = _upload_file([
+        ["Наряд", "ШЛ", "Дата"],
+        ["", "Ящики", ""],
+        ["Тест001", 1, "2026-10-14"],
+    ])
+    auth_client.post(
+        "/api/v1/import-sessions/import-shipment/",
+        {
+            "file": f,
+            "target_date": "2026-10-14",
+            "laboratory_id": laboratory.pk,
+        },
+        format="multipart",
+    )
+    shipment = Shipment.objects.first()
+    assert shipment.laboratory == laboratory

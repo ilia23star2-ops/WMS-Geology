@@ -3,7 +3,7 @@ ViewSets приложения receiving.
 
 - ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`.
 - ReceiptItemViewSet — CRUD.
-- ImportSessionViewSet — CRUD + custom action `upload`.
+- ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`.
 """
 
 from datetime import date, datetime
@@ -26,8 +26,9 @@ from .serializers import (
     ImportUploadResponseSerializer,
     ReceiptItemSerializer,
     ReceiptSerializer,
+    ShipmentImportResponseSerializer,
 )
-from .services import apply_import
+from .services import apply_import, apply_shipment_import
 
 
 # ============================================================
@@ -161,15 +162,9 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
     CRUD для сессий импорта.
 
     Фильтры: ?status=
-    Custom action:
-      - POST /import-sessions/upload/ — загрузить Excel-файл.
-
-    Обязательные form-поля `upload`:
-    - `file` (.xlsx / .xlsm);
-    - `target_date` (`2026-10-12` или `12.10.2026`).
-
-    Опциональное:
-    - `duplicate_action` — `cancel` (по умолчанию) / `overwrite` / `create`.
+    Custom actions:
+      - POST /import-sessions/upload/          — Excel → Receipt + ReceiptItem.
+      - POST /import-sessions/import-shipment/ — Excel → Shipment + Receipt + Container.
     """
 
     serializer_class = ImportSessionSerializer
@@ -186,6 +181,150 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(uploaded_by=self.request.user)
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="import-shipment",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def import_shipment(self, request):
+        """
+        Импорт рейса: Shipment INBOUND + Receipt + Container.
+
+        Form-data:
+        - `file` — обязательный, .xlsx / .xlsm.
+        - `target_date` — обязательный, ISO (`2026-10-14`) или
+          русский (`14.10.2026`).
+        - `shipment_number` — опциональный; если нет — генерируется.
+        - `laboratory_id` — опциональный.
+
+        Ответ:
+        - 200 — успех / частичный (status=APPLIED или PARSED).
+        - 200 + status=ERROR — нечего создавать (нет данных).
+        - 400 — нет файла / плохая дата / плохой формат.
+        """
+        # 1. Файл.
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            return Response(
+                {"error": "Файл не передан (поле `file`)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ext = (
+            file_obj.name.rsplit(".", 1)[-1].lower()
+            if "." in file_obj.name
+            else ""
+        )
+        if ext not in ("xlsx", "xlsm"):
+            return Response(
+                {"error": "Поддерживаются только .xlsx / .xlsm."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 2. target_date.
+        raw_date = request.data.get("target_date")
+        target_date = _parse_target_date(raw_date)
+        if target_date is None:
+            return Response(
+                {
+                    "error": (
+                        "Поле `target_date` обязательно. "
+                        "Форматы: `2026-10-14` или `14.10.2026`."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3. Опциональный номер рейса.
+        shipment_number = (
+            request.data.get("shipment_number") or ""
+        ).strip() or None
+
+        # 4. Опциональная лаборатория.
+        laboratory = None
+        laboratory_id = request.data.get("laboratory_id")
+        if laboratory_id:
+            from apps.samples.catalogs import Laboratory
+            laboratory = Laboratory.objects.filter(
+                pk=laboratory_id,
+            ).first()
+
+        # 5. Читаем содержимое.
+        content = file_obj.read()
+
+        # 6. Создаём ImportSession.
+        import_session = ImportSession.objects.create(
+            file=ContentFile(content, name=file_obj.name),
+            file_format=ImportSession.FILE_FORMAT_XLSX,
+            uploaded_by=request.user,
+        )
+
+        # 7. Парсим.
+        try:
+            parsed = parse_excel(
+                BytesIO(content),
+                research_type_codes=set(
+                    ResearchType.objects.values_list("code", flat=True)
+                ),
+            )
+        except Exception as exc:
+            import_session.status = ImportSession.STATUS_ERROR
+            import_session.parse_errors = [
+                {"error": f"Ошибка парсинга: {exc}"}
+            ]
+            import_session.save(update_fields=["status", "parse_errors"])
+            return Response(
+                {
+                    "error": f"Не удалось распарсить файл: {exc}",
+                    "import_session_id": import_session.pk,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 8. Применяем.
+        shipment, errors = apply_shipment_import(
+            parsed,
+            import_session,
+            target_date=target_date,
+            laboratory=laboratory,
+            shipment_number=shipment_number,
+            sent_by=request.user,
+        )
+
+        # 9. Считаем контейнеры и вопросы.
+        import_session.refresh_from_db()
+        containers_count = (
+            import_session.receipt.items.count()
+            if import_session.receipt is not None
+            else 0
+        )
+        questions_count = sum(
+            1 for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
+        )
+
+        response_data = {
+            "import_session_id": import_session.pk,
+            "status": import_session.status,
+            "shipment_id": shipment.pk if shipment else None,
+            "shipment_number": (
+                shipment.shipment_number if shipment else None
+            ),
+            "receipt_id": (
+                import_session.receipt.pk
+                if import_session.receipt else None
+            ),
+            "receipt_number": (
+                import_session.receipt.receipt_number
+                if import_session.receipt else None
+            ),
+            "containers_count": containers_count,
+            "questions_count": questions_count,
+            "parse_errors": errors,
+        }
+        serializer = ShipmentImportResponseSerializer(response_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=False,
