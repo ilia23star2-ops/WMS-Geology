@@ -11,11 +11,11 @@
 
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
-**Текущий заход:** серия `7a` закрыта. Следующая — `2.x-receiving`
-(приёмка рейсов) или отдельные заходы по выбору (см. PLAN.md).
+**Текущий заход:** серия `2.x-receiving` (backend) закрыта.
+Следующая — web: экран приёмки рейсов (`receiving-2`).
 
-**Предыдущий заход:** `bundle-7a-4c-2c` — web: интеграция preview
-после fill-samples (закрыт 2026-10-14).
+**Предыдущий заход:** `receiving-1c` — backend: эндпоинт
+`POST /import-sessions/import-shipment/` (закрыт 2026-10-14).
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`,
@@ -29,6 +29,12 @@
   (присваивает `container_number`, обнуляет draft-поля).
 - Excel-импорт: `target_date` (обязательно), `duplicate_action`
   (cancel/overwrite/create), 409 на дубликат.
+- **Серия 2.x-receiving (2026-10-14):**
+  - Парсер с группами «типы + Дата», шапка до `MAX_HEADER_SEARCH`,
+    строка типа тары, `1+1`, список дат.
+  - Сервис `apply_shipment_import`: `Shipment INBOUND` + `Receipt`
+    + `ReceiptItem` + `Container` (draft).
+  - Эндпоинт `POST /import-sessions/import-shipment/`.
 
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники
@@ -44,7 +50,9 @@
   - Интеграция: после save → автоматически открывается preview.
 
 **Что нужно добавить (web):**
-- Экран приёмки рейсов (2.x-receiving).
+- **Экран приёмки рейсов** (`receiving-2`) — список рейсов,
+  детали, разбор `NEEDS_CONFIRMATION`.
+- **«Завершить приёмку»** + PDF «Акт приёмки» (`receiving-3`).
 - Расширенный поиск.
 - ТД-28 (fallback в парсере), ТД-29 (hint префиксов) — низкий
   приоритет.
@@ -53,12 +61,12 @@
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
-**Backend:** 623 теста.
+**Backend:** 662 теста.
 **Web:** 24 юнит-теста.
 
 **Ближайшая работа:**
-- Серия `2.x-receiving` — Excel-импорт рейса, экран приёмки,
-  PDF-акт.
+- `receiving-2` — web: экран приёмки рейсов.
+- `receiving-3` — web: «Завершить приёмку» + PDF-акт.
 - ТД-28, ТД-29 — отложить до появления реальной необходимости.
 
 ---
@@ -84,14 +92,14 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (623 теста)
+### Backend (662 теста)
 
 | Приложение | Что внутри |
 |---|---|
 | `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number), ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site) |
-| `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер + сервис импорта |
+| `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер (+группы, тип тары) + сервис импорта + `apply_shipment_import` + эндпоинт `import-shipment` |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
 | `inventory` | InventorySession, InventoryScan, InventoryIssue |
@@ -149,7 +157,14 @@
 - **`poetry env remove --all && poetry install`** после переезда проекта.
 - **`apps/storage/services/` — пакет**, не модуль
   (`__init__.py` + `bulk_create.py`).
+- **`apps/receiving/parsers/` — пакет** (`__init__.py` +
+  `excel_parser.py` + `types.py`).
+- **`apps/receiving/services/` — пакет** (`__init__.py` +
+  `import_service.py`).
 - **Django signals для sync-логики — не используем** (см. 1.58).
+- **`transaction.set_rollback(True)` несовместим с `import_session.save()`
+  внутри одного `atomic`** — использовать «сухой прогон» + `with
+  transaction.atomic()` на блок записи (receiving-1b).
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
@@ -158,10 +173,12 @@
 - Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`,
   `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`,
   `add-containers`, `remove-container`, `mark-ready`, `pdf`,
-  `mark-printed`, `bulk-create`, `fill-samples`.
+  `mark-printed`, `bulk-create`, `fill-samples`, `upload`,
+  `import-shipment`.
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`,
   остальные приложения — **без префикса** (`/api/v1/samples/...`,
-  `/api/v1/research-types/...`, `/api/v1/work-orders/...`).
+  `/api/v1/research-types/...`, `/api/v1/work-orders/...`,
+  `/api/v1/receipts/...`, `/api/v1/import-sessions/...`).
 
 ### Домен
 - Проба в системе = **навеска**. Не уникальна по номеру.
@@ -176,6 +193,9 @@
   статусом тары через `sync_sample_status_for_container`.
 - **Тара-заготовка**: `container_number = NULL`, draft-поля
   заполнены. После `fill-samples` — номер присвоен, draft обнулён.
+- **Импорт рейса** (`import-shipment`): `Receipt.site = NULL`
+  (участок — на `ReceiptItem.site`); один `Receipt` на рейс;
+  `Shipment.status = SENT`; `Container.status = IN_TRANSIT`.
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.

@@ -372,6 +372,97 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 
 ---
 
+## Приёмка рейсов (`Receiving`)
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| `GET` | `/receipts` | Список партий |
+| `GET` | `/receipts/{id}` | Одна партия |
+| `POST` | `/receipts/{id}/confirm` | Подтвердить приёмку |
+| `POST` | `/receipts/{id}/cancel` | Отменить |
+| `GET` | `/receipt-items` | Строки партии |
+| `GET` | `/import-sessions` | Сессии импорта |
+| `POST` | `/import-sessions/upload/` | Excel → Receipt + ReceiptItem |
+| `POST` | `/import-sessions/import-shipment/` | Excel → Shipment + Receipt + Container |
+
+**Фильтры `GET /receipts`:** `status`, `laboratory_id`, `site_id`,
+`shipment_id`.
+**Фильтры `GET /receipt-items`:** `receipt_id`, `status`,
+`container_id`.
+
+### `POST /import-sessions/upload/`
+
+Старый импорт: создаёт `Receipt` + `ReceiptItem`, **без** `Shipment`
+и `Container`.
+
+**Form-data:**
+- `file` — обязателен (`.xlsx` / `.xlsm`);
+- `target_date` — обязателен (ISO `2026-10-12` или рус. `12.10.2026`);
+- `duplicate_action` — `cancel` (default) / `overwrite` / `create`.
+
+**Ответ 200:** `{import_session_id, status, file_format, sheets_count,
+rows_count, containers_count, parse_errors, receipts}`.
+**Ответ 409:** `DUPLICATE_DATE` — партия за эту дату уже есть.
+
+### `POST /import-sessions/import-shipment/`
+
+Новый импорт: создаёт **рейс целиком**.
+- `Shipment` (direction=INBOUND, status=SENT, site=NULL);
+- один `Receipt` на рейс (`site=NULL`, `shipment=shipment`);
+- по одному `ReceiptItem` на каждую тару (`expected_samples_count=1`);
+- по одному `Container` (`status=IN_TRANSIT`,
+  `container_number=NULL`, draft-поля).
+
+**Form-data:**
+- `file` — обязателен (`.xlsx` / `.xlsm`);
+- `target_date` — обязателен (ISO или рус.);
+- `shipment_number` — опционален; если нет — генерируется
+  `Р-{year}-NNN`;
+- `laboratory_id` — опционален (откуда).
+
+**Спорные ячейки** (несколько дат, `target_date` не входит, дат нет) —
+пишутся в `parse_errors` с `code=NEEDS_CONFIRMATION` и `reason`:
+- `no_dates` — в ячейке нет ни одной даты;
+- `multi_date_match` — несколько дат, `target_date` входит;
+- `target_date_not_matched` — даты есть, `target_date` не входит.
+
+Такие ячейки **пропускаются**, `status=PARSED` (не `APPLIED`).
+
+**Ответ 200:**
+
+    {
+      "import_session_id": 12,
+      "status": "APPLIED",
+      "shipment_id": 5,
+      "shipment_number": "Р-2026-001",
+      "receipt_id": 8,
+      "receipt_number": "ПР-5",
+      "containers_count": 5,
+      "questions_count": 0,
+      "parse_errors": []
+    }
+
+**Ошибки:**
+- 400 — нет файла / плохая дата / неподдерживаемый формат;
+- 200 + `status=ERROR`, `shipment_id=null` — нечего создавать
+  (нет данных, нет участка, нет ТИ).
+
+**Формат Excel** (уточнение к 1.49):
+- Файл может содержать 1–2 строки «шапки» до заголовков
+  (`АКТ сдачи-приема` и т.п.) — парсер их пропускает
+  (`MAX_HEADER_SEARCH=20`).
+- Строка заголовков: `№ Наряд-заказа` / `Н/З` / `Наряд` + блоки
+  типов + `Дата`.
+- **Сразу после заголовков** — строка **типа тары** (`Ящики`,
+  `Биг-бэг`). Она обязательна для каждой колонки типа. Признак:
+  под Н/З пусто, а другие значения есть.
+- Каждый блок «типы + Дата» — своя дата. В одной ячейке «Дата»
+  может быть список через запятую (`13.08,02.09,25.05`).
+- Количество тары: число, или `1+1` (сумма).
+- Дата без года (`13.08`) — текущий год.
+
+---
+
 ## Пользователи и роли
 
 | Метод | Путь | Что делает |

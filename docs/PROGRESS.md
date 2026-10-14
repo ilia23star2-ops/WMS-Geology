@@ -55,6 +55,19 @@
   (3 вкладки: Список проб / Этикетка / QR).
 - ✅ **`bundle-7a-4c-2c`** — web: интеграция — после save
   автоматически открывается preview.
+- ✅ **`receiving-1a`** — backend: парсер — группы
+  «типы + Дата», список дат в ячейке, составное количество `1+1`.
+- ✅ **`receiving-1a-2`** — backend: парсер — поиск строки
+  заголовков в первых `MAX_HEADER_SEARCH=20` строках, строка
+  типа тары (обязательна для каждой колонки типа),
+  `MISSING_CONTAINER_TYPE`.
+- ✅ **`receiving-1b`** — backend: сервис `apply_shipment_import`:
+  `Shipment` (INBOUND, SENT) + `Receipt` (site=NULL) +
+  `ReceiptItem` + N `Container` (status=IN_TRANSIT, draft-поля).
+  Спорные ячейки — в `parse_errors` с
+  `code=NEEDS_CONFIRMATION` (3 reason). +16 тестов.
+- ✅ **`receiving-1c`** — backend: эндпоинт
+  `POST /import-sessions/import-shipment/`. +12 тестов views.
 
 ### Что закрыто (docs)
 
@@ -73,20 +86,21 @@
 
 ### Что дальше
 
-- ⬜ **`2.x-receiving`** — Excel-импорт рейса + экран приёмки
-  + PDF-акт.
+- ⬜ **`receiving-2`** — web: экран приёмки рейсов (список,
+  детали, разбор `NEEDS_CONFIRMATION`, сканер).
+- ⬜ **`receiving-3`** — web: «Завершить приёмку» + PDF-акт.
 - ⬜ **`bundle-3`** (отложен) — `SamplesGroupedList`.
 - ⬜ **`bundle-4`** (отложен) — реестр проб на grouped.
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 16 (backend: 1, 2, 5, 6a, 6b,
-  7a-1, 7a-2, 7a-2b; web: 7a-3, 7a-4ab, 7a-4c-1, 7a-4c-2a,
-  7a-4c-2b, 7a-4c-2c; docs: 2).
+- Заходов закрыто (с 2026-10-12): 21 (backend: 1, 2, 5, 6a, 6b,
+  7a-1, 7a-2, 7a-2b, receiving-1a, 1a-2, 1b, 1c; web: 7a-3,
+  7a-4ab, 7a-4c-1, 7a-4c-2a, 7a-4c-2b, 7a-4c-2c; docs: 2).
 - «Не норм» на первом прогоне: 0.
 - Откатов: 0.
-- **Backend: 623 теста** (было 552 на старте серии).
-- **Web: 24 юнит-теста** (было 6 → +18 парсера)..
+- **Backend: 662 теста** (было 552 на старте серии).
+- **Web: 24 юнит-теста** (было 6 → +18 парсера).
 
 ---
 
