@@ -14,6 +14,7 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
 import PrintBatchesPage from "./pages/PrintBatchesPage";
+import ReceivingPage from "./pages/ReceivingPage";
 import SamplesPage from "./pages/SamplesPage";
 import { useAuthStore } from "./stores/authStore";
 
@@ -58,6 +59,7 @@ function AppRoutes() {
                     <Route path="/" element={<HomePage />} />
                     <Route path="/containers" element={<ContainersPage />} />
                     <Route path="/samples" element={<SamplesPage />} />
+                    <Route path="/receiving" element={<ReceivingPage />} />
                     <Route path="/print" element={<PrintBatchesPage />} />
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />
                     <Route path="/catalogs" element={<CatalogsPage />} />
