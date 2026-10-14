@@ -5,6 +5,7 @@
  * Клик по строке — детали рейса (receiving-2c).
  */
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
     Card,
@@ -60,6 +61,7 @@ function formatDate(value: string | null): string {
 }
 
 export default function ReceivingPage() {
+    const navigate = useNavigate();
     const [filters, setFilters] = useState<ShipmentFilters>({
         direction: "INBOUND",
     });
@@ -126,7 +128,7 @@ export default function ReceivingPage() {
                 },
             },
             {
-                field: "items_count",
+                field: "containers_count",
                 headerName: "Тар",
                 width: 100,
                 type: "number",
@@ -247,10 +249,16 @@ export default function ReceivingPage() {
                         paginationModel={paginationModel}
                         onPaginationModelChange={setPaginationModel}
                         pageSizeOptions={[PAGE_SIZE]}
+                        onRowClick={(params) =>
+                            navigate(`/receiving/${params.row.id}`)
+                        }
                         disableRowSelectionOnClick
                         disableColumnFilter
                         disableColumnSelector
                         disableDensitySelector
+                        sx={{
+                            "& .MuiDataGrid-row": { cursor: "pointer" },
+                        }}
                     />
                 </Box>
             </Card>

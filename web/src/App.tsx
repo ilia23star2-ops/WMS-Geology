@@ -16,6 +16,7 @@ import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
 import PrintBatchesPage from "./pages/PrintBatchesPage";
 import ReceivingPage from "./pages/ReceivingPage";
 import SamplesPage from "./pages/SamplesPage";
+import ShipmentDetailPage from "./pages/ShipmentDetailPage";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient({
@@ -60,6 +61,10 @@ function AppRoutes() {
                     <Route path="/containers" element={<ContainersPage />} />
                     <Route path="/samples" element={<SamplesPage />} />
                     <Route path="/receiving" element={<ReceivingPage />} />
+                    <Route
+                        path="/receiving/:id"
+                        element={<ShipmentDetailPage />}
+                    />
                     <Route path="/print" element={<PrintBatchesPage />} />
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />
                     <Route path="/catalogs" element={<CatalogsPage />} />
