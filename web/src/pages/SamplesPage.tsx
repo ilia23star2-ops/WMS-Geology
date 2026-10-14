@@ -48,6 +48,7 @@ const STATUS_COLORS: Record<
     CONSUMED: "warning",
     DISPOSED: "error",
     PENDING_DECRYPTION: "warning",
+    PENDING_PLACEMENT: "warning",
 };
 
 function formatDate(value: string | null): string {
