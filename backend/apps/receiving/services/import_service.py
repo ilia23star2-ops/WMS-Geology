@@ -17,20 +17,17 @@
   - `ReceiptItem` **не создаём**;
   - `Container` **не создаём**;
   - записываем `NEEDS_CONFIRMATION` в `parse_errors`.
-- Кладовщик разбирает на экране сверки (resolve-conflicts):
-  указывает фактическое количество, оно превращается в `ReceiptItem`
-  (без `Container`), `Container` создаётся на самой сверке.
+- Кладовщик разбирает на экране сверки (`resolve-receipt-conflicts`).
 
 `no_dates` / `target_date_not_matched` → `TARGET_DATE_MISSING`.
 
-Сверка (`resolve-receipt-conflicts`, `3b-1`):
-- `get_unresolved_conflicts` — список неразобранных вопросов с полем
-  `suggested_count` (остаток по истории `MATCHED`-строк).
-- `resolve_receipt_conflicts` — принимает ответы кладовщика,
-  создаёт `ReceiptItem` (без `Container`), помечает вопрос
-  `resolved`.
+Сверка (`receipts/{id}/check/`, `3b-2`):
+- `check_receipt` — батч отметок.
 
-Разбор вопросов `resolve-questions` — legacy, оставлен для совместимости.
+`container_type`:
+- Заполняется при создании `ReceiptItem` в `apply_shipment_import`
+  и `resolve_receipt_conflicts`.
+- В legacy-импорте (`build_receipt_from_parsed`) — NULL.
 """
 
 from dataclasses import replace
@@ -176,6 +173,8 @@ def build_receipt_from_parsed(
 
                 ReceiptItem.objects.create(
                     receipt=receipt,
+                    container=None,
+                    container_type=None,
                     expected_container_number="",
                     expected_work_order_number=row.work_order_number,
                     expected_research_type_code=rt.code,
@@ -489,6 +488,7 @@ def apply_shipment_import(
                 ReceiptItem.objects.create(
                     receipt=receipt,
                     container=container,
+                    container_type=ct,
                     expected_container_number="",
                     expected_work_order_number=wo_number,
                     expected_research_type_code=rt.code,
@@ -521,12 +521,7 @@ def _compute_suggested_count(
     question: dict,
     current_receipt: Receipt,
 ) -> int:
-    """
-    Остаток тар по истории: `total - sum(MATCHED за те же даты)`.
-
-    Считаем только подтверждённые тары (`status=MATCHED`).
-    Текущий Receipt исключаем, чтобы не задваивать.
-    """
+    """Остаток тар по истории `MATCHED`-строк за те же даты."""
     total = int(question.get("containers_count", 0) or 0)
     wo_number = question.get("work_order", "")
     rt_code = question.get("research_type", "")
@@ -567,11 +562,7 @@ def _all_questions(parse_errors: list[dict]) -> list[dict]:
 
 
 def get_unresolved_conflicts(receipt: Receipt) -> list[dict]:
-    """
-    Неразобранные `NEEDS_CONFIRMATION` для Receipt.
-
-    Каждый элемент: поля вопроса + `question_index` + `suggested_count`.
-    """
+    """Неразобранные `NEEDS_CONFIRMATION` для Receipt."""
     import_session = ImportSession.objects.filter(receipt=receipt).first()
     if import_session is None:
         return []
@@ -607,9 +598,7 @@ def resolve_receipt_conflicts(
     conflicts: list[dict],
 ) -> tuple[int, list[dict]]:
     """
-    Разбирает конфликты `Receipt`:
-    - создаёт N `ReceiptItem` (без `Container`);
-    - помечает вопрос `resolved`.
+    Разбирает конфликты `Receipt`.
 
     :param conflicts: `[{"question_index": int, "containers_count": int}]`.
     :returns: (создано `ReceiptItem`, список ошибок).
@@ -704,12 +693,14 @@ def resolve_receipt_conflicts(
                 ),
             }]
 
+        ct = _get_or_create_container_type(q["container_type"])
         wo = _get_or_create_work_order(q["work_order"], site)
 
         for _ in range(count):
             ReceiptItem.objects.create(
                 receipt=receipt,
                 container=None,
+                container_type=ct,
                 expected_container_number="",
                 expected_work_order_number=q["work_order"],
                 expected_research_type_code=rt.code,
@@ -730,8 +721,15 @@ def resolve_receipt_conflicts(
     import_session.parse_errors = parse_errors
 
     questions = _all_questions(parse_errors)
-    all_resolved = all(q.get("resolved") for q in questions) if questions else True
-    if questions and all_resolved and import_session.status == ImportSession.STATUS_PARSED:
+    all_resolved = (
+        all(q.get("resolved") for q in questions)
+        if questions else True
+    )
+    if (
+        questions
+        and all_resolved
+        and import_session.status == ImportSession.STATUS_PARSED
+    ):
         import_session.status = ImportSession.STATUS_APPLIED
 
     import_session.save(update_fields=["parse_errors", "status"])
@@ -893,6 +891,7 @@ def resolve_import_questions(
             ReceiptItem.objects.create(
                 receipt=receipt,
                 container=container,
+                container_type=ct,
                 expected_container_number="",
                 expected_work_order_number=q["work_order"],
                 expected_research_type_code=rt.code,

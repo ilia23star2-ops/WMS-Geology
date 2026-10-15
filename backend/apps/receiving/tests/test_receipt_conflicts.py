@@ -358,3 +358,28 @@ def test_resolve_no_session(auth_client):
     )
     assert response.status_code == 400
     assert "сессии импорта" in str(response.data)
+
+
+
+@pytest.mark.django_db
+def test_resolve_sets_container_type_on_items(
+    auth_client, site, research_type,
+):
+    """ReceiptItem из конфликта получает container_type (3b-1-2a)."""
+    receipt, _ = _make_receipt()
+    response = auth_client.post(
+        f"/api/v1/receipts/{receipt.pk}/resolve-conflicts/",
+        {
+            "conflicts": [
+                {"question_index": 0, "containers_count": 2},
+            ],
+        },
+        format="json",
+    )
+    assert response.status_code == 200
+
+    items = ReceiptItem.objects.filter(receipt=receipt)
+    assert items.count() == 2
+    for it in items:
+        assert it.container_type is not None
+        assert it.container_type.name == "Ящики"

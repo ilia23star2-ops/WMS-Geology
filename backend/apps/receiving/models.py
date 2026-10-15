@@ -6,6 +6,12 @@
 - ImportSession — загрузка Excel-файла.
 
 Соответствует docs/DATABASE.md v4.
+
+Изменения (receiving-3b-1-2a):
+- `ReceiptItem.container_type` — FK на `storage.ContainerType`,
+  nullable. Заполняется при создании из однозначной ячейки
+  (`apply_shipment_import`) и при разборе конфликта
+  (`resolve_receipt_conflicts`). У legacy-импорта — NULL.
 """
 
 from django.conf import settings
@@ -121,6 +127,17 @@ class ReceiptItem(models.Model):
         blank=True,
         related_name="receipt_items",
         help_text="Создаётся при подтверждении приёмки.",
+    )
+    container_type = models.ForeignKey(
+        "storage.ContainerType",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="receipt_items",
+        help_text=(
+            "Тип тары. Заполняется при импорте однозначной ячейки "
+            "или при разборе конфликта. У legacy-импорта — NULL."
+        ),
     )
 
     # --- Ожидаемое (из Excel или QR) ---
