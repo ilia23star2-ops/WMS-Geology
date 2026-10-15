@@ -11,23 +11,21 @@
   по одной ReceiptItem + Container на каждую **однозначную** тару.
 
 Спорные ячейки (`multi_date_match`):
-- В ячейке несколько дат, `target_date` входит. Непонятно, сколько
-  из общего количества тар приходит именно в эту дату.
-- По каждой такой ячейке:
-  - `ReceiptItem` **не создаём**;
-  - `Container` **не создаём**;
-  - записываем `NEEDS_CONFIRMATION` в `parse_errors`.
-- Кладовщик разбирает на экране сверки (`resolve-receipt-conflicts`).
+- `ReceiptItem`/`Container` не создаются, только вопрос
+  `NEEDS_CONFIRMATION`.
+- Кладовщик разбирает (`resolve-receipt-conflicts`).
 
 `no_dates` / `target_date_not_matched` → `TARGET_DATE_MISSING`.
 
 Сверка (`receipts/{id}/check/`, `3b-2`):
-- `check_receipt` — батч отметок.
+- `check_receipt` — батч отметок. Каждая отметка сохраняется
+  сразу. Можно прерваться и продолжить.
 
-`container_type`:
-- Заполняется при создании `ReceiptItem` в `apply_shipment_import`
-  и `resolve_receipt_conflicts`.
-- В legacy-импорте (`build_receipt_from_parsed`) — NULL.
+Завершение приёмки (`receipts/{id}/complete/`, `3c`):
+- `complete_receipt` — блокирует, если есть неразобранные
+  конфликты или несверенные `ReceiptItem.status=EXPECTED`.
+- Переводит `Receipt` в `CONFIRMED`, `Shipment` — в `RECEIVED`
+  или `PARTIALLY_RECEIVED`.
 """
 
 from dataclasses import replace
@@ -735,6 +733,272 @@ def resolve_receipt_conflicts(
     import_session.save(update_fields=["parse_errors", "status"])
 
     return created_count, []
+
+
+# ============================================================
+# СВЕРКА (3b-2): `receipts/{id}/check/`
+# ============================================================
+@transaction.atomic
+def check_receipt(
+    receipt: Receipt,
+    items: list[dict],
+) -> tuple[dict, list[dict]]:
+    """
+    Сверка тары по `Receipt`.
+
+    :param items: `[{"item_id": int, "matched": bool,
+        "container_number": str | None}, ...]`.
+    :returns: (сводка, список ошибок).
+    """
+    if receipt.status in (
+        Receipt.STATUS_CONFIRMED,
+        Receipt.STATUS_CANCELLED,
+    ):
+        return {}, [{
+            "error": (
+                f"Нельзя сверять партию в статусе {receipt.status}."
+            ),
+        }]
+
+    receipt_items = {
+        it.pk: it
+        for it in ReceiptItem.objects
+        .filter(receipt=receipt)
+        .select_related("container", "container_type")
+    }
+
+    errors: list[dict] = []
+    seen_items: set[int] = set()
+    seen_numbers: set[str] = set()
+
+    for r in items:
+        item_id = r["item_id"]
+        number = r.get("container_number") or None
+
+        if item_id in seen_items:
+            errors.append({
+                "item_id": item_id,
+                "error": "Дубликат item_id в запросе.",
+            })
+            continue
+        seen_items.add(item_id)
+
+        if item_id not in receipt_items:
+            errors.append({
+                "item_id": item_id,
+                "error": "Строка не принадлежит этой партии.",
+            })
+            continue
+
+        item = receipt_items[item_id]
+
+        if bool(r["matched"]) and item.container_type is None:
+            errors.append({
+                "item_id": item_id,
+                "error": (
+                    "У строки не указан тип тары. "
+                    "Заполните и повторите."
+                ),
+            })
+            continue
+
+        if number:
+            if number in seen_numbers:
+                errors.append({
+                    "item_id": item_id,
+                    "error": f"Номер «{number}» указан дважды в запросе.",
+                })
+                continue
+            seen_numbers.add(number)
+
+            existing = (
+                Container.objects
+                .filter(container_number=number)
+                .exclude(pk=item.container_id)
+                .first()
+            )
+            if existing is not None:
+                errors.append({
+                    "item_id": item_id,
+                    "error": (
+                        f"Номер «{number}» уже занят тарой #{existing.pk}."
+                    ),
+                })
+
+    if errors:
+        return {}, errors
+
+    matched_count = 0
+    missing_count = 0
+
+    for r in items:
+        item = receipt_items[r["item_id"]]
+        matched = bool(r["matched"])
+        number = r.get("container_number") or None
+
+        if matched:
+            if item.container_id is None:
+                container = Container.objects.create(
+                    container_number=number,
+                    container_type=item.container_type,
+                    status=Container.STATUS_PENDING_PLACEMENT,
+                    draft_site=item.site,
+                    draft_research_type=item.research_type,
+                    draft_work_order_coded=item.expected_work_order_number,
+                    draft_work_order_incoming="",
+                )
+                item.container = container
+            else:
+                container = item.container
+                if number:
+                    container.container_number = number
+                container.status = Container.STATUS_PENDING_PLACEMENT
+                container.save(update_fields=[
+                    "container_number", "status",
+                ])
+
+            item.status = ReceiptItem.STATUS_MATCHED
+            item.expected_container_number = number or ""
+            item.save(update_fields=[
+                "container", "status", "expected_container_number",
+            ])
+            matched_count += 1
+        else:
+            if item.container_id is not None:
+                container = item.container
+                if container.samples.exists():
+                    return {}, [{
+                        "item_id": item.pk,
+                        "error": (
+                            "У тары есть пробы, удалить нельзя. "
+                            "Сначала очистите пробы."
+                        ),
+                    }]
+                item.container = None
+                item.save(update_fields=["container"])
+                container.delete()
+
+            item.status = ReceiptItem.STATUS_MISSING
+            item.save(update_fields=["status"])
+            missing_count += 1
+
+    total = ReceiptItem.objects.filter(receipt=receipt).count()
+
+    if (
+        receipt.status == Receipt.STATUS_EXPECTED
+        and (matched_count or missing_count)
+    ):
+        receipt.status = Receipt.STATUS_IN_PROGRESS
+        receipt.save(update_fields=["status"])
+
+    summary = {
+        "receipt_id": receipt.pk,
+        "total_items_count": total,
+        "matched_count": matched_count,
+        "missing_count": missing_count,
+    }
+    return summary, []
+
+
+# ============================================================
+# ЗАВЕРШЕНИЕ ПРИЁМКИ (3c): `receipts/{id}/complete/`
+# ============================================================
+@transaction.atomic
+def complete_receipt(
+    receipt: Receipt,
+    user=None,
+) -> tuple[dict, list[dict]]:
+    """
+    Завершает приёмку партии.
+
+    Проверки:
+    - статус не `CONFIRMED` / `CANCELLED`;
+    - нет неразобранных `NEEDS_CONFIRMATION`;
+    - нет несверенных `ReceiptItem.status=EXPECTED`.
+
+    Действия:
+    - `Receipt.status = CONFIRMED`, `received_at=now`,
+      `received_by=user`;
+    - `Shipment.status = RECEIVED`, если все `MATCHED`;
+    - `Shipment.status = PARTIALLY_RECEIVED`, если есть `MISSING`.
+
+    :returns: (сводка, список ошибок).
+    """
+    if receipt.status == Receipt.STATUS_CONFIRMED:
+        return {}, [{"error": "Партия уже подтверждена."}]
+    if receipt.status == Receipt.STATUS_CANCELLED:
+        return {}, [{"error": "Нельзя завершить отменённую партию."}]
+
+    # 1. Неразобранные конфликты.
+    total_q, resolved_q = count_questions(receipt)
+    unresolved = total_q - resolved_q
+    if unresolved > 0:
+        return {}, [{
+            "error": (
+                f"Осталось разобрать конфликтов: {unresolved}. "
+                f"Сначала разберите все конфликты."
+            ),
+        }]
+
+    # 2. Несверенные строки.
+    items = list(ReceiptItem.objects.filter(receipt=receipt))
+    if not items:
+        return {}, [{"error": "В партии нет ни одной строки."}]
+
+    expected_items = [
+        it for it in items if it.status == ReceiptItem.STATUS_EXPECTED
+    ]
+    if expected_items:
+        return {}, [{
+            "error": (
+                f"Осталось несверенных тар: {len(expected_items)}. "
+                f"Продолжите сверку."
+            ),
+        }]
+
+    # 3. Итоги.
+    matched_count = sum(
+        1 for it in items if it.status == ReceiptItem.STATUS_MATCHED
+    )
+    missing_count = sum(
+        1 for it in items if it.status == ReceiptItem.STATUS_MISSING
+    )
+    other_count = len(items) - matched_count - missing_count
+
+    # 4. Receipt.
+    receipt.status = Receipt.STATUS_CONFIRMED
+    receipt.received_at = timezone.now()
+    if user is not None and getattr(user, "pk", None):
+        receipt.received_by = user
+    receipt.save(update_fields=[
+        "status", "received_at", "received_by",
+    ])
+
+    # 5. Shipment.
+    shipment_status = None
+    shipment_id = None
+    if receipt.shipment_id is not None:
+        shipment = receipt.shipment
+        if missing_count == 0 and other_count == 0:
+            shipment.status = Shipment.STATUS_RECEIVED
+        else:
+            shipment.status = Shipment.STATUS_PARTIALLY_RECEIVED
+        shipment.received_at = receipt.received_at
+        shipment.save(update_fields=["status", "received_at"])
+        shipment_status = shipment.status
+        shipment_id = shipment.pk
+
+    summary = {
+        "receipt_id": receipt.pk,
+        "status": receipt.status,
+        "total_items_count": len(items),
+        "matched_count": matched_count,
+        "missing_count": missing_count,
+        "other_count": other_count,
+        "shipment_id": shipment_id,
+        "shipment_status": shipment_status,
+    }
+    return summary, []
 
 
 # ============================================================

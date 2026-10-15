@@ -24,6 +24,9 @@ from apps.samples.catalogs import ResearchType
 from .models import ImportSession, Receipt, ReceiptItem
 from .parsers import parse_excel
 from .serializers import (
+    CheckReceiptRequestSerializer,
+    CheckReceiptResponseSerializer,
+    CompleteReceiptResponseSerializer,
     ConflictSerializer,
     ImportSessionSerializer,
     ImportUploadResponseSerializer,
@@ -38,6 +41,8 @@ from .serializers import (
 from .services import (
     apply_import,
     apply_shipment_import,
+    check_receipt,
+    complete_receipt,
     count_questions,
     get_unresolved_conflicts,
     resolve_import_questions,
@@ -200,6 +205,73 @@ class ReceiptViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["post"], url_path="check")
+    def check(self, request, pk=None):
+        """
+        Сверка тары по партии.
+
+        Тело:
+        - `items: [{item_id: int, matched: bool,
+            container_number: str | null}, ...]`.
+
+        `matched=true` → создать/обновить `Container`
+        (`status=PENDING_PLACEMENT`), присвоить номер,
+        `ReceiptItem.status=MATCHED`.
+        `matched=false` → удалить `Container` (если нет проб),
+        `ReceiptItem.status=MISSING`.
+        """
+        receipt = self.get_object()
+        ser = CheckReceiptRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        summary, errors = check_receipt(
+            receipt, ser.validated_data["items"],
+        )
+
+        if errors:
+            return Response(
+                {"errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            CheckReceiptResponseSerializer({
+                **summary,
+                "errors": [],
+            }).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        """
+        Завершить приёмку партии.
+
+        Проверки:
+        - нет неразобранных конфликтов `NEEDS_CONFIRMATION`;
+        - нет несверенных строк `ReceiptItem.status=EXPECTED`.
+
+        Действия:
+        - `Receipt.status=CONFIRMED`;
+        - `Shipment.status=RECEIVED` или `PARTIALLY_RECEIVED`.
+        """
+        receipt = self.get_object()
+
+        summary, errors = complete_receipt(receipt, user=request.user)
+
+        if errors:
+            return Response(
+                {"errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            CompleteReceiptResponseSerializer({
+                **summary,
+                "errors": [],
+            }).data,
+            status=status.HTTP_200_OK,
+        )
 
 # ============================================================
 # ReceiptItem
