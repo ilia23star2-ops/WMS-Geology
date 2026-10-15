@@ -3,8 +3,19 @@
  *
  * - `Receipt` — партия (одна машина / один день).
  * - `ReceiptItem` — строка партии (одна тара).
+ *
+ * Сверка (`3d-1`):
+ * - `useReceiptConflicts` — список неразобранных конфликтов.
+ * - `useResolveConflicts` — разбор конфликтов.
+ * - `useCheckReceipt` — отметки приехала/нет + номера тар.
+ * - `useCompleteReceipt` — завершение приёмки.
  */
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "./client";
 import type { PaginatedResponse } from "./types";
@@ -64,6 +75,7 @@ export interface ReceiptItem {
     receipt: number;
     container: number | null;
     container_number: string | null;
+    container_type: number | null;
     expected_container_number: string;
     expected_work_order_number: string;
     expected_research_type_code: string;
@@ -167,5 +179,183 @@ export function useReceiptItems(params: ReceiptItemsListParams) {
         queryFn: () => fetchReceiptItems(params),
         placeholderData: keepPreviousData,
         staleTime: 10_000,
+    });
+}
+
+// ============================================================
+// Сверка приёмки (`3d-1`)
+// ============================================================
+
+// --- Конфликты ---
+export type ConflictReason =
+    | "multi_date_match"
+    | "no_dates"
+    | "target_date_not_matched";
+
+export interface ReceiptConflict {
+    question_index: number;
+    code: string;
+    title: string;
+    reason: ConflictReason;
+    sheet: string;
+    work_order: string;
+    research_type: string;
+    container_type: string;
+    containers_count: number;
+    raw_dates: string[];
+    target_date: string;
+    message: string;
+    suggested_count: number;
+}
+
+export interface ReceiptConflictsResponse {
+    receipt_id: number;
+    conflicts: ReceiptConflict[];
+    total_conflicts_count: number;
+    resolved_conflicts_count: number;
+}
+
+export async function fetchReceiptConflicts(
+    receiptId: number,
+): Promise<ReceiptConflictsResponse> {
+    const { data } = await apiClient.get<ReceiptConflictsResponse>(
+        `/receipts/${receiptId}/conflicts/`,
+    );
+    return data;
+}
+
+export function useReceiptConflicts(receiptId: number | null) {
+    return useQuery({
+        queryKey: ["receipt-conflicts", receiptId],
+        queryFn: () => fetchReceiptConflicts(receiptId as number),
+        enabled: typeof receiptId === "number" && !Number.isNaN(receiptId),
+        staleTime: 10_000,
+    });
+}
+
+// --- Разбор конфликтов ---
+export interface ConflictResolution {
+    question_index: number;
+    containers_count: number;
+}
+
+export interface ResolveConflictsRequest {
+    conflicts: ConflictResolution[];
+}
+
+export interface ResolveConflictsResponse {
+    receipt_id: number;
+    created_items_count: number;
+    resolved_conflicts_count: number;
+    total_conflicts_count: number;
+    errors: Array<Record<string, unknown>>;
+}
+
+export async function resolveConflicts(
+    receiptId: number,
+    payload: ResolveConflictsRequest,
+): Promise<ResolveConflictsResponse> {
+    const { data } = await apiClient.post<ResolveConflictsResponse>(
+        `/receipts/${receiptId}/resolve-conflicts/`,
+        payload,
+    );
+    return data;
+}
+
+export function useResolveConflicts(receiptId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: ResolveConflictsRequest) =>
+            resolveConflicts(receiptId, payload),
+        onSuccess: () => {
+            void qc.invalidateQueries({
+                queryKey: ["receipt-conflicts", receiptId],
+            });
+            void qc.invalidateQueries({
+                queryKey: ["receipt-items"],
+            });
+            void qc.invalidateQueries({ queryKey: ["receipt"] });
+        },
+    });
+}
+
+// --- Сверка (отметки + номера) ---
+export interface CheckReceiptItem {
+    item_id: number;
+    matched: boolean;
+    container_number?: string | null;
+}
+
+export interface CheckReceiptRequest {
+    items: CheckReceiptItem[];
+}
+
+export interface CheckReceiptResponse {
+    receipt_id: number;
+    total_items_count: number;
+    matched_count: number;
+    missing_count: number;
+    errors: Array<Record<string, unknown>>;
+}
+
+export async function checkReceipt(
+    receiptId: number,
+    payload: CheckReceiptRequest,
+): Promise<CheckReceiptResponse> {
+    const { data } = await apiClient.post<CheckReceiptResponse>(
+        `/receipts/${receiptId}/check/`,
+        payload,
+    );
+    return data;
+}
+
+export function useCheckReceipt(receiptId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: CheckReceiptRequest) =>
+            checkReceipt(receiptId, payload),
+        onSuccess: () => {
+            void qc.invalidateQueries({
+                queryKey: ["receipt-items"],
+            });
+            void qc.invalidateQueries({ queryKey: ["receipt"] });
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+        },
+    });
+}
+
+// --- Завершение ---
+export interface CompleteReceiptResponse {
+    receipt_id: number;
+    status: ReceiptStatus;
+    total_items_count: number;
+    matched_count: number;
+    missing_count: number;
+    other_count: number;
+    shipment_id: number | null;
+    shipment_status: string | null;
+    errors: Array<Record<string, unknown>>;
+}
+
+export async function completeReceipt(
+    receiptId: number,
+): Promise<CompleteReceiptResponse> {
+    const { data } = await apiClient.post<CompleteReceiptResponse>(
+        `/receipts/${receiptId}/complete/`,
+        {},
+    );
+    return data;
+}
+
+export function useCompleteReceipt(receiptId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: () => completeReceipt(receiptId),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["receipt"] });
+            void qc.invalidateQueries({ queryKey: ["receipts"] });
+            void qc.invalidateQueries({ queryKey: ["shipment"] });
+            void qc.invalidateQueries({ queryKey: ["shipments"] });
+        },
     });
 }
