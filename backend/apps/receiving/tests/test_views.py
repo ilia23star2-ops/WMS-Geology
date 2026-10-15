@@ -815,7 +815,10 @@ def test_import_shipment_questions_reported(
 def test_import_shipment_nothing_to_create(
     auth_client, site, research_types,
 ):
-    """Ячейка с датой вне target_date → вопрос, рейс PARSED, 0 тар."""
+    """
+    Ячейка с датой вне target_date → TARGET_DATE_MISSING,
+    рейс не создаётся (ERROR).
+    """
     from apps.picking.models import Shipment
     from apps.storage.models import Container
 
@@ -830,12 +833,18 @@ def test_import_shipment_nothing_to_create(
         format="multipart",
     )
     assert response.status_code == 200
-    assert response.data["status"] == "PARSED"
-    assert response.data["shipment_id"] is not None
+    assert response.data["status"] == "ERROR"
+    assert response.data["shipment_id"] is None
     assert response.data["containers_count"] == 0
-    assert response.data["questions_count"] >= 1
-    assert Shipment.objects.count() == 1
+    assert Shipment.objects.count() == 0
     assert Container.objects.count() == 0
+
+    # В errors должна быть запись TARGET_DATE_MISSING, не вопрос.
+    codes = [
+        e.get("code") for e in response.data["parse_errors"]
+    ]
+    assert "TARGET_DATE_MISSING" in codes
+    assert "NEEDS_CONFIRMATION" not in codes
 
 
 def test_import_shipment_site_not_found(

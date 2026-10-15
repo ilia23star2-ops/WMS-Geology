@@ -10,8 +10,14 @@
   Shipment (INBOUND, SENT) + Receipt (site=None) +
   ReceiptItem на каждую тару + пустой Container
   (status=IN_TRANSIT, draft-поля).
-- Спорные ячейки (несколько дат, нет дат, target не совпал)
-  уходят в `ImportSession.parse_errors` с `code=NEEDS_CONFIRMATION`.
+
+Спорные ячейки:
+- `multi_date_match` (несколько дат, target входит) →
+  `code=NEEDS_CONFIRMATION` (вопрос, разбор вручную).
+- `no_dates` / `target_date_not_matched` →
+  `code=TARGET_DATE_MISSING`, сообщение
+  «На выбранную дату информации нет» (информационная запись,
+  рейс не создаётся, если это единственное содержимое).
 
 Разбор вопросов (`POST /import-sessions/{id}/resolve-questions/`):
 - `resolve_import_questions` — принимает распределение тар по датам
@@ -290,46 +296,26 @@ def _collect_pending_questions(
     target_date: date,
 ) -> list[dict]:
     """
-    Собирает «вопросы» по спорным ячейкам:
+    Собирает вопросы `NEEDS_CONFIRMATION`.
 
-    - `no_dates` — в ячейке нет ни одной даты;
-    - `multi_date_match` — в ячейке несколько дат, target входит;
-    - `target_date_not_matched` — в ячейке есть даты, но target
-      не входит.
-
-    Все вопросы кладутся в `parse_errors` с
-    `code=NEEDS_CONFIRMATION`.
+    Только один случай: `multi_date_match` — в ячейке несколько дат,
+    и `target_date` входит в список. Нужно уточнить, сколько именно
+    тар приходит в эту дату.
     """
     questions: list[dict] = []
     for sheet in parsed.sheets:
         for row in sheet.rows:
             for cell in row.cells:
                 dates = cell.dates
-                base = {
-                    "code": "NEEDS_CONFIRMATION",
-                    "sheet": sheet.sheet_name,
-                    "work_order": row.work_order_number,
-                    "research_type": cell.research_type_code,
-                    "container_type": cell.container_type_name,
-                    "containers_count": cell.containers_count,
-                }
-                if not dates:
+                if len(dates) > 1 and target_date in dates:
                     questions.append({
-                        **base,
-                        "reason": "no_dates",
-                        "raw_dates": [],
-                        "message": (
-                            f"Ячейка без даты. Н/З {row.work_order_number}, "
-                            f"тип {cell.research_type_code}, "
-                            f"{cell.container_type_name} × "
-                            f"{cell.containers_count}. "
-                            f"Уточните дату."
-                        ),
-                    })
-                elif len(dates) > 1 and target_date in dates:
-                    questions.append({
-                        **base,
+                        "code": "NEEDS_CONFIRMATION",
                         "reason": "multi_date_match",
+                        "sheet": sheet.sheet_name,
+                        "work_order": row.work_order_number,
+                        "research_type": cell.research_type_code,
+                        "container_type": cell.container_type_name,
+                        "containers_count": cell.containers_count,
                         "raw_dates": [d.isoformat() for d in dates],
                         "target_date": target_date.isoformat(),
                         "message": (
@@ -343,22 +329,56 @@ def _collect_pending_questions(
                             f"приходит в эту дату."
                         ),
                     })
+    return questions
+
+
+def _collect_date_missing_errors(
+    parsed: ParsedWorkbook,
+    target_date: date,
+) -> list[dict]:
+    """
+    Собирает информационные записи `TARGET_DATE_MISSING`.
+
+    Случаи:
+    - `no_dates` — в ячейке нет ни одной даты;
+    - `target_date_not_matched` — даты есть, но `target_date`
+      не входит.
+
+    Рейс в этих случаях не создаётся (если больше нечего создавать),
+    но кладовщик видит в отчёте, что на выбранную дату информации нет.
+    """
+    errors: list[dict] = []
+    for sheet in parsed.sheets:
+        for row in sheet.rows:
+            for cell in row.cells:
+                dates = cell.dates
+                if not dates:
+                    errors.append({
+                        "code": "TARGET_DATE_MISSING",
+                        "reason": "no_dates",
+                        "sheet": sheet.sheet_name,
+                        "work_order": row.work_order_number,
+                        "research_type": cell.research_type_code,
+                        "container_type": cell.container_type_name,
+                        "containers_count": cell.containers_count,
+                        "raw_dates": [],
+                        "target_date": target_date.isoformat(),
+                        "message": "На выбранную дату информации нет.",
+                    })
                 elif target_date not in dates:
-                    questions.append({
-                        **base,
+                    errors.append({
+                        "code": "TARGET_DATE_MISSING",
                         "reason": "target_date_not_matched",
+                        "sheet": sheet.sheet_name,
+                        "work_order": row.work_order_number,
+                        "research_type": cell.research_type_code,
+                        "container_type": cell.container_type_name,
+                        "containers_count": cell.containers_count,
                         "raw_dates": [d.isoformat() for d in dates],
                         "target_date": target_date.isoformat(),
-                        "message": (
-                            f"В ячейке нет {target_date.strftime('%d.%m.%Y')}. "
-                            f"Н/З {row.work_order_number}, тип "
-                            f"{cell.research_type_code}, "
-                            f"{cell.container_type_name} × "
-                            f"{cell.containers_count}. "
-                            f"Ячейка пропущена — уточните вручную."
-                        ),
+                        "message": "На выбранную дату информации нет.",
                     })
-    return questions
+    return errors
 
 
 @transaction.atomic
@@ -379,18 +399,18 @@ def apply_shipment_import(
     3. По одной `ReceiptItem` на каждую тару (expected_samples_count=1).
     4. По одному пустому `Container` (status=IN_TRANSIT, draft-поля,
        container_number=None).
-    5. Спорные ячейки → в `parse_errors` с
-       `code=NEEDS_CONFIRMATION`.
-
-    Если на `target_date` нечего создавать, но есть вопросы —
-    рейс всё равно создаётся, `status=PARSED`, 0 контейнеров.
+    5. Спорные ячейки (`multi_date_match`) → `NEEDS_CONFIRMATION`.
+    6. Ячейки без дат / с датами, не включающими `target_date` →
+       `TARGET_DATE_MISSING` (информационно, рейс не создаётся,
+       если это единственное содержимое).
 
     :param target_date: обязательна.
     :param shipment_number: если не задан — генерируется.
     :returns: (Shipment | None, errors).
     """
-    # 1. Вопросы — по ИСХОДНОМУ parsed (до фильтра по дате).
+    # 1. Вопросы и «нет данных» — по ИСХОДНОМУ parsed (до фильтра).
     questions = _collect_pending_questions(parsed, target_date)
+    date_missing_errors = _collect_date_missing_errors(parsed, target_date)
     parser_errors = list(parsed.errors)
 
     # 2. Фильтр по дате.
@@ -432,10 +452,16 @@ def apply_shipment_import(
                     cell.containers_count,
                 ))
 
-    all_errors = parser_errors + build_errors + questions
+    all_errors = (
+        parser_errors
+        + build_errors
+        + questions
+        + date_missing_errors
+    )
 
     # 4. Если нечего создавать И нет вопросов — ERROR.
     #    Если есть вопросы — создаём рейс с 0 контейнерами (PARSED).
+    #    `date_missing_errors` сами по себе рейс не создают.
     if not to_create and not questions:
         import_session.parse_errors = all_errors
         import_session.status = ImportSession.STATUS_ERROR
@@ -497,11 +523,15 @@ def apply_shipment_import(
                 )
 
     # 6. Обновление сессии — вне транзакции записи.
+    #    `date_missing_errors` не влияют на статус:
+    #    они информационные, не блокируют APPLIED.
+    status_relevant = parser_errors + build_errors + questions
+
     import_session.parse_errors = all_errors
     import_session.receipt = receipt
     import_session.status = (
         ImportSession.STATUS_APPLIED
-        if not all_errors
+        if not status_relevant
         else ImportSession.STATUS_PARSED
     )
     import_session.save(update_fields=["parse_errors", "status", "receipt"])
