@@ -537,3 +537,18 @@ def test_shipment_import_no_rows_for_target_date(
 
     session.refresh_from_db()
     assert session.status == ImportSession.STATUS_ERROR
+
+
+
+def test_shipment_import_receipt_item_has_container_type(
+    db, session, site, research_types,
+):
+    """У ReceiptItem заполнен container_type (receiving-3b-1-2a)."""
+    parsed = _make_parsed()
+    apply_shipment_import(parsed, session, target_date=TARGET)
+
+    items = ReceiptItem.objects.all()
+    assert items.count() == 5
+    for item in items:
+        assert item.container_type is not None
+        assert item.container_type.name == "Ящики"

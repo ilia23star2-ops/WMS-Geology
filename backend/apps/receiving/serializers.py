@@ -100,6 +100,7 @@ class ReceiptItemSerializer(serializers.ModelSerializer):
             "receipt",
             "container",
             "container_number",
+            "container_type",
             "expected_container_number",
             "expected_work_order_number",
             "expected_research_type_code",
