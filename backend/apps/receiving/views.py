@@ -3,7 +3,8 @@ ViewSets приложения receiving.
 
 - ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`.
 - ReceiptItemViewSet — CRUD.
-- ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`.
+- ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`,
+  `resolve-questions`.
 """
 
 from datetime import date, datetime
@@ -167,10 +168,11 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
     """
     CRUD для сессий импорта.
 
-    Фильтры: ?status=
+    Фильтры: `?status=`, `?receipt_id=`
     Custom actions:
       - POST /import-sessions/upload/          — Excel → Receipt + ReceiptItem.
       - POST /import-sessions/import-shipment/ — Excel → Shipment + Receipt + Container.
+      - POST /import-sessions/{id}/resolve-questions/ — разбор NEEDS_CONFIRMATION.
     """
 
     serializer_class = ImportSessionSerializer
@@ -180,9 +182,13 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
         qs = ImportSession.objects.select_related(
             "uploaded_by", "receipt",
         ).all()
-        status_ = self.request.query_params.get("status")
+        p = self.request.query_params
+        status_ = p.get("status")
         if status_:
             qs = qs.filter(status=status_)
+        receipt_id = p.get("receipt_id")
+        if receipt_id:
+            qs = qs.filter(receipt_id=receipt_id)
         return qs
 
     def perform_create(self, serializer):

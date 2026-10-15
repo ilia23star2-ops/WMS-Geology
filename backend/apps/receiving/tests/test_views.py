@@ -333,6 +333,19 @@ def test_import_session_list_filter_by_status(auth_client, db):
     assert response.status_code == 200
     assert response.data["count"] == 1
 
+def test_import_session_list_filter_by_receipt(auth_client, receipt, db):
+    """Фильтр `?receipt_id=` возвращает только нужную сессию."""
+    ImportSession.objects.create(
+        file="receipts/a.xlsx", receipt=receipt,
+    )
+    ImportSession.objects.create(file="receipts/b.xlsx")
+
+    response = auth_client.get(
+        f"/api/v1/import-sessions/?receipt_id={receipt.pk}"
+    )
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["receipt"] == receipt.pk
 
 # ============================================================
 # ImportSession — upload (bundle-3)
