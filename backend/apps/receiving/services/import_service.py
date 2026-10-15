@@ -8,24 +8,29 @@
 Импорт рейса (`POST /import-sessions/import-shipment/`):
 - `apply_shipment_import` — рейс целиком:
   Shipment (INBOUND, SENT) + Receipt (site=None) +
-  ReceiptItem на каждую тару + пустой Container
-  (status=IN_TRANSIT, draft-поля).
+  по одной ReceiptItem + Container на каждую **однозначную** тару.
 
-Спорные ячейки:
-- `multi_date_match` (несколько дат, target входит) →
-  `code=NEEDS_CONFIRMATION` (вопрос, разбор вручную).
-- `no_dates` / `target_date_not_matched` →
-  `code=TARGET_DATE_MISSING`, сообщение
-  «На выбранную дату информации нет» (информационная запись,
-  рейс не создаётся, если это единственное содержимое).
+Спорные ячейки (`multi_date_match`):
+- В ячейке несколько дат, `target_date` входит. Непонятно, сколько
+  из общего количества тар приходит именно в эту дату.
+- По каждой такой ячейке:
+  - `ReceiptItem` **не создаём**;
+  - `Container` **не создаём**;
+  - записываем `NEEDS_CONFIRMATION` в `parse_errors`.
+- Кладовщик разберёт на экране сверки: укажет фактическое
+  количество, оно превратится в `ReceiptItem` (без `Container`),
+  `Container` создаётся на самой сверке.
+
+`no_dates` / `target_date_not_matched` → `TARGET_DATE_MISSING`
+(информационная запись, рейс не создаётся, если это единственное
+содержимое).
 
 Каждая запись в `parse_errors` (в т.ч. от парсера) получает
 русский `title` для UI.
 
-Разбор вопросов (`POST /import-sessions/{id}/resolve-questions/`):
-- `resolve_import_questions` — принимает распределение тар по датам
-  для каждого вопроса, создаёт `Container` + `ReceiptItem`
-  только для `target_date`, помечает вопрос `resolved: true`.
+Разбор вопросов (`POST /import-sessions/{id}/resolve-questions/`) —
+legacy: оставлен в API для совместимости, UI использует новый
+сценарий сверки.
 """
 
 from dataclasses import replace
@@ -62,6 +67,15 @@ def _to_iso(value) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
+
+
+def _is_conflict_cell(cell, target_date: date) -> bool:
+    """
+    Ячейка конфликтная, если у неё больше одной даты и `target_date`
+    входит в список. По такой ячейке создаётся только вопрос
+    (NEEDS_CONFIRMATION) — ни ReceiptItem, ни Container.
+    """
+    return len(cell.dates) > 1 and target_date in cell.dates
 
 
 def _detect_site(name: str) -> Site | None:
@@ -105,7 +119,7 @@ def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
 
     Ячейка без дат — пропускается.
     Ячейка с несколькими датами — берётся, если target входит
-    в список.
+    в список (может быть как конфликтной, так и нет).
 
     Листы без подходящих ячеек отбрасываются.
     """
@@ -318,8 +332,7 @@ def _collect_pending_questions(
     for sheet in parsed.sheets:
         for row in sheet.rows:
             for cell in row.cells:
-                dates = cell.dates
-                if len(dates) > 1 and target_date in dates:
+                if _is_conflict_cell(cell, target_date):
                     questions.append({
                         "code": "NEEDS_CONFIRMATION",
                         "title": TITLE_NEEDS_CONFIRMATION,
@@ -329,7 +342,7 @@ def _collect_pending_questions(
                         "research_type": cell.research_type_code,
                         "container_type": cell.container_type_name,
                         "containers_count": cell.containers_count,
-                        "raw_dates": [d.isoformat() for d in dates],
+                        "raw_dates": [d.isoformat() for d in cell.dates],
                         "target_date": target_date.isoformat(),
                         "message": (
                             f"В ячейке несколько дат, включая "
@@ -404,12 +417,12 @@ def apply_shipment_import(
 
     1. `Shipment` (direction=INBOUND, status=SENT, site=None).
     2. `Receipt` (site=None, shipment=shipment).
-    3. По одной `ReceiptItem` на каждую тару (expected_samples_count=1).
-    4. По одному пустому `Container` (status=IN_TRANSIT, draft-поля).
-    5. `multi_date_match` → `NEEDS_CONFIRMATION` (вопрос).
-    6. `no_dates` / `target_date_not_matched` →
-       `TARGET_DATE_MISSING` (информационно, рейс не создаётся,
-       если это единственное содержимое).
+    3. По одной `ReceiptItem` + `Container` (status=IN_TRANSIT,
+       draft-поля) на каждую **однозначную** тару.
+    4. `multi_date_match` → `NEEDS_CONFIRMATION` (вопрос,
+       `ReceiptItem`/`Container` **не создаются**).
+    5. `no_dates` / `target_date_not_matched` →
+       `TARGET_DATE_MISSING` (информационно).
 
     :returns: (Shipment | None, errors).
     """
@@ -422,6 +435,7 @@ def apply_shipment_import(
     filtered = _filter_by_date(parsed, target_date)
 
     # 3. СУХОЙ ПРОГОН: собираем, что надо создать.
+    #    Конфликтные ячейки пропускаем — для них только вопрос.
     to_create: list[tuple[Site, str, ResearchType, str, int]] = []
     build_errors: list[dict] = []
 
@@ -437,6 +451,9 @@ def apply_shipment_import(
 
         for row in sheet.rows:
             for cell in row.cells:
+                if _is_conflict_cell(cell, target_date):
+                    # Конфликтная ячейка → только вопрос, не создаём.
+                    continue
                 rt = ResearchType.objects.filter(
                     code__iexact=cell.research_type_code,
                 ).first()
@@ -544,7 +561,7 @@ def apply_shipment_import(
 
 
 # ============================================================
-# РАЗБОР ВОПРОСОВ: `POST /import-sessions/{id}/resolve-questions/`
+# РАЗБОР ВОПРОСОВ (legacy): `POST /import-sessions/{id}/resolve-questions/`
 # ============================================================
 def _questions_in(parse_errors: list[dict]) -> list[dict]:
     """Все вопросы из parse_errors (по коду)."""
@@ -637,7 +654,10 @@ def resolve_import_questions(
     resolutions: list[dict],
 ) -> tuple[int, list[dict]]:
     """
-    Применяет разбор вопросов `NEEDS_CONFIRMATION`.
+    Legacy: разбор вопросов `NEEDS_CONFIRMATION` через `distribution`.
+
+    UI переходит на сценарий сверки (`receipts/{id}/check/`),
+    но этот API пока оставлен для совместимости.
 
     :returns: (количество созданных Container, список ошибок).
     """
