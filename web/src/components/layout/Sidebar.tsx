@@ -2,6 +2,7 @@
  * Боковое меню (Drawer).
  *
  * Активный пункт: подсветка primary.main + белый текст.
+ * На мобильном — закрывается после выбора пункта.
  */
 import {
     Box,
@@ -39,14 +40,18 @@ const MENU: MenuItem[] = [
     { label: "Справочники", path: "/catalogs", icon: <MenuBookIcon /> },
 ];
 
-interface SidebarProps {
-    mobileOpen: boolean;
-    onMobileClose: () => void;
+interface DrawerContentProps {
+    onNavigate: () => void;
 }
 
-function DrawerContent() {
+function DrawerContent({ onNavigate }: DrawerContentProps) {
     const navigate = useNavigate();
     const location = useLocation();
+
+    function handleClick(path: string) {
+        navigate(path);
+        onNavigate();
+    }
 
     return (
         <>
@@ -66,7 +71,7 @@ function DrawerContent() {
                             <ListItemButton
                                 key={item.path}
                                 selected={selected}
-                                onClick={() => navigate(item.path)}
+                                onClick={() => handleClick(item.path)}
                                 sx={{
                                     "&.Mui-selected": {
                                         bgcolor: "primary.main",
@@ -91,6 +96,11 @@ function DrawerContent() {
     );
 }
 
+interface SidebarProps {
+    mobileOpen: boolean;
+    onMobileClose: () => void;
+}
+
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
     return (
         <Box
@@ -110,7 +120,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     },
                 }}
             >
-                <DrawerContent />
+                <DrawerContent onNavigate={onMobileClose} />
             </Drawer>
 
             <Drawer
@@ -124,7 +134,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
                     },
                 }}
             >
-                <DrawerContent />
+                <DrawerContent onNavigate={() => { }} />
             </Drawer>
         </Box>
     );

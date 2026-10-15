@@ -417,8 +417,9 @@ def apply_shipment_import(
 
     all_errors = parser_errors + build_errors + questions
 
-    # 4. Если создавать нечего — сессия в ERROR, рейс не создаём.
-    if not to_create:
+    # 4. Если нечего создавать И нет вопросов — ERROR.
+    #    Если есть вопросы — создаём рейс с 0 контейнерами (PARSED).
+    if not to_create and not questions:
         import_session.parse_errors = all_errors
         import_session.status = ImportSession.STATUS_ERROR
         import_session.save(update_fields=["parse_errors", "status"])
