@@ -2,15 +2,16 @@
  * Диалог импорта рейса из Excel.
  *
  * Загружает файл, дату и опциональные параметры.
- * При статусе ERROR в ответе — не закрывает диалог, показывает ошибки
- * списком, сгруппированным по коду.
+ * При статусе ERROR в ответе — не закрывает диалог, показывает
+ * компактную сводку + раскрываемый список ошибок по группам.
  * При успехе (APPLIED / PARSED) — вызывает onSuccess и закрывается.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
     Alert,
     Box,
     Button,
+    Collapse,
     Dialog,
     DialogActions,
     DialogContent,
@@ -23,11 +24,14 @@ import {
     TextField,
     Typography,
 } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { AxiosError } from "axios";
 
 import {
     useImportShipment,
     useLaboratories,
+    type ImportError,
     type ImportShipmentResponse,
 } from "../api";
 
@@ -37,10 +41,7 @@ interface ImportShipmentDialogProps {
     onSuccess: (result: ImportShipmentResponse) => void;
 }
 
-/**
- * Формат тела ошибки DRF / нашего backend.
- * `error` может быть строкой или объектом с `message`.
- */
+/** Формат тела ошибки DRF / нашего backend. */
 interface BackendErrorBody {
     error?: string | { message?: string };
     message?: string;
@@ -48,83 +49,170 @@ interface BackendErrorBody {
     [key: string]: unknown;
 }
 
-/** Извлекает человекочитаемое сообщение из ошибки axios. */
 function extractErrorMessage(err: AxiosError<BackendErrorBody>): string {
     const data = err.response?.data;
-
-    if (!data) {
-        return err.message || "Проверьте соединение.";
-    }
-
+    if (!data) return err.message || "Проверьте соединение.";
     if (typeof data.error === "string") return data.error;
     if (data.error && typeof data.error === "object" && data.error.message) {
         return data.error.message;
     }
     if (data.message) return data.message;
     if (data.detail) return data.detail;
-
     return JSON.stringify(data);
 }
 
-/** Группирует ошибки по коду и возвращает Map<код, ошибки>. */
-function groupErrors(
-    errors: {
-        code?: string;
-        error?: string;
-        sheet?: string;
-        row?: number;
-        column?: number;
-    }[],
-) {
-    const groups = new Map<string, typeof errors>();
-    for (const e of errors) {
-        const key = e.code ?? "OTHER";
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(e);
-    }
-    return groups;
-}
-
-const ERROR_TITLES: Record<string, string> = {
+/**
+ * Русские заголовки для групп ошибок.
+ * `title` (приходит с backend) — приоритетно;
+ * эти — fallback по `code`.
+ */
+const CODE_TITLES: Record<string, string> = {
+    NEEDS_CONFIRMATION: "Требует уточнения",
+    TARGET_DATE_MISSING: "Нет данных на дату",
     UNKNOWN_RESEARCH_TYPE: "Неизвестный тип исследования",
     MISSING_CONTAINER_TYPE: "Не указан тип тары",
+    MISSING_WORK_ORDER_COLUMN: "Не найдена колонка Н/З",
+    DUPLICATE_DATE: "Дубль даты",
 };
 
-function ErrorList({
-    errors,
-}: {
-    errors: ImportShipmentResponse["parse_errors"];
-}) {
-    const groups = groupErrors(errors);
+const OTHER_TITLE = "Прочие ошибки";
+
+/** Возвращает отображаемый заголовок ошибки. */
+function getTitle(e: ImportError): string {
+    const explicit = (e as { title?: string }).title;
+    if (explicit) return explicit;
+    return CODE_TITLES[e.code ?? ""] ?? OTHER_TITLE;
+}
+
+/** Короткая однострочная сводка по одной ошибке. */
+function shortLine(e: ImportError): string {
+    const parts: string[] = [];
+    if (e.sheet) parts.push(`Лист «${e.sheet}»`);
+    if (e.row !== undefined) parts.push(`строка ${e.row}`);
+    if (e.column !== undefined) parts.push(`колонка ${e.column}`);
+    const wo = (e as { work_order?: string }).work_order;
+    if (wo) parts.push(`Н/З ${wo}`);
+    const prefix = parts.length ? `${parts.join(", ")} — ` : "";
+    const msg =
+        e.error
+        ?? (e as { message?: string }).message
+        ?? "Проблема в данных.";
+    return `${prefix}${msg}`;
+}
+
+const MAX_PER_GROUP = 5;
+
+interface GroupedErrorsProps {
+    errors: ImportError[];
+}
+
+function GroupedErrors({ errors }: GroupedErrorsProps) {
+    const groups = useMemo(() => {
+        const map = new Map<string, ImportError[]>();
+        for (const e of errors) {
+            const key = getTitle(e);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key)!.push(e);
+        }
+        return Array.from(map.entries());
+    }, [errors]);
 
     return (
-        <Box sx={{ maxHeight: 300, overflow: "auto" }}>
-            {Array.from(groups.entries()).map(([code, items]) => (
-                <Box key={code} sx={{ mb: 1.5 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                        {ERROR_TITLES[code] ?? code} ({items.length})
+        <Stack spacing={2}>
+            {groups.map(([title, items]) => (
+                <Box key={title}>
+                    <Typography
+                        variant="subtitle2"
+                        sx={{ mb: 0.5, fontWeight: 600 }}
+                    >
+                        {title} — {items.length}
                     </Typography>
                     <Box
                         component="ul"
                         sx={{
                             m: 0,
                             pl: 2,
-                            "& li": { mb: 0.25, fontSize: "0.85rem" },
+                            "& li": {
+                                mb: 0.25,
+                                fontSize: "0.85rem",
+                                color: "text.secondary",
+                            },
                         }}
                     >
-                        {items.map((e, i) => (
-                            <li key={i}>
-                                {e.sheet && `Лист «${e.sheet}»`}
-                                {e.row !== undefined && `, строка ${e.row}`}
-                                {e.column !== undefined &&
-                                    `, колонка ${e.column}`}
-                                {e.error ? ` — ${e.error}` : ""}
-                            </li>
+                        {items.slice(0, MAX_PER_GROUP).map((e, i) => (
+                            <li key={i}>{shortLine(e)}</li>
                         ))}
+                        {items.length > MAX_PER_GROUP && (
+                            <li>
+                                … и ещё {items.length - MAX_PER_GROUP}{" "}
+                                {items.length - MAX_PER_GROUP === 1
+                                    ? "запись"
+                                    : "записей"}
+                            </li>
+                        )}
                     </Box>
                 </Box>
             ))}
-        </Box>
+        </Stack>
+    );
+}
+
+interface ErrorSummaryProps {
+    errors: ImportError[];
+}
+
+function ErrorSummary({ errors }: ErrorSummaryProps) {
+    const [expanded, setExpanded] = useState(false);
+
+    /** Сводка по типам: `[title, count]` без раскрытия. */
+    const summary = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const e of errors) {
+            const key = getTitle(e);
+            map.set(key, (map.get(key) ?? 0) + 1);
+        }
+        return Array.from(map.entries());
+    }, [errors]);
+
+    return (
+        <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Найдено проблем: {errors.length}
+            </Typography>
+            <Box
+                component="ul"
+                sx={{ m: 0, pl: 2, "& li": { fontSize: "0.85rem" } }}
+            >
+                {summary.map(([title, count]) => (
+                    <li key={title}>
+                        {title} — {count}
+                    </li>
+                ))}
+            </Box>
+
+            <Button
+                size="small"
+                endIcon={
+                    expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />
+                }
+                onClick={() => setExpanded((v) => !v)}
+                sx={{ mt: 1 }}
+            >
+                {expanded ? "Скрыть подробности" : "Показать подробности"}
+            </Button>
+            <Collapse in={expanded} unmountOnExit>
+                <Box
+                    sx={{
+                        mt: 1,
+                        maxHeight: 320,
+                        overflow: "auto",
+                        pr: 1,
+                    }}
+                >
+                    <GroupedErrors errors={errors} />
+                </Box>
+            </Collapse>
+        </Alert>
     );
 }
 
@@ -168,7 +256,6 @@ export default function ImportShipmentDialog({
             setError("Выберите файл Excel.");
             return;
         }
-
         if (!targetDate) {
             setError("Укажите дату рейса.");
             return;
@@ -188,7 +275,7 @@ export default function ImportShipmentDialog({
                 if (result.parse_errors && result.parse_errors.length > 0) {
                     setParseErrors(result.parse_errors);
                 } else {
-                    setError("Ошибка импорта данных.");
+                    setError("Импорт завершился с ошибкой.");
                 }
                 return;
             }
@@ -216,12 +303,7 @@ export default function ImportShipmentDialog({
                 )}
 
                 {parseErrors && parseErrors.length > 0 && (
-                    <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
-                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                            Найдено {parseErrors.length} проблем в файле:
-                        </Typography>
-                        <ErrorList errors={parseErrors} />
-                    </Alert>
+                    <ErrorSummary errors={parseErrors} />
                 )}
 
                 <Stack spacing={2} sx={{ mt: 1 }}>
@@ -254,7 +336,6 @@ export default function ImportShipmentDialog({
                         </Typography>
                     </Stack>
 
-                    {/* MUI 9: InputLabelProps убран, shrink через sx */}
                     <TextField
                         label="Дата рейса *"
                         type="date"

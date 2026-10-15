@@ -19,6 +19,9 @@
   «На выбранную дату информации нет» (информационная запись,
   рейс не создаётся, если это единственное содержимое).
 
+Каждая запись в `parse_errors` (в т.ч. от парсера) получает
+русский `title` для UI.
+
 Разбор вопросов (`POST /import-sessions/{id}/resolve-questions/`):
 - `resolve_import_questions` — принимает распределение тар по датам
   для каждого вопроса, создаёт `Container` + `ReceiptItem`
@@ -37,6 +40,16 @@ from apps.receiving.parsers import ParsedWorkbook
 from apps.samples.catalogs import ResearchType, Site
 from apps.storage.models import Container, ContainerType
 from apps.work_orders.models import WorkOrder
+
+
+# Русские заголовки для UI.
+TITLE_NEEDS_CONFIRMATION = "Требует уточнения"
+TITLE_TARGET_DATE_MISSING = "Нет данных на дату"
+TITLE_UNKNOWN_TYPE = "Неизвестный тип исследования"
+TITLE_MISSING_CONTAINER_TYPE = "Не указан тип тары"
+TITLE_MISSING_WORK_ORDER = "Не найдена колонка Н/З"
+TITLE_DUPLICATE_DATE = "Дубль даты"
+TITLE_OTHER = "Прочие ошибки"
 
 
 # ============================================================
@@ -90,10 +103,9 @@ def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
     """
     Оставляет только ячейки с указанной датой.
 
-    Ячейка без дат — пропускается (непонятно, к какой дате).
+    Ячейка без дат — пропускается.
     Ячейка с несколькими датами — берётся, если target входит
-    в список (спорный случай, фиксируется в errors на уровне
-    сервиса).
+    в список.
 
     Листы без подходящих ячеек отбрасываются.
     """
@@ -126,6 +138,7 @@ def build_receipt_from_parsed(
         site = _detect_site(sheet.sheet_name)
         if site is None:
             errors.append({
+                "title": "Участок не найден",
                 "sheet": sheet.sheet_name,
                 "error": f"Участок не найден: {sheet.sheet_name}",
             })
@@ -149,6 +162,7 @@ def build_receipt_from_parsed(
                 ).first()
                 if rt is None:
                     errors.append({
+                        "title": TITLE_UNKNOWN_TYPE,
                         "sheet": sheet.sheet_name,
                         "work_order": row.work_order_number,
                         "error": (
@@ -185,6 +199,7 @@ def _make_duplicate_error(
 ) -> dict:
     """Стандартная структура ошибки-дубликата."""
     return {
+        "title": TITLE_DUPLICATE_DATE,
         "error": "DUPLICATE_DATE",
         "message": (
             f"Партия за {target_date.strftime('%d.%m.%Y')} уже существует. "
@@ -253,9 +268,7 @@ def apply_import(
 # НОВЫЙ импорт: Shipment + Receipt + ReceiptItem + Container
 # ============================================================
 def _generate_shipment_number(target_year: int) -> str:
-    """
-    Генерирует `Р-{year}-{NNN}` (3 цифры, от 001). Пропускает занятые.
-    """
+    """Генерирует `Р-{year}-{NNN}` (3 цифры, от 001)."""
     prefix = f"Р-{target_year}-"
     last = (
         Shipment.objects
@@ -299,8 +312,7 @@ def _collect_pending_questions(
     Собирает вопросы `NEEDS_CONFIRMATION`.
 
     Только один случай: `multi_date_match` — в ячейке несколько дат,
-    и `target_date` входит в список. Нужно уточнить, сколько именно
-    тар приходит в эту дату.
+    и `target_date` входит в список.
     """
     questions: list[dict] = []
     for sheet in parsed.sheets:
@@ -310,6 +322,7 @@ def _collect_pending_questions(
                 if len(dates) > 1 and target_date in dates:
                     questions.append({
                         "code": "NEEDS_CONFIRMATION",
+                        "title": TITLE_NEEDS_CONFIRMATION,
                         "reason": "multi_date_match",
                         "sheet": sheet.sheet_name,
                         "work_order": row.work_order_number,
@@ -321,12 +334,8 @@ def _collect_pending_questions(
                         "message": (
                             f"В ячейке несколько дат, включая "
                             f"{target_date.strftime('%d.%m.%Y')}. "
-                            f"Н/З {row.work_order_number}, тип "
-                            f"{cell.research_type_code}, "
-                            f"{cell.container_type_name} × "
-                            f"{cell.containers_count}. "
-                            f"Нужно уточнить, сколько именно тар "
-                            f"приходит в эту дату."
+                            f"Уточните, сколько тар приходит "
+                            f"в эту дату."
                         ),
                     })
     return questions
@@ -343,9 +352,6 @@ def _collect_date_missing_errors(
     - `no_dates` — в ячейке нет ни одной даты;
     - `target_date_not_matched` — даты есть, но `target_date`
       не входит.
-
-    Рейс в этих случаях не создаётся (если больше нечего создавать),
-    но кладовщик видит в отчёте, что на выбранную дату информации нет.
     """
     errors: list[dict] = []
     for sheet in parsed.sheets:
@@ -355,6 +361,7 @@ def _collect_date_missing_errors(
                 if not dates:
                     errors.append({
                         "code": "TARGET_DATE_MISSING",
+                        "title": TITLE_TARGET_DATE_MISSING,
                         "reason": "no_dates",
                         "sheet": sheet.sheet_name,
                         "work_order": row.work_order_number,
@@ -368,6 +375,7 @@ def _collect_date_missing_errors(
                 elif target_date not in dates:
                     errors.append({
                         "code": "TARGET_DATE_MISSING",
+                        "title": TITLE_TARGET_DATE_MISSING,
                         "reason": "target_date_not_matched",
                         "sheet": sheet.sheet_name,
                         "work_order": row.work_order_number,
@@ -397,18 +405,15 @@ def apply_shipment_import(
     1. `Shipment` (direction=INBOUND, status=SENT, site=None).
     2. `Receipt` (site=None, shipment=shipment).
     3. По одной `ReceiptItem` на каждую тару (expected_samples_count=1).
-    4. По одному пустому `Container` (status=IN_TRANSIT, draft-поля,
-       container_number=None).
-    5. Спорные ячейки (`multi_date_match`) → `NEEDS_CONFIRMATION`.
-    6. Ячейки без дат / с датами, не включающими `target_date` →
+    4. По одному пустому `Container` (status=IN_TRANSIT, draft-поля).
+    5. `multi_date_match` → `NEEDS_CONFIRMATION` (вопрос).
+    6. `no_dates` / `target_date_not_matched` →
        `TARGET_DATE_MISSING` (информационно, рейс не создаётся,
        если это единственное содержимое).
 
-    :param target_date: обязательна.
-    :param shipment_number: если не задан — генерируется.
     :returns: (Shipment | None, errors).
     """
-    # 1. Вопросы и «нет данных» — по ИСХОДНОМУ parsed (до фильтра).
+    # 1. Вопросы и «нет данных» — по ИСХОДНОМУ parsed.
     questions = _collect_pending_questions(parsed, target_date)
     date_missing_errors = _collect_date_missing_errors(parsed, target_date)
     parser_errors = list(parsed.errors)
@@ -424,6 +429,7 @@ def apply_shipment_import(
         site = _detect_site(sheet.sheet_name)
         if site is None:
             build_errors.append({
+                "title": "Участок не найден",
                 "sheet": sheet.sheet_name,
                 "error": f"Участок не найден: {sheet.sheet_name}",
             })
@@ -436,6 +442,7 @@ def apply_shipment_import(
                 ).first()
                 if rt is None:
                     build_errors.append({
+                        "title": TITLE_UNKNOWN_TYPE,
                         "sheet": sheet.sheet_name,
                         "work_order": row.work_order_number,
                         "error": (
@@ -460,8 +467,7 @@ def apply_shipment_import(
     )
 
     # 4. Если нечего создавать И нет вопросов — ERROR.
-    #    Если есть вопросы — создаём рейс с 0 контейнерами (PARSED).
-    #    `date_missing_errors` сами по себе рейс не создают.
+    #    `date_missing_errors` сами рейс не создают.
     if not to_create and not questions:
         import_session.parse_errors = all_errors
         import_session.status = ImportSession.STATUS_ERROR
@@ -522,9 +528,7 @@ def apply_shipment_import(
                     status=ReceiptItem.STATUS_EXPECTED,
                 )
 
-    # 6. Обновление сессии — вне транзакции записи.
-    #    `date_missing_errors` не влияют на статус:
-    #    они информационные, не блокируют APPLIED.
+    # 6. Обновление сессии.
     status_relevant = parser_errors + build_errors + questions
 
     import_session.parse_errors = all_errors
@@ -554,11 +558,7 @@ def _collect_validation_errors(
     parse_errors: list[dict],
     resolutions: list[dict],
 ) -> list[dict]:
-    """
-    Проверяет корректность запроса на разбор до применения.
-
-    Возвращает список ошибок (пустой — всё ок).
-    """
+    """Проверяет корректность запроса на разбор до применения."""
     errors: list[dict] = []
     seen: set[int] = set()
 
@@ -639,10 +639,6 @@ def resolve_import_questions(
     """
     Применяет разбор вопросов `NEEDS_CONFIRMATION`.
 
-    :param import_session: сессия импорта (должна быть в PARSED).
-    :param resolutions: список словарей
-        `{"question_index": int, "distribution": [
-            {"date": "YYYY-MM-DD", "containers_count": int}, ...]}`.
     :returns: (количество созданных Container, список ошибок).
     """
     parse_errors = list(import_session.parse_errors or [])
