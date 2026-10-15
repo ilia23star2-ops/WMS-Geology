@@ -1,16 +1,16 @@
 """
-Тесты сервиса `apply_shipment_import` (receiving-1b / 2e-2b).
+Тесты сервиса `apply_shipment_import` (receiving-1b / 2e-2b / 3a).
 
 Покрывают:
 - создание Shipment (INBOUND, SENT) + Receipt (site=None);
-- по 1 ReceiptItem и 1 Container на каждую тару;
+- по 1 ReceiptItem и 1 Container на каждую **однозначную** тару;
 - draft-поля Container;
 - get_or_create ContainerType по имени;
 - генерацию shipment_number и использование заданного;
 - статусы ImportSession (APPLIED / PARSED / ERROR);
-- `multi_date_match` → NEEDS_CONFIRMATION (единственный вопрос);
-- `no_dates` / `target_date_not_matched` → TARGET_DATE_MISSING
-  (информационные записи, не вопросы);
+- `multi_date_match` → NEEDS_CONFIRMATION без создания
+  ReceiptItem/Container (3a);
+- `no_dates` / `target_date_not_matched` → TARGET_DATE_MISSING;
 - ошибки: site не найден, research_type не найден.
 """
 
@@ -258,12 +258,15 @@ def test_shipment_import_creates_new_container_type(
 
 
 # ============================================================
-# multi_date_match → NEEDS_CONFIRMATION
+# multi_date_match → NEEDS_CONFIRMATION (3a: без ReceiptItem/Container)
 # ============================================================
 def test_shipment_import_multi_date_match_question(
     db, session, site, research_types,
 ):
-    """Несколько дат, target входит → вопрос + ячейка обработана."""
+    """
+    Несколько дат, target входит → вопрос, **ни одного**
+    ReceiptItem/Container не создаётся.
+    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="TST00472",
@@ -279,8 +282,12 @@ def test_shipment_import_multi_date_match_question(
         parsed, session, target_date=TARGET,
     )
 
+    # Рейс создан (есть вопрос).
     assert shipment is not None
-    assert Container.objects.count() == 3
+    # Но ни ReceiptItem, ни Container — не созданы.
+    assert ReceiptItem.objects.count() == 0
+    assert Container.objects.count() == 0
+    assert Receipt.objects.count() == 1
 
     questions = [
         e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
@@ -288,6 +295,7 @@ def test_shipment_import_multi_date_match_question(
     assert len(questions) == 1
     assert questions[0]["reason"] == "multi_date_match"
     assert questions[0]["work_order"] == "TST00472"
+    assert questions[0]["containers_count"] == 3
 
 
 def test_shipment_import_questions_set_session_status_parsed(
@@ -308,6 +316,53 @@ def test_shipment_import_questions_set_session_status_parsed(
     apply_shipment_import(parsed, session, target_date=TARGET)
     session.refresh_from_db()
     assert session.status == ImportSession.STATUS_PARSED
+    assert Container.objects.count() == 0
+
+
+def test_shipment_import_multi_date_match_with_regular_row(
+    db, session, site, research_types,
+):
+    """
+    Смешанный файл: обычная ячейка + конфликтная.
+    Обычная → ReceiptItem + Container.
+    Конфликтная → только вопрос.
+    """
+    parsed = _make_parsed(rows=[
+        ParsedRow(
+            work_order_number="TST00001",
+            cells=[ParsedCell(
+                research_type_code="ШЛ",
+                containers_count=2,
+                container_type_name="Ящики",
+                dates=[TARGET],
+            )],
+        ),
+        ParsedRow(
+            work_order_number="TST00472",
+            cells=[ParsedCell(
+                research_type_code="АД",
+                containers_count=3,
+                container_type_name="Ящики",
+                dates=[date(2026, 8, 13), TARGET],
+            )],
+        ),
+    ])
+    shipment, errors = apply_shipment_import(
+        parsed, session, target_date=TARGET,
+    )
+
+    assert shipment is not None
+    # Обычная ячейка создала 2.
+    assert ReceiptItem.objects.count() == 2
+    assert Container.objects.count() == 2
+    # Конфликтная — только вопрос.
+    questions = [
+        e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
+    ]
+    assert len(questions) == 1
+
+    session.refresh_from_db()
+    assert session.status == ImportSession.STATUS_PARSED
 
 
 # ============================================================
@@ -316,10 +371,6 @@ def test_shipment_import_questions_set_session_status_parsed(
 def test_shipment_import_no_dates_is_not_a_question(
     db, session, site, research_types,
 ):
-    """
-    Ячейка без дат → TARGET_DATE_MISSING (не вопрос), рейс ERROR,
-    если больше нечего создавать.
-    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="TST00001",
@@ -355,9 +406,6 @@ def test_shipment_import_no_dates_is_not_a_question(
 def test_shipment_import_target_date_not_matched_is_not_a_question(
     db, session, site, research_types,
 ):
-    """
-    Даты есть, target не входит → TARGET_DATE_MISSING (не вопрос).
-    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="TST00999",
@@ -387,11 +435,6 @@ def test_shipment_import_target_date_not_matched_is_not_a_question(
 def test_shipment_import_mixed_creates_shipment_with_missing_reports(
     db, session, site, research_types,
 ):
-    """
-    Есть валидные ячейки + TARGET_DATE_MISSING → рейс создан,
-    TARGET_DATE_MISSING в parse_errors, статус APPLIED
-    (missing не блокирует).
-    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="TST00001",
@@ -474,10 +517,6 @@ def test_shipment_import_research_type_not_found(
 def test_shipment_import_no_rows_for_target_date(
     db, session, site, research_types,
 ):
-    """
-    Единственная ячейка с датой вне target_date → TARGET_DATE_MISSING,
-    рейс не создаётся.
-    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="Тест001",
