@@ -76,6 +76,7 @@ export interface ReceiptItem {
     container: number | null;
     container_number: string | null;
     container_type: number | null;
+    container_type_name: string | null;
     expected_container_number: string;
     expected_work_order_number: string;
     expected_research_type_code: string;

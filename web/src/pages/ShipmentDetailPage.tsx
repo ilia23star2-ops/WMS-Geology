@@ -6,10 +6,8 @@
  *   водитель, машина);
  * - связанный Receipt (один на рейс, `site=NULL`);
  * - список ReceiptItem (по одной строке на тару);
- * - кнопку «Разобрать вопросы (N)», если есть неразобранные
- *   `NEEDS_CONFIRMATION`.
+ * - кнопку «Начать сверку» — переход на `/receiving/:id/check`.
  */
-import { useMemo } from "react";
 import {
     Alert,
     Box,
@@ -21,6 +19,7 @@ import {
     Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 import {
     DataGrid,
     type GridColDef,
@@ -32,11 +31,9 @@ import {
     RECEIPT_STATUS_LABELS,
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
-    useImportSessionByReceipt,
     useReceiptItems,
     useReceipts,
     useShipment,
-    type ImportError,
     type ReceiptItem,
     type ReceiptItemStatus,
     type ShipmentStatus,
@@ -67,16 +64,6 @@ const ITEM_STATUS_COLORS: Record<
     EXTRA: "warning",
     PENDING_DECRYPTION: "default",
 };
-
-/**
- * Возвращает true, если запись `parse_errors` — неразобранный
- * вопрос `NEEDS_CONFIRMATION`.
- */
-function isPendingQuestion(e: ImportError): boolean {
-    if (e.code !== "NEEDS_CONFIRMATION") return false;
-    const resolved = (e as { resolved?: boolean }).resolved;
-    return !resolved;
-}
 
 function formatDate(value: string | null): string {
     if (!value) return "—";
@@ -196,14 +183,6 @@ export default function ShipmentDetailPage() {
 
     const receipt = receipts.data?.results[0] ?? null;
 
-    const importSession = useImportSessionByReceipt(receipt?.id ?? null);
-
-    const pendingQuestionsCount = useMemo(() => {
-        const session = importSession.data?.results[0];
-        if (!session?.parse_errors) return 0;
-        return session.parse_errors.filter(isPendingQuestion).length;
-    }, [importSession.data]);
-
     if (shipment.isError) {
         return (
             <Box>
@@ -321,22 +300,19 @@ export default function ShipmentDetailPage() {
                                     Тар в партии: <b>{receipt.items_count}</b>
                                 </Typography>
                             </Stack>
-                            {pendingQuestionsCount > 0 && (
-                                <Box sx={{ mt: 2 }}>
-                                    <Button
-                                        variant="contained"
-                                        color="warning"
-                                        onClick={() =>
-                                            navigate(
-                                                `/receiving/${data.id}/questions`,
-                                            )
-                                        }
-                                    >
-                                        Разобрать вопросы (
-                                        {pendingQuestionsCount})
-                                    </Button>
-                                </Box>
-                            )}
+                            <Box sx={{ mt: 2 }}>
+                                <Button
+                                    variant="contained"
+                                    startIcon={<FactCheckIcon />}
+                                    onClick={() =>
+                                        navigate(
+                                            `/receiving/${data.id}/check`,
+                                        )
+                                    }
+                                >
+                                    Начать сверку
+                                </Button>
+                            </Box>
                         </CardContent>
                     </Card>
 
