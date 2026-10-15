@@ -1,5 +1,5 @@
 """
-Тесты сервиса `apply_shipment_import` (receiving-1b).
+Тесты сервиса `apply_shipment_import` (receiving-1b / 2e-2b).
 
 Покрывают:
 - создание Shipment (INBOUND, SENT) + Receipt (site=None);
@@ -8,8 +8,9 @@
 - get_or_create ContainerType по имени;
 - генерацию shipment_number и использование заданного;
 - статусы ImportSession (APPLIED / PARSED / ERROR);
-- спорные ячейки: no_dates / multi_date_match /
-  target_date_not_matched → parse_errors с code=NEEDS_CONFIRMATION;
+- `multi_date_match` → NEEDS_CONFIRMATION (единственный вопрос);
+- `no_dates` / `target_date_not_matched` → TARGET_DATE_MISSING
+  (информационные записи, не вопросы);
 - ошибки: site не найден, research_type не найден.
 """
 
@@ -110,11 +111,9 @@ def test_shipment_import_success(db, session, site, research_types):
     assert receipt.site is None
     assert receipt.expected_date == TARGET
 
-    # 3 (ШЛ) + 2 (ХА) = 5 ReceiptItem и 5 Container.
     assert ReceiptItem.objects.count() == 5
     assert Container.objects.count() == 5
 
-    # Одна ContainerType на всё — «Ящики».
     assert ContainerType.objects.filter(name="Ящики").count() == 1
 
 
@@ -137,7 +136,6 @@ def test_shipment_import_container_draft_fields(
 def test_shipment_import_receipt_item_links_container(
     db, session, site, research_types,
 ):
-    """1 ReceiptItem = 1 Container, связь FK."""
     parsed = _make_parsed()
     apply_shipment_import(parsed, session, target_date=TARGET)
 
@@ -223,11 +221,8 @@ def test_shipment_import_multiple_sheets(db, session, research_types):
 
     assert shipment is not None
     assert errors == []
-    # Один Receipt на рейс.
     assert Receipt.objects.count() == 1
-    # 1 + 2 = 3 тары.
     assert Container.objects.count() == 3
-    # Разные участки в ReceiptItem.
     sites = set(ReceiptItem.objects.values_list("site__code", flat=True))
     assert sites == {"TST", "СЕВ"}
 
@@ -263,7 +258,7 @@ def test_shipment_import_creates_new_container_type(
 
 
 # ============================================================
-# Спорные ячейки → NEEDS_CONFIRMATION
+# multi_date_match → NEEDS_CONFIRMATION
 # ============================================================
 def test_shipment_import_multi_date_match_question(
     db, session, site, research_types,
@@ -285,7 +280,6 @@ def test_shipment_import_multi_date_match_question(
     )
 
     assert shipment is not None
-    # 3 тары созданы.
     assert Container.objects.count() == 3
 
     questions = [
@@ -296,85 +290,10 @@ def test_shipment_import_multi_date_match_question(
     assert questions[0]["work_order"] == "TST00472"
 
 
-def test_shipment_import_target_date_not_matched_question(
-    db, session, site, research_types,
-):
-    """Ячейка не попала в target → вопрос + ячейка пропущена."""
-    parsed = _make_parsed(rows=[
-        ParsedRow(
-            work_order_number="TST00999",
-            cells=[ParsedCell(
-                research_type_code="ШЛ",
-                containers_count=5,
-                container_type_name="Ящики",
-                dates=[date(2026, 1, 1)],
-            )],
-        ),
-        ParsedRow(
-            work_order_number="TST001",
-            cells=[ParsedCell(
-                research_type_code="ШЛ",
-                containers_count=1,
-                container_type_name="Ящики",
-                dates=[TARGET],
-            )],
-        ),
-    ])
-    shipment, errors = apply_shipment_import(
-        parsed, session, target_date=TARGET,
-    )
-    assert shipment is not None
-    # Только одна тара из TST001.
-    assert Container.objects.count() == 1
-
-    questions = [
-        e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
-    ]
-    assert len(questions) == 1
-    assert questions[0]["reason"] == "target_date_not_matched"
-
-
-def test_shipment_import_no_dates_question(
-    db, session, site, research_types,
-):
-    """Ячейка без дат → вопрос + ячейка пропущена."""
-    parsed = _make_parsed(rows=[
-        ParsedRow(
-            work_order_number="TST00001",
-            cells=[ParsedCell(
-                research_type_code="ШЛ",
-                containers_count=2,
-                container_type_name="Ящики",
-                dates=[],
-            )],
-        ),
-        ParsedRow(
-            work_order_number="TST00002",
-            cells=[ParsedCell(
-                research_type_code="ШЛ",
-                containers_count=1,
-                container_type_name="Ящики",
-                dates=[TARGET],
-            )],
-        ),
-    ])
-    shipment, errors = apply_shipment_import(
-        parsed, session, target_date=TARGET,
-    )
-    assert shipment is not None
-    assert Container.objects.count() == 1
-
-    questions = [
-        e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
-    ]
-    assert len(questions) == 1
-    assert questions[0]["reason"] == "no_dates"
-
-
 def test_shipment_import_questions_set_session_status_parsed(
     db, session, site, research_types,
 ):
-    """С вопросами — PARSED, а не APPLIED."""
+    """С вопросами — PARSED, не APPLIED."""
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="TST00001",
@@ -392,6 +311,124 @@ def test_shipment_import_questions_set_session_status_parsed(
 
 
 # ============================================================
+# no_dates / target_date_not_matched → TARGET_DATE_MISSING
+# ============================================================
+def test_shipment_import_no_dates_is_not_a_question(
+    db, session, site, research_types,
+):
+    """
+    Ячейка без дат → TARGET_DATE_MISSING (не вопрос), рейс ERROR,
+    если больше нечего создавать.
+    """
+    parsed = _make_parsed(rows=[
+        ParsedRow(
+            work_order_number="TST00001",
+            cells=[ParsedCell(
+                research_type_code="ШЛ",
+                containers_count=2,
+                container_type_name="Ящики",
+                dates=[],
+            )],
+        ),
+    ])
+    shipment, errors = apply_shipment_import(
+        parsed, session, target_date=TARGET,
+    )
+
+    assert shipment is None
+    assert Shipment.objects.count() == 0
+
+    session.refresh_from_db()
+    assert session.status == ImportSession.STATUS_ERROR
+
+    assert not any(
+        e.get("code") == "NEEDS_CONFIRMATION" for e in errors
+    )
+    missing = [
+        e for e in errors if e.get("code") == "TARGET_DATE_MISSING"
+    ]
+    assert len(missing) == 1
+    assert missing[0]["reason"] == "no_dates"
+    assert missing[0]["message"] == "На выбранную дату информации нет."
+
+
+def test_shipment_import_target_date_not_matched_is_not_a_question(
+    db, session, site, research_types,
+):
+    """
+    Даты есть, target не входит → TARGET_DATE_MISSING (не вопрос).
+    """
+    parsed = _make_parsed(rows=[
+        ParsedRow(
+            work_order_number="TST00999",
+            cells=[ParsedCell(
+                research_type_code="ШЛ",
+                containers_count=5,
+                container_type_name="Ящики",
+                dates=[date(2026, 1, 1)],
+            )],
+        ),
+    ])
+    shipment, errors = apply_shipment_import(
+        parsed, session, target_date=TARGET,
+    )
+    assert shipment is None
+
+    assert not any(
+        e.get("code") == "NEEDS_CONFIRMATION" for e in errors
+    )
+    missing = [
+        e for e in errors if e.get("code") == "TARGET_DATE_MISSING"
+    ]
+    assert len(missing) == 1
+    assert missing[0]["reason"] == "target_date_not_matched"
+
+
+def test_shipment_import_mixed_creates_shipment_with_missing_reports(
+    db, session, site, research_types,
+):
+    """
+    Есть валидные ячейки + TARGET_DATE_MISSING → рейс создан,
+    TARGET_DATE_MISSING в parse_errors, статус APPLIED
+    (missing не блокирует).
+    """
+    parsed = _make_parsed(rows=[
+        ParsedRow(
+            work_order_number="TST00001",
+            cells=[ParsedCell(
+                research_type_code="ШЛ",
+                containers_count=2,
+                container_type_name="Ящики",
+                dates=[TARGET],
+            )],
+        ),
+        ParsedRow(
+            work_order_number="TST00999",
+            cells=[ParsedCell(
+                research_type_code="ШЛ",
+                containers_count=5,
+                container_type_name="Ящики",
+                dates=[date(2026, 1, 1)],
+            )],
+        ),
+    ])
+    shipment, errors = apply_shipment_import(
+        parsed, session, target_date=TARGET,
+    )
+
+    assert shipment is not None
+    assert Container.objects.count() == 2
+
+    session.refresh_from_db()
+    assert session.status == ImportSession.STATUS_APPLIED
+
+    missing = [
+        e for e in errors if e.get("code") == "TARGET_DATE_MISSING"
+    ]
+    assert len(missing) == 1
+
+
+# ============================================================
 # Ошибки
 # ============================================================
 def test_shipment_import_site_not_found(
@@ -401,7 +438,6 @@ def test_shipment_import_site_not_found(
     shipment, errors = apply_shipment_import(
         parsed, session, target_date=TARGET,
     )
-    # Нет тары → рейс откатан, ничего не создано.
     assert shipment is None
     assert Container.objects.count() == 0
     assert Shipment.objects.count() == 0
@@ -439,7 +475,8 @@ def test_shipment_import_no_rows_for_target_date(
     db, session, site, research_types,
 ):
     """
-    Ячейка с датой вне target_date → вопрос, рейс PARSED, 0 тар.
+    Единственная ячейка с датой вне target_date → TARGET_DATE_MISSING,
+    рейс не создаётся.
     """
     parsed = _make_parsed(rows=[
         ParsedRow(
@@ -455,16 +492,9 @@ def test_shipment_import_no_rows_for_target_date(
     shipment, errors = apply_shipment_import(
         parsed, session, target_date=TARGET,
     )
-    # Рейс создаётся, но без тар — только вопрос.
-    assert shipment is not None
-    assert Shipment.objects.count() == 1
+    assert shipment is None
+    assert Shipment.objects.count() == 0
     assert Container.objects.count() == 0
 
     session.refresh_from_db()
-    assert session.status == ImportSession.STATUS_PARSED
-
-    questions = [
-        e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
-    ]
-    assert len(questions) == 1
-    assert questions[0]["reason"] == "target_date_not_matched"
+    assert session.status == ImportSession.STATUS_ERROR
