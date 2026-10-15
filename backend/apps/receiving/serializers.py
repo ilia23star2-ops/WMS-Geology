@@ -263,3 +263,61 @@ class ResolveConflictsResponseSerializer(serializers.Serializer):
     resolved_conflicts_count = serializers.IntegerField()
     total_conflicts_count = serializers.IntegerField()
     errors = serializers.ListField()
+
+
+
+# ============================================================
+# Сверка (`receipts/{id}/check/`) — 3b-2
+# ============================================================
+class CheckReceiptItemSerializer(serializers.Serializer):
+    """Одна отметка сверки."""
+
+    item_id = serializers.IntegerField(min_value=1)
+    matched = serializers.BooleanField()
+    container_number = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        default=None,
+    )
+
+    def validate_container_number(self, value):
+        if value is None:
+            return None
+        value = (value or "").strip()
+        return value or None
+
+
+class CheckReceiptRequestSerializer(serializers.Serializer):
+    """Запрос на сверку партии."""
+
+    items = CheckReceiptItemSerializer(many=True, allow_empty=False)
+
+
+class CheckReceiptResponseSerializer(serializers.Serializer):
+    """Ответ на сверку партии."""
+
+    receipt_id = serializers.IntegerField()
+    total_items_count = serializers.IntegerField()
+    matched_count = serializers.IntegerField()
+    missing_count = serializers.IntegerField()
+    errors = serializers.ListField()
+
+
+
+# ============================================================
+# Завершение приёмки (`receipts/{id}/complete/`) — 3c
+# ============================================================
+class CompleteReceiptResponseSerializer(serializers.Serializer):
+    """Ответ на завершение приёмки."""
+
+    receipt_id = serializers.IntegerField()
+    status = serializers.CharField()
+    total_items_count = serializers.IntegerField()
+    matched_count = serializers.IntegerField()
+    missing_count = serializers.IntegerField()
+    other_count = serializers.IntegerField()
+    shipment_id = serializers.IntegerField(allow_null=True)
+    shipment_status = serializers.CharField(allow_null=True)
+    errors = serializers.ListField()
