@@ -5,14 +5,39 @@
  * - `POST /import-sessions/import-shipment/` — импорт рейса.
  * - `POST /import-sessions/{id}/resolve-questions/` — разбор вопросов.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "./client";
+import type { PaginatedResponse } from "./types";
 
 /**
  * Вопрос по спорной ячейке (см. API.md → `import-shipment`).
  * Код `NEEDS_CONFIRMATION`, `reason` — один из трёх.
  */
+export type ImportSessionStatus =
+    | "PARSING"
+    | "PARSED"
+    | "ERROR"
+    | "APPLIED";
+
+export interface ImportSession {
+    id: number;
+    file: string | null;
+    file_format: "XLSX" | "CSV";
+    uploaded_at: string;
+    uploaded_by: number | null;
+    uploaded_by_username: string | null;
+    status: ImportSessionStatus;
+    parse_errors: ImportError[];
+    receipt: number | null;
+    receipt_number: string | null;
+}
+
 export type ImportQuestionReason =
     | "no_dates"
     | "multi_date_match"
@@ -176,5 +201,34 @@ export function useResolveQuestions(importSessionId: number) {
                 queryKey: ["containers"],
             });
         },
+    });
+}
+
+// ============================================================
+// Загрузка ImportSession по Receipt
+// ============================================================
+
+/**
+ * Сессии импорта, привязанные к Receipt.
+ * Используется на `/receiving/:id/questions` — чтобы получить
+ * `import_session_id` для разбора вопросов.
+ */
+export async function fetchImportSessionsByReceipt(
+    receiptId: number,
+): Promise<PaginatedResponse<ImportSession>> {
+    const { data } = await apiClient.get<PaginatedResponse<ImportSession>>(
+        "/import-sessions/",
+        { params: { receipt_id: receiptId } },
+    );
+    return data;
+}
+
+export function useImportSessionByReceipt(receiptId: number | null) {
+    return useQuery({
+        queryKey: ["import-session-by-receipt", receiptId],
+        queryFn: () => fetchImportSessionsByReceipt(receiptId as number),
+        enabled: typeof receiptId === "number" && !Number.isNaN(receiptId),
+        placeholderData: keepPreviousData,
+        staleTime: 10_000,
     });
 }

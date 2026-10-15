@@ -115,8 +115,10 @@ export type {
 } from "./receipts";
 
 export {
+    fetchImportSessionsByReceipt,
     importShipment,
     resolveQuestions,
+    useImportSessionByReceipt,
     useImportShipment,
     useResolveQuestions,
 } from "./importSessions";
@@ -124,6 +126,8 @@ export type {
     ImportError,
     ImportQuestion,
     ImportQuestionReason,
+    ImportSession,
+    ImportSessionStatus,
     ImportShipmentRequest,
     ImportShipmentResponse,
     ResolveDistributionItem,
