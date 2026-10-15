@@ -1,6 +1,6 @@
 /**
  * Диалог импорта рейса из Excel.
- * 
+ *
  * Загружает файл, дату и опциональные параметры.
  * При статусе ERROR в ответе — не закрывает диалог, показывает ошибки
  * списком, сгруппированным по коду.
@@ -23,8 +23,13 @@ import {
     TextField,
     Typography,
 } from "@mui/material";
+import { AxiosError } from "axios";
 
-import { useImportShipment, useLaboratories, type ImportShipmentResponse } from "../api";
+import {
+    useImportShipment,
+    useLaboratories,
+    type ImportShipmentResponse,
+} from "../api";
 
 interface ImportShipmentDialogProps {
     open: boolean;
@@ -32,8 +37,45 @@ interface ImportShipmentDialogProps {
     onSuccess: (result: ImportShipmentResponse) => void;
 }
 
+/**
+ * Формат тела ошибки DRF / нашего backend.
+ * `error` может быть строкой или объектом с `message`.
+ */
+interface BackendErrorBody {
+    error?: string | { message?: string };
+    message?: string;
+    detail?: string;
+    [key: string]: unknown;
+}
+
+/** Извлекает человекочитаемое сообщение из ошибки axios. */
+function extractErrorMessage(err: AxiosError<BackendErrorBody>): string {
+    const data = err.response?.data;
+
+    if (!data) {
+        return err.message || "Проверьте соединение.";
+    }
+
+    if (typeof data.error === "string") return data.error;
+    if (data.error && typeof data.error === "object" && data.error.message) {
+        return data.error.message;
+    }
+    if (data.message) return data.message;
+    if (data.detail) return data.detail;
+
+    return JSON.stringify(data);
+}
+
 /** Группирует ошибки по коду и возвращает Map<код, ошибки>. */
-function groupErrors(errors: { code?: string; error?: string; sheet?: string; row?: number; column?: number }[]) {
+function groupErrors(
+    errors: {
+        code?: string;
+        error?: string;
+        sheet?: string;
+        row?: number;
+        column?: number;
+    }[],
+) {
     const groups = new Map<string, typeof errors>();
     for (const e of errors) {
         const key = e.code ?? "OTHER";
@@ -48,7 +90,11 @@ const ERROR_TITLES: Record<string, string> = {
     MISSING_CONTAINER_TYPE: "Не указан тип тары",
 };
 
-function ErrorList({ errors }: { errors: ImportShipmentResponse["parse_errors"] }) {
+function ErrorList({
+    errors,
+}: {
+    errors: ImportShipmentResponse["parse_errors"];
+}) {
     const groups = groupErrors(errors);
 
     return (
@@ -70,7 +116,8 @@ function ErrorList({ errors }: { errors: ImportShipmentResponse["parse_errors"] 
                             <li key={i}>
                                 {e.sheet && `Лист «${e.sheet}»`}
                                 {e.row !== undefined && `, строка ${e.row}`}
-                                {e.column !== undefined && `, колонка ${e.column}`}
+                                {e.column !== undefined &&
+                                    `, колонка ${e.column}`}
                                 {e.error ? ` — ${e.error}` : ""}
                             </li>
                         ))}
@@ -91,7 +138,9 @@ export default function ImportShipmentDialog({
     const [shipmentNumber, setShipmentNumber] = useState("");
     const [laboratoryId, setLaboratoryId] = useState<string>("");
     const [error, setError] = useState<string | null>(null);
-    const [parseErrors, setParseErrors] = useState<ImportShipmentResponse["parse_errors"] | null>(null);
+    const [parseErrors, setParseErrors] = useState<
+        ImportShipmentResponse["parse_errors"] | null
+    >(null);
 
     const laboratories = useLaboratories();
     const importMutation = useImportShipment();
@@ -130,7 +179,9 @@ export default function ImportShipmentDialog({
                 file,
                 target_date: targetDate,
                 shipment_number: shipmentNumber.trim() || undefined,
-                laboratory_id: laboratoryId ? Number(laboratoryId) : undefined,
+                laboratory_id: laboratoryId
+                    ? Number(laboratoryId)
+                    : undefined,
             });
 
             if (result.status === "ERROR") {
@@ -145,17 +196,12 @@ export default function ImportShipmentDialog({
             onSuccess(result);
             reset();
             onClose();
-        } catch (err: any) {
-            const backendMessage =
-                err.response?.data?.error?.message ||
-                err.response?.data?.message ||
-                err.response?.data?.detail ||
-                JSON.stringify(err.response?.data);
-
-            setError(
-                backendMessage ||
-                "Не удалось импортировать рейс. Проверьте соединение."
-            );
+        } catch (err) {
+            const message =
+                err instanceof AxiosError
+                    ? extractErrorMessage(err)
+                    : "Не удалось импортировать рейс.";
+            setError(message);
         }
     }
 
@@ -180,7 +226,11 @@ export default function ImportShipmentDialog({
 
                 <Stack spacing={2} sx={{ mt: 1 }}>
                     {/* MUI 9: alignItems через sx, не проп */}
-                    <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+                    <Stack
+                        direction="row"
+                        spacing={2}
+                        sx={{ alignItems: "center" }}
+                    >
                         <Button
                             variant="outlined"
                             component="label"
@@ -217,7 +267,12 @@ export default function ImportShipmentDialog({
                             setError(null);
                             setParseErrors(null);
                         }}
-                        sx={{ "& .MuiInputLabel-root": { transform: "translate(14px, -9px) scale(0.75)" } }}
+                        sx={{
+                            "& .MuiInputLabel-root": {
+                                transform:
+                                    "translate(14px, -9px) scale(0.75)",
+                            },
+                        }}
                         disabled={importMutation.isPending}
                     />
 
@@ -231,13 +286,21 @@ export default function ImportShipmentDialog({
                         disabled={importMutation.isPending}
                     />
 
-                    <FormControl fullWidth size="small" disabled={importMutation.isPending}>
-                        <InputLabel id="import-lab-label">Лаборатория (опционально)</InputLabel>
+                    <FormControl
+                        fullWidth
+                        size="small"
+                        disabled={importMutation.isPending}
+                    >
+                        <InputLabel id="import-lab-label">
+                            Лаборатория (опционально)
+                        </InputLabel>
                         <Select
                             labelId="import-lab-label"
                             label="Лаборатория (опционально)"
                             value={laboratoryId}
-                            onChange={(e) => setLaboratoryId(String(e.target.value))}
+                            onChange={(e) =>
+                                setLaboratoryId(String(e.target.value))
+                            }
                         >
                             <MenuItem value="">— не указана —</MenuItem>
                             {(laboratories.data ?? []).map((lab) => (
@@ -250,15 +313,22 @@ export default function ImportShipmentDialog({
                 </Stack>
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleClose} disabled={importMutation.isPending}>
+                <Button
+                    onClick={handleClose}
+                    disabled={importMutation.isPending}
+                >
                     Отмена
                 </Button>
                 <Button
                     onClick={() => void handleConfirm()}
                     variant="contained"
-                    disabled={importMutation.isPending || !file || !targetDate}
+                    disabled={
+                        importMutation.isPending || !file || !targetDate
+                    }
                 >
-                    {importMutation.isPending ? "Импортируем..." : "Импортировать"}
+                    {importMutation.isPending
+                        ? "Импортируем..."
+                        : "Импортировать"}
                 </Button>
             </DialogActions>
         </Dialog>
