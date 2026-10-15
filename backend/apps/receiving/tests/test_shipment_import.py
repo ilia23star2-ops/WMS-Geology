@@ -438,6 +438,9 @@ def test_shipment_import_research_type_not_found(
 def test_shipment_import_no_rows_for_target_date(
     db, session, site, research_types,
 ):
+    """
+    Ячейка с датой вне target_date → вопрос, рейс PARSED, 0 тар.
+    """
     parsed = _make_parsed(rows=[
         ParsedRow(
             work_order_number="Тест001",
@@ -452,5 +455,16 @@ def test_shipment_import_no_rows_for_target_date(
     shipment, errors = apply_shipment_import(
         parsed, session, target_date=TARGET,
     )
-    assert shipment is None
-    assert Shipment.objects.count() == 0
+    # Рейс создаётся, но без тар — только вопрос.
+    assert shipment is not None
+    assert Shipment.objects.count() == 1
+    assert Container.objects.count() == 0
+
+    session.refresh_from_db()
+    assert session.status == ImportSession.STATUS_PARSED
+
+    questions = [
+        e for e in errors if e.get("code") == "NEEDS_CONFIRMATION"
+    ]
+    assert len(questions) == 1
+    assert questions[0]["reason"] == "target_date_not_matched"

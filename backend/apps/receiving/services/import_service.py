@@ -5,19 +5,25 @@
 - `build_receipt_from_parsed` — Receipt + ReceiptItem (без Container).
 - `apply_import` — с фильтром по дате, дубликатом, статусами.
 
-Новое (receiving-1b, `POST /import-shipment/`):
+Импорт рейса (`POST /import-sessions/import-shipment/`):
 - `apply_shipment_import` — рейс целиком:
   Shipment (INBOUND, SENT) + Receipt (site=None) +
   ReceiptItem на каждую тару + пустой Container
   (status=IN_TRANSIT, draft-поля).
 - Спорные ячейки (несколько дат, нет дат, target не совпал)
   уходят в `ImportSession.parse_errors` с `code=NEEDS_CONFIRMATION`.
+
+Разбор вопросов (`POST /import-sessions/{id}/resolve-questions/`):
+- `resolve_import_questions` — принимает распределение тар по датам
+  для каждого вопроса, создаёт `Container` + `ReceiptItem`
+  только для `target_date`, помечает вопрос `resolved: true`.
 """
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.picking.models import Shipment
 from apps.receiving.models import ImportSession, Receipt, ReceiptItem
@@ -30,6 +36,15 @@ from apps.work_orders.models import WorkOrder
 # ============================================================
 # Вспомогательные (общие для старого и нового импорта)
 # ============================================================
+def _to_iso(value) -> str:
+    """Нормализует дату к ISO-строке (str | date | datetime)."""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
 def _detect_site(name: str) -> Site | None:
     """Определяет участок по названию листа/строки."""
     if not name:
@@ -72,7 +87,7 @@ def _filter_by_date(parsed: ParsedWorkbook, target: date) -> ParsedWorkbook:
     Ячейка без дат — пропускается (непонятно, к какой дате).
     Ячейка с несколькими датами — берётся, если target входит
     в список (спорный случай, фиксируется в errors на уровне
-    сервиса — TODO receiving-1b).
+    сервиса).
 
     Листы без подходящих ячеек отбрасываются.
     """
@@ -367,6 +382,9 @@ def apply_shipment_import(
     5. Спорные ячейки → в `parse_errors` с
        `code=NEEDS_CONFIRMATION`.
 
+    Если на `target_date` нечего создавать, но есть вопросы —
+    рейс всё равно создаётся, `status=PARSED`, 0 контейнеров.
+
     :param target_date: обязательна.
     :param shipment_number: если не задан — генерируется.
     :returns: (Shipment | None, errors).
@@ -379,7 +397,6 @@ def apply_shipment_import(
     filtered = _filter_by_date(parsed, target_date)
 
     # 3. СУХОЙ ПРОГОН: собираем, что надо создать.
-    #    Только Resolvable-элементы (site + research_type найдены).
     to_create: list[tuple[Site, str, ResearchType, str, int]] = []
     build_errors: list[dict] = []
 
@@ -490,3 +507,207 @@ def apply_shipment_import(
     import_session.save(update_fields=["parse_errors", "status", "receipt"])
 
     return shipment, all_errors
+
+
+# ============================================================
+# РАЗБОР ВОПРОСОВ: `POST /import-sessions/{id}/resolve-questions/`
+# ============================================================
+def _questions_in(parse_errors: list[dict]) -> list[dict]:
+    """Все вопросы из parse_errors (по коду)."""
+    return [
+        e for e in parse_errors
+        if e.get("code") == "NEEDS_CONFIRMATION"
+    ]
+
+
+def _collect_validation_errors(
+    parse_errors: list[dict],
+    resolutions: list[dict],
+) -> list[dict]:
+    """
+    Проверяет корректность запроса на разбор до применения.
+
+    Возвращает список ошибок (пустой — всё ок).
+    """
+    errors: list[dict] = []
+    seen: set[int] = set()
+
+    for r in resolutions:
+        idx = r["question_index"]
+        if idx in seen:
+            errors.append({
+                "question_index": idx,
+                "error": "Дубликат question_index в запросе.",
+            })
+            continue
+        seen.add(idx)
+
+        if idx < 0 or idx >= len(parse_errors):
+            errors.append({
+                "question_index": idx,
+                "error": "Индекс вне диапазона parse_errors.",
+            })
+            continue
+
+        q = parse_errors[idx]
+        if q.get("code") != "NEEDS_CONFIRMATION":
+            errors.append({
+                "question_index": idx,
+                "error": "Эта запись — не вопрос NEEDS_CONFIRMATION.",
+            })
+            continue
+
+        if q.get("resolved"):
+            errors.append({
+                "question_index": idx,
+                "error": "Вопрос уже разобран.",
+            })
+            continue
+
+        total = sum(
+            d["containers_count"] for d in r["distribution"]
+        )
+        expected = q.get("containers_count", 0)
+        if total != expected:
+            errors.append({
+                "question_index": idx,
+                "error": (
+                    f"Сумма распределения {total} не совпадает "
+                    f"с количеством тар в вопросе ({expected})."
+                ),
+            })
+            continue
+
+        target_date_iso = q.get("target_date")
+        if not target_date_iso:
+            errors.append({
+                "question_index": idx,
+                "error": "В вопросе нет target_date.",
+            })
+            continue
+
+        if not any(
+            _to_iso(d["date"]) == target_date_iso
+            for d in r["distribution"]
+        ):
+            errors.append({
+                "question_index": idx,
+                "error": (
+                    f"В distribution отсутствует target_date "
+                    f"{target_date_iso}."
+                ),
+            })
+
+    return errors
+
+
+@transaction.atomic
+def resolve_import_questions(
+    import_session: ImportSession,
+    resolutions: list[dict],
+) -> tuple[int, list[dict]]:
+    """
+    Применяет разбор вопросов `NEEDS_CONFIRMATION`.
+
+    :param import_session: сессия импорта (должна быть в PARSED).
+    :param resolutions: список словарей
+        `{"question_index": int, "distribution": [
+            {"date": "YYYY-MM-DD", "containers_count": int}, ...]}`.
+    :returns: (количество созданных Container, список ошибок).
+    """
+    parse_errors = list(import_session.parse_errors or [])
+    questions = _questions_in(parse_errors)
+    if not questions:
+        return 0, [{"error": "В сессии нет вопросов NEEDS_CONFIRMATION."}]
+
+    receipt = import_session.receipt
+    if receipt is None:
+        return 0, [{"error": "У сессии нет связанного Receipt."}]
+
+    # 1. Валидация.
+    validation_errors = _collect_validation_errors(
+        parse_errors, resolutions,
+    )
+    if validation_errors:
+        return 0, validation_errors
+
+    # 2. Применяем.
+    created_count = 0
+
+    for r in resolutions:
+        idx = r["question_index"]
+        q = parse_errors[idx]
+        target_date_iso = q["target_date"]
+
+        site = _detect_site(q.get("sheet", ""))
+        if site is None:
+            return 0, [{
+                "question_index": idx,
+                "error": f"Участок не найден: {q.get('sheet')}",
+            }]
+
+        rt = ResearchType.objects.filter(
+            code__iexact=q["research_type"],
+        ).first()
+        if rt is None:
+            return 0, [{
+                "question_index": idx,
+                "error": f"Тип исследования не найден: {q['research_type']}",
+            }]
+
+        ct = _get_or_create_container_type(q["container_type"])
+        wo = _get_or_create_work_order(q["work_order"], site)
+
+        target_count = next(
+            d["containers_count"]
+            for d in r["distribution"]
+            if _to_iso(d["date"]) == target_date_iso
+        )
+
+        for _ in range(target_count):
+            container = Container.objects.create(
+                container_number=None,
+                container_type=ct,
+                status=Container.STATUS_IN_TRANSIT,
+                draft_site=site,
+                draft_research_type=rt,
+                draft_work_order_coded=q["work_order"],
+                draft_work_order_incoming="",
+            )
+            ReceiptItem.objects.create(
+                receipt=receipt,
+                container=container,
+                expected_container_number="",
+                expected_work_order_number=q["work_order"],
+                expected_research_type_code=rt.code,
+                expected_site_code=site.code,
+                expected_samples_count=1,
+                work_order=wo,
+                research_type=rt,
+                site=site,
+                status=ReceiptItem.STATUS_EXPECTED,
+            )
+            created_count += 1
+
+        # 3. Помечаем вопрос.
+        q["resolved"] = True
+        q["resolved_at"] = timezone.now().isoformat()
+        q["resolved_distribution"] = [
+            {
+                "date": _to_iso(d["date"]),
+                "containers_count": d["containers_count"],
+            }
+            for d in r["distribution"]
+        ]
+
+    # 4. Обновляем parse_errors и статус.
+    import_session.parse_errors = parse_errors
+
+    all_questions = _questions_in(parse_errors)
+    all_resolved = [q for q in all_questions if q.get("resolved")]
+    if all_questions and len(all_resolved) == len(all_questions):
+        import_session.status = ImportSession.STATUS_APPLIED
+
+    import_session.save(update_fields=["parse_errors", "status"])
+
+    return created_count, []

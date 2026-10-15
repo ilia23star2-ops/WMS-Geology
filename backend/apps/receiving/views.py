@@ -26,9 +26,15 @@ from .serializers import (
     ImportUploadResponseSerializer,
     ReceiptItemSerializer,
     ReceiptSerializer,
+    ResolveQuestionsRequestSerializer,
+    ResolveQuestionsResponseSerializer,
     ShipmentImportResponseSerializer,
 )
-from .services import apply_import, apply_shipment_import
+from .services import (
+    apply_import,
+    apply_shipment_import,
+    resolve_import_questions,
+)
 
 
 # ============================================================
@@ -459,4 +465,70 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
             "receipts": receipts,
         }
         serializer = ImportUploadResponseSerializer(response_data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="resolve-questions",
+    )
+    def resolve_questions(self, request, pk=None):
+        """
+        Разбор вопросов `NEEDS_CONFIRMATION`.
+
+        Доступен только в статусе `PARSED`.
+        `question_index` в теле — позиция вопроса в `parse_errors`.
+
+        Тело:
+        - `resolutions: [{question_index: int, distribution: [
+            {date: "YYYY-MM-DD", containers_count: int}, ...]}]`
+
+        Ответ 200:
+        `{import_session_id, status, created_containers_count,
+          resolved_questions_count, total_questions_count, errors}`.
+        """
+        import_session = self.get_object()
+
+        if import_session.status != ImportSession.STATUS_PARSED:
+            return Response(
+                {
+                    "error": (
+                        f"Разбор вопросов доступен только в статусе "
+                        f"PARSED, сейчас — {import_session.status}."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ser = ResolveQuestionsRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        created, errors = resolve_import_questions(
+            import_session,
+            ser.validated_data["resolutions"],
+        )
+
+        if errors:
+            return Response(
+                {"errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        import_session.refresh_from_db()
+        parse_errors = import_session.parse_errors or []
+        questions = [
+            e for e in parse_errors
+            if e.get("code") == "NEEDS_CONFIRMATION"
+        ]
+        resolved = [q for q in questions if q.get("resolved")]
+
+        response_data = {
+            "import_session_id": import_session.pk,
+            "status": import_session.status,
+            "created_containers_count": created,
+            "resolved_questions_count": len(resolved),
+            "total_questions_count": len(questions),
+            "errors": [],
+        }
+        serializer = ResolveQuestionsResponseSerializer(response_data)
         return Response(serializer.data, status=status.HTTP_200_OK)

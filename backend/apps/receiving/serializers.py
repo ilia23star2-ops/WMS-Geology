@@ -5,6 +5,9 @@
 - ReceiptItemSerializer — строка партии.
 - ImportSessionSerializer — сессия импорта.
 - ImportUploadResponseSerializer — ответ на загрузку Excel.
+- ShipmentImportResponseSerializer — ответ на импорт рейса.
+- ResolveQuestionsRequestSerializer — разбор вопросов (запрос).
+- ResolveQuestionsResponseSerializer — разбор вопросов (ответ).
 - ReceiptBriefSerializer — краткая инфо о Receipt.
 """
 
@@ -146,7 +149,7 @@ class ImportSessionSerializer(serializers.ModelSerializer):
 
 
 class ImportUploadResponseSerializer(serializers.Serializer):
-    """Ответ на загрузку Excel-файла."""
+    """Ответ на загрузку Excel-файла (старый импорт)."""
 
     import_session_id = serializers.IntegerField()
     status = serializers.CharField()
@@ -156,6 +159,7 @@ class ImportUploadResponseSerializer(serializers.Serializer):
     containers_count = serializers.IntegerField()
     parse_errors = serializers.ListField()
     receipts = ReceiptBriefSerializer(many=True)
+
 
 class ShipmentImportResponseSerializer(serializers.Serializer):
     """Ответ на импорт рейса (`POST /import-sessions/import-shipment/`)."""
@@ -169,3 +173,44 @@ class ShipmentImportResponseSerializer(serializers.Serializer):
     containers_count = serializers.IntegerField()
     questions_count = serializers.IntegerField()
     parse_errors = serializers.ListField()
+
+
+# ============================================================
+# Разбор вопросов `NEEDS_CONFIRMATION`
+# ============================================================
+class DistributionItemSerializer(serializers.Serializer):
+    """Одна запись распределения: дата + количество тар."""
+
+    date = serializers.DateField()
+    containers_count = serializers.IntegerField(min_value=0)
+
+
+class QuestionResolutionSerializer(serializers.Serializer):
+    """Один разобранный вопрос."""
+
+    question_index = serializers.IntegerField(min_value=0)
+    distribution = DistributionItemSerializer(
+        many=True, allow_empty=False,
+    )
+
+
+class ResolveQuestionsRequestSerializer(serializers.Serializer):
+    """Запрос на разбор вопросов.
+
+    `question_index` — позиция вопроса в `ImportSession.parse_errors`.
+    """
+
+    resolutions = QuestionResolutionSerializer(
+        many=True, allow_empty=False,
+    )
+
+
+class ResolveQuestionsResponseSerializer(serializers.Serializer):
+    """Ответ на разбор вопросов."""
+
+    import_session_id = serializers.IntegerField()
+    status = serializers.CharField()
+    created_containers_count = serializers.IntegerField()
+    resolved_questions_count = serializers.IntegerField()
+    total_questions_count = serializers.IntegerField()
+    errors = serializers.ListField()
