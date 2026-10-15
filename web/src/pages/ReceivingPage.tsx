@@ -1,13 +1,16 @@
 /**
- * Приёмка рейсов: список Shipment (INBOUND).
- *
- * DataGrid + фильтры (направление, статус) + server-side пагинация.
- * Клик по строке — детали рейса (receiving-2c).
- */
+Приёмка рейсов: список Shipment (INBOUND).
+DataGrid + фильтры (направление, статус) + server-side пагинация.
+Клик по строке — детали рейса (receiving-2c).
+Кнопка «Импортировать рейс» — открывает диалог (receiving-2d).
+*/
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+    Alert,
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
@@ -16,6 +19,7 @@ import {
     InputLabel,
     MenuItem,
     Select,
+    Snackbar,
     Stack,
     Typography,
 } from "@mui/material";
@@ -24,16 +28,17 @@ import {
     type GridColDef,
     type GridPaginationModel,
 } from "@mui/x-data-grid";
-
 import {
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
     useShipments,
+    type ImportShipmentResponse,
     type Shipment,
     type ShipmentDirection,
     type ShipmentFilters,
     type ShipmentStatus,
 } from "../api";
+import ImportShipmentDialog from "../components/ImportShipmentDialog";
 
 const PAGE_SIZE = 50;
 
@@ -62,6 +67,8 @@ function formatDate(value: string | null): string {
 
 export default function ReceivingPage() {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+
     const [filters, setFilters] = useState<ShipmentFilters>({
         direction: "INBOUND",
     });
@@ -69,6 +76,13 @@ export default function ReceivingPage() {
         page: 0,
         pageSize: PAGE_SIZE,
     });
+
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+    const [snackbar, setSnackbar] = useState<{
+        open: boolean;
+        message: string;
+        severity: "success" | "warning" | "error";
+    } | null>(null);
 
     const { data, isLoading, isError } = useShipments({
         page: paginationModel.page + 1,
@@ -91,8 +105,7 @@ export default function ReceivingPage() {
                     const direction = params.value as ShipmentDirection;
                     return (
                         <Chip
-                            label={SHIPMENT_DIRECTION_LABELS[direction] ??
-                                direction}
+                            label={SHIPMENT_DIRECTION_LABELS[direction] ?? direction}
                             size="small"
                             variant="outlined"
                         />
@@ -139,6 +152,33 @@ export default function ReceivingPage() {
         [],
     );
 
+    function handleImportSuccess(result: ImportShipmentResponse) {
+        // Инвалидируем кэш, чтобы список обновился
+        queryClient.invalidateQueries({ queryKey: ["shipments"] });
+
+        if (result.status === "APPLIED" && result.questions_count === 0) {
+            setSnackbar({
+                open: true,
+                message: `Импортировано ${result.containers_count} тар.`,
+                severity: "success",
+            });
+            navigate(`/receiving/${result.shipment_id}`);
+        } else if (result.status === "PARSED" && result.questions_count > 0) {
+            setSnackbar({
+                open: true,
+                message: `Импортировано ${result.containers_count} тар, ⚠️ ${result.questions_count} вопросов.`,
+                severity: "warning",
+            });
+            // Остаёмся на /receiving, список обновится благодаря invalidateQueries
+        } else {
+            setSnackbar({
+                open: true,
+                message: "Неожиданный статус импорта. Проверьте список рейсов.",
+                severity: "error",
+            });
+        }
+    }
+
     return (
         <Box>
             <Box
@@ -152,6 +192,12 @@ export default function ReceivingPage() {
                 <Typography variant="h2" component="h1">
                     Приёмка
                 </Typography>
+                <Button
+                    variant="contained"
+                    onClick={() => setImportDialogOpen(true)}
+                >
+                    Импортировать рейс
+                </Button>
             </Box>
 
             <Card sx={{ mb: 2 }}>
@@ -196,7 +242,6 @@ export default function ReceivingPage() {
                                 </Select>
                             </FormControl>
                         </Grid>
-
                         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                             <FormControl fullWidth size="small">
                                 <InputLabel id="status-label">Статус</InputLabel>
@@ -265,10 +310,32 @@ export default function ReceivingPage() {
 
             {isError && (
                 <Stack sx={{ mt: 2 }}>
-                    <Typography color="error">
-                        Ошибка загрузки рейсов.
-                    </Typography>
+                    <Alert severity="error">Ошибка загрузки рейсов.</Alert>
                 </Stack>
+            )}
+
+            <ImportShipmentDialog
+                open={importDialogOpen}
+                onClose={() => setImportDialogOpen(false)}
+                onSuccess={handleImportSuccess}
+            />
+
+            {snackbar && (
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={() => setSnackbar(null)}
+                    anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                >
+                    <Alert
+                        onClose={() => setSnackbar(null)}
+                        severity={snackbar.severity}
+                        variant="filled"
+                        sx={{ width: "100%" }}
+                    >
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
             )}
         </Box>
     );

@@ -15,10 +15,12 @@
 заголовков. Парсер сам находит строку заголовков по маркеру
 «№ Наряд-заказа» / «Н/З» / «Наряд».
 
-Сразу после строки заголовков идёт строка **типа тары**
+Сразу после строки заголовков (возможно, после пустых строк-
+разделителей и дубля заголовков) идёт строка **типа тары**
 («Ящики», «Биг-бэг», …). Признак строки типа тары:
-ячейка под колонкой Н/З **пустая**, но есть другие значения.
-Если под Н/З есть значение — это уже данные, type_row нет.
+ячейка под колонкой Н/З пустая ИЛИ содержит дубль заголовка Н/З,
+но есть другие текстовые значения (не числа).
+Если под Н/З есть значение (не дубль заголовка) — это уже данные.
 
 Парсер не обращается к БД. Список известных кодов типов
 передаётся снаружи (`research_type_codes`).
@@ -51,12 +53,58 @@ ERR_MISSING_CONTAINER_TYPE = "MISSING_CONTAINER_TYPE"
 # Максимум строк «шапки» до заголовков (защита от зацикливания).
 MAX_HEADER_SEARCH = 20
 
+# Максимум строк после заголовков для поиска type_row
+# (пустые разделители + дубли заголовков + строка типа тары).
+MAX_TYPE_ROW_SEARCH = 5
+
 
 def _normalize(value) -> str:
     """Нормализация строки: strip, lower, схлопывание пробелов."""
     if value is None:
         return ""
     return re.sub(r"\s+", " ", str(value).strip().lower())
+
+
+def _is_numeric(value) -> bool:
+    """Проверка, является ли значение числом (int/float/«1+1»)."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        s = value.strip().replace(",", ".")
+        try:
+            float(s)
+            return True
+        except ValueError:
+            pass
+        if "+" in s:
+            parts = s.split("+")
+            try:
+                all(float(p) for p in parts)
+                return True
+            except ValueError:
+                pass
+    return False
+
+
+def _is_empty_row(row) -> bool:
+    """Строка полностью пустая (все ячейки None или пустые)."""
+    return all(_normalize(c) == "" for c in row)
+
+
+def _is_header_duplicate(candidate, headers) -> bool:
+    """Строка — дубль заголовков, если ≥80% непустых ячеек совпадают."""
+    match_count = 0
+    total_non_empty = 0
+    for c, h in zip(candidate, headers):
+        c_norm = _normalize(c)
+        h_norm = _normalize(h)
+        if h_norm:
+            total_non_empty += 1
+            if c_norm == h_norm:
+                match_count += 1
+    return total_non_empty > 0 and match_count >= total_non_empty * 0.8
 
 
 def _parse_one_date(s: str, default_year: int) -> date | None:
@@ -221,23 +269,59 @@ def _parse_sheet(
         })
         return sheet
 
-    # 3. Строка типа тары: следующая после заголовков.
-    #    Признак: ячейка под Н/З пустая, но есть другие значения.
-    #    Если под Н/З есть значение — это уже данные.
+    # Нормализованный заголовок Н/З (для сравнения при поиске type_row).
+    wo_header_norm = _normalize(headers[work_order_idx])
+
+    # 3. Ищем строку типа тары в следующих MAX_TYPE_ROW_SEARCH строках.
+    #    Пропускаем:
+    #    - полностью пустые строки (разделители),
+    #    - дубли заголовков (≥80% совпадение с headers).
+    #    Под Н/З может быть пусто ИЛИ дубль заголовка Н/З.
     type_row: tuple | None = None
+    type_row_number: int | None = None
     data_start_idx = header_idx + 1
-    if header_idx + 1 < len(all_rows):
-        candidate = all_rows[header_idx + 1]
+
+    for offset in range(1, MAX_TYPE_ROW_SEARCH + 1):
+        if header_idx + offset >= len(all_rows):
+            break
+        candidate = all_rows[header_idx + offset]
+
+        # Полностью пустая строка — пропускаем (разделитель).
+        if _is_empty_row(candidate):
+            data_start_idx = header_idx + offset + 1
+            continue
+
         wo_cell = (
             candidate[work_order_idx]
             if work_order_idx < len(candidate)
             else None
         )
-        wo_is_empty = _normalize(wo_cell) == ""
-        has_other_values = any(_normalize(c) for c in candidate)
-        if wo_is_empty and has_other_values:
-            type_row = candidate
-            data_start_idx = header_idx + 2
+        wo_norm = _normalize(wo_cell)
+
+        # Дубль заголовков — пропускаем.
+        if _is_header_duplicate(candidate, headers):
+            data_start_idx = header_idx + offset + 1
+            continue
+
+        # Строка типа тары: под Н/З пусто ИЛИ дубль заголовка Н/З,
+        # но есть текст под типами исследования.
+        wo_is_empty_or_header = (
+            wo_norm == "" or wo_norm == wo_header_norm
+        )
+        if wo_is_empty_or_header:
+            has_text = any(
+                _normalize(c) and not _is_numeric(c)
+                for i, c in enumerate(candidate)
+                if i != work_order_idx  # Игнорируем колонку Н/З
+            )
+            if has_text:
+                type_row = candidate
+                type_row_number = header_idx + offset + 1  # 1-based
+                data_start_idx = header_idx + offset + 1
+                break
+
+        # Иначе — это данные.
+        break
 
     # 4. Определяем группы «типы + Дата».
     #    Ошибки MISSING_CONTAINER_TYPE собираем в буфер, чтобы добавить
@@ -294,7 +378,7 @@ def _parse_sheet(
         if not container_type_name:
             missing_ct_errors.append({
                 "sheet": sheet_name,
-                "row": header_idx + 2 if type_row else header_idx + 1,
+                "row": type_row_number if type_row_number else header_idx + 2,
                 "column": idx,
                 "error": (
                     f"Не указан тип тары для типа исследования "
