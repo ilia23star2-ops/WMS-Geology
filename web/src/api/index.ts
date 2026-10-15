@@ -114,13 +114,22 @@ export type {
     ReceiptsListParams,
 } from "./receipts";
 
-export { importShipment, useImportShipment } from "./importSessions";
+export {
+    importShipment,
+    resolveQuestions,
+    useImportShipment,
+    useResolveQuestions,
+} from "./importSessions";
 export type {
     ImportError,
     ImportQuestion,
     ImportQuestionReason,
     ImportShipmentRequest,
     ImportShipmentResponse,
+    ResolveDistributionItem,
+    ResolveQuestionItem,
+    ResolveQuestionsRequest,
+    ResolveQuestionsResponse,
 } from "./importSessions";
 
 export type {

@@ -1,8 +1,9 @@
 /**
- * API импорта Excel-рейса.
+ * API импорта Excel-рейса и разбора вопросов `NEEDS_CONFIRMATION`.
  *
- * Один эндпоинт: `POST /import-sessions/import-shipment/`.
- * Form-data: file, target_date, опционально shipment_number и laboratory_id.
+ * Эндпоинты:
+ * - `POST /import-sessions/import-shipment/` — импорт рейса.
+ * - `POST /import-sessions/{id}/resolve-questions/` — разбор вопросов.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -28,6 +29,10 @@ export interface ImportQuestion {
     raw_dates: string[];
     target_date?: string;
     message: string;
+    /** Заполняется после разбора. */
+    resolved?: boolean;
+    resolved_at?: string;
+    resolved_distribution?: ResolveDistributionItem[];
 }
 
 export interface ImportError {
@@ -90,6 +95,77 @@ export function useImportShipment() {
     return useMutation({
         mutationFn: importShipment,
         onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["shipments"],
+            });
+            void queryClient.invalidateQueries({
+                queryKey: ["receipts"],
+            });
+            void queryClient.invalidateQueries({
+                queryKey: ["containers"],
+            });
+        },
+    });
+}
+
+// ============================================================
+// Разбор вопросов `NEEDS_CONFIRMATION`
+// ============================================================
+
+/**
+ * Одна запись распределения тар: конкретная дата + количество.
+ * Сумма по всем датам должна равняться `question.containers_count`.
+ */
+export interface ResolveDistributionItem {
+    date: string; // YYYY-MM-DD
+    containers_count: number;
+}
+
+/**
+ * Разбор одного вопроса.
+ * `question_index` — позиция вопроса в `ImportSession.parse_errors`.
+ */
+export interface ResolveQuestionItem {
+    question_index: number;
+    distribution: ResolveDistributionItem[];
+}
+
+export interface ResolveQuestionsRequest {
+    resolutions: ResolveQuestionItem[];
+}
+
+export interface ResolveQuestionsResponse {
+    import_session_id: number;
+    status: "APPLIED" | "PARSED" | "ERROR";
+    created_containers_count: number;
+    resolved_questions_count: number;
+    total_questions_count: number;
+    errors: Array<Record<string, unknown>>;
+}
+
+export async function resolveQuestions(
+    importSessionId: number,
+    payload: ResolveQuestionsRequest,
+): Promise<ResolveQuestionsResponse> {
+    const { data } = await apiClient.post<ResolveQuestionsResponse>(
+        `/import-sessions/${importSessionId}/resolve-questions/`,
+        payload,
+    );
+    return data;
+}
+
+export function useResolveQuestions(importSessionId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: ResolveQuestionsRequest) =>
+            resolveQuestions(importSessionId, payload),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["import-session", importSessionId],
+            });
+            void queryClient.invalidateQueries({
+                queryKey: ["shipment"],
+            });
             void queryClient.invalidateQueries({
                 queryKey: ["shipments"],
             });
