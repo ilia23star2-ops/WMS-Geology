@@ -1,5 +1,5 @@
 """
-Модели приложения "Склад" (v4).
+Модели приложения "Склад" (v5).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
@@ -9,13 +9,15 @@
 - Уникальность: `(name, laboratory)` вместо `name`.
 
 Изменения v4 (серия 2.x-web-v2, bundle-7a-2b):
-- `Container.container_number` — nullable. Тара-заготовка создаётся
-  без номера, номер присваивается на шаге заполнения пробами.
+- `Container.container_number` — nullable.
 - +4 draft-поля: `draft_site`, `draft_research_type`,
-  `draft_work_order_coded`, `draft_work_order_incoming` —
-  предзаполняются при создании тары-заготовки, используются
-  для предзаполнения формы fill-samples, обнуляются после
-  успешного заполнения.
+  `draft_work_order_coded`, `draft_work_order_incoming`.
+
+Изменения v5 (серия 2.x-web-v2, bundle-3d-3-fix-2):
+- `Container.container_number` — больше **не уникален** глобально.
+  Номер тары — «этикетка внутри группы (Н/З × ТИ)», может
+  повторяться у разных групп. Внутренний идентификатор — `id`
+  (в QR-payload `WMSG:CONTAINER:<id>`).
 """
 
 from django.db import models
@@ -296,6 +298,10 @@ class Container(models.Model):
        Заполняются draft-поля.
     2. Заполнение пробами (`container_number` присваивается) —
        fill-samples. Draft-поля обнуляются.
+
+    `container_number` — **не уникален** глобально: это «этикетка
+    внутри группы (Н/З × ТИ)». Номера `1, 2, 3` могут встречаться
+    у разных групп. Уникальный идентификатор — `id` (в QR).
     """
 
     STATUS_ACTIVE = "ACTIVE"
@@ -311,12 +317,11 @@ class Container(models.Model):
 
     container_number = models.CharField(
         max_length=100,
-        unique=True,
         null=True,
         blank=True,
         help_text=(
-            "Номер тары. NULL — заготовка, номер ещё не присвоен "
-            "(заполняется на шаге заполнения пробами)."
+            "Номер тары — «этикетка внутри группы (Н/З × ТИ)». "
+            "Не уникален глобально. NULL — заготовка без номера."
         ),
     )
     container_type = models.ForeignKey(
@@ -367,9 +372,6 @@ class Container(models.Model):
         help_text="Шаблон комментария (если выбран из списка).",
     )
 
-    # Draft-поля: заполняются при создании тары-заготовки
-    # (bulk-create). Используются для предзаполнения формы
-    # fill-samples. Обнуляются после успешного заполнения.
     draft_site = models.ForeignKey(
         "samples.Site",
         on_delete=models.SET_NULL,

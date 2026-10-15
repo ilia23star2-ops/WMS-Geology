@@ -14,10 +14,10 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
 import PrintBatchesPage from "./pages/PrintBatchesPage";
+import ReceiptCheckPage from "./pages/ReceiptCheckPage";
 import ReceivingPage from "./pages/ReceivingPage";
 import SamplesPage from "./pages/SamplesPage";
 import ShipmentDetailPage from "./pages/ShipmentDetailPage";
-import ShipmentQuestionsPage from "./pages/ShipmentQuestionsPage";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient({
@@ -67,8 +67,8 @@ function AppRoutes() {
                         element={<ShipmentDetailPage />}
                     />
                     <Route
-                        path="/receiving/:id/questions"
-                        element={<ShipmentQuestionsPage />}
+                        path="/receiving/:id/check"
+                        element={<ReceiptCheckPage />}
                     />
                     <Route path="/print" element={<PrintBatchesPage />} />
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />

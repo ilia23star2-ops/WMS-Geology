@@ -2,13 +2,15 @@
 Сериализаторы приложения receiving.
 
 - ReceiptSerializer — партия приёмки.
-- ReceiptItemSerializer — строка партии.
+- ReceiptItemSerializer — строка партии (включая `container_type_name`).
 - ImportSessionSerializer — сессия импорта.
 - ImportUploadResponseSerializer — ответ на загрузку Excel.
 - ShipmentImportResponseSerializer — ответ на импорт рейса.
 - ResolveQuestionsRequest/Response — legacy разбор вопросов.
-- ConflictSerializer — вопрос конфликта с suggested_count.
-- ResolveConflictsRequest/Response — новый разбор.
+- ConflictSerializer — вопрос конфликта с `suggested_count`.
+- ResolveConflictsRequest/Response — разбор конфликтов.
+- CheckReceiptRequest/Response — сверка.
+- CompleteReceiptResponse — завершение.
 - ReceiptBriefSerializer — краткая инфо о Receipt.
 """
 
@@ -92,6 +94,9 @@ class ReceiptItemSerializer(serializers.ModelSerializer):
     site_code = serializers.CharField(
         source="site.code", read_only=True, default=None,
     )
+    container_type_name = serializers.CharField(
+        source="container_type.name", read_only=True, default=None,
+    )
 
     class Meta:
         model = ReceiptItem
@@ -101,6 +106,7 @@ class ReceiptItemSerializer(serializers.ModelSerializer):
             "container",
             "container_number",
             "container_type",
+            "container_type_name",
             "expected_container_number",
             "expected_work_order_number",
             "expected_research_type_code",
@@ -265,7 +271,6 @@ class ResolveConflictsResponseSerializer(serializers.Serializer):
     errors = serializers.ListField()
 
 
-
 # ============================================================
 # Сверка (`receipts/{id}/check/`) — 3b-2
 # ============================================================
@@ -303,7 +308,6 @@ class CheckReceiptResponseSerializer(serializers.Serializer):
     matched_count = serializers.IntegerField()
     missing_count = serializers.IntegerField()
     errors = serializers.ListField()
-
 
 
 # ============================================================

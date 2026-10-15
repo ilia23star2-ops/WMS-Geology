@@ -2,14 +2,12 @@
  * Экран сверки приёмки (`/receiving/:id/check`).
  *
  * Верхний блок — неразобранные конфликты (`multi_date_match`).
- * По каждому: сколько тар пришло на target_date. Кнопка «Применить»
- * превращает ответ в N `ReceiptItem`.
+ * Нижний блок — сверка тары: чекбокс «Приехала» + номер тары.
  *
- * Нижний блок — сверка тары: чекбокс «Приехала» + номер тары для
- * каждой строки партии. Одна кнопка «Сохранить сверку» — batch.
- *
- * Кнопка «Завершить приёмку» — активна, когда конфликтов нет
- * и все строки в `MATCHED` / `MISSING`. Backend перепроверяет.
+ * «Сохранить сверку» — промежуточное сохранение.
+ * «Завершить приёмку» — сначала сохраняет, потом завершает.
+ * Ошибки от backend показываются в строках (под полем номера)
+ * и общим Alert'ом.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -22,6 +20,7 @@ import {
     Chip,
     CircularProgress,
     Divider,
+    FormHelperText,
     Stack,
     Table,
     TableBody,
@@ -52,14 +51,57 @@ import {
     type ReceiptItem,
 } from "../api";
 
-/**
- * Локальный стейт по строке сверки:
- * - `matched` — чекбокс;
- * - `containerNumber` — поле номера тары.
- */
 interface MarkState {
     matched: boolean;
     containerNumber: string;
+}
+
+/**
+ * Ошибка от backend (`{errors: [{item_id?, error}]}`).
+ */
+interface BackendErrorItem {
+    item_id?: number;
+    error?: string;
+}
+
+function extractErrors(err: unknown): {
+    perItem: Record<number, string>;
+    common: string[];
+} {
+    const perItem: Record<number, string> = {};
+    const common: string[] = [];
+
+    const anyErr = err as {
+        response?: {
+            data?: {
+                errors?: BackendErrorItem[];
+                error?: string;
+                detail?: string;
+            };
+        };
+    };
+
+    const data = anyErr?.response?.data;
+    const errors = data?.errors;
+    if (Array.isArray(errors)) {
+        for (const e of errors) {
+            if (typeof e?.item_id === "number" && e.error) {
+                perItem[e.item_id] = e.error;
+            } else if (e?.error) {
+                common.push(e.error);
+            }
+        }
+        return { perItem, common };
+    }
+
+    if (typeof data?.error === "string") {
+        common.push(data.error);
+    } else if (typeof data?.detail === "string") {
+        common.push(data.detail);
+    } else {
+        common.push("Не удалось выполнить. Проверьте данные.");
+    }
+    return { perItem, common };
 }
 
 function formatDateRu(iso: string | null | undefined): string {
@@ -218,12 +260,12 @@ export default function ReceiptCheckPage() {
 
     const [marks, setMarks] = useState<Record<number, MarkState>>({});
     const [message, setMessage] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [commonErrors, setCommonErrors] = useState<string[]>([]);
+    const [itemErrors, setItemErrors] = useState<Record<number, string>>({});
     const [conflictErrors, setConflictErrors] = useState<
         Record<number, string>
     >({});
 
-    // Инициализация/обновление marks при изменении items.
     const receiptItems: ReceiptItem[] = useMemo(
         () => items.data?.results ?? [],
         [items.data],
@@ -247,17 +289,9 @@ export default function ReceiptCheckPage() {
         });
     }, [receiptItems]);
 
-    // Конфликты.
     const conflictList: ReceiptConflict[] =
         conflicts.data?.conflicts ?? [];
     const hasConflicts = conflictList.length > 0;
-
-    // Все ли строки сверены.
-    const allChecked =
-        receiptItems.length > 0
-        && receiptItems.every(
-            (it) => it.status === "MATCHED" || it.status === "MISSING",
-        );
 
     // ============================
     // Действия
@@ -279,20 +313,20 @@ export default function ReceiptCheckPage() {
             setMessage("Конфликт разобран.");
             void conflicts.refetch();
             void items.refetch();
-        } catch {
+        } catch (err) {
+            const { perItem, common } = extractErrors(err);
+            const firstCommon = common[0] ?? "Не удалось применить.";
             setConflictErrors((prev) => ({
                 ...prev,
-                [questionIndex]:
-                    "Не удалось применить. Проверьте данные.",
+                [questionIndex]: firstCommon,
             }));
+            // Для per-item (не должно быть) — игнорируем.
+            void perItem;
         }
     }
 
-    async function handleSave() {
-        setError(null);
-        setMessage(null);
-
-        const payload = receiptItems.map((it) => {
+    function buildCheckPayload() {
+        return receiptItems.map((it) => {
             const m = marks[it.id];
             return {
                 item_id: it.id,
@@ -301,34 +335,71 @@ export default function ReceiptCheckPage() {
                     (m?.containerNumber ?? "").trim() || null,
             };
         });
+    }
 
+    async function handleSave() {
+        setMessage(null);
+        setCommonErrors([]);
+        setItemErrors({});
         try {
-            const res = await checkMutation.mutateAsync({ items: payload });
+            const res = await checkMutation.mutateAsync({
+                items: buildCheckPayload(),
+            });
             setMessage(
                 `Сохранено. Совпадает: ${res.matched_count}, `
                 + `отсутствует: ${res.missing_count}.`,
             );
             void items.refetch();
-        } catch {
-            setError("Не удалось сохранить сверку. Проверьте номера тар.");
+        } catch (err) {
+            const { perItem, common } = extractErrors(err);
+            setItemErrors(perItem);
+            setCommonErrors(common);
+            if (Object.keys(perItem).length > 0 && common.length === 0) {
+                setCommonErrors([
+                    "Не удалось сохранить часть строк. "
+                    + "Смотрите ошибки в таблице.",
+                ]);
+            }
         }
     }
 
     async function handleComplete() {
-        setError(null);
         setMessage(null);
+        setCommonErrors([]);
+        setItemErrors({});
+
+        const uncheckedCount = receiptItems.filter(
+            (it) => !(marks[it.id]?.matched ?? false),
+        ).length;
+
+        if (uncheckedCount > 0) {
+            const ok = window.confirm(
+                `Не отмечено как «приехала»: ${uncheckedCount} тар. `
+                + "Они будут помечены как отсутствующие. Продолжить?",
+            );
+            if (!ok) return;
+        }
+
         try {
+            await checkMutation.mutateAsync({
+                items: buildCheckPayload(),
+            });
             const res = await completeMutation.mutateAsync();
             setMessage(
                 `Приёмка завершена. Статус: ${res.status}. `
                 + `Рейс: ${res.shipment_status ?? "—"}.`,
             );
             setTimeout(() => navigate(`/receiving/${shipmentId}`), 800);
-        } catch {
-            setError(
-                "Не удалось завершить приёмку. "
-                + "Проверьте конфликты и сверку.",
-            );
+        } catch (err) {
+            const { perItem, common } = extractErrors(err);
+            setItemErrors(perItem);
+            setCommonErrors(common);
+            if (Object.keys(perItem).length > 0 && common.length === 0) {
+                setCommonErrors([
+                    "Не удалось завершить: часть строк с ошибками. "
+                    + "Смотрите ошибки в таблице.",
+                ]);
+            }
         }
     }
 
@@ -358,6 +429,16 @@ export default function ReceiptCheckPage() {
             </Box>
         );
     }
+
+    const completeDisabled =
+        completeMutation.isPending
+        || checkMutation.isPending
+        || hasConflicts
+        || receiptItems.length === 0;
+
+    const completeTooltip = hasConflicts
+        ? "Сначала разберите конфликты"
+        : "";
 
     return (
         <Box>
@@ -404,9 +485,16 @@ export default function ReceiptCheckPage() {
                     {message}
                 </Alert>
             )}
-            {error && (
+
+            {commonErrors.length > 0 && (
                 <Alert severity="error" sx={{ mb: 2 }}>
-                    {error}
+                    <Stack spacing={0.5}>
+                        {commonErrors.map((msg, i) => (
+                            <Typography key={i} variant="body2">
+                                {msg}
+                            </Typography>
+                        ))}
+                    </Stack>
                 </Alert>
             )}
 
@@ -492,8 +580,16 @@ export default function ReceiptCheckPage() {
                                     matched: false,
                                     containerNumber: "",
                                 };
+                                const rowError = itemErrors[it.id];
                                 return (
-                                    <TableRow key={it.id}>
+                                    <TableRow
+                                        key={it.id}
+                                        sx={
+                                            rowError
+                                                ? { bgcolor: "error.light" }
+                                                : undefined
+                                        }
+                                    >
                                         <TableCell padding="checkbox">
                                             <Checkbox
                                                 checked={m.matched}
@@ -516,7 +612,7 @@ export default function ReceiptCheckPage() {
                                             {it.expected_research_type_code}
                                         </TableCell>
                                         <TableCell>
-                                            {it.expected_site_code}
+                                            {it.container_type_name ?? "—"}
                                         </TableCell>
                                         <TableCell>
                                             <TextField
@@ -532,8 +628,9 @@ export default function ReceiptCheckPage() {
                                                         },
                                                     }))
                                                 }
-                                                placeholder="T-001"
+                                                placeholder="1"
                                                 disabled={!m.matched}
+                                                error={Boolean(rowError)}
                                                 sx={{
                                                     minWidth: 140,
                                                     "& .MuiInputBase-input": {
@@ -541,6 +638,11 @@ export default function ReceiptCheckPage() {
                                                     },
                                                 }}
                                             />
+                                            {rowError && (
+                                                <FormHelperText error>
+                                                    {rowError}
+                                                </FormHelperText>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <Chip
@@ -586,26 +688,14 @@ export default function ReceiptCheckPage() {
                         : "Сохранить сверку"}
                 </Button>
 
-                <Tooltip
-                    title={
-                        hasConflicts
-                            ? "Сначала разберите конфликты"
-                            : !allChecked
-                                ? "Не все тары сверены"
-                                : ""
-                    }
-                >
+                <Tooltip title={completeTooltip}>
                     <span>
                         <Button
                             variant="contained"
                             color="success"
                             startIcon={<DoneAllIcon />}
                             onClick={() => void handleComplete()}
-                            disabled={
-                                completeMutation.isPending
-                                || hasConflicts
-                                || !allChecked
-                            }
+                            disabled={completeDisabled}
                         >
                             {completeMutation.isPending
                                 ? "Завершаем..."
@@ -613,17 +703,6 @@ export default function ReceiptCheckPage() {
                         </Button>
                     </span>
                 </Tooltip>
-
-                {!allChecked && receiptItems.length > 0 && (
-                    <Typography variant="body2" color="text.secondary">
-                        Не сверено:{" "}
-                        {
-                            receiptItems.filter(
-                                (it) => it.status === "EXPECTED",
-                            ).length
-                        }
-                    </Typography>
-                )}
             </Stack>
         </Box>
     );
