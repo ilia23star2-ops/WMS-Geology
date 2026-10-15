@@ -6,8 +6,9 @@
 - ImportSessionSerializer — сессия импорта.
 - ImportUploadResponseSerializer — ответ на загрузку Excel.
 - ShipmentImportResponseSerializer — ответ на импорт рейса.
-- ResolveQuestionsRequestSerializer — разбор вопросов (запрос).
-- ResolveQuestionsResponseSerializer — разбор вопросов (ответ).
+- ResolveQuestionsRequest/Response — legacy разбор вопросов.
+- ConflictSerializer — вопрос конфликта с suggested_count.
+- ResolveConflictsRequest/Response — новый разбор.
 - ReceiptBriefSerializer — краткая инфо о Receipt.
 """
 
@@ -176,7 +177,7 @@ class ShipmentImportResponseSerializer(serializers.Serializer):
 
 
 # ============================================================
-# Разбор вопросов `NEEDS_CONFIRMATION`
+# Разбор вопросов `NEEDS_CONFIRMATION` (legacy, по distribution)
 # ============================================================
 class DistributionItemSerializer(serializers.Serializer):
     """Одна запись распределения: дата + количество тар."""
@@ -186,7 +187,7 @@ class DistributionItemSerializer(serializers.Serializer):
 
 
 class QuestionResolutionSerializer(serializers.Serializer):
-    """Один разобранный вопрос."""
+    """Один разобранный вопрос (legacy)."""
 
     question_index = serializers.IntegerField(min_value=0)
     distribution = DistributionItemSerializer(
@@ -195,10 +196,7 @@ class QuestionResolutionSerializer(serializers.Serializer):
 
 
 class ResolveQuestionsRequestSerializer(serializers.Serializer):
-    """Запрос на разбор вопросов.
-
-    `question_index` — позиция вопроса в `ImportSession.parse_errors`.
-    """
+    """Запрос на разбор вопросов (legacy)."""
 
     resolutions = QuestionResolutionSerializer(
         many=True, allow_empty=False,
@@ -206,11 +204,61 @@ class ResolveQuestionsRequestSerializer(serializers.Serializer):
 
 
 class ResolveQuestionsResponseSerializer(serializers.Serializer):
-    """Ответ на разбор вопросов."""
+    """Ответ на разбор вопросов (legacy)."""
 
     import_session_id = serializers.IntegerField()
     status = serializers.CharField()
     created_containers_count = serializers.IntegerField()
     resolved_questions_count = serializers.IntegerField()
     total_questions_count = serializers.IntegerField()
+    errors = serializers.ListField()
+
+
+# ============================================================
+# Разбор конфликтов рейса (`receipts/{id}/conflicts/`) — 3b-1
+# ============================================================
+class ConflictSerializer(serializers.Serializer):
+    """
+    Неразобранный конфликт `Receipt` с `suggested_count`.
+
+    `suggested_count` — остаток по истории `MATCHED`-строк.
+    """
+
+    question_index = serializers.IntegerField()
+    code = serializers.CharField()
+    title = serializers.CharField()
+    reason = serializers.CharField()
+    sheet = serializers.CharField()
+    work_order = serializers.CharField()
+    research_type = serializers.CharField()
+    container_type = serializers.CharField()
+    containers_count = serializers.IntegerField()
+    raw_dates = serializers.ListField(child=serializers.CharField())
+    target_date = serializers.CharField()
+    message = serializers.CharField()
+    suggested_count = serializers.IntegerField()
+
+
+class ConflictResolutionSerializer(serializers.Serializer):
+    """Один ответ кладовщика по конфликту."""
+
+    question_index = serializers.IntegerField(min_value=0)
+    containers_count = serializers.IntegerField(min_value=0)
+
+
+class ResolveConflictsRequestSerializer(serializers.Serializer):
+    """Запрос на разбор конфликтов."""
+
+    conflicts = ConflictResolutionSerializer(
+        many=True, allow_empty=False,
+    )
+
+
+class ResolveConflictsResponseSerializer(serializers.Serializer):
+    """Ответ на разбор конфликтов."""
+
+    receipt_id = serializers.IntegerField()
+    created_items_count = serializers.IntegerField()
+    resolved_conflicts_count = serializers.IntegerField()
+    total_conflicts_count = serializers.IntegerField()
     errors = serializers.ListField()

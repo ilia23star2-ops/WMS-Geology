@@ -1,10 +1,11 @@
 """
 ViewSets приложения receiving.
 
-- ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`.
+- ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`,
+  `conflicts`, `resolve-conflicts`.
 - ReceiptItemViewSet — CRUD.
 - ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`,
-  `resolve-questions`.
+  `resolve-questions` (legacy).
 """
 
 from datetime import date, datetime
@@ -23,10 +24,13 @@ from apps.samples.catalogs import ResearchType
 from .models import ImportSession, Receipt, ReceiptItem
 from .parsers import parse_excel
 from .serializers import (
+    ConflictSerializer,
     ImportSessionSerializer,
     ImportUploadResponseSerializer,
     ReceiptItemSerializer,
     ReceiptSerializer,
+    ResolveConflictsRequestSerializer,
+    ResolveConflictsResponseSerializer,
     ResolveQuestionsRequestSerializer,
     ResolveQuestionsResponseSerializer,
     ShipmentImportResponseSerializer,
@@ -34,7 +38,10 @@ from .serializers import (
 from .services import (
     apply_import,
     apply_shipment_import,
+    count_questions,
+    get_unresolved_conflicts,
     resolve_import_questions,
+    resolve_receipt_conflicts,
 )
 
 
@@ -48,8 +55,6 @@ def _parse_target_date(value) -> date | None:
     Поддерживаемые форматы:
     - ISO: `YYYY-MM-DD` (`2026-10-12`);
     - русский: `DD.MM.YYYY` (`12.10.2026`).
-
-    :returns: `date` или None, если распарсить не удалось.
     """
     if value is None:
         return None
@@ -77,7 +82,7 @@ DUPLICATE_ACTIONS = {"cancel", "overwrite", "create"}
 # Receipt
 # ============================================================
 class ReceiptViewSet(viewsets.ModelViewSet):
-    """CRUD для партий приёмки + confirm/cancel."""
+    """CRUD для партий приёмки + confirm/cancel/conflicts/resolve-conflicts."""
 
     serializer_class = ReceiptSerializer
     permission_classes = [IsAuthenticated]
@@ -136,6 +141,65 @@ class ReceiptViewSet(viewsets.ModelViewSet):
         receipt.save(update_fields=["status"])
         return Response(ReceiptSerializer(receipt).data)
 
+    @action(detail=True, methods=["get"], url_path="conflicts")
+    def conflicts(self, request, pk=None):
+        """
+        Неразобранные конфликты `Receipt`.
+
+        Каждый элемент: поля вопроса + `question_index` +
+        `suggested_count` (остаток по истории `MATCHED`).
+        """
+        receipt = self.get_object()
+        items = get_unresolved_conflicts(receipt)
+        total, resolved = count_questions(receipt)
+
+        return Response(
+            {
+                "receipt_id": receipt.pk,
+                "conflicts": ConflictSerializer(items, many=True).data,
+                "total_conflicts_count": total,
+                "resolved_conflicts_count": resolved,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="resolve-conflicts")
+    def resolve_conflicts(self, request, pk=None):
+        """
+        Разобрать конфликты `Receipt`.
+
+        Тело:
+        - `conflicts: [{question_index: int, containers_count: int}]`.
+
+        Создаёт N `ReceiptItem` (без `Container`), помечает вопрос
+        `resolved`.
+        """
+        receipt = self.get_object()
+        ser = ResolveConflictsRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        created, errors = resolve_receipt_conflicts(
+            receipt, ser.validated_data["conflicts"],
+        )
+
+        if errors:
+            return Response(
+                {"errors": errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        total, resolved = count_questions(receipt)
+
+        return Response(
+            ResolveConflictsResponseSerializer({
+                "receipt_id": receipt.pk,
+                "created_items_count": created,
+                "resolved_conflicts_count": resolved,
+                "total_conflicts_count": total,
+                "errors": [],
+            }).data,
+            status=status.HTTP_200_OK,
+        )
+
 
 # ============================================================
 # ReceiptItem
@@ -172,7 +236,7 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
     Custom actions:
       - POST /import-sessions/upload/          — Excel → Receipt + ReceiptItem.
       - POST /import-sessions/import-shipment/ — Excel → Shipment + Receipt + Container.
-      - POST /import-sessions/{id}/resolve-questions/ — разбор NEEDS_CONFIRMATION.
+      - POST /import-sessions/{id}/resolve-questions/ — legacy.
     """
 
     serializer_class = ImportSessionSerializer
@@ -201,22 +265,7 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
         parser_classes=[MultiPartParser, FormParser],
     )
     def import_shipment(self, request):
-        """
-        Импорт рейса: Shipment INBOUND + Receipt + Container.
-
-        Form-data:
-        - `file` — обязательный, .xlsx / .xlsm.
-        - `target_date` — обязательный, ISO (`2026-10-14`) или
-          русский (`14.10.2026`).
-        - `shipment_number` — опциональный; если нет — генерируется.
-        - `laboratory_id` — опциональный.
-
-        Ответ:
-        - 200 — успех / частичный (status=APPLIED или PARSED).
-        - 200 + status=ERROR — нечего создавать (нет данных).
-        - 400 — нет файла / плохая дата / плохой формат.
-        """
-        # 1. Файл.
+        """Импорт рейса: Shipment INBOUND + Receipt + Container."""
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response(
@@ -235,7 +284,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 2. target_date.
         raw_date = request.data.get("target_date")
         target_date = _parse_target_date(raw_date)
         if target_date is None:
@@ -249,12 +297,10 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 3. Опциональный номер рейса.
         shipment_number = (
             request.data.get("shipment_number") or ""
         ).strip() or None
 
-        # 4. Опциональная лаборатория.
         laboratory = None
         laboratory_id = request.data.get("laboratory_id")
         if laboratory_id:
@@ -263,17 +309,14 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 pk=laboratory_id,
             ).first()
 
-        # 5. Читаем содержимое.
         content = file_obj.read()
 
-        # 6. Создаём ImportSession.
         import_session = ImportSession.objects.create(
             file=ContentFile(content, name=file_obj.name),
             file_format=ImportSession.FILE_FORMAT_XLSX,
             uploaded_by=request.user,
         )
 
-        # 7. Парсим.
         try:
             parsed = parse_excel(
                 BytesIO(content),
@@ -295,7 +338,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 8. Применяем.
         shipment, errors = apply_shipment_import(
             parsed,
             import_session,
@@ -305,7 +347,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
             sent_by=request.user,
         )
 
-        # 9. Считаем контейнеры и вопросы.
         import_session.refresh_from_db()
         containers_count = (
             import_session.receipt.items.count()
@@ -345,23 +386,7 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
         parser_classes=[MultiPartParser, FormParser],
     )
     def upload(self, request):
-        """
-        Принять Excel-файл, распарсить, применить импорт.
-
-        Form-data:
-        - `file` — обязательный, .xlsx / .xlsm.
-        - `target_date` — обязательный, ISO (`2026-10-12`) или
-          русский (`12.10.2026`).
-        - `duplicate_action` — `cancel` (по умолчанию) / `overwrite` /
-          `create`.
-
-        Ответ:
-        - 200 — успех, `import_session_id`, `status`, counts, receipts.
-        - 400 — ошибка валидации (нет файла / нет даты / плохая дата /
-          неподдерживаемый формат).
-        - 409 — `DUPLICATE_DATE` (партия за эту дату уже существует).
-        """
-        # 1. Файл.
+        """Старый импорт: Excel → Receipt + ReceiptItem."""
         file_obj = request.FILES.get("file")
         if not file_obj:
             return Response(
@@ -380,7 +405,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 2. Дата привоза.
         raw_date = request.data.get("target_date")
         target_date = _parse_target_date(raw_date)
         if target_date is None:
@@ -394,7 +418,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 3. Действие при дубликате.
         duplicate_action = (
             request.data.get("duplicate_action") or "cancel"
         ).strip().lower()
@@ -410,17 +433,14 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 4. Читаем содержимое ДО сохранения файла.
         content = file_obj.read()
 
-        # 5. Создаём ImportSession.
         import_session = ImportSession.objects.create(
             file=ContentFile(content, name=file_obj.name),
             file_format=ImportSession.FILE_FORMAT_XLSX,
             uploaded_by=request.user,
         )
 
-        # 6. Парсим.
         try:
             parsed = parse_excel(
                 BytesIO(content),
@@ -442,7 +462,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # 7. Применяем.
         receipts, errors = apply_import(
             parsed,
             import_session,
@@ -450,7 +469,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
             duplicate_action=duplicate_action,
         )
 
-        # 8. Проверяем на DUPLICATE_DATE — это 409, а не 200.
         duplicate_error = next(
             (e for e in errors if e.get("error") == "DUPLICATE_DATE"),
             None,
@@ -458,7 +476,6 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
         if duplicate_error is not None:
             return Response(duplicate_error, status=status.HTTP_409_CONFLICT)
 
-        # 9. Успех / частичный успех.
         import_session.refresh_from_db()
         response_data = {
             "import_session_id": import_session.pk,
@@ -479,20 +496,7 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
         url_path="resolve-questions",
     )
     def resolve_questions(self, request, pk=None):
-        """
-        Разбор вопросов `NEEDS_CONFIRMATION`.
-
-        Доступен только в статусе `PARSED`.
-        `question_index` в теле — позиция вопроса в `parse_errors`.
-
-        Тело:
-        - `resolutions: [{question_index: int, distribution: [
-            {date: "YYYY-MM-DD", containers_count: int}, ...]}]`
-
-        Ответ 200:
-        `{import_session_id, status, created_containers_count,
-          resolved_questions_count, total_questions_count, errors}`.
-        """
+        """Legacy: разбор вопросов `NEEDS_CONFIRMATION` через distribution."""
         import_session = self.get_object()
 
         if import_session.status != ImportSession.STATUS_PARSED:
