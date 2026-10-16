@@ -1,5 +1,5 @@
 /**
- * Хук списка проб.
+ * Хуки списка проб.
  *
  * Server-side пагинация: backend отдаёт 50 на страницу.
  *
@@ -9,8 +9,16 @@
  *
  * Группировка (`2f-2a`): `useSamplesGrouped` — группы по
  * (Н/З × ТИ), пагинация по 20 групп.
+ *
+ * CRUD + действия (`2f-2b`): `useUpdateSample`, `useDeleteSample`,
+ * `useDisposeSample`, `useRestoreSample`.
  */
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "./client";
 import type { PaginatedResponse } from "./types";
@@ -55,6 +63,7 @@ export interface Sample {
     disposed_at: string | null;
     disposed_by: number | null;
     disposal_reason: string;
+    current_location?: string;
     created_at: string;
     updated_at: string;
 }
@@ -185,5 +194,118 @@ export function useSamplesGrouped(params: SamplesGroupedParams) {
         queryFn: () => fetchSamplesGrouped(params),
         placeholderData: keepPreviousData,
         staleTime: 30_000,
+    });
+}
+
+// ============================================================
+// CRUD + действия (пачка 2f-2b)
+// ============================================================
+
+export async function fetchSample(id: number): Promise<Sample> {
+    const { data } = await apiClient.get<Sample>(`/samples/${id}/`);
+    return data;
+}
+
+export function useSample(id: number | null) {
+    return useQuery({
+        queryKey: ["sample", id],
+        queryFn: () => fetchSample(id as number),
+        enabled: typeof id === "number" && !Number.isNaN(id),
+        staleTime: 10_000,
+    });
+}
+
+export interface UpdateSamplePayload {
+    sample_number?: string;
+    research_type?: number;
+    site?: number | null;
+    status?: SampleStatus;
+}
+
+export async function updateSample(
+    id: number,
+    payload: UpdateSamplePayload,
+): Promise<Sample> {
+    const { data } = await apiClient.patch<Sample>(
+        `/samples/${id}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdateSample() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, payload }: {
+            id: number;
+            payload: UpdateSamplePayload;
+        }) => updateSample(id, payload),
+        onSuccess: (_data, variables) => {
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["samples-grouped"] });
+            void qc.invalidateQueries({
+                queryKey: ["sample", variables.id],
+            });
+        },
+    });
+}
+
+export async function deleteSample(id: number): Promise<void> {
+    await apiClient.delete(`/samples/${id}/`);
+}
+
+export function useDeleteSample() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => deleteSample(id),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["samples-grouped"] });
+        },
+    });
+}
+
+export async function disposeSample(
+    id: number,
+    reason: string,
+): Promise<Sample> {
+    const { data } = await apiClient.post<Sample>(
+        `/samples/${id}/dispose/`,
+        { disposal_reason: reason },
+    );
+    return data;
+}
+
+export function useDisposeSample() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, reason }: { id: number; reason: string }) =>
+            disposeSample(id, reason),
+        onSuccess: (_data, variables) => {
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["samples-grouped"] });
+            void qc.invalidateQueries({
+                queryKey: ["sample", variables.id],
+            });
+        },
+    });
+}
+
+export async function restoreSample(id: number): Promise<Sample> {
+    const { data } = await apiClient.post<Sample>(
+        `/samples/${id}/restore/`,
+    );
+    return data;
+}
+
+export function useRestoreSample() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => restoreSample(id),
+        onSuccess: (_data, id) => {
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["samples-grouped"] });
+            void qc.invalidateQueries({ queryKey: ["sample", id] });
+        },
     });
 }
