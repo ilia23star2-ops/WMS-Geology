@@ -171,10 +171,16 @@ export type {
 export {
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
+    cancelShipment,
+    deleteShipment,
     fetchShipment,
     fetchShipments,
+    updateShipment,
+    useCancelShipment,
+    useDeleteShipment,
     useShipment,
     useShipments,
+    useUpdateShipment,
 } from "./shipments";
 export type {
     Shipment,
@@ -182,6 +188,7 @@ export type {
     ShipmentFilters,
     ShipmentsListParams,
     ShipmentStatus,
+    UpdateShipmentPayload,
 } from "./shipments";
 
 export {
