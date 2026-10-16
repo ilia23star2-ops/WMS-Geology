@@ -1,15 +1,20 @@
 /**
- * Топология склада (пачка 2f-4a + 2f-4b).
+ * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2).
  *
  * Двухпанельный вид:
  * - Слева — дерево: Комната → Стеллаж → Секция → Ярус.
  * - Справа — таблица ячеек выбранного яруса.
  *
  * CRUD на всех уровнях + поддон на ячейке (2f-4b).
+ * QR-кнопки (2f-4c-2):
+ * - у Section в дереве — PDF одной секции;
+ * - у Cell в таблице — PDF одной ячейки;
+ * - чекбоксы + «Печать QR (N)» — batch.
+ *
  * Если у узла есть дети, кнопка «Удалить» задизейблена
  * (UI-защита; backend — CASCADE).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
     Alert,
     Box,
@@ -32,14 +37,21 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import PrintIcon from "@mui/icons-material/Print";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
 import {
     DataGrid,
     type GridColDef,
+    type GridRowId,
+    type GridRowSelectionModel,
 } from "@mui/x-data-grid";
 
 import {
     CELL_TYPE_LABELS,
     PALLET_STATUS_LABELS,
+    downloadCellQrPdf,
+    downloadCellsBatchQrPdf,
+    downloadSectionQrPdf,
     useCells,
     useDeleteCell,
     useDeleteRack,
@@ -52,6 +64,7 @@ import {
     useSections,
     useTiers,
     type Cell,
+    type QrBatchItem,
     type Rack,
     type Room,
     type Section,
@@ -72,6 +85,10 @@ function extractError(err: unknown): string | null {
         ?? anyErr?.response?.data?.detail
         ?? null
     );
+}
+
+function emptySelection(): GridRowSelectionModel {
+    return { type: "include", ids: new Set<GridRowId>() };
 }
 
 /**
@@ -131,6 +148,9 @@ export default function TopologyPage() {
 
     const [palletCell, setPalletCell] = useState<Cell | null>(null);
 
+    const [cellSelection, setCellSelection] =
+        useState<GridRowSelectionModel>(emptySelection());
+
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +165,11 @@ export default function TopologyPage() {
     const delSection = useDeleteSection();
     const delTier = useDeleteTier();
     const delCell = useDeleteCell();
+
+    const selectedCellIds = useMemo(
+        () => Array.from(cellSelection.ids).map((id) => Number(id)),
+        [cellSelection],
+    );
 
     function openCreate(
         kind: TopologyKind,
@@ -186,6 +211,36 @@ export default function TopologyPage() {
         }
     }
 
+    async function handleSectionQr(section: Section) {
+        try {
+            await downloadSectionQrPdf(section.id);
+        } catch {
+            setError(`Не удалось открыть QR секции «${section.code}».`);
+        }
+    }
+
+    async function handleCellQr(cell: Cell) {
+        try {
+            await downloadCellQrPdf(cell.id);
+        } catch {
+            setError(`Не удалось открыть QR ячейки «${cell.code}».`);
+        }
+    }
+
+    async function handleBatchQr() {
+        if (selectedCellIds.length === 0) return;
+        const items: QrBatchItem[] = selectedCellIds.map((id) => ({
+            type: "CELL",
+            id,
+        }));
+        try {
+            await downloadCellsBatchQrPdf(items);
+            setCellSelection(emptySelection());
+        } catch {
+            setError("Не удалось сформировать PDF с QR.");
+        }
+    }
+
     // Ячейки выбранного яруса
     const cellColumns: GridColDef<Cell>[] = [
         { field: "id", headerName: "ID", width: 70 },
@@ -194,7 +249,7 @@ export default function TopologyPage() {
             field: "full_address",
             headerName: "Адрес",
             flex: 1,
-            minWidth: 260,
+            minWidth: 240,
         },
         {
             field: "cell_type",
@@ -231,12 +286,20 @@ export default function TopologyPage() {
         {
             field: "actions",
             headerName: "",
-            width: 100,
+            width: 140,
             sortable: false,
             filterable: false,
             disableColumnMenu: true,
             renderCell: (params) => (
                 <Stack direction="row" spacing={0.5}>
+                    <Tooltip title="QR-код">
+                        <IconButton
+                            size="small"
+                            onClick={() => void handleCellQr(params.row)}
+                        >
+                            <QrCode2Icon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
                     <Tooltip title="Редактировать">
                         <IconButton
                             size="small"
@@ -283,6 +346,7 @@ export default function TopologyPage() {
         onAdd,
         onEdit,
         onDelete,
+        onQr,
         selected,
     }: {
         label: string;
@@ -292,6 +356,7 @@ export default function TopologyPage() {
         onAdd: () => void;
         onEdit: () => void;
         onDelete: () => void;
+        onQr?: () => void;
         selected?: boolean;
     }) {
         return (
@@ -324,6 +389,19 @@ export default function TopologyPage() {
                         <AddIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
+                {onQr && (
+                    <Tooltip title="QR-код">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onQr();
+                            }}
+                        >
+                            <QrCode2Icon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                )}
                 <Tooltip title="Редактировать">
                     <IconButton
                         size="small"
@@ -401,7 +479,7 @@ export default function TopologyPage() {
                 sx={{ alignItems: "flex-start" }}
             >
                 {/* Дерево */}
-                <Card sx={{ width: { xs: "100%", md: 420 }, flexShrink: 0 }}>
+                <Card sx={{ width: { xs: "100%", md: 460 }, flexShrink: 0 }}>
                     <CardContent>
                         <Typography variant="h3" sx={{ mb: 1 }}>
                             Иерархия
@@ -511,6 +589,9 @@ export default function TopologyPage() {
                                                                                     section.id,
                                                                                 )
                                                                             }
+                                                                            onQr={() =>
+                                                                                void handleSectionQr(section)
+                                                                            }
                                                                             onEdit={() =>
                                                                                 openEdit("section", {
                                                                                     id: section.id,
@@ -539,9 +620,10 @@ export default function TopologyPage() {
                                                                                         depth={3}
                                                                                         hasChildren={false}
                                                                                         selected={tierSelected}
-                                                                                        onSelect={() =>
-                                                                                            setSelectedTier(tier.id)
-                                                                                        }
+                                                                                        onSelect={() => {
+                                                                                            setSelectedTier(tier.id);
+                                                                                            setCellSelection(emptySelection());
+                                                                                        }}
                                                                                         onAdd={() =>
                                                                                             openCreate(
                                                                                                 "cell",
@@ -607,8 +689,33 @@ export default function TopologyPage() {
                             <>
                                 <Stack
                                     direction="row"
-                                    sx={{ justifyContent: "flex-end", mb: 1 }}
+                                    spacing={1}
+                                    sx={{
+                                        justifyContent: "flex-end",
+                                        alignItems: "center",
+                                        mb: 1,
+                                        flexWrap: "wrap",
+                                        rowGap: 1,
+                                    }}
                                 >
+                                    {selectedCellIds.length > 0 && (
+                                        <>
+                                            <Typography
+                                                variant="body2"
+                                                color="text.secondary"
+                                            >
+                                                Выбрано: {selectedCellIds.length}
+                                            </Typography>
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                startIcon={<PrintIcon />}
+                                                onClick={() => void handleBatchQr()}
+                                            >
+                                                Печать QR ({selectedCellIds.length})
+                                            </Button>
+                                        </>
+                                    )}
                                     <Tooltip title="Добавить ячейку">
                                         <IconButton
                                             color="primary"
@@ -637,6 +744,9 @@ export default function TopologyPage() {
                                         rows={cells.data ?? []}
                                         columns={cellColumns}
                                         loading={cells.isLoading}
+                                        checkboxSelection
+                                        rowSelectionModel={cellSelection}
+                                        onRowSelectionModelChange={setCellSelection}
                                         disableRowSelectionOnClick
                                         disableColumnFilter
                                         disableColumnSelector
