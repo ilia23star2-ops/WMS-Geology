@@ -7,8 +7,9 @@ ViewSets приложения samples.
 
 from collections import OrderedDict
 
-from django.db.models import Count
-from rest_framework import viewsets
+from django.db.models import ProtectedError
+from django.utils import timezone
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -91,13 +92,27 @@ class WellViewSet(viewsets.ModelViewSet):
         return qs
 
 
+def _describe_protected(objects) -> str:
+    """Человекочитаемое описание объектов, блокирующих удаление."""
+    counts: dict[str, int] = {}
+    for obj in objects:
+        label = str(obj._meta.verbose_name_plural)
+        counts[label] = counts.get(label, 0) + 1
+    return ", ".join(f"{k}: {v}" for k, v in counts.items())
+
+
 class SampleViewSet(viewsets.ModelViewSet):
     """
     CRUD для проб.
 
     Фильтры (см. get_queryset).
     Custom actions:
-    - GET /samples/grouped/ — сгруппированный список.
+    - GET  /samples/grouped/       — сгруппированный список.
+    - POST /samples/{id}/dispose/  — утилизация (2f-2b).
+    - POST /samples/{id}/restore/  — возврат из утилизации (2f-2b).
+
+    `destroy` защищён: если проба фигурирует в `PickListItem` или
+    `ShipmentItem` — вернётся 409.
     """
 
     serializer_class = SampleSerializer
@@ -172,6 +187,100 @@ class SampleViewSet(viewsets.ModelViewSet):
         return qs
 
     # ------------------------------------------------------------
+    # Удаление (2f-2b)
+    # ------------------------------------------------------------
+    def destroy(self, request, *args, **kwargs):
+        """
+        Удаление пробы. Если проба фигурирует в `PickListItem` или
+        `ShipmentItem` — `ProtectedError` → 409 с пояснением.
+        """
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+        except ProtectedError as exc:
+            return Response(
+                {
+                    "error": (
+                        "Нельзя удалить пробу: на неё ссылаются "
+                        f"связанные объекты ({len(exc.protected_objects)})."
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # ------------------------------------------------------------
+    # Утилизация / возврат (2f-2b)
+    # ------------------------------------------------------------
+    def _get_sample_any(self, pk: int) -> Sample | None:
+        """
+        Достаёт пробу независимо от фильтров `get_queryset`.
+
+        Нужно для `dispose` / `restore`: утилизированные пробы
+        исключены из основного queryset, но эти экшены должны
+        их видеть.
+        """
+        return Sample.objects.filter(pk=pk).first()
+
+    @action(detail=True, methods=["post"], url_path="dispose")
+    def dispose(self, request, pk=None):
+        """
+        Утилизировать пробу (soft, с аудитом).
+
+        Тело: `{disposal_reason: str}` (опционально).
+        """
+        sample = self._get_sample_any(pk)
+        if sample is None:
+            return Response(
+                {"error": "Проба не найдена."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if sample.status == Sample.STATUS_DISPOSED:
+            return Response(
+                {"error": "Проба уже утилизирована."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = (request.data.get("disposal_reason") or "").strip()
+
+        sample.status = Sample.STATUS_DISPOSED
+        sample.disposed_at = timezone.now()
+        sample.disposed_by = request.user
+        sample.disposal_reason = reason
+        sample.save(update_fields=[
+            "status", "disposed_at", "disposed_by", "disposal_reason",
+        ])
+
+        return Response(SampleSerializer(sample).data)
+
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        """Вернуть пробу из утилизации (статус → `IN_STORAGE`)."""
+        sample = self._get_sample_any(pk)
+        if sample is None:
+            return Response(
+                {"error": "Проба не найдена."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if sample.status != Sample.STATUS_DISPOSED:
+            return Response(
+                {"error": "Проба не находится в статусе «Утилизирована»."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sample.status = Sample.STATUS_IN_STORAGE
+        sample.disposed_at = None
+        sample.disposed_by = None
+        sample.disposal_reason = ""
+        sample.save(update_fields=[
+            "status", "disposed_at", "disposed_by", "disposal_reason",
+        ])
+
+        return Response(SampleSerializer(sample).data)
+
+    # ------------------------------------------------------------
     # Группированный список
     # ------------------------------------------------------------
     @action(detail=False, methods=["get"], url_path="grouped")
@@ -187,18 +296,10 @@ class SampleViewSet(viewsets.ModelViewSet):
         - пробы без Н/З — в конце, по коду типа.
 
         Пагинация — по 20 групп.
-
-        Реализация — Python-группировка. Для больших БД (100 тыс.
-        проб) может потребовать оптимизации; на текущих объёмах
-        (до 10 тыс.) работает быстро.
         """
         per_page = 20
         qs = self.get_queryset()
 
-        # Загружаем пробы с сортировкой: сначала по Н/З, потом по типу,
-        # потом по таре, потом по номеру пробы.
-        # Пробы без Н/З окажутся в конце (null сортируется последним
-        # в PostgreSQL при ASC).
         samples = list(
             qs.select_related(
                 "container",
@@ -224,7 +325,6 @@ class SampleViewSet(viewsets.ModelViewSet):
                 "results": [],
             })
 
-        # Группировка.
         groups_map: "OrderedDict[tuple, dict]" = OrderedDict()
         for s in samples:
             key = (s.current_work_order_id, s.research_type_id)
@@ -248,7 +348,6 @@ class SampleViewSet(viewsets.ModelViewSet):
 
         groups_list = list(groups_map.values())
 
-        # Пагинация по группам.
         try:
             page = int(request.query_params.get("page", 1))
         except (TypeError, ValueError):
@@ -261,7 +360,6 @@ class SampleViewSet(viewsets.ModelViewSet):
         end = start + per_page
         page_groups = groups_list[start:end]
 
-        # Формируем ответ.
         results = []
         for g in page_groups:
             containers_data = []

@@ -42,10 +42,20 @@ export type { ContainerType } from "./containerTypes";
 
 export {
     SAMPLE_STATUS_LABELS,
+    deleteSample,
+    disposeSample,
+    fetchSample,
     fetchSamples,
     fetchSamplesGrouped,
+    restoreSample,
+    updateSample,
+    useDeleteSample,
+    useDisposeSample,
+    useRestoreSample,
+    useSample,
     useSamples,
     useSamplesGrouped,
+    useUpdateSample,
 } from "./samples";
 export type {
     GroupedContainer,
@@ -60,6 +70,7 @@ export type {
     SamplesGroupedParams,
     SamplesGroupedResponse,
     SamplesListParams,
+    UpdateSamplePayload,
 } from "./samples";
 
 export {

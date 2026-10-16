@@ -1,11 +1,11 @@
 /**
- * Группированный список проб (пачка 2f-2a).
+ * Группированный список проб (пачка 2f-2a + 2f-2b).
  *
  * Группа = (Н/З × ТИ). Внутри — тары с пробами.
  * Источник: `GET /samples/grouped/`, пагинация по 20 групп.
  *
- * Отдельный компонент, чтобы `SamplesPage` могла переключать
- * режимы «Список / Группы» без ветвлений в JSX.
+ * Клик по чипу пробы открывает `SampleEditDialog` (edit / dispose /
+ * restore / delete).
  */
 import { useEffect, useState } from "react";
 import {
@@ -31,6 +31,7 @@ import {
     type SampleFilters,
     type SampleStatus,
 } from "../api";
+import SampleEditDialog from "./SampleEditDialog";
 
 const GROUPS_PAGE_SIZE = 20;
 
@@ -55,6 +56,7 @@ export default function SamplesGroupedList({
     filters,
 }: SamplesGroupedListProps) {
     const [page, setPage] = useState(1);
+    const [editingSampleId, setEditingSampleId] = useState<number | null>(null);
 
     // При смене фильтров — возвращаемся на первую страницу.
     useEffect(() => {
@@ -105,7 +107,7 @@ export default function SamplesGroupedList({
                 color="text.secondary"
                 sx={{ mb: 1 }}
             >
-                Групп: {totalGroups}. Пагинация — по 20 групп.
+                Групп: {totalGroups}. Клик по пробе — редактирование.
             </Typography>
 
             {groups.map((group, idx) => {
@@ -207,6 +209,10 @@ export default function SamplesGroupedList({
                                                             ?? "default"
                                                         }
                                                         variant="outlined"
+                                                        onClick={() =>
+                                                            setEditingSampleId(s.id)
+                                                        }
+                                                        clickable
                                                     />
                                                 ))}
                                             </Stack>
@@ -236,7 +242,6 @@ export default function SamplesGroupedList({
                 </Box>
             )}
 
-            {/* Легенда статусов */}
             <Box sx={{ mt: 3 }}>
                 <Typography variant="caption" color="text.secondary">
                     Статусы:{" "}
@@ -247,6 +252,12 @@ export default function SamplesGroupedList({
                         .join(" · ")}
                 </Typography>
             </Box>
+
+            <SampleEditDialog
+                open={editingSampleId !== null}
+                sampleId={editingSampleId}
+                onClose={() => setEditingSampleId(null)}
+            />
         </Box>
     );
 }
