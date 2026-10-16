@@ -74,11 +74,21 @@ export type {
 } from "./samples";
 
 export {
+    CATALOG_META,
+    useCreateCatalog,
+    useDeleteCatalog,
     useLaboratories,
     useResearchTypes,
     useSites,
+    useUpdateCatalog,
 } from "./catalogs";
-export type { Laboratory, ResearchType, Site } from "./catalogs";
+export type {
+    CatalogKind,
+    CatalogPayload,
+    Laboratory,
+    ResearchType,
+    Site,
+} from "./catalogs";
 
 export {
     PRINT_BATCH_STATUS_LABELS,
