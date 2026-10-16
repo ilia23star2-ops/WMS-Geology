@@ -1,8 +1,7 @@
 # TESTING.md — что и как тестируется
 
 > Правило: новый код → новые тесты. См. `RULES.md` §12.3.
-> Проект в **проектной фазе** — тесты ещё не пишутся. Этот документ
-> задаёт стандарт для **кодовой фазы**.
+> Проект в **кодовой фазе**, тесты пишутся и живут в репозитории.
 
 ---
 
@@ -22,6 +21,86 @@
 
 ---
 
+## Как запускать
+
+### Backend
+
+```bash
+cd backend
+poetry run pytest -q                 # все тесты
+poetry run pytest -v                 # подробно
+poetry run pytest apps/<app>/tests/test_<file>.py -v
+poetry run pytest -k "search"        # тесты по имени
+poetry run python manage.py check
+poetry run python manage.py makemigrations --check --dry-run
+```
+
+### Web
+
+```bash
+cd web
+npm test                # Vitest (single run)
+npm run test:watch      # Vitest (watch)
+npm run lint
+npm run build
+```
+
+### Mobile
+
+```bash
+cd mobile
+flutter test
+flutter analyze
+```
+
+### Автоматически
+
+GitHub Actions: на каждый push в `feature/**` и `fix/**` —
+unit + integration. На merge в `main` — все три уровня. Конфиг —
+`.github/workflows/ci.yml`.
+
+---
+
+## Текущее состояние
+
+**Backend: 744 теста.**
+**Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
+**Mobile: 32 юнит-теста.**
+
+### Backend — покрытие по приложениям
+
+| Приложение | Ключевые тесты |
+|---|---|
+| `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**), bulk-create, fill-samples, фильтры `?draft_*`, `DELETE` + 409 |
+| `samples` | Модели, `Sample` (+`dispose`/`restore`, 409 при delete), `grouped` action, фильтры, поиск, seeds |
+| `receiving` | Парсер Excel (группы, тип тары, `1+1`), `apply_shipment_import`, `receipts/{id}/conflicts/`, `resolve-conflicts`, `check`, `complete`, `act` (PDF), `import-shipment` |
+| `picking` | Модели + API, фильтр `?work_order=` (с `linked_order`) |
+| `labels` | QR-сервис, PDF-этикетки, раскладка, QR-сетка, партии печати, `act_service` |
+| `users` | JWT, `UserProfile`, `Role`, `AuditLog`, seeds |
+| `movements`, `inventory`, `work_orders` | Модели + API |
+| `tests/test_openapi.py` | Contract-тесты: схема OpenAPI соответствует контрактам |
+
+### Web — покрытие
+
+- `src/api/tokenStorage.test.ts` — 3 теста.
+- `src/stores/authStore.test.ts` — 3 теста.
+- `src/utils/parseSampleInput.test.ts` — 18 тестов (парсер номера
+  пробы: prefix / middle / sequence).
+
+Компоненты и страницы (MUI-диалоги, DataGrid, роуты) —
+**не тестируются юнит-тестами**, только device-check.
+
+### Mobile — покрытие
+
+- Парсер QR (`parseQrPayload`).
+- `TokenStorage` на `flutter_secure_storage`.
+- `ApiClient` (Dio, JWT-интерцептор).
+- Модели `Container`, `Sample`.
+
+UI (экраны, сканер) — device-check на планшете.
+
+---
+
 ## Unit-тесты (приоритет 1)
 
 ### Домен
@@ -34,40 +113,61 @@
   через `linked_order_id`.
 - `test_sample_work_orders_many_to_many` — проба связана с
   несколькими Н/З, фильтр по любому находит её.
+- `test_container_number_duplicate_allowed` — `Container.container_number`
+  больше не уникален глобально (DECISIONS 1.61).
+- `test_container_number_duplicate_is_valid` — то же для
+  сериализатора (2f-1b).
 
-### Поиск
+### Поиск и фильтры
 
 - `test_search_by_sample_number` — поиск по номеру возвращает все
   строки с разными типами.
 - `test_search_by_work_order_incoming` — фильтр по входящему Н/З
   находит пробы, чей текущий Н/З — зашифрованный.
-- `test_search_by_research_type` — фильтр по типу.
-- `test_search_by_site_and_well` — фильтр по участку и скважине.
+- `test_search_by_research_type`, `test_search_by_site_and_well`.
+- `test_filter_by_draft_work_order_coded_icontains`,
+  `test_filter_by_draft_research_type`,
+  `test_filter_draft_work_order_and_research_type_combined` — 2f-1.
 
 ### Адресное хранение
 
 - `test_full_address_generation` — сборка «Комната / Стеллаж /
   Пролёт / Ярус / Ячейка».
-- `test_pallet_position_in_cell` — позиция поддона 1–3.
-- `test_pallet_on_floor` — поддон с `floor_room_id`, без ячейки.
-- `test_cell_max_pallets` — нельзя положить 4-й поддон.
+- `test_pallet_one_to_one_cell_raises`, `test_pallet_in_transit_valid`,
+  `test_pallet_capacity_override_jsonb`.
 
-### Парсеры (для миграции и приёмки)
+### Парсеры
 
-- `test_parse_qr_payload` — разбор QR-кода в структуру.
-- `test_parse_legacy_label_ocr` — парсинг текста старой этикетки.
-- `test_normalize_sample_number` — нормализация номера (пробелы,
-  регистр, разделители).
+- `parse_excel` — группы «типы + Дата», шапка до
+  `MAX_HEADER_SEARCH`, строка типа тары, `1+1`, список дат.
+- `parseSampleInput` (web, 18 тестов) — префикс + middle +
+  sequence.
+- `test_parse_qr_payload` (mobile) — разбор `WMSG:<TYPE>:<ID>`.
+
+### Custom actions
+
+- `test_dispose_sets_status_and_audit`,
+  `test_dispose_already_disposed_returns_400`,
+  `test_restore_from_disposed_returns_200`,
+  `test_restore_not_disposed_returns_400`,
+  `test_delete_sample_returns_204`,
+  `test_delete_sample_protected_returns_409` — 2f-2b.
+- `test_delete_container_protected_returns_409` — 2f-1.
+- `test_act_returns_pdf_for_confirmed_receipt`,
+  `test_act_returns_400_for_non_confirmed` — 3f-1.
 
 ---
 
 ## Integration-тесты (приоритет 2)
 
 - `test_api_create_sample` — POST создаёт запись и возвращает ID.
-- `test_api_scan_container` — POST /scan обновляет `location`.
 - `test_api_filter_samples` — GET /samples с параметрами фильтра.
 - `test_inventory_session_flow` — старт → сканы → завершение →
   отчёт по расхождениям.
+- `test_import_shipment_creates_full_chain` — Excel → Shipment +
+  Receipt + ReceiptItem + Container.
+- `test_complete_receipt_blocks_unresolved` — `complete` возвращает
+  400, если есть неразобранные конфликты.
 - `test_migration_001_applied` — миграция создаёт все таблицы.
 
 ---
@@ -83,80 +183,55 @@
 
 ---
 
-## Что уже есть
+## Правила написания
 
-**Ничего.** Проектная фаза.
+- Имя теста: `test_<что>_<условие>_<ожидание>` (snake_case).
+- Один тест — одна проверка.
+- Ассерты простые, без магии.
+- Не тестировать UI.
+- Тест быстрый: unit < 500 мс, integration < 5 сек.
+- Комментарии — на русском.
+- Фикстуры — в `conftest.py`, не дублировать.
+
+### Специфика проекта
+
+- **Django:** `@pytest.mark.django_db` на каждом тесте, использующем
+  БД.
+- **Файлы-ответы (`FileResponse`):** у `FileResponse` **нет**
+  атрибута `.content`. Читать `streaming_content`
+  (см. `test_receipt_act_endpoint.py`, 3f-1).
+- **`ProtectedError`:** в тестах `destroy` удобно мокать через
+  `patch(..., side_effect=ProtectedError("test", []))` —
+  не заводить реальные `PrintBatch`/`Shipment` только ради 409
+  (пример: `test_delete_sample_protected_returns_409`).
+- **`get_object()` уважает `get_queryset`.** Если экшен должен
+  видеть «скрытые» объекты (утилизированные пробы) — брать
+  `Model.objects.filter(pk=pk).first()` (2f-2b,
+  `_get_sample_any`).
+- **MSYS2 (UCRT64):** `manage.py shell -c "..."` ломается —
+  писать тесты или временный скрипт.
 
 ---
 
-## Что ещё нужно
+## Что делать при падении теста
 
-### Приоритет 1 (перед первым кодом)
-
-- Договориться о структуре тестов (папки, имена).
-- Определить тестовые фикстуры (комната, стеллаж, ячейка, тара,
-  проба, Н/З).
-
-### Приоритет 2 (в кодовой фазе)
-
-- Покрыть все доменные функции из `SCENARIOS.md`.
-- Покрыть все эндпоинты из `API.md`.
-
----
-
-## Как запускать
-
-### Backend
-
-```bash
-cd backend
-pytest                    # все тесты
-pytest tests/unit/        # только unit
-pytest tests/integration/ # только integration
-pytest -k "search"        # тесты по имени
-Web
-bash
-cd web
-npm test
-Mobile
-bash
-cd mobile
-flutter test
-Автоматически
-GitHub Actions: на каждый push в feature/** и fix/** —
-unit + integration. На merge в main — все три уровня.
-
-Правила написания
-Имя теста: test_<что>_<условие>_<ожидание> (snake_case).
-
-Один тест — одна проверка.
-
-Ассерты простые, без магии.
-
-Не тестировать UI.
-
-Тест быстрый: unit < 500 мс, integration < 5 сек.
-
-Комментарии — на русском.
-
-Фикстуры — в conftest.py, не дублировать.
-
-Что делать при падении теста
 Не удалять тест.
+1. Понять, кто прав — тест или код.
+2. Если тест прав — исправить код.
+3. Если тест устарел — обновить с пояснением.
+4. Если непонятно, кто прав — остановиться и спросить.
 
-Тест — контракт.
+---
 
-Если тест прав, а код неправ — исправить код.
+## Долг — сводка
 
-Если тест устарел — обновить с пояснением.
+**Сделано:**
+- Три уровня тестов (unit / integration / contract) — действуют.
+- 744 backend + 24 web + 32 mobile = **800 тестов**.
+- Contract-тесты OpenAPI.
 
-Если непонятно, кто прав — остановиться и спросить.
-
-Долг — сводка
-Сделано:
-
-Ничего (проектная фаза).
-
-Осталось:
-
-Все три уровня — в кодовой фазе.
+**Осталось:**
+- **ТД-34.** `console.error` в catch-блоках web-компонентов — низкий.
+- **ТД-28.** Fallback `parseSampleInput` — низкий.
+- Покрытие новых заходов серии 2f — по мере реализации.
+- Покрытие custom actions приёмки (`check`/`complete`) — точечное.

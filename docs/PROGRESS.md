@@ -10,8 +10,9 @@
 **Дата:** 2026-10-12 — активна.
 **Ветка:** `feature/2.x-web-v2` (активная).
 **Контекст:** Расширение web-клиента: приёмка, ручной ввод тары
-с пробами, расширенный поиск. Стратегия — Web первый, Mobile
-по требованию. Backend на старте серии — 552 теста.
+с пробами, полный CRUD в интерфейсе, полировка. Стратегия —
+Web первый, Mobile по требованию. Backend на старте серии —
+552 теста.
 
 ### Что закрыто (backend)
 
@@ -39,22 +40,6 @@
   Заготовка создаётся без номера, номер присваивается в
   `fill-samples`, draft-поля обнуляются. См. решение 1.60.
   Миграция `0005_*`. −19 старых тестов, +26 новых.
-- ✅ **`bundle-7a-3`** — web: форма «Создать тару» (заготовки).
-  Кнопка на `/containers` → диалог с полями Участок, Н/З, чекбокс
-  вх. Н/З, ТИ, Тип тары, Кол-во. Создаёт N заготовок через
-  `bulk-create`.
-- ✅ **`bundle-7a-4ab`** — web: парсер `parseSampleInput` +
-  хук `useFillSamples`. 18 юнит-тестов парсера.
-- ✅ **`bundle-7a-4c-1`** — web: форма «Заполнить тару пробами».
-  Шапка read-only из draft-полей, поле номера тары, парсер
-  диапазонов, блокировка дубликатов.
-- ✅ **`bundle-7a-4c-2a`** — web: `useContainer`, `container_id`
-  в фильтре проб, `fetchLabelPdfUrl`, `PENDING_PLACEMENT` в
-  `SamplesPage`.
-- ✅ **`bundle-7a-4c-2b`** — web: диалог `ContainerPreviewDialog`
-  (3 вкладки: Список проб / Этикетка / QR).
-- ✅ **`bundle-7a-4c-2c`** — web: интеграция — после save
-  автоматически открывается preview.
 - ✅ **`receiving-1a`** — backend: парсер — группы
   «типы + Дата», список дат в ячейке, составное количество `1+1`.
 - ✅ **`receiving-1a-2`** — backend: парсер — поиск строки
@@ -68,6 +53,75 @@
   `code=NEEDS_CONFIRMATION` (3 reason). +16 тестов.
 - ✅ **`receiving-1c`** — backend: эндпоинт
   `POST /import-sessions/import-shipment/`. +12 тестов views.
+- ✅ **`receiving-3a`** — `multi_date_match` создаёт только
+  вопрос `NEEDS_CONFIRMATION`, без `ReceiptItem`/`Container`.
+- ✅ **`receiving-3b-1`** — `GET /receipts/{id}/conflicts/`
+  + `POST /receipts/{id}/resolve-conflicts/` + `suggested_count`.
+- ✅ **`receiving-3b-1-2a`** — `ReceiptItem.container_type`
+  (FK на `ContainerType`, nullable), миграция `receiving/0002`.
+- ✅ **`receiving-3b-2`** — `POST /receipts/{id}/check/`
+  (сверка тары, batch). +14 тестов.
+- ✅ **`receiving-3c`** — `POST /receipts/{id}/complete/`
+  (завершение приёмки; блокирует при unresolved/EXPECTED).
+- ✅ **`receiving-3d-3-fix-2`** — снять `unique=True`
+  с `Container.container_number`, миграция `storage/0006`.
+  См. решение 1.61.
+- ✅ **`3f-1`** — `GET /receipts/{id}/act/` — PDF «Акт приёмки»
+  (только `status=CONFIRMED`). `apps/labels/services/act_service.py`.
+  +9 тестов (`test_receipt_act_endpoint.py`).
+- ✅ **`3f-1b`** — stale tests: `Container.container_number`
+  без unique (переделаны `test_container_number_unique` и
+  `test_container_number_unique_validation`).
+- ✅ **`2f-1`** — фильтры `?draft_work_order_coded=` (icontains)
+  + `?draft_research_type_id=` в `/storage/containers/`;
+  `DELETE /storage/containers/{id}/` → 409 при `ProtectedError`.
+  +5 тестов (`test_container_filters.py`).
+- ✅ **`2f-2b`** — `POST /samples/{id}/dispose/` +
+  `POST /samples/{id}/restore/` (soft-утилизация с аудитом);
+  `DELETE /samples/{id}/` → 409 при `ProtectedError`.
+  +7 тестов (`test_sample_actions.py`).
+
+### Что закрыто (web)
+
+- ✅ **`bundle-7a-3`** — форма «Создать тару» (заготовки).
+  Кнопка на `/containers` → диалог с полями Участок, Н/З, чекбокс
+  вх. Н/З, ТИ, Тип тары, Кол-во. Создаёт N заготовок через
+  `bulk-create`.
+- ✅ **`bundle-7a-4ab`** — парсер `parseSampleInput` +
+  хук `useFillSamples`. 18 юнит-тестов парсера.
+- ✅ **`bundle-7a-4c-1`** — форма «Заполнить тару пробами».
+  Шапка read-only из draft-полей, поле номера тары, парсер
+  диапазонов, блокировка дубликатов.
+- ✅ **`bundle-7a-4c-2a`** — `useContainer`, `container_id`
+  в фильтре проб, `fetchLabelPdfUrl`, `PENDING_PLACEMENT` в
+  `SamplesPage`.
+- ✅ **`bundle-7a-4c-2b`** — диалог `ContainerPreviewDialog`
+  (3 вкладки: Список проб / Этикетка / QR).
+- ✅ **`bundle-7a-4c-2c`** — интеграция — после save
+  автоматически открывается preview.
+- ✅ **`receiving-3d-1`** — API-хуки: `useReceiptConflicts`,
+  `useResolveConflicts`, `useCheckReceipt`, `useCompleteReceipt`.
+- ✅ **`receiving-3d-2`** — `ReceiptCheckPage`
+  (страница сверки приёмки, `/receiving/:id/check`).
+- ✅ **`receiving-3d-3`** — интеграция: роут, кнопка
+  «Начать сверку», удаление `/questions`.
+- ✅ **`3f-2`** — web: кнопка «Акт приёмки» на
+  `ReceiptCheckPage` (`fetchReceiptActBlob` +
+  `PictureAsPdfIcon`), открывает PDF в новой вкладке.
+  Отдельно добавлен `fetchReceiptActBlob` в `api/index.ts`.
+- ✅ **`2f-1`** — реестр тары: колонки «Н/З» (draft) и «ТИ»
+  (draft), фильтры «Н/З» (текст) и «ТИ» (селект),
+  `ContainerEditDialog` (edit), `Delete` с confirm
+  и обработкой 409.
+- ✅ **`2f-2a`** — группированный список проб:
+  `SamplesGroupedList` (аккордеоны по Н/З × ТИ, карточки тар,
+  чипы проб). Единый вид `/samples`, без вкладок.
+- ✅ **`2f-2b`** — `SampleEditDialog` (edit / dispose / restore /
+  delete пробы), клик по чипу пробы в группированном списке.
+- ✅ **`2f-2c`** — dev-логирование API-запросов в консоль
+  (`import.meta.env.DEV`). React Query Devtools **не ставили** —
+  корпоративная сеть рабочего ПК блокирует `registry.npmjs.org`
+  (ТД-36).
 
 ### Что закрыто (docs)
 
@@ -77,30 +131,58 @@
 - ✅ **`docs/2.x-web-v2-update-2`** — API.md (draft-поля,
   опциональный `container_number`), DATABASE.md (v6),
   DECISIONS 1.60, CONTEXT / PLAN / PROGRESS.
+- ✅ **`docs/2.x-web-v2-update-3`** (2026-10-16) — CONTEXT / PLAN /
+  DECISIONS (1.50 «закрыто», 1.61) / API (receiving-3, 3f,
+  2f-1/2a/2b/2c) / PROGRESS / TESTING (ТД-26).
 
 ### В работе
 
 - 🟡 **`bundle-7`** — web-форма «Создать тару» (WIP, неверный UX,
-  переделывается на 7a-3 / 7a-4). Ветка
+  переделана в 7a-3 / 7a-4). Ветка
   `fix/2.x-web-v2-bundle-7` — **не закрыта, не мержить**.
 
 ### Что дальше
 
-- ⬜ **`receiving-2`** — web: экран приёмки рейсов (список,
-  детали, разбор `NEEDS_CONFIRMATION`, сканер).
-- ⬜ **`receiving-3`** — web: «Завершить приёмку» + PDF-акт.
-- ⬜ **`bundle-3`** (отложен) — `SamplesGroupedList`.
-- ⬜ **`bundle-4`** (отложен) — реестр проб на grouped.
+Серия `2f` — полный CRUD в web (см. PLAN.md, 14 заходов):
+
+- ⬜ **`2f-3a/b/c`** — справочники (ТИ, участки, лаборатории) — CRUD.
+- ⬜ **`2f-4`** — топология (комнаты…поддоны) — CRUD.
+- ⬜ **`2f-5`** — приёмка: edit/delete строк, отмена партии;
+  ТД-31, ТД-32.
+- ⬜ **`2f-5b`** — Excel-загрузка рейса через UI.
+- ⬜ **`2f-6`** — рейсы: edit/delete/отмена.
+- ⬜ **`2f-7`** — партии печати: hard-delete черновиков,
+  сопроводительный PDF; ТД-30.
+- ⬜ **`2f-7b`** — «+ Добавить тару» на экране сверки (3b-3).
+- ⬜ **`2f-8`** — Н/З: новая вкладка.
+- ⬜ **`2f-9`** — перемещения.
+- ⬜ **`2f-10`** — инвентаризация.
+- ⬜ **`2f-11`** — глобальный поиск `/search` (ТД-22).
+- ⬜ **`2f-12`** — макет 4: редактирование скважины.
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 21 (backend: 1, 2, 5, 6a, 6b,
-  7a-1, 7a-2, 7a-2b, receiving-1a, 1a-2, 1b, 1c; web: 7a-3,
-  7a-4ab, 7a-4c-1, 7a-4c-2a, 7a-4c-2b, 7a-4c-2c; docs: 2).
-- «Не норм» на первом прогоне: 0.
+- Заходов закрыто (с 2026-10-12): 40.
+  - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
+    `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
+    `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
+    `receiving-1c`, `receiving-3a`, `receiving-3b-1`,
+    `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
+    `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`.
+  - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
+    `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
+    `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
+    `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`.
+  - docs: 3.
+- «Не норм» на первом прогоне: 2.
+  - 3f-1: `FileResponse` не имеет `.content` — читать
+    `streaming_content`.
+  - 2f-2b: `get_object()` учитывает фильтры `get_queryset`
+    (утилизированные пробы → 404). Решено `_get_sample_any`.
 - Откатов: 0.
-- **Backend: 662 теста** (было 552 на старте серии).
-- **Web: 24 юнит-теста** (было 6 → +18 парсера).
+- **Backend: 744 теста** (было 552 на старте серии).
+- **Web: 24 юнит-теста** (парсер проб + tokenStorage + authStore).
+- **Mobile: 32 юнит-теста** (без изменений в этой серии).
 
 ---
 

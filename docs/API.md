@@ -26,7 +26,9 @@
 | `GET` | `/samples/{id}` | Одна проба |
 | `POST` | `/samples` | Создать пробу |
 | `PATCH` | `/samples/{id}` | Обновить |
-| `DELETE` | `/samples/{id}` | Удалить (только admin) |
+| `DELETE` | `/samples/{id}` | Удалить (hard; 409 при `ProtectedError`) |
+| `POST` | `/samples/{id}/dispose/` | Утилизировать (soft, с аудитом) |
+| `POST` | `/samples/{id}/restore/` | Вернуть из утилизации |
 | `GET` | `/samples/grouped/` | Сгруппированный список (Н/З + тип → тара) |
 
 **Фильтры `GET /samples`:**
@@ -65,8 +67,8 @@
 
 **`current_location`** — вычисляемое поле:
 - тара на поддоне в ячейке → `cell.full_address`;
-- тара на полу в комнате → `На полу: <комната>`;
-- тара без места → `Место не указано`.
+- тара на полу в комнате → «На полу: <комната>»;
+- тара без места → «Место не указано».
 
 **Пример `POST /samples`:**
 
@@ -80,6 +82,48 @@
       "site": 1,
       "current_work_order": 11
     }
+
+### `POST /samples/{id}/dispose/`
+
+Soft-утилизация пробы. Устанавливает `status=DISPOSED`,
+`disposed_at=now`, `disposed_by=request.user`,
+`disposal_reason` (опционально).
+
+**Тело запроса:**
+
+    {
+      "disposal_reason": "Разбита"
+    }
+
+`disposal_reason` — опционально. Пустая строка допустима.
+
+**Ответ 200:** `SampleSerializer` с новыми значениями.
+
+**Ошибки:**
+- 404 — проба не найдена;
+- 400 — проба уже утилизирована.
+
+### `POST /samples/{id}/restore/`
+
+Возврат из утилизации. Сбрасывает `disposed_at`, `disposed_by`,
+`disposal_reason`, ставит `status=IN_STORAGE`.
+
+**Тело:** пустое (`{}`).
+
+**Ответ 200:** `SampleSerializer`.
+
+**Ошибки:**
+- 404 — проба не найдена;
+- 400 — проба не в статусе `DISPOSED`.
+
+### `DELETE /samples/{id}/`
+
+Hard-delete пробы. Если проба фигурирует в `PickListItem` или
+`ShipmentItem` — 409.
+
+**Ошибки:**
+- 404 — проба не найдена;
+- 409 — `{"error": "Нельзя удалить пробу: на неё ссылаются связанные объекты (N)."}`.
 
 ### `GET /samples/grouped/`
 
@@ -158,7 +202,8 @@
 | `GET` | `/storage/containers` | Список |
 | `GET` | `/storage/containers/{id}` | Одна тара + пробы внутри |
 | `POST` | `/storage/containers` | Создать одну |
-| `PATCH` | `/storage/containers/{id}` | Переместить / обновить |
+| `PATCH` | `/storage/containers/{id}` | Обновить |
+| `DELETE` | `/storage/containers/{id}` | Удалить (409 при `ProtectedError`) |
 | `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
 | `POST` | `/storage/containers/bulk-create/` | Создать N тар-заготовок (без проб) |
 | `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить тару пробами |
@@ -166,7 +211,27 @@
 | `POST` | `/storage/pallets` | Создать поддон |
 
 **Фильтры контейнеров:** `pallet_id`, `floor_room_id`,
-`container_type_id`, `status`, `comment_template_id`.
+`container_type_id`, `status`, `comment_template_id`,
+`draft_work_order_coded` (icontains), `draft_research_type_id`.
+
+**`DELETE /storage/containers/{id}/`** (2f-1):
+
+Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
+ней есть пробы) → 409.
+
+**Ошибки:**
+- 404 — тара не найдена;
+- 409 — `{"error": "Нельзя удалить тару: на неё ссылаются связанные объекты (N)."}`.
+
+**Draft-фильтры** (2f-1):
+
+- `?draft_work_order_coded=TST0001` — частичный поиск по
+  draft-номеру входящего Н/З (`icontains`);
+- `?draft_research_type_id=3` — точное совпадение по ID
+  draft-ТИ.
+
+Используются в реестре тары, чтобы различать одинаковые номера
+из разных групп (Н/З × ТИ) — см. DECISIONS 1.61.
 
 ### `POST /storage/containers/bulk-create/`
 
@@ -378,8 +443,13 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 |---|---|---|
 | `GET` | `/receipts` | Список партий |
 | `GET` | `/receipts/{id}` | Одна партия |
-| `POST` | `/receipts/{id}/confirm` | Подтвердить приёмку |
+| `POST` | `/receipts/{id}/confirm` | Подтвердить приёмку (ручной override) |
 | `POST` | `/receipts/{id}/cancel` | Отменить |
+| `GET` | `/receipts/{id}/conflicts/` | Неразобранные `NEEDS_CONFIRMATION` + `suggested_count` |
+| `POST` | `/receipts/{id}/resolve-conflicts/` | Разобрать конфликты |
+| `POST` | `/receipts/{id}/check/` | Сверка тары (batch) |
+| `POST` | `/receipts/{id}/complete/` | Завершить приёмку |
+| `GET` | `/receipts/{id}/act/` | PDF «Акт приёмки» (только `CONFIRMED`) |
 | `GET` | `/receipt-items` | Строки партии |
 | `GET` | `/import-sessions` | Сессии импорта |
 | `POST` | `/import-sessions/upload/` | Excel → Receipt + ReceiptItem |
@@ -389,6 +459,148 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 `shipment_id`.
 **Фильтры `GET /receipt-items`:** `receipt_id`, `status`,
 `container_id`.
+
+### `GET /receipts/{id}/conflicts/`
+
+Неразобранные конфликты партии (`code=NEEDS_CONFIRMATION`,
+`resolved != true`). Каждый элемент содержит поля вопроса +
+`question_index` + `suggested_count`.
+
+**Ответ 200:**
+
+    {
+      "receipt_id": 8,
+      "conflicts": [
+        {
+          "question_index": 3,
+          "code": "NEEDS_CONFIRMATION",
+          "title": "Требует уточнения",
+          "reason": "multi_date_match",
+          "sheet": "Тестовый",
+          "work_order": "TST0001",
+          "research_type": "ШЛ",
+          "container_type": "Коробка",
+          "containers_count": 4,
+          "raw_dates": ["2026-10-13", "2026-10-14"],
+          "target_date": "2026-10-14",
+          "message": "В ячейке несколько дат, включая 14.10.2026.",
+          "suggested_count": 2
+        }
+      ],
+      "total_conflicts_count": 3,
+      "resolved_conflicts_count": 2
+    }
+
+### `POST /receipts/{id}/resolve-conflicts/`
+
+Разобрать конфликты партии. Создаёт N `ReceiptItem` (без
+`Container`), помечает вопрос `resolved`.
+
+**Тело запроса:**
+
+    {
+      "conflicts": [
+        {"question_index": 3, "containers_count": 2}
+      ]
+    }
+
+**Ответ 200:**
+
+    {
+      "receipt_id": 8,
+      "created_items_count": 2,
+      "resolved_conflicts_count": 3,
+      "total_conflicts_count": 3,
+      "errors": []
+    }
+
+**Ошибки 400:** невалидный индекс, вопрос уже разобран,
+`containers_count > declared_count`, дубликат `question_index`.
+
+### `POST /receipts/{id}/check/`
+
+Сверка тары по партии (batch).
+
+**Тело запроса:**
+
+    {
+      "items": [
+        {"item_id": 101, "matched": true, "container_number": "1"},
+        {"item_id": 102, "matched": false}
+      ]
+    }
+
+**Логика:**
+- `matched=true` → создать/обновить `Container`
+  (`status=PENDING_PLACEMENT`), присвоить номер,
+  `ReceiptItem.status=MATCHED`.
+- `matched=false` → удалить `Container` (если нет проб),
+  `ReceiptItem.status=MISSING`.
+- `Receipt.status=IN_PROGRESS`, если была `EXPECTED`.
+
+**Ответ 200:**
+
+    {
+      "receipt_id": 8,
+      "total_items_count": 10,
+      "matched_count": 8,
+      "missing_count": 2,
+      "errors": []
+    }
+
+**Ошибки 400:**
+- строка не принадлежит партии;
+- `container_type` не заполнен у `matched`-строки;
+- номер тары дублируется в запросе.
+
+### `POST /receipts/{id}/complete/`
+
+Завершить приёмку партии.
+
+**Проверки:**
+- нет неразобранных `NEEDS_CONFIRMATION`;
+- нет `ReceiptItem.status=EXPECTED`.
+
+**Действия:**
+- `Receipt.status=CONFIRMED`, `received_at=now`,
+  `received_by=request.user`;
+- `Shipment.status=RECEIVED` (все `MATCHED`) или
+  `PARTIALLY_RECEIVED` (есть `MISSING`).
+
+**Ответ 200:**
+
+    {
+      "receipt_id": 8,
+      "status": "CONFIRMED",
+      "total_items_count": 10,
+      "matched_count": 8,
+      "missing_count": 2,
+      "other_count": 0,
+      "shipment_id": 5,
+      "shipment_status": "PARTIALLY_RECEIVED",
+      "errors": []
+    }
+
+**Ошибки 400:** остались конфликты; остались `EXPECTED`;
+партия пуста; партия уже `CONFIRMED` / `CANCELLED`.
+
+### `GET /receipts/{id}/act/`
+
+PDF «Акт приёмки» (решение 1.50). Доступен только для
+`Receipt.status=CONFIRMED`.
+
+**Ответ 200:** `application/pdf`, `Content-Disposition: inline;
+filename="act_<receipt_number>.pdf"`.
+
+Содержимое PDF:
+- шапка: «АКТ ПРИЁМКИ № <receipt_number>»;
+- метаданные: дата рейса, рейс, лаборатория, участок;
+- сводка: всего / принято / не пришло / прочее;
+- таблица «Не приехало» (`№ | Участок | Н/З | Иссл. | Тип тары |
+  Кол-во`);
+- подписи: «Сдал: ___» / «Принял: ___».
+
+**Ошибки 400:** статус не `CONFIRMED`.
 
 ### `POST /import-sessions/upload/`
 
@@ -488,6 +700,13 @@ rows_count, containers_count, parse_errors, receipts}`.
 
 Коды: `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`,
 `CONFLICT`, `INTERNAL_ERROR`.
+
+**Исключение** — custom actions, возвращающие простую форму:
+
+    {"error": "<строка>"}
+
+Так делают: `check`, `complete`, `act`, `dispose`, `restore`,
+`destroy` (409) — короткое сообщение без кода.
 
 ---
 

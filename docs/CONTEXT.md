@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-14
+**Дата обновления:** 2026-10-16
 
 ---
 
@@ -11,11 +11,17 @@
 
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
-**Текущий заход:** серия `2.x-receiving` (backend) закрыта.
-Следующая — web: экран приёмки рейсов (`receiving-2`).
+**Текущий заход:** серия `2f` (полный CRUD в web + полировка).
+Закрыто: `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`. Следующий — `2f-3a`.
 
-**Предыдущий заход:** `receiving-1c` — backend: эндпоинт
-`POST /import-sessions/import-shipment/` (закрыт 2026-10-14).
+**Предыдущие заходы:**
+- `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
+  `conflicts` / `check` / `complete`, PDF «Акт приёмки».
+- `3f-1` / `3f-1b` / `3f-2`: PDF акта, stale tests, кнопка в web.
+- `2f-1`: колонки «Н/З», «ТИ», фильтры, edit/delete тары.
+- `2f-2a`: группированный список проб (Н/З × ТИ).
+- `2f-2b`: CRUD + dispose/restore/delete проб.
+- `2f-2c`: dev-логирование API-запросов.
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`,
@@ -35,6 +41,27 @@
   - Сервис `apply_shipment_import`: `Shipment INBOUND` + `Receipt`
     + `ReceiptItem` + `Container` (draft).
   - Эндпоинт `POST /import-sessions/import-shipment/`.
+- **Серия receiving-3 (2026-10-14 — 2026-10-15):**
+  - `ReceiptItem.container_type` (FK, nullable) — миграция `0002`.
+  - `GET /receipts/{id}/conflicts/` — неразобранные
+    `NEEDS_CONFIRMATION` + `suggested_count`.
+  - `POST /receipts/{id}/resolve-conflicts/` — разбор конфликтов.
+  - `POST /receipts/{id}/check/` — сверка тары (batch).
+  - `POST /receipts/{id}/complete/` — завершение приёмки.
+  - `Container.container_number` — **без unique** (миграция
+    `storage/0006`). Семантика: номер тары внутри группы
+    (Н/З × ТИ), идентификатор — `id`.
+- **Пачка 3f-1 (2026-10-15):**
+  - `GET /receipts/{id}/act/` — PDF «Акт приёмки»
+    (только для `status=CONFIRMED`).
+- **Пачка 2f-1 (2026-10-16):**
+  - Фильтры `?draft_work_order_coded=` (icontains) +
+    `?draft_research_type_id=` в `/storage/containers/`.
+  - `DELETE /storage/containers/{id}/` → 409 при `ProtectedError`.
+- **Пачка 2f-2b (2026-10-16):**
+  - `POST /samples/{id}/dispose/` — soft-утилизация с аудитом.
+  - `POST /samples/{id}/restore/` — вернуть из утилизации.
+  - `DELETE /samples/{id}/` → 409 при `ProtectedError`.
 
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники
@@ -48,12 +75,41 @@
   - Диалог предпросмотра `ContainerPreviewDialog` — 3 вкладки
     (Список / Этикетка / QR) + кнопки «В партию печати».
   - Интеграция: после save → автоматически открывается preview.
+- **Серия receiving-3 + 3f-2 (2026-10-14 — 2026-10-15):**
+  - Экран сверки `/receiving/:id/check` (`ReceiptCheckPage`).
+  - Разбор конфликтов, сверка тары, завершение приёмки.
+  - Кнопка «Акт приёмки» — открывает PDF в новой вкладке
+    (только для `CONFIRMED`).
+- **Пачка 2f-1 (2026-10-16):**
+  - Колонки «Н/З» (draft) и «ТИ» (draft) в реестре тары.
+  - Фильтры «Н/З» (текст) и «ТИ» (селект).
+  - `ContainerEditDialog` — edit тары.
+  - Delete тары (с confirm, обработка 409).
+- **Пачка 2f-2a (2026-10-16):**
+  - `SamplesGroupedList` — группированный список (Н/З × ТИ),
+    аккордеоны, карточки тар, чипы проб.
+  - Единый вид для `/samples` — без вкладок.
+- **Пачка 2f-2b (2026-10-16):**
+  - `SampleEditDialog` — edit / dispose / restore / delete пробы.
+  - Клик по чипу пробы в группированном списке.
+- **Пачка 2f-2c (2026-10-16):**
+  - Dev-логирование API-запросов в консоль (`import.meta.env.DEV`).
 
-**Что нужно добавить (web):**
-- **Экран приёмки рейсов** (`receiving-2`) — список рейсов,
-  детали, разбор `NEEDS_CONFIRMATION`.
-- **«Завершить приёмку»** + PDF «Акт приёмки» (`receiving-3`).
-- Расширенный поиск.
+**Что нужно добавить (web, серия 2f — 14 заходов):**
+- **2f-3a/b/c:** справочники (ТИ, участки, лаборатории) — CRUD.
+- **2f-4:** топология (комнаты…поддоны) — CRUD.
+- **2f-5:** приёмка — edit/delete строк, отмена партии;
+  ТД-31 (экран `NEEDS_CONFIRMATION`), ТД-32.
+- **2f-5b:** Excel-загрузка рейса через UI.
+- **2f-6:** рейсы — edit/delete/отмена.
+- **2f-7:** партии печати — hard-delete черновиков,
+  сопроводительный PDF; ТД-30.
+- **2f-7b:** «+ Добавить тару» на экране сверки (3b-3).
+- **2f-8:** Н/З — новая вкладка (создание/правка).
+- **2f-9:** перемещения — новая вкладка.
+- **2f-10:** инвентаризация — новая вкладка.
+- **2f-11:** глобальный поиск `/search` (ТД-22).
+- **2f-12:** макет 4 — редактирование скважины.
 - ТД-28 (fallback в парсере), ТД-29 (hint префиксов) — низкий
   приоритет.
 
@@ -61,12 +117,15 @@
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
-**Backend:** 662 теста.
+**Backend:** 744 теста.
 **Web:** 24 юнит-теста.
+**Mobile:** 32 юнит-теста.
 
 **Ближайшая работа:**
-- `receiving-2` — web: экран приёмки рейсов.
-- `receiving-3` — web: «Завершить приёмку» + PDF-акт.
+- `2f-3a` — справочник ТИ (CRUD).
+- `2f-3b` — участки.
+- `2f-3c` — лаборатории.
+- Дальше — по таблице 2f в `PLAN.md`.
 - ТД-28, ТД-29 — отложить до появления реальной необходимости.
 
 ---
@@ -78,7 +137,7 @@
 1. **Web-фичи — первый приоритет.**
 2. **Mobile — по требованию** (если web-фича требует проверки
    на устройстве — сканер, камера).
-3. **Роли и права — после.**
+3. **Роли и права — после.** Пока CRUD в UI открыт всем.
 4. **`Receipt`** — только для Excel и акта приёмки.
 
 ---
@@ -92,19 +151,19 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (662 теста)
+### Backend (744 теста)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number), ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
-| `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`), SampleWorkOrder, sync-сервис |
+| `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number, **без unique**), ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
+| `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`, dispose/restore), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site) |
-| `receiving` | Receipt, ReceiptItem, ImportSession + Excel-парсер (+группы, тип тары) + сервис импорта + `apply_shipment_import` + эндпоинт `import-shipment` |
+| `receiving` | Receipt, ReceiptItem (+`container_type`), ImportSession + Excel-парсер (+группы, тип тары) + сервис импорта + `apply_shipment_import` + `import-shipment`; actions `conflicts`, `resolve-conflicts`, `check`, `complete`, `act` |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
 | `inventory` | InventorySession, InventoryScan, InventoryIssue |
 | `users` | Role, UserProfile, AuditLog + JWT auth |
-| `labels` | QR-сервис, PDF-этикетки, QR-сетка, `PrintBatch` + `PrintBatchItem`, API корзины и печати |
+| `labels` | QR-сервис, PDF-этикетки, QR-сетка, `PrintBatch` + `PrintBatchItem`, API корзины и печати, `act_service` (PDF «Акт приёмки») |
 
 ### Web (React, 24 юнит-теста)
 
@@ -113,12 +172,14 @@
 | Аутентификация | Zustand-стор, login-форма, protected routes, JWT-интерцептор с авто-refresh |
 | Layout | MUI sidebar + header, адаптив |
 | Главная | 4 карточки со счётчиками |
-| Тара | DataGrid, фильтры, PDF-этикетка, выбор в партию печати, форма «Создать тару», форма «Заполнить пробами», preview с 3 вкладками |
-| Пробы | DataGrid, фильтры, «Показать утилизированные» |
+| Тара | DataGrid, фильтры (статус, тип, «Н/З», «ТИ»), edit/delete, PDF-этикетка, выбор в партию печати, форма «Создать тару», форма «Заполнить пробами», preview с 3 вкладками |
+| Пробы | **Группированный список** (Н/З × ТИ), `SampleEditDialog` (edit / dispose / restore / delete) |
 | Печать | Список партий, детали, add/remove тар, PDF |
-| Справочники | Типы исследования, участки, лаборатории (просмотр) |
+| Справочники | Типы исследования, участки, лаборатории (просмотр; CRUD — 2f-3) |
+| Приёмка | Список рейсов, детали, экран сверки `/receiving/:id/check`, кнопка «Акт приёмки» |
+| Dev-инфра | Логирование API в консоль (`import.meta.env.DEV`) |
 
-**Чего нет:** экран приёмки, расширенный поиск.
+**Чего нет:** CRUD справочников и топологии, экраны Н/З / перемещений / инвентаризации, глобальный поиск.
 
 ### Mobile (Flutter, 32 юнит-теста)
 
@@ -131,9 +192,8 @@
 | Карточка тары | Поля тары + список проб внутри (pull-to-refresh) |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (60 решений), `DATABASE` (v6),
-  `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`,
-  `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (61), `DATABASE` (v6), `API`,
+  `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -150,7 +210,8 @@
 - `CheckConstraint(condition=...)`, не `check=`.
 - CHECK с NULL: `NULL = NULL` не TRUE.
 - `ProtectedError` при удалении Container с пробами, ContainerType
-  с контейнерами, Sample из PickListItem и ShipmentItem.
+  с контейнерами, Sample из PickListItem и ShipmentItem,
+  Container из PrintBatchItem. ViewSets отдают 409 (2f-1, 2f-2b).
 - **`poetry lock`** после изменения `pyproject.toml`.
 - **Циклические импорты** — использовать строковые ссылки.
 - **Сортировка кириллицы в БД** — использовать `sort_order`.
@@ -165,6 +226,10 @@
 - **`transaction.set_rollback(True)` несовместим с `import_session.save()`
   внутри одного `atomic`** — использовать «сухой прогон» + `with
   transaction.atomic()` на блок записи (receiving-1b).
+- **`get_object()` уважает фильтры `get_queryset`.** Для действий,
+  которым нужны «скрытые» объекты (утилизированные пробы) —
+  брать `Model.objects.filter(pk=pk).first()` напрямую (2f-2b,
+  `SampleViewSet._get_sample_any`).
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
@@ -174,7 +239,8 @@
   `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`,
   `add-containers`, `remove-container`, `mark-ready`, `pdf`,
   `mark-printed`, `bulk-create`, `fill-samples`, `upload`,
-  `import-shipment`.
+  `import-shipment`, `conflicts`, `resolve-conflicts`, `check`,
+  `act`, `dispose`, `restore`.
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`,
   остальные приложения — **без префикса** (`/api/v1/samples/...`,
   `/api/v1/research-types/...`, `/api/v1/work-orders/...`,
@@ -196,6 +262,11 @@
 - **Импорт рейса** (`import-shipment`): `Receipt.site = NULL`
   (участок — на `ReceiptItem.site`); один `Receipt` на рейс;
   `Shipment.status = SENT`; `Container.status = IN_TRANSIT`.
+- **`Container.container_number` — НЕ уникален глобально**
+  (DECISIONS 1.61). Семантика: номер тары внутри группы
+  (Н/З × ТИ). У `TST00469/ГД` тары 1..4, у `TST00470/ГД` тоже
+  1..4 — корректно. Идентификатор — `id`
+  (в QR: `WMSG:CONTAINER:<id>`).
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.
@@ -211,6 +282,10 @@
   не переписывает первую печать. Ручной override —
   `POST /mark-printed/`.
 - Шрифт `DejaVuSans.ttf` — в `static/fonts/`, не в git.
+- **Акт приёмки (3f-1):** `apps/labels/services/act_service.py`.
+  Переиспользует `FONT_PATH`, `_check_font`, `_truncate_to_width`
+  из `label_service`. A4 portrait: шапка / метаданные / сводка /
+  таблица неприехавших / подписи.
 
 ### Web
 - **Vite proxy:** `/api/*` → `http://localhost:8000`. Backend должен
@@ -225,7 +300,8 @@
 - **Zustand:** при F5 состояние сбрасывается — race condition
   закрыт флагом `isBootstrapping`.
 - **Vite build:** warning «chunks > 500 kB» — ожидаемо.
-  Code-splitting отложен (ТД-21).
+  Code-splitting отложен (ТД-21 / ТД-35). Бандл вырос до
+  ~1271 kB (gzip ~380 kB).
 - **URL справочников:** `/research-types/`, `/sites/`,
   `/laboratories/` — **без префикса** `/samples/`.
 - **MUI icons:** `DeleteOutline` **не существует**, использовать
@@ -239,6 +315,11 @@
 - **Диалог заполнения:** `fillContainerWithSamples` **обнуляет
   draft-поля** тары. `ContainerPreviewDialog` после save
   подтягивает обновлённую тару (с номером, без draft).
+- **`FileResponse` в тестах:** у него нет `.content`, читать
+  `streaming_content` (3f-1).
+- **React Query Devtools не ставим:** рабочий ПК за корпоративной
+  сетью, `registry.npmjs.org` недоступен (ТД-36). Вместо панели —
+  dev-логирование в `client.ts` (`import.meta.env.DEV`).
 - **Ветка `fix/2.x-web-v2-bundle-7`** — WIP, не мержить, форма
   создания тары переделана в 7a-3.
 
@@ -276,6 +357,8 @@
   (терминал уже в `backend/`).
 - **Пути git-команд из корня проекта** — с префиксом `backend/`
   или `web/` (в зависимости от места).
+- **`git checkout -b` может упасть** на «already exists» — тогда
+  проверить `git branch --show-current` перед коммитом.
 
 ---
 
