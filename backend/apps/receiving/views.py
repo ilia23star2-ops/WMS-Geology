@@ -3,7 +3,7 @@ ViewSets приложения receiving.
 
 - ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`,
   `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`.
-- ReceiptItemViewSet — CRUD.
+- ReceiptItemViewSet — CRUD + каскадное удаление (2f-5a-1).
 - ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`,
   `resolve-questions` (legacy).
 """
@@ -12,6 +12,8 @@ from datetime import date, datetime
 from io import BytesIO
 
 from django.core.files.base import ContentFile
+from django.db import transaction
+from django.db.models import ProtectedError
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -311,7 +313,15 @@ class ReceiptViewSet(viewsets.ModelViewSet):
 # ReceiptItem
 # ============================================================
 class ReceiptItemViewSet(viewsets.ModelViewSet):
-    """CRUD для строк приёмки."""
+    """
+    CRUD для строк приёмки.
+
+    `DELETE` (2f-5a-1) — каскадное удаление:
+    - удаляются все пробы связанной тары (если они не в отгрузке/выборке);
+    - удаляется сама тара;
+    - удаляется строка.
+    Всё одной транзакцией. Ошибка — ничего не удаляется.
+    """
 
     serializer_class = ReceiptItemSerializer
     permission_classes = [IsAuthenticated]
@@ -329,6 +339,57 @@ class ReceiptItemViewSet(viewsets.ModelViewSet):
         if p.get("container_id"):
             qs = qs.filter(container_id=p["container_id"])
         return qs
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        """
+        Каскадное удаление строки приёмки.
+
+        1. Если у строки есть тара:
+           - удалить все её пробы (кроме тех, что уже в отгрузке/выборке);
+           - удалить тару.
+        2. Удалить саму строку.
+
+        При `ProtectedError` — 409 с текстом, что именно защищено.
+        """
+        instance = self.get_object()
+        container = instance.container
+
+        if container is not None:
+            # Сначала пробы (Container → Sample — PROTECT).
+            for sample in container.samples.all():
+                try:
+                    sample.delete()
+                except ProtectedError as exc:
+                    protected = ", ".join(
+                        str(obj._meta.verbose_name_plural)
+                        for obj in exc.protected_objects
+                    ) or "связанные объекты"
+                    return Response(
+                        {
+                            "error": (
+                                f"Нельзя удалить тару: проба "
+                                f"«{sample.sample_number}» уже "
+                                f"используется ({protected})."
+                            ),
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+            try:
+                container.delete()
+            except ProtectedError as exc:
+                return Response(
+                    {
+                        "error": (
+                            "Нельзя удалить тару: на неё ссылаются "
+                            f"связанные объекты ({len(exc.protected_objects)})."
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ============================================================
