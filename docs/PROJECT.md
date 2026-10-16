@@ -5,7 +5,7 @@
 
 **Шаблон:** ai-development-template v1.0
 **Дата заполнения:** 2026-10-07
-**Дата обновления:** 2026-10-12
+**Дата обновления:** 2026-10-16
 
 ---
 
@@ -83,7 +83,7 @@ Android-приложение для планшетов. QR-коды как ос�
 - `qrcode` — генерация QR.
 - `pillow` — изображения для QR.
 - `openpyxl` — парсинг Excel-приёмки.
-- `fpdf2` — генерация PDF-этикеток.
+- `fpdf2` — генерация PDF-этикеток и акта приёмки.
 
 ### Web (ключевые зависимости)
 
@@ -316,12 +316,13 @@ Android-приложение для планшетов. QR-коды как ос�
 | 1.3-backend-v2 | ✅ | Справочники, приёмка, рейсы, 400 тестов |
 | 2.0-excel-parser | ✅ | Парсер Excel-приёмки, 433 теста |
 | 2.1-label-generator | ✅ | QR, PDF-этикетки, партии печати, 552 теста |
-| 2.x-web | ✅ | React: логин, реестры, печать, справочники, 552 теста |
+| 2.x-web | ✅ | React: логин, реестры, печать, справочники |
 | 2.x-mobile | ✅ | Flutter: auth, сканер QR, карточка тары, 32 теста |
-| **2.x-web-v2** | 🟡 **текущая** | Приёмка, поиск, ручной ввод, 575 тестов |
+| **2.x-web-v2** | 🟡 **текущая** | Приёмка, топология, полный CRUD, QR топологии, 762 теста |
 | 2.x-lab-portal | ⬜ | Портал лабораторий |
 | 2.x-lifecycle | ⬜ | Пересмотр статусов Container / Sample |
 | 2.x-sorting | ⬜ | Помощник сортировки |
+| 2.x-rbac | ⬜ | Роли и права |
 | 3.x-migration | ⬜ | Миграция старых этикеток (OCR) |
 | 3.x-deploy | ⬜ | Сборка web + backend в installer |
 
@@ -334,8 +335,11 @@ Android-приложение для планшетов. QR-коды как ос�
 ### QR-стратегия
 
 - Основной QR — на **таре**.
-- QR на **секции** — виртуальный вид ярусов A–D.
-- QR на **ячейке** — точечная работа.
+- QR на **секции** — виртуальный вид ярусов A–D. Автогенерация
+  при создании (`WMSG:SECTION:<id>`); PDF-печать через
+  `GET /storage/sections/{id}/qr.pdf/` и batch `qr-batch`.
+- QR на **ячейке** — точечная работа. Автогенерация
+  (`WMSG:CELL:<id>`); PDF через `GET /storage/cells/{id}/qr.pdf/`.
 - На поддонах и пробах — **нет**.
 - Существующие этикетки не переклеиваются.
 - Старый ID → `Sample.legacy_data` (JSONB).
@@ -355,6 +359,10 @@ Android-приложение для планшетов. QR-коды как ос�
 - Ярусы — A, B, C, D (снизу вверх).
 - `Container` удаляется только если пуст (`PROTECT` от `Sample`).
 - Утилизация — **soft-delete** (`status = DISPOSED`).
+- `Container.container_number` — **не уникален** глобально
+  (см. DECISIONS 1.61).
+- `Container.status` — начальный статус `PENDING_FILLING`
+  («Ожидает заполнения», см. DECISIONS 1.62).
 - `PrintBatch.status` — soft через `CANCELLED`.
 - `PrintBatchItem.container` — `PROTECT`.
 
@@ -407,9 +415,9 @@ Android-приложение для планшетов. QR-коды как ос�
 
 | Файл | Версия / дата | Примечание |
 |---|---|---|
-| `DATABASE.md` | v5 (2026-10-10) | + PrintBatch, PrintBatchItem |
-| `API.md` | 2026-10-12 | + grouped, bulk-create, current_location |
-| `SCENARIOS.md` | v4 | |
+| `DATABASE.md` | v7 (2026-10-16) | + PENDING_FILLING, QR topology, unique снят, каскад |
+| `API.md` | 2026-10-16 | + qr.pdf, qr-batch, delete receipt-items, PENDING_FILLING |
+| `SCENARIOS.md` | v4 | Сценарии приёмки, выборки, портала |
 | `UI.md` | v2 (2026-10-10) | Дизайн-система, MUI |
 | `TEMPLATES-PROJECT.md` | 2026-10-07 | Дополнения к шаблонам |
 | `INTEGRATIONS.md` | (серия 2.x-lab-portal) | Внешние интеграции |

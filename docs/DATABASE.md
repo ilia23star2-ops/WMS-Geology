@@ -5,7 +5,7 @@
 - **СУБД:** PostgreSQL 16+ (портативный / Docker).
 - **Кодировка:** UTF-8.
 - **Временная зона:** UTC (хранение), локальная (отображение).
-- **Версия схемы:** 6.
+- **Версия схемы:** 7.
 - **Миграции:** Django migrations в `backend/apps/*/migrations/`.
 
 ## История версий
@@ -18,6 +18,33 @@
 - **v5** — Партии печати: `PrintBatches`, `PrintBatchItems` (2.1).
 - **v6** — Container draft-поля + nullable `container_number`
   (2.x-web-v2, bundle-7a-2b).
+- **v7** — Container `PENDING_FILLING` + снят UNIQUE с
+  `container_number` + AlterField `qr_code` (help_text)
+  (2.x-web-v2, пачки `2f-4c-1`, `2f-5c-1`, `receiving-3d-3-fix-2`).
+
+## Изменения v6 → v7
+
+Решения **1.61, 1.62, 1.63** из `docs/DECISIONS.md`:
+
+**Миграция `storage/0006_alter_container_container_number`** (решение 1.61):
+- `Containers.container_number` — **снят `UNIQUE`**.
+- Семантика: номер тары — метка внутри группы (Н/З × ТИ),
+  идентификатор — `id`. Уникальность в группе не проверяется
+  на уровне БД.
+
+**Миграция `storage/0007_alter_cell_qr_code_alter_section_qr_code`**
+(решение 1.63):
+- `Sections.qr_code`, `Cells.qr_code` — `AlterField` (только
+  `help_text`: «Автогенерируется при создании»).
+- Автогенерация выполняется в `save()`: `WMSG:SECTION:<id>` /
+  `WMSG:CELL:<id>`.
+
+**Миграция `storage/0008_alter_container_status` + data-migration**
+(решение 1.62):
+- В `Containers.status` добавлен `PENDING_FILLING`
+  («Ожидает заполнения»). Статус — первым в `STATUS_CHOICES`.
+- Data-migration: старые тары `PENDING_PLACEMENT` **без проб** →
+  `PENDING_FILLING`. Тары с пробами — без изменений.
 
 ## Изменения v5 → v6
 
@@ -136,8 +163,10 @@
 
 Без изменений (v2).
 
-- `Sections.qr_code` — обязателен.
-- `Cells.qr_code` — обязателен.
+- `Sections.qr_code` — автогенерируется в `save()` (payload
+  `WMSG:SECTION:<id>`), если пусто.
+- `Cells.qr_code` — автогенерируется в `save()` (payload
+  `WMSG:CELL:<id>`), если пусто.
 - `Cells.cell_type` — `STANDARD` / `CORE`.
 
 #### `Pallets` (Вариант A)
@@ -170,7 +199,7 @@
 | Поле | Тип | Описание |
 |---|---|---|
 | `id` | SERIAL PK | |
-| `container_number` | VARCHAR(100) UNIQUE NULL | NULL = заготовка без номера |
+| `container_number` | VARCHAR(100) NULL | NULL = заготовка без номера. **Без UNIQUE** (см. 1.61) |
 | `container_type_id` | INT FK → ContainerTypes (PROTECT) | |
 | `qr_code` | TEXT UNIQUE NULL | `WMSG:CONTAINER:<id>` |
 | `pallet_id` | INT FK → Pallets NULL | |
@@ -178,7 +207,7 @@
 | `position_on_pallet` | INT NULL | |
 | `comment` | TEXT | |
 | `comment_template_id` | INT FK → ContainerComments NULL | |
-| `status` | VARCHAR(50) | `ACTIVE / PENDING_PLACEMENT / IN_TRANSIT / ISSUED` |
+| `status` | VARCHAR(50) | `PENDING_FILLING / PENDING_PLACEMENT / ACTIVE / IN_TRANSIT / ISSUED` |
 | `draft_site_id` | INT FK → Sites NULL | участок (черновик до заполнения) |
 | `draft_research_type_id` | INT FK → ResearchTypes NULL | ТИ (черновик) |
 | `draft_work_order_coded` | VARCHAR(100) DEFAULT "" | Н/З coded (черновик) |
@@ -186,6 +215,14 @@
 | `created_at` | TIMESTAMPTZ | |
 
 **CHECK:** `pallet_id` и `floor_room_id` не заданы одновременно.
+
+**Статус `PENDING_FILLING`** (см. DECISIONS 1.62): тара создана
+(импортом или через `bulk-create`), пробы ещё не заведены. После
+`fill-samples` → `PENDING_PLACEMENT`. Признак того, что тару
+надо заполнить.
+
+**`container_number` — не уникален** (см. DECISIONS 1.61).
+Семантика: метка внутри группы (Н/З × ТИ). Идентификатор — `id`.
 
 **Draft-поля** заполняются при создании тары-заготовки
 (`POST /storage/containers/bulk-create/`). Используются для
@@ -286,6 +323,7 @@
 | `id` | SERIAL PK | |
 | `receipt_id` | INT FK → Receipts (CASCADE) | |
 | `container_id` | INT FK → Containers NULL | |
+| `container_type_id` | INT FK → ContainerTypes NULL | тип тары (заполняется из импорта/разбора) |
 | `expected_container_number` | VARCHAR(100) | |
 | `expected_work_order_number` | VARCHAR(100) | |
 | `expected_research_type_code` | VARCHAR(20) | |
@@ -302,6 +340,10 @@
 
 **Индексы:** `receipt`, `status`.
 
+**Удаление** (`DELETE /receipt-items/{id}/`) — каскадное
+(см. DECISIONS 1.64): пробы тары → тара → строка. Одна транзакция,
+`ProtectedError` → 409.
+
 #### `ImportSessions`
 
 | Поле | Тип | Описание |
@@ -312,7 +354,7 @@
 | `uploaded_at` | TIMESTAMPTZ | |
 | `uploaded_by_id` | INT FK → User NULL | |
 | `status` | VARCHAR(50) | `PARSING / PARSED / ERROR / APPLIED` |
-| `parse_errors` | JSONB | |
+| `parse_errors` | JSONB | список ошибок/вопросов |
 | `receipt_id` | INT FK → Receipts NULL | |
 
 ---
@@ -434,6 +476,14 @@ RETURNED / CANCELLED / LOST`.
 - **CHECK-constraints:** `condition=` (Django 5.2+).
 - **CASCADE / PROTECT / SET_NULL:** явно указано у каждого FK.
 - **Справочники:** `PROTECT` на FK из реальных данных.
+
+## PDF-рендеры (не в БД)
+
+- **Этикетка тары** — `apps/labels/services/label_service.py`.
+- **QR топологии (Section, Cell)** — `apps/storage/services/qr_topology.py`.
+  A4, сетка 2×3, QR 65×65, адрес под QR.
+- **Акт приёмки** — `apps/labels/services/act_service.py`.
+  A4 portrait, шапка/метаданные/сводка/таблица/подписи.
 
 ## Бэкапы
 
