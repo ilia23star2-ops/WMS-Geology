@@ -9,6 +9,9 @@
  * - `useResolveConflicts` — разбор конфликтов.
  * - `useCheckReceipt` — отметки приехала/нет + номера тар.
  * - `useCompleteReceipt` — завершение приёмки.
+ *
+ * PDF «Акт приёмки» (`3f-2`):
+ * - `fetchReceiptActBlob` — blob PDF для `CONFIRMED`-партии.
  */
 import {
     keepPreviousData,
@@ -359,4 +362,24 @@ export function useCompleteReceipt(receiptId: number) {
             void qc.invalidateQueries({ queryKey: ["shipments"] });
         },
     });
+}
+
+// ============================================================
+// PDF «Акт приёмки» (`3f-2`)
+// ============================================================
+/**
+ * Скачивает PDF «Акт приёмки» для `Receipt` в виде `Blob`.
+ *
+ * Доступен только для `CONFIRMED`-партии; иначе backend вернёт 400
+ * (при `responseType: "blob"` тело ошибки — тоже `Blob`, его
+ * парсит вызывающий код).
+ */
+export async function fetchReceiptActBlob(
+    receiptId: number,
+): Promise<Blob> {
+    const { data } = await apiClient.get(
+        `/receipts/${receiptId}/act/`,
+        { responseType: "blob" },
+    );
+    return data as Blob;
 }
