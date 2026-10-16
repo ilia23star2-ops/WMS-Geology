@@ -100,6 +100,7 @@ export {
     checkReceipt,
     completeReceipt,
     fetchReceipt,
+    fetchReceiptActBlob,
     fetchReceiptConflicts,
     fetchReceiptItems,
     fetchReceipts,

@@ -6,6 +6,9 @@
  *
  * «Сохранить сверку» — промежуточное сохранение.
  * «Завершить приёмку» — сначала сохраняет, потом завершает.
+ * «Акт приёмки» (`3f-2`) — PDF в новой вкладке, только для
+ * `CONFIRMED`-партии.
+ *
  * Ошибки от backend показываются в строках (под полем номера)
  * и общим Alert'ом.
  */
@@ -35,12 +38,14 @@ import {
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CheckIcon from "@mui/icons-material/Check";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import SaveIcon from "@mui/icons-material/Save";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
     RECEIPT_ITEM_STATUS_LABELS,
     RECEIPT_STATUS_LABELS,
+    fetchReceiptActBlob,
     useCheckReceipt,
     useCompleteReceipt,
     useReceiptConflicts,
@@ -102,6 +107,33 @@ function extractErrors(err: unknown): {
         common.push("Не удалось выполнить. Проверьте данные.");
     }
     return { perItem, common };
+}
+
+/**
+ * Извлекает текст ошибки из ответа, где тело — `Blob` (`3f-2`).
+ *
+ * Backend отдаёт 400 с JSON `{error: "..."}`. При `responseType:
+ * "blob"` axios заворачивает это тело в `Blob`. Пробуем прочитать
+ * его как текст и распарсить JSON. Если не вышло — вернёт null.
+ */
+async function extractBlobError(err: unknown): Promise<string | null> {
+    const anyErr = err as { response?: { data?: unknown } };
+    const data = anyErr?.response?.data;
+
+    if (data instanceof Blob) {
+        try {
+            const text = await data.text();
+            const json = JSON.parse(text) as { error?: string };
+            return json.error ?? null;
+        } catch {
+            return null;
+        }
+    }
+
+    if (data && typeof data === "object" && "error" in data) {
+        return String((data as { error: unknown }).error);
+    }
+    return null;
 }
 
 function formatDateRu(iso: string | null | undefined): string {
@@ -265,6 +297,7 @@ export default function ReceiptCheckPage() {
     const [conflictErrors, setConflictErrors] = useState<
         Record<number, string>
     >({});
+    const [actLoading, setActLoading] = useState(false);
 
     const receiptItems: ReceiptItem[] = useMemo(
         () => items.data?.results ?? [],
@@ -403,6 +436,25 @@ export default function ReceiptCheckPage() {
         }
     }
 
+    async function handleOpenAct() {
+        if (!receiptId) return;
+        setMessage(null);
+        setCommonErrors([]);
+        setActLoading(true);
+        try {
+            const blob = await fetchReceiptActBlob(receiptId);
+            const url = URL.createObjectURL(blob);
+            window.open(url, "_blank");
+            // Отпускаем URL через минуту — вкладка успеет подхватить.
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        } catch (err) {
+            const blobErr = await extractBlobError(err);
+            setCommonErrors([blobErr ?? "Не удалось открыть акт приёмки."]);
+        } finally {
+            setActLoading(false);
+        }
+    }
+
     // ============================
     // Рендер
     // ============================
@@ -439,6 +491,14 @@ export default function ReceiptCheckPage() {
     const completeTooltip = hasConflicts
         ? "Сначала разберите конфликты"
         : "";
+
+    const actDisabled =
+        receipt.status !== "CONFIRMED" || actLoading;
+
+    const actTooltip =
+        receipt.status === "CONFIRMED"
+            ? "Открыть PDF «Акт приёмки» в новой вкладке"
+            : "Акт доступен только для подтверждённой партии";
 
     return (
         <Box>
@@ -672,7 +732,7 @@ export default function ReceiptCheckPage() {
             <Stack
                 direction="row"
                 spacing={2}
-                sx={{ alignItems: "center", mt: 2 }}
+                sx={{ alignItems: "center", mt: 2, flexWrap: "wrap" }}
             >
                 <Button
                     variant="contained"
@@ -700,6 +760,19 @@ export default function ReceiptCheckPage() {
                             {completeMutation.isPending
                                 ? "Завершаем..."
                                 : "Завершить приёмку"}
+                        </Button>
+                    </span>
+                </Tooltip>
+
+                <Tooltip title={actTooltip}>
+                    <span>
+                        <Button
+                            variant="outlined"
+                            startIcon={<PictureAsPdfIcon />}
+                            onClick={() => void handleOpenAct()}
+                            disabled={actDisabled}
+                        >
+                            {actLoading ? "Готовим..." : "Акт приёмки"}
                         </Button>
                     </span>
                 </Tooltip>
