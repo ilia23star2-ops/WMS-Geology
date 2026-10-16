@@ -2,12 +2,16 @@
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
  *
  * - Кнопка «Создать тару» → диалог создания заготовок.
- * - Клик по строке заготовки (container_number = null) → форма
- *   заполнения пробами.
+ * - Клик по строке в статусе `PENDING_FILLING` (тара без проб) →
+ *   форма заполнения пробами. Номер не важен: если он был задан
+ *   при импорте, поле в форме будет предзаполнено.
  * - При выборе тар — кнопка «В партию печати (N)».
  * - Edit/Delete — кнопки в колонке действий (пачка 2f-1).
- * - Колонки «Н/З», «ТИ» — draft-контекст (номер тары не уникален
- *   глобально, различаем по группе Н/З × ТИ).
+ * - Колонки «Н/З», «ТИ» — draft-контекст.
+ *
+ * Статусы (2f-5c-2): `PENDING_FILLING` («Ожидает заполнения») —
+ * новая начальная точка после импорта/создания. После `fill-samples`
+ * тара переходит в `PENDING_PLACEMENT`.
  */
 import { useMemo, useState } from "react";
 import {
@@ -65,8 +69,9 @@ const STATUS_COLORS: Record<
     ContainerStatus,
     "success" | "warning" | "info" | "default"
 > = {
-    ACTIVE: "success",
+    PENDING_FILLING: "warning",
     PENDING_PLACEMENT: "warning",
+    ACTIVE: "success",
     IN_TRANSIT: "info",
     ISSUED: "default",
 };
@@ -272,8 +277,10 @@ export default function ContainersPage() {
     ];
 
     function handleRowClick(row: Container) {
-        // Клик по заготовке → открываем форму заполнения.
-        if (!row.container_number) {
+        // Тары без проб (в статусе «Ожидает заполнения») — открываем
+        // форму заполнения пробами. Номер не важен: если был задан
+        // при импорте, поле предзаполнится.
+        if (row.status === "PENDING_FILLING") {
             setFillContainer(row);
         }
     }

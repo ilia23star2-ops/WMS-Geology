@@ -4,9 +4,15 @@
  * Server-side пагинация: backend отдаёт фиксированные 50 на
  * страницу (PAGE_SIZE в settings). `?page=` — с 1.
  *
- * ВАЖНО: метки `CONTAINER_STATUS_LABELS` — только UI. Технические
- * значения в БД — `ACTIVE` / `PENDING_PLACEMENT` / `IN_TRANSIT` /
- * `ISSUED`. Модель статусов будет пересмотрена в отдельной серии
+ * Статусы (пачка 2f-5c-2):
+ * - PENDING_FILLING  — «Ожидает заполнения» (тара без проб,
+ *   создана импортом или вручную);
+ * - PENDING_PLACEMENT — «Ожидает размещения» (пробы есть, ячейка нет);
+ * - ACTIVE           — «Размещена» (стоит в ячейке);
+ * - IN_TRANSIT       — «В пути»;
+ * - ISSUED           — «Выдана».
+ *
+ * Модель статусов будет пересмотрена в отдельной серии
  * (`2.x-container-lifecycle`, см. PLAN.md).
  */
 import {
@@ -20,14 +26,16 @@ import { apiClient } from "./client";
 import type { PaginatedResponse } from "./types";
 
 export type ContainerStatus =
-    | "ACTIVE"
+    | "PENDING_FILLING"
     | "PENDING_PLACEMENT"
+    | "ACTIVE"
     | "IN_TRANSIT"
     | "ISSUED";
 
 export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
-    ACTIVE: "Размещена",
+    PENDING_FILLING: "Ожидает заполнения",
     PENDING_PLACEMENT: "Ожидает размещения",
+    ACTIVE: "Размещена",
     IN_TRANSIT: "В пути",
     ISSUED: "Выдана",
 };
