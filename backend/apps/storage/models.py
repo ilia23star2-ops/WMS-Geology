@@ -1,5 +1,5 @@
 """
-Модели приложения "Склад" (v5).
+Модели приложения "Склад" (v6).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
@@ -15,13 +15,17 @@
 
 Изменения v5 (серия 2.x-web-v2, bundle-3d-3-fix-2):
 - `Container.container_number` — больше **не уникален** глобально.
-  Номер тары — «этикетка внутри группы (Н/З × ТИ)», может
-  повторяться у разных групп. Внутренний идентификатор — `id`
-  (в QR-payload `WMSG:CONTAINER:<id>`).
+
+Изменения v6 (серия 2.x-web-v2, пачка 2f-4c-1):
+- `Section.save()` и `Cell.save()` — автогенерация `qr_code`
+  при создании, если не задан явно. Payload:
+  `WMSG:SECTION:<pk>` / `WMSG:CELL:<pk>`.
 """
 
 from django.db import models
 from django.db.models import Q
+
+from apps.labels.services.qr_service import make_payload
 
 from .catalogs import ContainerComment  # noqa: F401
 
@@ -75,7 +79,9 @@ class Section(models.Model):
         unique=True,
         null=True,
         blank=True,
-        help_text="QR-код секции (обязателен для виртуального вида).",
+        help_text=(
+            "QR-код секции. Автогенерируется при создании, если не задан."
+        ),
     )
     description = models.TextField(blank=True, default="")
 
@@ -91,6 +97,18 @@ class Section(models.Model):
 
     def __str__(self) -> str:
         return f"{self.rack} / {self.code}"
+
+    def save(self, *args, **kwargs):
+        """
+        Сохраняет секцию; если `qr_code` пусто — генерирует по pk.
+
+        Двойной `super().save()`: первый создаёт запись (или обновляет
+        по переданным полям), получает pk; второй пишет `qr_code`.
+        """
+        super().save(*args, **kwargs)
+        if not self.qr_code:
+            self.qr_code = make_payload("SECTION", self.pk)
+            super().save(update_fields=["qr_code"])
 
 
 class Tier(models.Model):
@@ -152,7 +170,9 @@ class Cell(models.Model):
         unique=True,
         null=True,
         blank=True,
-        help_text="QR-код ячейки. Обязателен для точечной работы.",
+        help_text=(
+            "QR-код ячейки. Автогенерируется при создании, если не задан."
+        ),
     )
     is_active = models.BooleanField(default=True)
 
@@ -168,6 +188,13 @@ class Cell(models.Model):
 
     def __str__(self) -> str:
         return self.full_address
+
+    def save(self, *args, **kwargs):
+        """См. `Section.save()`."""
+        super().save(*args, **kwargs)
+        if not self.qr_code:
+            self.qr_code = make_payload("CELL", self.pk)
+            super().save(update_fields=["qr_code"])
 
 
 class Pallet(models.Model):

@@ -36,6 +36,14 @@ from .serializers import (
     TierSerializer,
 )
 from .services import bulk_create_containers, fill_container_with_samples
+from .services.qr_topology import render_topology_qr_pdf
+
+
+def _section_address(section: Section) -> str:
+    """Адрес секции: Комната / Стеллаж / Секция."""
+    return (
+        f"{section.rack.room.name} / {section.rack.code} / {section.code}"
+    )
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
@@ -73,17 +81,100 @@ class RackViewSet(viewsets.ModelViewSet):
 
 
 class SectionViewSet(viewsets.ModelViewSet):
-    """Фильтр: ?rack_id="""
+    """Фильтр: ?rack_id=. QR: `.qr.pdf`, batch — `.qr-batch`."""
 
     serializer_class = SectionSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Section.objects.select_related("rack").all()
+        qs = Section.objects.select_related("rack__room").all()
         rack_id = self.request.query_params.get("rack_id")
         if rack_id:
             qs = qs.filter(rack_id=rack_id)
         return qs
+
+    @action(detail=True, methods=["get"], url_path="qr.pdf")
+    def qr_pdf(self, request, pk=None):
+        """PDF с QR-кодом одной секции."""
+        section = self.get_object()
+        buf = render_topology_qr_pdf([
+            {
+                "type": "SECTION",
+                "id": section.pk,
+                "address": _section_address(section),
+            },
+        ])
+        return FileResponse(
+            buf,
+            as_attachment=False,
+            filename=f"qr-section-{section.pk}.pdf",
+            content_type="application/pdf",
+        )
+
+    @action(detail=False, methods=["post"], url_path="qr-batch")
+    def qr_batch(self, request):
+        """
+        PDF с партией QR (Section + Cell).
+
+        Тело: `{"items": [{"type": "SECTION"|"CELL", "id": int}, ...]}`.
+        Адреса собираются на сервере: Section — из пути,
+        Cell — `full_address`.
+        """
+        items = request.data.get("items")
+        if not isinstance(items, list) or not items:
+            return Response(
+                {"error": "Поле `items` обязательно и не пусто."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resolved = []
+        for idx, item in enumerate(items):
+            t = (item.get("type") or "").upper()
+            i = item.get("id")
+            if t == "SECTION":
+                obj = Section.objects.select_related(
+                    "rack__room",
+                ).filter(pk=i).first()
+                if obj is None:
+                    return Response(
+                        {"error": f"Секция #{i} не найдена (item #{idx})."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                resolved.append({
+                    "type": "SECTION",
+                    "id": obj.pk,
+                    "address": _section_address(obj),
+                })
+            elif t == "CELL":
+                obj = Cell.objects.filter(pk=i).first()
+                if obj is None:
+                    return Response(
+                        {"error": f"Ячейка #{i} не найдена (item #{idx})."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+                resolved.append({
+                    "type": "CELL",
+                    "id": obj.pk,
+                    "address": obj.full_address,
+                })
+            else:
+                return Response(
+                    {
+                        "error": (
+                            f"Неизвестный `type` «{t}» (item #{idx}). "
+                            "Допустимые: SECTION, CELL."
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        buf = render_topology_qr_pdf(resolved)
+        return FileResponse(
+            buf,
+            as_attachment=False,
+            filename="qr-topology-batch.pdf",
+            content_type="application/pdf",
+        )
 
 
 class TierViewSet(viewsets.ModelViewSet):
@@ -101,7 +192,7 @@ class TierViewSet(viewsets.ModelViewSet):
 
 
 class CellViewSet(viewsets.ModelViewSet):
-    """Фильтры: ?tier_id=, ?is_active="""
+    """Фильтры: ?tier_id=, ?is_active=. QR: `.qr.pdf`."""
 
     serializer_class = CellSerializer
     permission_classes = [IsAuthenticated]
@@ -115,6 +206,24 @@ class CellViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
         return qs
+
+    @action(detail=True, methods=["get"], url_path="qr.pdf")
+    def qr_pdf(self, request, pk=None):
+        """PDF с QR-кодом одной ячейки."""
+        cell = self.get_object()
+        buf = render_topology_qr_pdf([
+            {
+                "type": "CELL",
+                "id": cell.pk,
+                "address": cell.full_address,
+            },
+        ])
+        return FileResponse(
+            buf,
+            as_attachment=False,
+            filename=f"qr-cell-{cell.pk}.pdf",
+            content_type="application/pdf",
+        )
 
 
 class PalletViewSet(viewsets.ModelViewSet):
