@@ -1,9 +1,18 @@
 /**
-Приёмка рейсов: список Shipment (INBOUND).
-DataGrid + фильтры (направление, статус) + server-side пагинация.
-Клик по строке — детали рейса (receiving-2c).
-Кнопка «Импортировать рейс» — открывает диалог (receiving-2d).
-*/
+ * Приёмка рейсов: список Shipment (INBOUND).
+ *
+ * DataGrid + фильтры (направление, статус) + server-side пагинация.
+ * Клик по строке — детали рейса (receiving-2c).
+ * Кнопка «Импортировать рейс» — открывает диалог (receiving-2d).
+ *
+ * После импорта (2f-5b-fix):
+ * - APPLIED → сразу на карточку рейса;
+ * - PARSED + questions > 0 → сразу на экран сверки (`/check`),
+ *   где разбираются конфликты;
+ * - PARSED без вопросов (только parser/build ошибки) → остаёмся
+ *   на списке со snackbar;
+ * - ERROR → остаёмся, snackbar с предупреждением.
+ */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -153,30 +162,47 @@ export default function ReceivingPage() {
     );
 
     function handleImportSuccess(result: ImportShipmentResponse) {
-        // Инвалидируем кэш, чтобы список обновился
-        queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        // Инвалидируем кэш, чтобы список обновился.
+        void queryClient.invalidateQueries({ queryKey: ["shipments"] });
 
-        if (result.status === "APPLIED" && result.questions_count === 0) {
+        if (result.status === "APPLIED") {
+            // Всё создалось без вопросов — сразу на карточку рейса.
+            if (result.shipment_id !== null) {
+                navigate(`/receiving/${result.shipment_id}`);
+            }
+            return;
+        }
+
+        if (result.status === "PARSED" && result.questions_count > 0) {
+            // Есть спорные ячейки — сразу на экран сверки,
+            // там карточки конфликтов.
+            if (result.shipment_id !== null) {
+                navigate(`/receiving/${result.shipment_id}/check`);
+            }
+            return;
+        }
+
+        if (result.status === "PARSED") {
+            // PARSED без вопросов — только parser/build ошибки.
+            // Остаёмся на списке, показываем предупреждение.
             setSnackbar({
                 open: true,
-                message: `Импортировано ${result.containers_count} тар.`,
-                severity: "success",
-            });
-            navigate(`/receiving/${result.shipment_id}`);
-        } else if (result.status === "PARSED" && result.questions_count > 0) {
-            setSnackbar({
-                open: true,
-                message: `Импортировано ${result.containers_count} тар, ⚠️ ${result.questions_count} вопросов.`,
+                message: (
+                    `Рейс ${result.shipment_number ?? ""} импортирован `
+                    + `частично (${result.containers_count} тар). `
+                    + `Смотрите ошибки в партии.`
+                ),
                 severity: "warning",
             });
-            // Остаёмся на /receiving, список обновится благодаря invalidateQueries
-        } else {
-            setSnackbar({
-                open: true,
-                message: "Неожиданный статус импорта. Проверьте список рейсов.",
-                severity: "error",
-            });
+            return;
         }
+
+        // ERROR или другой случай.
+        setSnackbar({
+            open: true,
+            message: "Импорт завершился с ошибкой. Проверьте файл.",
+            severity: "error",
+        });
     }
 
     return (
