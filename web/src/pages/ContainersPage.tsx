@@ -5,6 +5,9 @@
  * - Клик по строке заготовки (container_number = null) → форма
  *   заполнения пробами.
  * - При выборе тар — кнопка «В партию печати (N)».
+ * - Edit/Delete — кнопки в колонке действий (пачка 2f-1).
+ * - Колонки «Н/З», «ТИ» — draft-контекст (номер тары не уникален
+ *   глобально, различаем по группе Н/З × ТИ).
  */
 import { useMemo, useState } from "react";
 import {
@@ -21,10 +24,13 @@ import {
     Select,
     Snackbar,
     Stack,
+    TextField,
     Tooltip,
     Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import PrintIcon from "@mui/icons-material/Print";
 import {
@@ -38,14 +44,17 @@ import { useNavigate } from "react-router-dom";
 
 import {
     CONTAINER_STATUS_LABELS,
+    deleteContainer,
     downloadLabelPdf,
     useContainers,
     useContainerTypes,
+    useResearchTypes,
     type Container,
     type ContainerFilters,
     type ContainerStatus,
 } from "../api";
 import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
+import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import FillContainerDialog from "../components/FillContainerDialog";
 import ContainerPreviewDialog from "../components/ContainerPreviewDialog";
@@ -93,12 +102,16 @@ export default function ContainersPage() {
     const [fillContainer, setFillContainer] = useState<Container | null>(null);
     const [fillMessage, setFillMessage] = useState<string | null>(null);
     const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
+    const [editContainer, setEditContainer] = useState<Container | null>(null);
+    const [editMessage, setEditMessage] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const { data, isLoading, isError } = useContainers({
         page: paginationModel.page + 1,
         filters,
     });
     const containerTypes = useContainerTypes();
+    const researchTypes = useResearchTypes();
 
     const typesMap = useMemo(() => {
         const map = new Map<number, string>();
@@ -113,13 +126,36 @@ export default function ContainersPage() {
         [selection],
     );
 
+    async function handleDelete(row: Container) {
+        const label = row.container_number
+            ? `№ ${row.container_number}`
+            : `#${row.id}`;
+        const ok = window.confirm(
+            `Удалить тару ${label}? Действие необратимо.`,
+        );
+        if (!ok) return;
+        try {
+            await deleteContainer(row.id);
+            setEditMessage(`Тара ${label} удалена.`);
+        } catch (err) {
+            const anyErr = err as {
+                response?: { data?: { error?: string; detail?: string } };
+            };
+            const msg =
+                anyErr?.response?.data?.error
+                ?? anyErr?.response?.data?.detail
+                ?? `Не удалось удалить тару ${label}.`;
+            setDeleteError(msg);
+        }
+    }
+
     const columns: GridColDef<Container>[] = [
         { field: "id", headerName: "ID", width: 80 },
         {
             field: "container_number",
             headerName: "Номер",
             flex: 1,
-            minWidth: 140,
+            minWidth: 120,
             renderCell: (params) => {
                 if (params.value) return params.value;
                 return (
@@ -139,6 +175,19 @@ export default function ContainersPage() {
             minWidth: 140,
             valueGetter: (_value, row) =>
                 typesMap.get(row.container_type) ?? `#${row.container_type}`,
+        },
+        {
+            field: "draft_work_order_coded",
+            headerName: "Н/З",
+            flex: 1,
+            minWidth: 140,
+            valueGetter: (value) => value || "—",
+        },
+        {
+            field: "draft_research_type_name",
+            headerName: "ТИ",
+            width: 140,
+            valueGetter: (value) => value || "—",
         },
         {
             field: "status",
@@ -171,28 +220,53 @@ export default function ContainersPage() {
         {
             field: "actions",
             headerName: "",
-            width: 70,
+            width: 130,
             sortable: false,
             filterable: false,
             disableColumnMenu: true,
             renderCell: (params) => (
-                <Tooltip title="PDF этикетки">
-                    <IconButton
-                        size="small"
-                        onClick={async (e) => {
-                            e.stopPropagation();
-                            try {
-                                await downloadLabelPdf(params.row.id);
-                            } catch {
-                                setPdfError(
-                                    `Не удалось сформировать PDF для тары ${params.row.container_number ?? `#${params.row.id}`}.`,
-                                );
-                            }
-                        }}
-                    >
-                        <PictureAsPdfIcon fontSize="small" />
-                    </IconButton>
-                </Tooltip>
+                <Stack direction="row" spacing={0.5}>
+                    <Tooltip title="Редактировать">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setEditContainer(params.row);
+                            }}
+                        >
+                            <EditIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="PDF этикетки">
+                        <IconButton
+                            size="small"
+                            onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                    await downloadLabelPdf(params.row.id);
+                                } catch {
+                                    setPdfError(
+                                        `Не удалось сформировать PDF для тары ${params.row.container_number ?? `#${params.row.id}`}.`,
+                                    );
+                                }
+                            }}
+                        >
+                            <PictureAsPdfIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Удалить">
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDelete(params.row);
+                            }}
+                        >
+                            <DeleteIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                </Stack>
             ),
         },
     ];
@@ -249,7 +323,7 @@ export default function ContainersPage() {
             <Card sx={{ mb: 2 }}>
                 <CardContent>
                     <Grid container spacing={2}>
-                        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <FormControl fullWidth size="small">
                                 <InputLabel id="status-label">Статус</InputLabel>
                                 <Select
@@ -278,7 +352,7 @@ export default function ContainersPage() {
                             </FormControl>
                         </Grid>
 
-                        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                             <FormControl fullWidth size="small">
                                 <InputLabel id="type-label">Тип тары</InputLabel>
                                 <Select
@@ -304,6 +378,56 @@ export default function ContainersPage() {
                                         <MenuItem key={t.id} value={String(t.id)}>
                                             {t.name}
                                             {t.laboratory_name ? ` (${t.laboratory_name})` : ""}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                            <TextField
+                                label="Н/З (draft)"
+                                size="small"
+                                fullWidth
+                                value={filters.draft_work_order_coded ?? ""}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setFilters((prev) => ({
+                                        ...prev,
+                                        draft_work_order_coded:
+                                            value === "" ? undefined : value,
+                                    }));
+                                    setPaginationModel((m) => ({ ...m, page: 0 }));
+                                }}
+                                placeholder="TST0001…"
+                            />
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="draft-rt-label">ТИ (draft)</InputLabel>
+                                <Select
+                                    labelId="draft-rt-label"
+                                    label="ТИ (draft)"
+                                    value={
+                                        filters.draft_research_type_id !== undefined
+                                            ? String(filters.draft_research_type_id)
+                                            : ""
+                                    }
+                                    onChange={(e) => {
+                                        const value = e.target.value as string;
+                                        setFilters((prev) => ({
+                                            ...prev,
+                                            draft_research_type_id:
+                                                value === "" ? undefined : Number(value),
+                                        }));
+                                        setPaginationModel((m) => ({ ...m, page: 0 }));
+                                    }}
+                                >
+                                    <MenuItem value="">Все</MenuItem>
+                                    {(researchTypes.data ?? []).map((rt) => (
+                                        <MenuItem key={rt.id} value={String(rt.id)}>
+                                            {rt.code} — {rt.name}
                                         </MenuItem>
                                     ))}
                                 </Select>
@@ -376,6 +500,18 @@ export default function ContainersPage() {
                 onClose={() => setPreviewContainerId(null)}
             />
 
+            <ContainerEditDialog
+                open={editContainer !== null}
+                container={editContainer}
+                onClose={() => setEditContainer(null)}
+                onSuccess={(updated) => {
+                    setEditMessage(
+                        `Тара ${updated.container_number ?? `#${updated.id}`} сохранена.`,
+                    );
+                    setEditContainer(null);
+                }}
+            />
+
             <AddToPrintBatchDialog
                 open={dialogOpen}
                 containerIds={selectedIds}
@@ -405,6 +541,20 @@ export default function ContainersPage() {
                 autoHideDuration={6000}
                 onClose={() => setFillMessage(null)}
                 message={fillMessage ?? ""}
+            />
+
+            <Snackbar
+                open={editMessage !== null}
+                autoHideDuration={6000}
+                onClose={() => setEditMessage(null)}
+                message={editMessage ?? ""}
+            />
+
+            <Snackbar
+                open={deleteError !== null}
+                autoHideDuration={8000}
+                onClose={() => setDeleteError(null)}
+                message={deleteError ?? ""}
             />
         </Box>
     );

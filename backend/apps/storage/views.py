@@ -2,6 +2,7 @@
 ViewSets приложения storage.
 """
 
+from django.db.models import ProtectedError
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -170,7 +171,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
     CRUD для тары.
 
     Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=,
-             ?status=, ?comment_template_id=
+             ?status=, ?comment_template_id=,
+             ?draft_work_order_coded= (icontains),
+             ?draft_research_type_id=
 
     Custom actions:
       - GET  /storage/containers/{id}/label.pdf/     — PDF этикетки.
@@ -178,6 +181,11 @@ class ContainerViewSet(viewsets.ModelViewSet):
         тары-заготовок (без проб).
       - POST /storage/containers/{id}/fill-samples/  — заполнение
         тары пробами (с присвоением номера).
+
+    `DELETE` защищён: если на тару ссылаются пробы (`Sample`),
+    элементы партии печати (`PrintBatchItem`) или строки приёмки
+    (`ReceiptItem`) — вернётся 409 с пояснением. Это осознанно:
+    тару, оставившую след в истории, не удаляем молча.
     """
 
     serializer_class = ContainerSerializer
@@ -201,7 +209,32 @@ class ContainerViewSet(viewsets.ModelViewSet):
         if p.get("comment_template_id"):
             qs = qs.filter(comment_template_id=p["comment_template_id"])
 
+        # Draft-контекст группы (Н/З × ТИ) — для реестра тары.
+        draft_wo = p.get("draft_work_order_coded")
+        if draft_wo:
+            qs = qs.filter(draft_work_order_coded__icontains=draft_wo)
+        draft_rt = p.get("draft_research_type_id")
+        if draft_rt:
+            qs = qs.filter(draft_research_type_id=draft_rt)
+
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        """Удаление тары с защитой от `ProtectedError`."""
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+        except ProtectedError as exc:
+            return Response(
+                {
+                    "error": (
+                        "Нельзя удалить тару: на неё ссылаются "
+                        f"связанные объекты ({len(exc.protected_objects)})."
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="label.pdf")
     def label_pdf(self, request, pk=None):

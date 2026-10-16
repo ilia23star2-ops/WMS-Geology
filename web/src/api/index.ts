@@ -9,15 +9,19 @@ export { login, logout, fetchMe } from "./auth";
 export {
     CONTAINER_STATUS_LABELS,
     bulkCreateContainers,
+    deleteContainer,
     downloadLabelPdf,
     fetchContainer,
     fetchContainers,
     fetchLabelPdfUrl,
     fillContainerWithSamples,
+    updateContainer,
     useBulkCreateContainers,
     useContainer,
     useContainers,
+    useDeleteContainer,
     useFillSamples,
+    useUpdateContainer,
 } from "./containers";
 export type {
     BulkCreateContainerItem,
@@ -30,6 +34,7 @@ export type {
     FillSamplesGroup,
     FillSamplesRequest,
     FillSamplesResponse,
+    UpdateContainerPayload,
 } from "./containers";
 
 export { fetchContainerTypes, useContainerTypes } from "./containerTypes";
