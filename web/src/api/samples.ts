@@ -6,6 +6,9 @@
  * ВАЖНО: метки `SAMPLE_STATUS_LABELS` — только UI. Технические
  * значения в БД — из модели Sample. Модель статусов будет
  * пересмотрена в серии `2.x-lifecycle` (см. PLAN.md).
+ *
+ * Группировка (`2f-2a`): `useSamplesGrouped` — группы по
+ * (Н/З × ТИ), пагинация по 20 групп.
  */
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
@@ -96,6 +99,90 @@ export function useSamples(params: SamplesListParams) {
     return useQuery({
         queryKey: ["samples", params],
         queryFn: () => fetchSamples(params),
+        placeholderData: keepPreviousData,
+        staleTime: 30_000,
+    });
+}
+
+// ============================================================
+// Группировка проб (пачка 2f-2a)
+// ============================================================
+
+export interface GroupedWorkOrder {
+    id: number;
+    number: string;
+    type: string;
+}
+
+export interface GroupedResearchType {
+    id: number;
+    code: string;
+    name: string;
+}
+
+export interface GroupedContainerBrief {
+    id: number;
+    number: string | null;
+    status: string;
+}
+
+export interface GroupedSampleBrief {
+    id: number;
+    sample_number: string;
+    status: SampleStatus;
+    updated_at: string;
+}
+
+export interface GroupedContainer {
+    container: GroupedContainerBrief;
+    location: string;
+    samples: GroupedSampleBrief[];
+}
+
+export interface SampleGroup {
+    work_order: GroupedWorkOrder | null;
+    research_type: GroupedResearchType;
+    total_samples: number;
+    containers: GroupedContainer[];
+}
+
+export interface SamplesGroupedResponse {
+    count: number;   // всего групп
+    next: string | null;
+    previous: string | null;
+    page_size: number;
+    results: SampleGroup[];
+}
+
+export interface SamplesGroupedParams {
+    page: number; // 1-based, по группам
+    filters: SampleFilters;
+}
+
+export async function fetchSamplesGrouped(
+    params: SamplesGroupedParams,
+): Promise<SamplesGroupedResponse> {
+    const query: Record<string, string | number> = { page: params.page };
+    const f = params.filters;
+
+    if (f.sample_number) query.sample_number = f.sample_number;
+    if (f.research_type !== undefined) query.research_type = f.research_type;
+    if (f.site !== undefined) query.site = f.site;
+    if (f.status) query.status = f.status;
+    if (f.work_order) query.work_order = f.work_order;
+    if (f.show_disposed) query.show_disposed = "true";
+
+    const { data } = await apiClient.get<SamplesGroupedResponse>(
+        "/samples/grouped/",
+        { params: query },
+    );
+    return data;
+}
+
+export function useSamplesGrouped(params: SamplesGroupedParams) {
+    return useQuery({
+        queryKey: ["samples-grouped", params],
+        queryFn: () => fetchSamplesGrouped(params),
         placeholderData: keepPreviousData,
         staleTime: 30_000,
     });
