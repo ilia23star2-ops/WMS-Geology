@@ -4,6 +4,9 @@
 Только создание тары-заготовки (без проб).
 Заполнение пробами — в `test_fill_samples.py`.
 
+Пачка 2f-5c-1: заготовки создаются со статусом
+`PENDING_FILLING` («Ожидает заполнения»).
+
 Покрывают:
 - успешное создание тары с номером и без;
 - сохранение draft-полей на таре;
@@ -74,7 +77,7 @@ def test_bulk_create_success(auth_client, container_type):
 
     c = Container.objects.get()
     assert c.container_number == "T-BULK-001"
-    assert c.status == Container.STATUS_PENDING_PLACEMENT
+    assert c.status == Container.STATUS_PENDING_FILLING
 
 
 @pytest.mark.django_db
@@ -97,14 +100,14 @@ def test_bulk_create_multiple_containers(auth_client, container_type):
     assert response.data["total_containers"] == 3
     assert Container.objects.count() == 3
     assert all(
-        c.status == Container.STATUS_PENDING_PLACEMENT
+        c.status == Container.STATUS_PENDING_FILLING
         for c in Container.objects.all()
     )
 
 
 @pytest.mark.django_db
 def test_bulk_create_without_number(auth_client, container_type):
-    """Тара-заготовка без container_number."""
+    """Тара-заготовка без container_number, статус PENDING_FILLING."""
     payload = {
         "containers": [
             {"container_type_id": container_type.pk},
@@ -118,6 +121,7 @@ def test_bulk_create_without_number(auth_client, container_type):
     assert response.status_code == 201
     c = Container.objects.get()
     assert c.container_number is None
+    assert c.status == Container.STATUS_PENDING_FILLING
 
 
 @pytest.mark.django_db
@@ -144,6 +148,7 @@ def test_bulk_create_with_draft_fields(
     assert c.draft_research_type_id == research_type.pk
     assert c.draft_work_order_coded == "TST0001"
     assert c.draft_work_order_incoming == "02-Тест001"
+    assert c.status == Container.STATUS_PENDING_FILLING
 
 
 @pytest.mark.django_db
@@ -164,6 +169,10 @@ def test_bulk_create_mixed_numbers(auth_client, container_type):
     assert Container.objects.count() == 2
     assert Container.objects.filter(container_number="T-WITH-NUM").exists()
     assert Container.objects.filter(container_number__isnull=True).count() == 1
+    assert all(
+        c.status == Container.STATUS_PENDING_FILLING
+        for c in Container.objects.all()
+    )
 
 
 # ============================================================

@@ -20,6 +20,8 @@
 Сверка (`receipts/{id}/check/`, `3b-2`):
 - `check_receipt` — батч отметок. Каждая отметка сохраняется
   сразу. Можно прерваться и продолжить.
+- При `matched=true` создаётся/обновляется `Container`
+  со статусом `PENDING_FILLING` («Ожидает заполнения»).
 
 Завершение приёмки (`receipts/{id}/complete/`, `3c`):
 - `complete_receipt` — блокирует, если есть неразобранные
@@ -749,6 +751,10 @@ def check_receipt(
     :param items: `[{"item_id": int, "matched": bool,
         "container_number": str | None}, ...]`.
     :returns: (сводка, список ошибок).
+
+    При `matched=true` создаётся/обновляется `Container`
+    со статусом `PENDING_FILLING` («Ожидает заполнения»):
+    после приёмки тара есть, но проб внутри ещё нет.
     """
     if receipt.status in (
         Receipt.STATUS_CONFIRMED,
@@ -841,7 +847,7 @@ def check_receipt(
                 container = Container.objects.create(
                     container_number=number,
                     container_type=item.container_type,
-                    status=Container.STATUS_PENDING_PLACEMENT,
+                    status=Container.STATUS_PENDING_FILLING,
                     draft_site=item.site,
                     draft_research_type=item.research_type,
                     draft_work_order_coded=item.expected_work_order_number,
@@ -850,12 +856,16 @@ def check_receipt(
                 item.container = container
             else:
                 container = item.container
+                update_fields: list[str] = []
                 if number:
                     container.container_number = number
-                container.status = Container.STATUS_PENDING_PLACEMENT
-                container.save(update_fields=[
-                    "container_number", "status",
-                ])
+                    update_fields.append("container_number")
+                # Если в таре нет проб — статус «Ожидает заполнения».
+                if not container.samples.exists():
+                    container.status = Container.STATUS_PENDING_FILLING
+                    update_fields.append("status")
+                if update_fields:
+                    container.save(update_fields=update_fields)
 
             item.status = ReceiptItem.STATUS_MATCHED
             item.expected_container_number = number or ""

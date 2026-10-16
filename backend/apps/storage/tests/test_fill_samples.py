@@ -1,6 +1,9 @@
 """
 Тесты action `POST /api/v1/storage/containers/{id}/fill-samples/`.
 
+Пачка 2f-5c-1: тара в статусе `PENDING_FILLING` после заполнения
+переходит в `PENDING_PLACEMENT`.
+
 Покрывают:
 - успешное заполнение тары пробами (шифрованные + нешифрованные);
 - автосоздание WorkOrder (CODED и INCOMING);
@@ -11,6 +14,7 @@
 - сохранение существующего container_number;
 - обнуление draft-полей;
 - правило «одна тара = один тип исследования»;
+- переход статуса `PENDING_FILLING → PENDING_PLACEMENT` (2f-5c-1);
 - ошибки: несуществующий research_type / site,
   sequence_from > sequence_to, тара не найдена,
   конфликт container_number.
@@ -54,7 +58,7 @@ def draft_container(db, container_type):
     return Container.objects.create(
         container_number=None,
         container_type=container_type,
-        status=Container.STATUS_PENDING_PLACEMENT,
+        status=Container.STATUS_PENDING_FILLING,
     )
 
 
@@ -127,6 +131,34 @@ def test_fill_samples_success(auth_client, container, research_type, site):
     s_plain = Sample.objects.get(sample_number="TST124001")
     assert s_plain.well is not None
     assert s_plain.well.well_name == "124"
+
+
+# ============================================================
+# Смена статуса (2f-5c-1)
+# ============================================================
+@pytest.mark.django_db
+def test_fill_samples_pending_filling_to_pending_placement(
+    auth_client, draft_container, research_type, site,
+):
+    """
+    Тара PENDING_FILLING после заполнения → PENDING_PLACEMENT.
+    Пробы получают тот же статус (через sync).
+    """
+    assert draft_container.status == Container.STATUS_PENDING_FILLING
+
+    response = auth_client.post(
+        _url(draft_container),
+        _payload(research_type, site),
+        format="json",
+    )
+    assert response.status_code == 201
+
+    draft_container.refresh_from_db()
+    assert draft_container.status == Container.STATUS_PENDING_PLACEMENT
+
+    assert Sample.objects.filter(
+        status=Sample.STATUS_PENDING_PLACEMENT,
+    ).count() == 5
 
 
 # ============================================================
@@ -287,7 +319,7 @@ def test_fill_samples_clears_draft_fields(
     container = Container.objects.create(
         container_number=None,
         container_type=container_type,
-        status=Container.STATUS_PENDING_PLACEMENT,
+        status=Container.STATUS_PENDING_FILLING,
         draft_site=site,
         draft_research_type=research_type,
         draft_work_order_coded="OLD-CODED",

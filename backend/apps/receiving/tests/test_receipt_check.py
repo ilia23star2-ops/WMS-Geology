@@ -1,9 +1,13 @@
 """
-Тесты сверки `Receipt` (`receipts/{id}/check/`) — 3b-2.
+Тесты сверки `Receipt` (`receipts/{id}/check/`) — 3b-2 + 2f-5c-1.
+
+При `matched=true` создаётся/обновляется Container со статусом
+`PENDING_FILLING` («Ожидает заполнения»).
 
 Покрывают:
-- создание Container со статусом PENDING_PLACEMENT для отмеченных;
-- обновление существующего Container (номер меняется);
+- создание Container со статусом PENDING_FILLING для отмеченных;
+- обновление существующего Container (номер меняется,
+  статус становится PENDING_FILLING);
 - удаление Container (hard) для неотмеченных без проб;
 - ошибку при попытке удалить Container с пробами;
 - присвоение номера тары (expected_container_number);
@@ -158,11 +162,12 @@ def test_check_all_matched_creates_containers(
     assert it1.status == ReceiptItem.STATUS_MATCHED
     assert it1.container is not None
     assert it1.container.container_number == "T-001"
-    assert it1.container.status == Container.STATUS_PENDING_PLACEMENT
+    assert it1.container.status == Container.STATUS_PENDING_FILLING
     assert it1.expected_container_number == "T-001"
 
     assert it2.status == ReceiptItem.STATUS_MATCHED
     assert it2.container.container_number == "T-002"
+    assert it2.container.status == Container.STATUS_PENDING_FILLING
 
 
 @pytest.mark.django_db
@@ -251,7 +256,7 @@ def test_check_updates_existing_container_number(
     assert response.status_code == 200
     c.refresh_from_db()
     assert c.container_number == "T-NEW"
-    assert c.status == Container.STATUS_PENDING_PLACEMENT
+    assert c.status == Container.STATUS_PENDING_FILLING
 
 
 @pytest.mark.django_db
