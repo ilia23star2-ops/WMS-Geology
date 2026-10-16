@@ -2,6 +2,9 @@
  * Axios-клиент с JWT-интерцептором и авто-refresh.
  *
  * BaseURL: `/api/v1`. В dev — через Vite proxy на backend :8000.
+ *
+ * В dev-режиме (`import.meta.env.DEV`) логирует запросы и ответы
+ * в консоль браузера. В prod — нет.
  */
 import axios, {
     AxiosError,
@@ -77,3 +80,32 @@ apiClient.interceptors.response.use(
         }
     },
 );
+
+// --- Dev-логирование (только `npm run dev`) ---
+if (import.meta.env.DEV) {
+    apiClient.interceptors.request.use((config) => {
+        console.debug(
+            `[api] → ${(config.method ?? "get").toUpperCase()} ${config.url ?? ""}`,
+            config.params ?? config.data ?? "",
+        );
+        return config;
+    });
+
+    apiClient.interceptors.response.use(
+        (response) => {
+            console.debug(
+                `[api] ← ${response.status} ${response.config.url ?? ""}`,
+            );
+            return response;
+        },
+        (error: AxiosError) => {
+            const status = error.response?.status ?? "?";
+            const url = error.config?.url ?? "";
+            console.error(
+                `[api] ✗ ${status} ${url}`,
+                error.response?.data ?? error.message,
+            );
+            return Promise.reject(error);
+        },
+    );
+}
