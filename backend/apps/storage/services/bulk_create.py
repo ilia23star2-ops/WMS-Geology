@@ -5,12 +5,13 @@
 
 1. `bulk_create_containers` — создание N тар-заготовок без проб.
    Draft-поля (участок, ТИ, Н/З) сохраняются для последующего
-   заполнения. `container_number` опционален: тара может быть
-   создана без номера (сценарий «заготовка»).
+   заполнения. `container_number` опционален.
 
 2. `fill_container_with_samples` — заполнение существующей тары
    пробами. Присваивает `container_number` (если был NULL),
    создаёт Н/З, `Well`, `Sample`. Обнуляет draft-поля.
+   Переводит статус тары из `PENDING_FILLING` в
+   `PENDING_PLACEMENT`.
 
 Обе — атомарные, явные вызовы, без Django signals.
 """
@@ -36,8 +37,9 @@ def bulk_create_containers(
     """
     Создать N тар-заготовок без проб.
 
-    Все тары получают статус `PENDING_PLACEMENT` — место определяется
-    отдельным шагом (решение 1.47).
+    Все тары получают статус `PENDING_FILLING` — «Ожидает заполнения»:
+    тара создана, пробы ещё не положены. После `fill-samples` тара
+    переходит в `PENDING_PLACEMENT`.
 
     Draft-поля (`draft_site`, `draft_research_type`,
     `draft_work_order_coded`, `draft_work_order_incoming`) —
@@ -68,7 +70,7 @@ def bulk_create_containers(
         container = Container.objects.create(
             container_number=cdata.get("container_number") or None,
             container_type_id=cdata["container_type_id"],
-            status=Container.STATUS_PENDING_PLACEMENT,
+            status=Container.STATUS_PENDING_FILLING,
             draft_site_id=draft_site_id,
             draft_research_type_id=draft_research_type_id,
             draft_work_order_coded=draft_work_order_coded or "",
@@ -103,6 +105,8 @@ def fill_container_with_samples(
     - `container_number` — если задан и у тары номер ещё не присвоен,
       присвоить (с проверкой уникальности);
     - draft-поля тары обнуляются после успешного заполнения;
+    - если тара была в статусе `PENDING_FILLING`, после заполнения
+      она переходит в `PENDING_PLACEMENT`;
     - статус проб синхронизируется со статусом тары
       через `sync_sample_status_for_container`.
 
@@ -194,11 +198,16 @@ def fill_container_with_samples(
             )
             created.append(sample)
 
-    # 4. Обновить тару: container_number + обнулить draft-поля.
+    # 4. Обновить тару: номер, статус, draft-поля.
     update_fields: list[str] = []
     if new_number and not container.container_number:
         container.container_number = new_number
         update_fields.append("container_number")
+
+    # PENDING_FILLING → PENDING_PLACEMENT (после появления проб).
+    if container.status == Container.STATUS_PENDING_FILLING:
+        container.status = Container.STATUS_PENDING_PLACEMENT
+        update_fields.append("status")
 
     if container.draft_site_id:
         container.draft_site = None

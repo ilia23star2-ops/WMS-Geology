@@ -1,5 +1,5 @@
 """
-Модели приложения "Склад" (v6).
+Модели приложения "Склад" (v7).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
@@ -18,8 +18,13 @@
 
 Изменения v6 (серия 2.x-web-v2, пачка 2f-4c-1):
 - `Section.save()` и `Cell.save()` — автогенерация `qr_code`
-  при создании, если не задан явно. Payload:
-  `WMSG:SECTION:<pk>` / `WMSG:CELL:<pk>`.
+  при создании, если не задан явно.
+
+Изменения v7 (серия 2.x-web-v2, пачка 2f-5c-1):
+- `Container.STATUS_PENDING_FILLING` — тара создана (импортом
+  или вручную), но пробы в неё ещё не положены.
+- `bulk-create` и `check_receipt` создают тары в этом статусе;
+  `fill-samples` переводит в `PENDING_PLACEMENT`.
 """
 
 from django.db import models
@@ -321,23 +326,29 @@ class Container(models.Model):
     Тара — физический контейнер с пробами одного типа исследования.
 
     Жизненный цикл:
-    1. Создание заготовки (`container_number = NULL`) — bulk-create.
-       Заполняются draft-поля.
-    2. Заполнение пробами (`container_number` присваивается) —
-       fill-samples. Draft-поля обнуляются.
+    1. **Создание** (bulk-create или check_receipt при приёмке).
+       `container_number` может быть пустым или заданным.
+       Статус — `PENDING_FILLING` («Ожидает заполнения»):
+       тара есть физически, но проб внутри нет.
+    2. **Заполнение** (fill-samples). Присваивается `container_number`
+       (если был пуст). Пробы создаются. Статус → `PENDING_PLACEMENT`.
+    3. **Размещение** (отдельный шаг в будущем). Ячейка присвоена.
+       Статус → `ACTIVE`.
 
     `container_number` — **не уникален** глобально: это «этикетка
     внутри группы (Н/З × ТИ)». Номера `1, 2, 3` могут встречаться
     у разных групп. Уникальный идентификатор — `id` (в QR).
     """
 
-    STATUS_ACTIVE = "ACTIVE"
+    STATUS_PENDING_FILLING = "PENDING_FILLING"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
+    STATUS_ACTIVE = "ACTIVE"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
     STATUS_ISSUED = "ISSUED"
     STATUS_CHOICES = [
-        (STATUS_ACTIVE, "Активна"),
+        (STATUS_PENDING_FILLING, "Ожидает заполнения"),
         (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
+        (STATUS_ACTIVE, "Активна"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
     ]
