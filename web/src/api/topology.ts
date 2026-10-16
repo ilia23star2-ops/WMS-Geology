@@ -1,0 +1,397 @@
+/**
+ * API топологии склада: Room → Rack → Section → Tier → Cell.
+ *
+ * CRUD для всех пяти сущностей. `Pallet` — отдельный заход (2f-4b).
+ */
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
+
+import { apiClient } from "./client";
+import type { PaginatedResponse } from "./types";
+
+// ============================================================
+// Типы
+// ============================================================
+
+export interface Room {
+    id: number;
+    name: string;
+    description: string;
+}
+
+export interface Rack {
+    id: number;
+    room: number;
+    code: string;
+    description: string;
+}
+
+export type TierCode = "A" | "B" | "C" | "D";
+
+export interface Section {
+    id: number;
+    rack: number;
+    code: string;
+    qr_code: string | null;
+    description: string;
+}
+
+export interface Tier {
+    id: number;
+    section: number;
+    code: TierCode;
+    level_number: number | null;
+    description: string;
+}
+
+export type CellType = "STANDARD" | "CORE";
+
+export const CELL_TYPE_LABELS: Record<CellType, string> = {
+    STANDARD: "Обычная",
+    CORE: "Керновая",
+};
+
+export interface Cell {
+    id: number;
+    tier: number;
+    code: string;
+    full_address: string;
+    cell_type: CellType;
+    qr_code: string | null;
+    is_active: boolean;
+}
+
+// ============================================================
+// Payload
+// ============================================================
+
+export interface RoomPayload {
+    name: string;
+    description: string;
+}
+
+export interface RackPayload {
+    room: number;
+    code: string;
+    description: string;
+}
+
+export interface SectionPayload {
+    rack: number;
+    code: string;
+    qr_code: string | null;
+    description: string;
+}
+
+export interface TierPayload {
+    section: number;
+    code: TierCode;
+    level_number: number | null;
+    description: string;
+}
+
+export interface CellPayload {
+    tier: number;
+    code: string;
+    full_address: string;
+    cell_type: CellType;
+    qr_code: string | null;
+    is_active: boolean;
+}
+
+// ============================================================
+// Списки (с фильтрами по родителю)
+// ============================================================
+
+async function fetchList<T>(
+    url: string,
+    params?: Record<string, string | number>,
+): Promise<T[]> {
+    const { data } = await apiClient.get<PaginatedResponse<T>>(url, {
+        params,
+    });
+    return data.results;
+}
+
+export function useRooms() {
+    return useQuery({
+        queryKey: ["topology", "rooms"],
+        queryFn: () => fetchList<Room>("/storage/rooms/"),
+        staleTime: 60_000,
+    });
+}
+
+export function useRacks(roomId: number | null) {
+    return useQuery({
+        queryKey: ["topology", "racks", roomId],
+        queryFn: () =>
+            fetchList<Rack>("/storage/racks/", {
+                room_id: roomId as number,
+            }),
+        enabled: roomId !== null,
+        placeholderData: keepPreviousData,
+        staleTime: 60_000,
+    });
+}
+
+export function useSections(rackId: number | null) {
+    return useQuery({
+        queryKey: ["topology", "sections", rackId],
+        queryFn: () =>
+            fetchList<Section>("/storage/sections/", {
+                rack_id: rackId as number,
+            }),
+        enabled: rackId !== null,
+        placeholderData: keepPreviousData,
+        staleTime: 60_000,
+    });
+}
+
+export function useTiers(sectionId: number | null) {
+    return useQuery({
+        queryKey: ["topology", "tiers", sectionId],
+        queryFn: () =>
+            fetchList<Tier>("/storage/tiers/", {
+                section_id: sectionId as number,
+            }),
+        enabled: sectionId !== null,
+        placeholderData: keepPreviousData,
+        staleTime: 60_000,
+    });
+}
+
+export function useCells(tierId: number | null) {
+    return useQuery({
+        queryKey: ["topology", "cells", tierId],
+        queryFn: () =>
+            fetchList<Cell>("/storage/cells/", {
+                tier_id: tierId as number,
+            }),
+        enabled: tierId !== null,
+        placeholderData: keepPreviousData,
+        staleTime: 60_000,
+    });
+}
+
+// ============================================================
+// CRUD
+// ============================================================
+
+/** Инвалидирует все запросы топологии (после любой мутации). */
+function invalidateAll(qc: ReturnType<typeof useQueryClient>): void {
+    void qc.invalidateQueries({ queryKey: ["topology"] });
+}
+
+// --- Rooms ---
+export function useCreateRoom() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: RoomPayload) => {
+            const { data } = await apiClient.post<Room>(
+                "/storage/rooms/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdateRoom() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: RoomPayload;
+        }) => {
+            const { data } = await apiClient.patch<Room>(
+                `/storage/rooms/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeleteRoom() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/rooms/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+// --- Racks ---
+export function useCreateRack() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: RackPayload) => {
+            const { data } = await apiClient.post<Rack>(
+                "/storage/racks/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdateRack() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: RackPayload;
+        }) => {
+            const { data } = await apiClient.patch<Rack>(
+                `/storage/racks/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeleteRack() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/racks/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+// --- Sections ---
+export function useCreateSection() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: SectionPayload) => {
+            const { data } = await apiClient.post<Section>(
+                "/storage/sections/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdateSection() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: SectionPayload;
+        }) => {
+            const { data } = await apiClient.patch<Section>(
+                `/storage/sections/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeleteSection() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/sections/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+// --- Tiers ---
+export function useCreateTier() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: TierPayload) => {
+            const { data } = await apiClient.post<Tier>(
+                "/storage/tiers/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdateTier() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: TierPayload;
+        }) => {
+            const { data } = await apiClient.patch<Tier>(
+                `/storage/tiers/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeleteTier() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/tiers/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+// --- Cells ---
+export function useCreateCell() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: CellPayload) => {
+            const { data } = await apiClient.post<Cell>(
+                "/storage/cells/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdateCell() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: CellPayload;
+        }) => {
+            const { data } = await apiClient.patch<Cell>(
+                `/storage/cells/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeleteCell() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/cells/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}

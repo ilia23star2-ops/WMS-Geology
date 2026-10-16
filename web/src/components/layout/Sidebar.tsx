@@ -20,6 +20,7 @@ import BiotechIcon from "@mui/icons-material/Biotech";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import PrintIcon from "@mui/icons-material/Print";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -37,6 +38,7 @@ const MENU: MenuItem[] = [
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
     { label: "Приёмка", path: "/receiving", icon: <LocalShippingIcon /> },
     { label: "Печать", path: "/print", icon: <PrintIcon /> },
+    { label: "Топология", path: "/topology", icon: <AccountTreeIcon /> },
     { label: "Справочники", path: "/catalogs", icon: <MenuBookIcon /> },
 ];
 
