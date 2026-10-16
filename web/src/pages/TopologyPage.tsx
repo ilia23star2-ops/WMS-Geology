@@ -1,20 +1,23 @@
 /**
- * Топология склада (пачка 2f-4a).
+ * Топология склада (пачка 2f-4a + 2f-4b).
  *
  * Двухпанельный вид:
  * - Слева — дерево: Комната → Стеллаж → Секция → Ярус.
  * - Справа — таблица ячеек выбранного яруса.
  *
- * CRUD на всех уровнях. Если у узла есть дети, кнопка «Удалить»
- * задизейблена (UI-защита; backend — CASCADE).
+ * CRUD на всех уровнях + поддон на ячейке (2f-4b).
+ * Если у узла есть дети, кнопка «Удалить» задизейблена
+ * (UI-защита; backend — CASCADE).
  */
 import { useState } from "react";
 import {
     Alert,
     Box,
+    Button,
     Card,
     CardContent,
     Chip,
+    CircularProgress,
     IconButton,
     List,
     ListItemButton,
@@ -36,12 +39,14 @@ import {
 
 import {
     CELL_TYPE_LABELS,
+    PALLET_STATUS_LABELS,
     useCells,
     useDeleteCell,
     useDeleteRack,
     useDeleteRoom,
     useDeleteSection,
     useDeleteTier,
+    usePalletByCell,
     useRacks,
     useRooms,
     useSections,
@@ -52,6 +57,7 @@ import {
     type Section,
     type Tier,
 } from "../api";
+import PalletDialog from "../components/PalletDialog";
 import TopologyEntityDialog, {
     type TopologyInitial,
     type TopologyKind,
@@ -68,6 +74,47 @@ function extractError(err: unknown): string | null {
     );
 }
 
+/**
+ * Ячейка колонки «Поддон»: chip с номером/статусом или кнопка
+ * «Добавить». Клик открывает `PalletDialog`.
+ */
+function CellPalletChip({
+    cell,
+    onOpen,
+}: {
+    cell: Cell;
+    onOpen: (cell: Cell) => void;
+}) {
+    const { data: pallet, isLoading } = usePalletByCell(cell.id);
+
+    if (isLoading) {
+        return <CircularProgress size={14} />;
+    }
+
+    if (!pallet) {
+        return (
+            <Button
+                size="small"
+                variant="text"
+                onClick={() => onOpen(cell)}
+                sx={{ textTransform: "none" }}
+            >
+                Добавить
+            </Button>
+        );
+    }
+
+    return (
+        <Chip
+            size="small"
+            label={`#${pallet.id} · ${PALLET_STATUS_LABELS[pallet.status]}`}
+            color={pallet.status === "ACTIVE" ? "success" : "default"}
+            onClick={() => onOpen(cell)}
+            clickable
+        />
+    );
+}
+
 export default function TopologyPage() {
     const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
     const [selectedRack, setSelectedRack] = useState<number | null>(null);
@@ -81,6 +128,8 @@ export default function TopologyPage() {
         useState<TopologyInitial | null>(null);
     const [dialogAddressPrefix, setDialogAddressPrefix] =
         useState<string>("");
+
+    const [palletCell, setPalletCell] = useState<Cell | null>(null);
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -145,22 +194,28 @@ export default function TopologyPage() {
             field: "full_address",
             headerName: "Адрес",
             flex: 1,
-            minWidth: 300,
+            minWidth: 260,
         },
         {
             field: "cell_type",
             headerName: "Тип",
-            width: 120,
+            width: 110,
             valueGetter: (value) =>
                 CELL_TYPE_LABELS[value as keyof typeof CELL_TYPE_LABELS]
                 ?? value,
         },
         {
-            field: "qr_code",
-            headerName: "QR",
-            flex: 1,
-            minWidth: 160,
-            valueGetter: (value) => value ?? "—",
+            field: "pallet",
+            headerName: "Поддон",
+            width: 200,
+            sortable: false,
+            filterable: false,
+            renderCell: (params) => (
+                <CellPalletChip
+                    cell={params.row}
+                    onOpen={(c) => setPalletCell(c)}
+                />
+            ),
         },
         {
             field: "is_active",
@@ -602,6 +657,13 @@ export default function TopologyPage() {
                 initial={dialogInitial}
                 addressPrefix={dialogAddressPrefix}
                 onClose={() => setDialogOpen(false)}
+                onSuccess={(msg) => setMessage(msg)}
+            />
+
+            <PalletDialog
+                open={palletCell !== null}
+                cell={palletCell}
+                onClose={() => setPalletCell(null)}
                 onSuccess={(msg) => setMessage(msg)}
             />
 

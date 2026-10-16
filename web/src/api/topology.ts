@@ -1,7 +1,7 @@
 /**
- * API топологии склада: Room → Rack → Section → Tier → Cell.
+ * API топологии склада: Room → Rack → Section → Tier → Cell → Pallet.
  *
- * CRUD для всех пяти сущностей. `Pallet` — отдельный заход (2f-4b).
+ * CRUD для всех шести сущностей (Pallet добавлен в 2f-4b).
  */
 import {
     keepPreviousData,
@@ -65,6 +65,31 @@ export interface Cell {
     is_active: boolean;
 }
 
+export type PalletType = "STANDARD" | "CORE";
+
+export const PALLET_TYPE_LABELS: Record<PalletType, string> = {
+    STANDARD: "Обычный",
+    CORE: "Керновый",
+};
+
+export type PalletStatus = "ACTIVE" | "EMPTY" | "IN_TRANSIT";
+
+export const PALLET_STATUS_LABELS: Record<PalletStatus, string> = {
+    ACTIVE: "Активен",
+    EMPTY: "Пуст",
+    IN_TRANSIT: "В пути",
+};
+
+export interface Pallet {
+    id: number;
+    cell: number | null;
+    floor_room: number | null;
+    pallet_type: PalletType;
+    capacity_override: Record<string, number>;
+    status: PalletStatus;
+    created_at: string;
+}
+
 // ============================================================
 // Payload
 // ============================================================
@@ -101,6 +126,13 @@ export interface CellPayload {
     cell_type: CellType;
     qr_code: string | null;
     is_active: boolean;
+}
+
+export interface PalletPayload {
+    cell?: number | null;
+    floor_room?: number | null;
+    pallet_type: PalletType;
+    status: PalletStatus;
 }
 
 // ============================================================
@@ -174,6 +206,26 @@ export function useCells(tierId: number | null) {
         enabled: tierId !== null,
         placeholderData: keepPreviousData,
         staleTime: 60_000,
+    });
+}
+
+/**
+ * Поддон, стоящий в ячейке (или `null`, если пусто).
+ *
+ * `Pallet.cell` — OneToOne, максимум один поддон на ячейку.
+ * Фильтр `?cell_id=` возвращает 0 или 1 запись.
+ */
+export function usePalletByCell(cellId: number | null) {
+    return useQuery({
+        queryKey: ["topology", "pallet-by-cell", cellId],
+        queryFn: async (): Promise<Pallet | null> => {
+            const list = await fetchList<Pallet>("/storage/pallets/", {
+                cell_id: cellId as number,
+            });
+            return list[0] ?? null;
+        },
+        enabled: cellId !== null,
+        staleTime: 30_000,
     });
 }
 
@@ -391,6 +443,48 @@ export function useDeleteCell() {
     return useMutation({
         mutationFn: async (id: number) => {
             await apiClient.delete(`/storage/cells/${id}/`);
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+// --- Pallets (2f-4b) ---
+export function useCreatePallet() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: PalletPayload) => {
+            const { data } = await apiClient.post<Pallet>(
+                "/storage/pallets/",
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useUpdatePallet() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, payload }: {
+            id: number;
+            payload: Partial<PalletPayload>;
+        }) => {
+            const { data } = await apiClient.patch<Pallet>(
+                `/storage/pallets/${id}/`,
+                payload,
+            );
+            return data;
+        },
+        onSuccess: () => invalidateAll(qc),
+    });
+}
+
+export function useDeletePallet() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await apiClient.delete(`/storage/pallets/${id}/`);
         },
         onSuccess: () => invalidateAll(qc),
     });
