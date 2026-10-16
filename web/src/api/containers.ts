@@ -56,6 +56,8 @@ export interface Container {
 export interface ContainerFilters {
     status?: ContainerStatus;
     container_type_id?: number;
+    draft_work_order_coded?: string;
+    draft_research_type_id?: number;
 }
 
 export interface ContainersListParams {
@@ -72,6 +74,12 @@ export async function fetchContainers(
     }
     if (params.filters.container_type_id) {
         query.container_type_id = params.filters.container_type_id;
+    }
+    if (params.filters.draft_work_order_coded) {
+        query.draft_work_order_coded = params.filters.draft_work_order_coded;
+    }
+    if (params.filters.draft_research_type_id) {
+        query.draft_research_type_id = params.filters.draft_research_type_id;
     }
 
     const { data } = await apiClient.get<PaginatedResponse<Container>>(
@@ -239,6 +247,58 @@ export function useFillSamples(containerId: number) {
                 queryKey: ["container", containerId],
             });
             void queryClient.invalidateQueries({ queryKey: ["samples"] });
+        },
+    });
+}
+
+// ============================================================
+// Update / Delete (пачка 2f-1)
+// ============================================================
+
+export interface UpdateContainerPayload {
+    container_number?: string | null;
+    container_type?: number;
+    status?: ContainerStatus;
+    comment?: string;
+}
+
+export async function updateContainer(
+    id: number,
+    payload: UpdateContainerPayload,
+): Promise<Container> {
+    const { data } = await apiClient.patch<Container>(
+        `/storage/containers/${id}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdateContainer() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, payload }: {
+            id: number;
+            payload: UpdateContainerPayload;
+        }) => updateContainer(id, payload),
+        onSuccess: (_data, variables) => {
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({
+                queryKey: ["container", variables.id],
+            });
+        },
+    });
+}
+
+export async function deleteContainer(id: number): Promise<void> {
+    await apiClient.delete(`/storage/containers/${id}/`);
+}
+
+export function useDeleteContainer() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => deleteContainer(id),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
         },
     });
 }
