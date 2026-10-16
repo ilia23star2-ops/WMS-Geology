@@ -43,12 +43,22 @@ export type { ContainerType } from "./containerTypes";
 export {
     SAMPLE_STATUS_LABELS,
     fetchSamples,
+    fetchSamplesGrouped,
     useSamples,
+    useSamplesGrouped,
 } from "./samples";
 export type {
+    GroupedContainer,
+    GroupedContainerBrief,
+    GroupedResearchType,
+    GroupedSampleBrief,
+    GroupedWorkOrder,
     Sample,
     SampleFilters,
+    SampleGroup,
     SampleStatus,
+    SamplesGroupedParams,
+    SamplesGroupedResponse,
     SamplesListParams,
 } from "./samples";
 
