@@ -2,6 +2,11 @@
  * API топологии склада: Room → Rack → Section → Tier → Cell → Pallet.
  *
  * CRUD для всех шести сущностей (Pallet добавлен в 2f-4b).
+ *
+ * QR (2f-4c-2):
+ * - `downloadSectionQrPdf` — PDF с QR одной секции.
+ * - `downloadCellQrPdf` — PDF с QR одной ячейки.
+ * - `downloadCellsBatchQrPdf` — POST-батч, PDF с несколькими QR.
  */
 import {
     keepPreviousData,
@@ -133,6 +138,13 @@ export interface PalletPayload {
     floor_room?: number | null;
     pallet_type: PalletType;
     status: PalletStatus;
+}
+
+export type QrBatchItemType = "SECTION" | "CELL";
+
+export interface QrBatchItem {
+    type: QrBatchItemType;
+    id: number;
 }
 
 // ============================================================
@@ -488,4 +500,57 @@ export function useDeletePallet() {
         },
         onSuccess: () => invalidateAll(qc),
     });
+}
+
+// ============================================================
+// QR (2f-4c-2)
+// ============================================================
+
+/**
+ * Открывает в новой вкладке PDF с QR одной секции.
+ *
+ * Паттерн тот же, что в `containers.ts` → `downloadLabelPdf`.
+ * URL живёт 60 секунд — вкладка успевает подхватить.
+ */
+export async function downloadSectionQrPdf(id: number): Promise<void> {
+    const { data } = await apiClient.get(
+        `/storage/sections/${id}/qr.pdf/`,
+        { responseType: "blob" },
+    );
+    const blob = new Blob([data as BlobPart], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Открывает в новой вкладке PDF с QR одной ячейки. */
+export async function downloadCellQrPdf(id: number): Promise<void> {
+    const { data } = await apiClient.get(
+        `/storage/cells/${id}/qr.pdf/`,
+        { responseType: "blob" },
+    );
+    const blob = new Blob([data as BlobPart], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * POST-батч: PDF с несколькими QR.
+ *
+ * `items` — массив `{type, id}` (Section / Cell).
+ * Backend сам собирает адреса под каждым QR.
+ */
+export async function downloadCellsBatchQrPdf(
+    items: QrBatchItem[],
+): Promise<void> {
+    const { data } = await apiClient.post(
+        "/storage/sections/qr-batch/",
+        { items },
+        { responseType: "blob" },
+    );
+    const blob = new Blob([data as BlobPart], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
