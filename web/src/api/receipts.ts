@@ -12,6 +12,11 @@
  *
  * PDF «Акт приёмки» (`3f-2`):
  * - `fetchReceiptActBlob` — blob PDF для `CONFIRMED`-партии.
+ *
+ * CRUD строк и отмена партии (`2f-5a-2`):
+ * - `useUpdateReceiptItem` — PATCH строки.
+ * - `useDeleteReceiptItem` — DELETE строки (каскад в backend).
+ * - `useCancelReceipt` — POST `/receipts/{id}/cancel/`.
  */
 import {
     keepPreviousData,
@@ -382,4 +387,79 @@ export async function fetchReceiptActBlob(
         { responseType: "blob" },
     );
     return data as Blob;
+}
+
+// ============================================================
+// CRUD строк и отмена партии (`2f-5a-2`)
+// ============================================================
+
+export interface UpdateReceiptItemPayload {
+    expected_container_number?: string;
+    expected_samples_count?: number | null;
+    status?: ReceiptItemStatus;
+    note?: string;
+}
+
+export async function updateReceiptItem(
+    itemId: number,
+    payload: UpdateReceiptItemPayload,
+): Promise<ReceiptItem> {
+    const { data } = await apiClient.patch<ReceiptItem>(
+        `/receipt-items/${itemId}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdateReceiptItem() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, payload }: {
+            id: number;
+            payload: UpdateReceiptItemPayload;
+        }) => updateReceiptItem(id, payload),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["receipt-items"] });
+            void qc.invalidateQueries({ queryKey: ["receipt"] });
+            void qc.invalidateQueries({ queryKey: ["receipts"] });
+        },
+    });
+}
+
+export async function deleteReceiptItem(itemId: number): Promise<void> {
+    await apiClient.delete(`/receipt-items/${itemId}/`);
+}
+
+export function useDeleteReceiptItem() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => deleteReceiptItem(id),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["receipt-items"] });
+            void qc.invalidateQueries({ queryKey: ["receipt"] });
+            void qc.invalidateQueries({ queryKey: ["receipts"] });
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+        },
+    });
+}
+
+export async function cancelReceipt(receiptId: number): Promise<Receipt> {
+    const { data } = await apiClient.post<Receipt>(
+        `/receipts/${receiptId}/cancel/`,
+        {},
+    );
+    return data;
+}
+
+export function useCancelReceipt() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => cancelReceipt(id),
+        onSuccess: (_data, id) => {
+            void qc.invalidateQueries({ queryKey: ["receipt", id] });
+            void qc.invalidateQueries({ queryKey: ["receipts"] });
+            void qc.invalidateQueries({ queryKey: ["shipment"] });
+            void qc.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
 }

@@ -6,8 +6,10 @@
  *   водитель, машина);
  * - связанный Receipt (один на рейс, `site=NULL`);
  * - список ReceiptItem (по одной строке на тару);
- * - кнопку «Начать сверку» — переход на `/receiving/:id/check`.
+ * - кнопки «Начать сверку», «Отменить партию» (2f-5a-2);
+ * - edit/delete строк (2f-5a-2).
  */
+import { useState } from "react";
 import {
     Alert,
     Box,
@@ -15,11 +17,16 @@ import {
     Card,
     CardContent,
     Chip,
+    IconButton,
     Stack,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import {
     DataGrid,
     type GridColDef,
@@ -31,13 +38,17 @@ import {
     RECEIPT_STATUS_LABELS,
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
+    useCancelReceipt,
+    useDeleteReceiptItem,
     useReceiptItems,
     useReceipts,
     useShipment,
+    type Receipt,
     type ReceiptItem,
     type ReceiptItemStatus,
     type ShipmentStatus,
 } from "../api";
+import ReceiptItemEditDialog from "../components/ReceiptItemEditDialog";
 
 const SHIPMENT_STATUS_COLORS: Record<
     ShipmentStatus,
@@ -74,18 +85,60 @@ function formatDate(value: string | null): string {
     }
 }
 
+function extractError(err: unknown): string | null {
+    const anyErr = err as {
+        response?: { data?: { error?: string; detail?: string } };
+    };
+    return (
+        anyErr?.response?.data?.error
+        ?? anyErr?.response?.data?.detail
+        ?? null
+    );
+}
+
 // ============================================================
 // Список ReceiptItem
 // ============================================================
-function ReceiptItemsPanel({ receiptId }: { receiptId: number }) {
+interface ReceiptItemsPanelProps {
+    receiptId: number;
+    onMessage: (msg: string) => void;
+    onError: (msg: string) => void;
+}
+
+function ReceiptItemsPanel({
+    receiptId,
+    onMessage,
+    onError,
+}: ReceiptItemsPanelProps) {
     const items = useReceiptItems({ page: 1, receiptId });
+    const deleteMutation = useDeleteReceiptItem();
+
+    const [editingItem, setEditingItem] = useState<ReceiptItem | null>(null);
+
+    async function handleDelete(item: ReceiptItem) {
+        const label = item.container_number
+            ?? (item.container ? `заготовка #${item.container}` : `#${item.id}`);
+        const ok = window.confirm(
+            `Удалить строку (тара ${label})? `
+            + "Если в таре есть пробы — они тоже удалятся.",
+        );
+        if (!ok) return;
+        try {
+            await deleteMutation.mutateAsync(item.id);
+            onMessage(`Строка (тара ${label}) удалена.`);
+        } catch (err) {
+            onError(
+                extractError(err) ?? "Не удалось удалить строку.",
+            );
+        }
+    }
 
     const columns: GridColDef<ReceiptItem>[] = [
         {
             field: "expected_work_order_number",
             headerName: "Н/З",
             flex: 1,
-            minWidth: 140,
+            minWidth: 130,
         },
         {
             field: "expected_research_type_code",
@@ -101,7 +154,7 @@ function ReceiptItemsPanel({ receiptId }: { receiptId: number }) {
             field: "container_number",
             headerName: "Тара",
             flex: 1,
-            minWidth: 140,
+            minWidth: 130,
             renderCell: (params) => {
                 if (params.value) return params.value;
                 if (params.row.container) {
@@ -129,7 +182,7 @@ function ReceiptItemsPanel({ receiptId }: { receiptId: number }) {
         {
             field: "status",
             headerName: "Статус",
-            width: 180,
+            width: 170,
             renderCell: (params) => {
                 const status = params.value as ReceiptItemStatus;
                 return (
@@ -140,6 +193,41 @@ function ReceiptItemsPanel({ receiptId }: { receiptId: number }) {
                     />
                 );
             },
+        },
+        {
+            field: "actions",
+            headerName: "",
+            width: 100,
+            sortable: false,
+            filterable: false,
+            disableColumnMenu: true,
+            renderCell: (params) => (
+                <Stack direction="row" spacing={0.5}>
+                    <Tooltip title="Редактировать">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingItem(params.row);
+                            }}
+                        >
+                            <EditIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Удалить">
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDelete(params.row);
+                            }}
+                        >
+                            <DeleteIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                </Stack>
+            ),
         },
     ];
 
@@ -163,6 +251,12 @@ function ReceiptItemsPanel({ receiptId }: { receiptId: number }) {
                     hideFooter
                 />
             </Box>
+            <ReceiptItemEditDialog
+                open={editingItem !== null}
+                item={editingItem}
+                onClose={() => setEditingItem(null)}
+                onSuccess={onMessage}
+            />
         </Card>
     );
 }
@@ -180,8 +274,29 @@ export default function ShipmentDetailPage() {
         page: 1,
         filters: { shipment_id: shipmentId ?? undefined },
     });
+    const cancelMutation = useCancelReceipt();
 
-    const receipt = receipts.data?.results[0] ?? null;
+    const [message, setMessage] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const receipt: Receipt | null = receipts.data?.results[0] ?? null;
+
+    async function handleCancelReceipt() {
+        if (!receipt) return;
+        const ok = window.confirm(
+            `Отменить партию ${receipt.receipt_number}? `
+            + "Статус станет «Отменена».",
+        );
+        if (!ok) return;
+        try {
+            await cancelMutation.mutateAsync(receipt.id);
+            setMessage(`Партия ${receipt.receipt_number} отменена.`);
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось отменить партию.",
+            );
+        }
+    }
 
     if (shipment.isError) {
         return (
@@ -204,6 +319,12 @@ export default function ShipmentDetailPage() {
     }
 
     const data = shipment.data;
+
+    const canCancel =
+        receipt !== null
+        && receipt.status !== "CONFIRMED"
+        && receipt.status !== "CANCELLED"
+        && !cancelMutation.isPending;
 
     return (
         <Box>
@@ -231,6 +352,25 @@ export default function ShipmentDetailPage() {
                     color={SHIPMENT_STATUS_COLORS[data.status] ?? "default"}
                 />
             </Box>
+
+            {message && (
+                <Alert
+                    severity="success"
+                    sx={{ mb: 2 }}
+                    onClose={() => setMessage(null)}
+                >
+                    {message}
+                </Alert>
+            )}
+            {error && (
+                <Alert
+                    severity="error"
+                    sx={{ mb: 2 }}
+                    onClose={() => setError(null)}
+                >
+                    {error}
+                </Alert>
+            )}
 
             <Card sx={{ mb: 2 }}>
                 <CardContent>
@@ -300,7 +440,11 @@ export default function ShipmentDetailPage() {
                                     Тар в партии: <b>{receipt.items_count}</b>
                                 </Typography>
                             </Stack>
-                            <Box sx={{ mt: 2 }}>
+                            <Stack
+                                direction="row"
+                                spacing={2}
+                                sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}
+                            >
                                 <Button
                                     variant="contained"
                                     startIcon={<FactCheckIcon />}
@@ -312,11 +456,38 @@ export default function ShipmentDetailPage() {
                                 >
                                     Начать сверку
                                 </Button>
-                            </Box>
+                                <Tooltip
+                                    title={
+                                        canCancel
+                                            ? "Статус станет «Отменена»"
+                                            : "Подтверждённую или отменённую партию отменить нельзя"
+                                    }
+                                >
+                                    <span>
+                                        <Button
+                                            variant="outlined"
+                                            color="warning"
+                                            startIcon={<WarningAmberIcon />}
+                                            onClick={() =>
+                                                void handleCancelReceipt()
+                                            }
+                                            disabled={!canCancel}
+                                        >
+                                            {cancelMutation.isPending
+                                                ? "Отменяем..."
+                                                : "Отменить партию"}
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                            </Stack>
                         </CardContent>
                     </Card>
 
-                    <ReceiptItemsPanel receiptId={receipt.id} />
+                    <ReceiptItemsPanel
+                        receiptId={receipt.id}
+                        onMessage={setMessage}
+                        onError={setError}
+                    />
                 </>
             )}
 

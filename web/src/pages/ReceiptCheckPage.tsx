@@ -8,6 +8,7 @@
  * «Завершить приёмку» — сначала сохраняет, потом завершает.
  * «Акт приёмки» (`3f-2`) — PDF в новой вкладке, только для
  * `CONFIRMED`-партии.
+ * «Отменить партию» (`2f-5a-2`) — статус станет «Отменена».
  *
  * Ошибки от backend показываются в строках (под полем номера)
  * и общим Alert'ом.
@@ -40,12 +41,14 @@ import CheckIcon from "@mui/icons-material/Check";
 import DoneAllIcon from "@mui/icons-material/DoneAll";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import SaveIcon from "@mui/icons-material/Save";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
     RECEIPT_ITEM_STATUS_LABELS,
     RECEIPT_STATUS_LABELS,
     fetchReceiptActBlob,
+    useCancelReceipt,
     useCheckReceipt,
     useCompleteReceipt,
     useReceiptConflicts,
@@ -111,10 +114,6 @@ function extractErrors(err: unknown): {
 
 /**
  * Извлекает текст ошибки из ответа, где тело — `Blob` (`3f-2`).
- *
- * Backend отдаёт 400 с JSON `{error: "..."}`. При `responseType:
- * "blob"` axios заворачивает это тело в `Blob`. Пробуем прочитать
- * его как текст и распарсить JSON. Если не вышло — вернёт null.
  */
 async function extractBlobError(err: unknown): Promise<string | null> {
     const anyErr = err as { response?: { data?: unknown } };
@@ -289,6 +288,7 @@ export default function ReceiptCheckPage() {
     const resolveMutation = useResolveConflicts(receiptId ?? 0);
     const checkMutation = useCheckReceipt(receiptId ?? 0);
     const completeMutation = useCompleteReceipt(receiptId ?? 0);
+    const cancelMutation = useCancelReceipt();
 
     const [marks, setMarks] = useState<Record<number, MarkState>>({});
     const [message, setMessage] = useState<string | null>(null);
@@ -353,7 +353,6 @@ export default function ReceiptCheckPage() {
                 ...prev,
                 [questionIndex]: firstCommon,
             }));
-            // Для per-item (не должно быть) — игнорируем.
             void perItem;
         }
     }
@@ -445,13 +444,35 @@ export default function ReceiptCheckPage() {
             const blob = await fetchReceiptActBlob(receiptId);
             const url = URL.createObjectURL(blob);
             window.open(url, "_blank");
-            // Отпускаем URL через минуту — вкладка успеет подхватить.
             setTimeout(() => URL.revokeObjectURL(url), 60_000);
         } catch (err) {
             const blobErr = await extractBlobError(err);
             setCommonErrors([blobErr ?? "Не удалось открыть акт приёмки."]);
         } finally {
             setActLoading(false);
+        }
+    }
+
+    async function handleCancelReceipt() {
+        if (!receipt) return;
+        const ok = window.confirm(
+            `Отменить партию ${receipt.receipt_number}? `
+            + "Статус станет «Отменена».",
+        );
+        if (!ok) return;
+        setMessage(null);
+        setCommonErrors([]);
+        try {
+            await cancelMutation.mutateAsync(receipt.id);
+            setMessage(`Партия ${receipt.receipt_number} отменена.`);
+            setTimeout(() => navigate(`/receiving/${shipmentId}`), 800);
+        } catch (err) {
+            const { common } = extractErrors(err);
+            setCommonErrors(
+                common.length > 0
+                    ? common
+                    : ["Не удалось отменить партию."],
+            );
         }
     }
 
@@ -499,6 +520,11 @@ export default function ReceiptCheckPage() {
         receipt.status === "CONFIRMED"
             ? "Открыть PDF «Акт приёмки» в новой вкладке"
             : "Акт доступен только для подтверждённой партии";
+
+    const canCancel =
+        receipt.status !== "CONFIRMED"
+        && receipt.status !== "CANCELLED"
+        && !cancelMutation.isPending;
 
     return (
         <Box>
@@ -732,7 +758,7 @@ export default function ReceiptCheckPage() {
             <Stack
                 direction="row"
                 spacing={2}
-                sx={{ alignItems: "center", mt: 2, flexWrap: "wrap" }}
+                sx={{ alignItems: "center", mt: 2, flexWrap: "wrap", rowGap: 1 }}
             >
                 <Button
                     variant="contained"
@@ -773,6 +799,28 @@ export default function ReceiptCheckPage() {
                             disabled={actDisabled}
                         >
                             {actLoading ? "Готовим..." : "Акт приёмки"}
+                        </Button>
+                    </span>
+                </Tooltip>
+
+                <Tooltip
+                    title={
+                        canCancel
+                            ? "Статус станет «Отменена»"
+                            : "Подтверждённую или отменённую партию отменить нельзя"
+                    }
+                >
+                    <span>
+                        <Button
+                            variant="outlined"
+                            color="warning"
+                            startIcon={<WarningAmberIcon />}
+                            onClick={() => void handleCancelReceipt()}
+                            disabled={!canCancel}
+                        >
+                            {cancelMutation.isPending
+                                ? "Отменяем..."
+                                : "Отменить партию"}
                         </Button>
                     </span>
                 </Tooltip>

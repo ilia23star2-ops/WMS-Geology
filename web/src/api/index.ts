@@ -187,21 +187,27 @@ export type {
 export {
     RECEIPT_ITEM_STATUS_LABELS,
     RECEIPT_STATUS_LABELS,
+    cancelReceipt,
     checkReceipt,
     completeReceipt,
+    deleteReceiptItem,
     fetchReceipt,
     fetchReceiptActBlob,
     fetchReceiptConflicts,
     fetchReceiptItems,
     fetchReceipts,
     resolveConflicts,
+    updateReceiptItem,
+    useCancelReceipt,
     useCheckReceipt,
     useCompleteReceipt,
+    useDeleteReceiptItem,
     useReceipt,
     useReceiptConflicts,
     useReceiptItems,
     useReceipts,
     useResolveConflicts,
+    useUpdateReceiptItem,
 } from "./receipts";
 export type {
     CheckReceiptItem,
@@ -221,6 +227,7 @@ export type {
     ReceiptsListParams,
     ResolveConflictsRequest,
     ResolveConflictsResponse,
+    UpdateReceiptItemPayload,
 } from "./receipts";
 
 export {
