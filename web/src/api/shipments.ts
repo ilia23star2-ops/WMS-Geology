@@ -3,8 +3,15 @@
  *
  * Фильтры по direction / status / laboratory_id / site_id.
  * Список — DRF-пагинация (50 на страницу).
+ *
+ * Пачка 2f-6a: добавлены update / delete / cancel.
  */
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from "@tanstack/react-query";
 
 import { apiClient } from "./client";
 import type { PaginatedResponse } from "./types";
@@ -118,5 +125,105 @@ export function useShipment(id: number | null) {
         queryFn: () => fetchShipment(id as number),
         enabled: typeof id === "number" && !Number.isNaN(id),
         staleTime: 10_000,
+    });
+}
+
+// ============================================================
+// Мутации (2f-6a)
+// ============================================================
+
+/**
+ * Поля, доступные для правки рейса.
+ * `status` — намеренно не здесь: меняется через `cancel` action.
+ * `sent_by`, `sent_at`, `cancelled_*` — read-only.
+ */
+export interface UpdateShipmentPayload {
+    shipment_number?: string;
+    direction?: ShipmentDirection;
+    destination?: string;
+    laboratory?: number | null;
+    site?: number | null;
+    shipment_date?: string | null;
+    driver_name?: string;
+    vehicle_number?: string;
+    note?: string;
+}
+
+export async function updateShipment(
+    id: number,
+    payload: UpdateShipmentPayload,
+): Promise<Shipment> {
+    const { data } = await apiClient.patch<Shipment>(
+        `/shipments/${id}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdateShipment() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({
+            id,
+            payload,
+        }: {
+            id: number;
+            payload: UpdateShipmentPayload;
+        }) => updateShipment(id, payload),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", data.id], data);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+export async function deleteShipment(id: number): Promise<void> {
+    await apiClient.delete(`/shipments/${id}/`);
+}
+
+export function useDeleteShipment() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => deleteShipment(id),
+        onSuccess: (_void, id) => {
+            queryClient.removeQueries({ queryKey: ["shipment", id] });
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            // Связанные Receipt теряют shipment (SET_NULL на backend).
+            void queryClient.invalidateQueries({ queryKey: ["receipts"] });
+        },
+    });
+}
+
+/**
+ * Отмена рейса: `POST /shipments/{id}/cancel/`.
+ * Backend вернёт 400, если статус — RECEIVED / PARTIALLY_RECEIVED /
+ * CANCELLED. `reason` опционален.
+ */
+export async function cancelShipment(
+    id: number,
+    reason?: string,
+): Promise<Shipment> {
+    const body = reason && reason.trim() ? { reason: reason.trim() } : {};
+    const { data } = await apiClient.post<Shipment>(
+        `/shipments/${id}/cancel/`,
+        body,
+    );
+    return data;
+}
+
+export function useCancelShipment() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({
+            id,
+            reason,
+        }: {
+            id: number;
+            reason?: string;
+        }) => cancelShipment(id, reason),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", data.id], data);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
     });
 }
