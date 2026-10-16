@@ -2,7 +2,7 @@
 ViewSets приложения receiving.
 
 - ReceiptViewSet — CRUD + custom actions `confirm`, `cancel`,
-  `conflicts`, `resolve-conflicts`.
+  `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`.
 - ReceiptItemViewSet — CRUD.
 - ImportSessionViewSet — CRUD + custom actions `upload`, `import-shipment`,
   `resolve-questions` (legacy).
@@ -12,6 +12,7 @@ from datetime import date, datetime
 from io import BytesIO
 
 from django.core.files.base import ContentFile
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -19,6 +20,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.labels.services.act_service import render_receipt_act
 from apps.samples.catalogs import ResearchType
 
 from .models import ImportSession, Receipt, ReceiptItem
@@ -87,7 +89,7 @@ DUPLICATE_ACTIONS = {"cancel", "overwrite", "create"}
 # Receipt
 # ============================================================
 class ReceiptViewSet(viewsets.ModelViewSet):
-    """CRUD для партий приёмки + confirm/cancel/conflicts/resolve-conflicts."""
+    """CRUD для партий приёмки + confirm/cancel/conflicts/resolve-conflicts/check/complete/act."""
 
     serializer_class = ReceiptSerializer
     permission_classes = [IsAuthenticated]
@@ -272,6 +274,38 @@ class ReceiptViewSet(viewsets.ModelViewSet):
             }).data,
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["get"], url_path="act")
+    def act(self, request, pk=None):
+        """
+        PDF «Акт приёмки» по завершённой партии (пачка 3f-1).
+
+        Доступен только для `Receipt.status=CONFIRMED`.
+        Иначе — 400. Файл отдаётся inline (`application/pdf`),
+        чтобы клиент мог либо открыть в браузере, либо сохранить.
+        """
+        receipt = self.get_object()
+
+        if receipt.status != Receipt.STATUS_CONFIRMED:
+            return Response(
+                {
+                    "error": (
+                        "Акт доступен только для подтверждённой партии "
+                        f"(текущий статус — {receipt.status})."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pdf_buf = render_receipt_act(receipt)
+        filename = f"act_{receipt.receipt_number}.pdf"
+        return FileResponse(
+            pdf_buf,
+            as_attachment=False,
+            filename=filename,
+            content_type="application/pdf",
+        )
+
 
 # ============================================================
 # ReceiptItem
