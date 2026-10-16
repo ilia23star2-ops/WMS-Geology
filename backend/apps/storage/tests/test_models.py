@@ -6,6 +6,10 @@
 - Pallet (OneToOne, XOR);
 - ContainerType (laboratory, unique (name, laboratory));
 - Container (comment, PENDING_PLACEMENT).
+
+`Container.container_number` — **не уникален глобально**
+(см. DECISIONS 1.61, пачка 3d-3-fix-2). Семантика: номер — метка
+внутри группы (Н/З × ТИ), идентификатор — `id`.
 """
 
 import pytest
@@ -286,14 +290,21 @@ def test_container_on_pallet_and_floor_raises(db, room, container_type):
         )
 
 
-def test_container_number_unique(db, container_type):
+def test_container_number_duplicate_allowed(db, container_type):
+    """
+    `container_number` **не уникален глобально** (DECISIONS 1.61).
+
+    Семантика: номер — метка внутри группы (Н/З × ТИ).
+    Идентификатор — `id` (QR: `WMSG:CONTAINER:<id>`).
+    """
     Container.objects.create(
-        container_number="T-005", container_type=container_type,
+        container_number="1", container_type=container_type,
     )
-    with pytest.raises(IntegrityError):
-        Container.objects.create(
-            container_number="T-005", container_type=container_type,
-        )
+    c2 = Container.objects.create(
+        container_number="1", container_type=container_type,
+    )
+    assert c2.pk is not None
+    assert Container.objects.filter(container_number="1").count() == 2
 
 
 def test_container_type_protected_from_delete(db, container_type):

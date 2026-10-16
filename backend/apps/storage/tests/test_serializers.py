@@ -5,8 +5,12 @@
 - сериализацию/десериализацию каждой модели;
 - валидацию XOR (pallet/floor_room, cell/floor_room);
 - read-only поля (created_at);
-- валидацию уникальности (container_number, qr_code);
+- валидацию уникальности (qr_code);
 - JSONB (capacity_override).
+
+`container_number` в `ContainerSerializer` **не валидируется на
+уникальность** (DECISIONS 1.61). Уникальность в группе
+(Н/З × ТИ) — забота `BulkCreateSerializer` (см. отдельные тесты).
 """
 
 import pytest
@@ -218,15 +222,20 @@ def test_container_position_on_pallet_optional(db, container_type):
     assert data["position_on_pallet"] == 2
 
 
-def test_container_number_unique_validation(db, container_type):
+def test_container_number_duplicate_is_valid(db, container_type):
+    """
+    Дубликат `container_number` проходит валидацию (DECISIONS 1.61).
+
+    Номер не уникален глобально; уникальность в группе
+    (Н/З × ТИ) — на уровне `BulkCreateSerializer`.
+    """
     Container.objects.create(
-        container_number="T-300", container_type=container_type,
+        container_number="1", container_type=container_type,
     )
     ser = ContainerSerializer(
-        data={"container_number": "T-300", "container_type": container_type.pk}
+        data={"container_number": "1", "container_type": container_type.pk}
     )
-    assert not ser.is_valid()
-    assert "container_number" in ser.errors
+    assert ser.is_valid()
 
 
 def test_container_created_at_readonly(db, container_type):
