@@ -1,5 +1,5 @@
 """
-Тесты моделей приложения storage (v3).
+Тесты моделей приложения storage (v6).
 
 Покрывают:
 - топологию;
@@ -10,6 +10,9 @@
 `Container.container_number` — **не уникален глобально**
 (см. DECISIONS 1.61, пачка 3d-3-fix-2). Семантика: номер — метка
 внутри группы (Н/З × ТИ), идентификатор — `id`.
+
+`Section.qr_code` и `Cell.qr_code` — **автогенерируются при
+создании** (пачка 2f-4c-1), если не заданы явно.
 """
 
 import pytest
@@ -84,12 +87,15 @@ def test_section_qr_code_unique(db, room):
         Section.objects.create(rack=rack, code="S2", qr_code="WMSG:SECTION:1")
 
 
-def test_section_qr_code_null_allowed(db, room):
+def test_section_qr_code_auto_generated(db, room):
+    """QR секции автогенерируется при создании (2f-4c-1)."""
     rack = Rack.objects.create(room=room, code="A")
     s1 = Section.objects.create(rack=rack, code="S1")
     s2 = Section.objects.create(rack=rack, code="S2")
-    assert s1.qr_code is None
-    assert s2.qr_code is None
+    assert s1.qr_code is not None
+    assert s2.qr_code is not None
+    assert s1.qr_code != s2.qr_code
+    assert s1.qr_code.startswith("WMSG:SECTION:")
 
 
 def test_tier_codes_a_d(db, room):
@@ -124,6 +130,14 @@ def test_cell_full_address_unique(db, full_topology):
 def test_cell_default_type_standard(db, full_topology):
     cell = full_topology["cell"]
     assert cell.cell_type == "STANDARD"
+
+
+def test_cell_qr_code_auto_generated(db, full_topology):
+    """QR ячейки автогенерируется при создании (2f-4c-1)."""
+    cell = full_topology["cell"]
+    assert cell.qr_code is not None
+    assert cell.qr_code.startswith("WMSG:CELL:")
+    assert str(cell.pk) in cell.qr_code
 
 
 def test_cell_qr_code_unique(db, full_topology):

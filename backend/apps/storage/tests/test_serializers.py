@@ -6,7 +6,8 @@
 - валидацию XOR (pallet/floor_room, cell/floor_room);
 - read-only поля (created_at);
 - валидацию уникальности (qr_code);
-- JSONB (capacity_override).
+- JSONB (capacity_override);
+- автогенерацию qr_code у Section / Cell (2f-4c-1).
 
 `container_number` в `ContainerSerializer` **не валидируется на
 уникальность** (DECISIONS 1.61). Уникальность в группе
@@ -97,11 +98,17 @@ def test_rack_serialize_with_room(db, rack):
     assert data["room"] == rack.room_id
 
 
-def test_section_qr_null_allowed(db, rack):
+def test_section_qr_auto_generated_via_serializer(db, rack):
+    """
+    Через сериализатор: `qr_code` не передан — генерируется
+    автоматически на `Section.save()` (2f-4c-1).
+    """
     ser = SectionSerializer(data={"rack": rack.pk, "code": "S2"})
     assert ser.is_valid()
     obj = ser.save()
-    assert obj.qr_code is None
+    assert obj.qr_code is not None
+    assert obj.qr_code.startswith("WMSG:SECTION:")
+    assert str(obj.pk) in obj.qr_code
 
 
 def test_tier_codes_serialize(db, tier):
@@ -117,6 +124,21 @@ def test_cell_serialize_full_address(db, cell):
     data = CellSerializer(cell).data
     assert data["full_address"] == "Комната 1 / A / S1 / A / 1"
     assert data["cell_type"] == "STANDARD"
+
+
+def test_cell_qr_auto_generated_via_serializer(db, tier):
+    """QR ячейки генерируется, если не передан (2f-4c-1)."""
+    ser = CellSerializer(
+        data={
+            "tier": tier.pk,
+            "code": "2",
+            "full_address": "Комната 1 / A / S1 / A / 2",
+        }
+    )
+    assert ser.is_valid()
+    obj = ser.save()
+    assert obj.qr_code is not None
+    assert obj.qr_code.startswith("WMSG:CELL:")
 
 
 def test_cell_qr_unique_validation(db, tier, cell):
