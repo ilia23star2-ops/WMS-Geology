@@ -5,8 +5,7 @@
  * страницу (PAGE_SIZE в settings). `?page=` — с 1.
  *
  * Статусы (пачка 2f-5c-2):
- * - PENDING_FILLING  — «Ожидает заполнения» (тара без проб,
- *   создана импортом или вручную);
+ * - PENDING_FILLING  — «Ожидает заполнения» (тара без проб);
  * - PENDING_PLACEMENT — «Ожидает размещения» (пробы есть, ячейка нет);
  * - ACTIVE           — «Размещена» (стоит в ячейке);
  * - IN_TRANSIT       — «В пути»;
@@ -260,7 +259,7 @@ export function useFillSamples(containerId: number) {
 }
 
 // ============================================================
-// Update / Delete (пачка 2f-1)
+// Update / Delete (пачки 2f-1 + 2f-5c-3)
 // ============================================================
 
 export interface UpdateContainerPayload {
@@ -268,6 +267,11 @@ export interface UpdateContainerPayload {
     container_type?: number;
     status?: ContainerStatus;
     comment?: string;
+    // Draft-поля (2f-5c-3).
+    draft_site?: number | null;
+    draft_research_type?: number | null;
+    draft_work_order_coded?: string;
+    draft_work_order_incoming?: string;
 }
 
 export async function updateContainer(
