@@ -80,6 +80,25 @@ Web первый, Mobile по требованию. Backend на старте с
   `POST /samples/{id}/restore/` (soft-утилизация с аудитом);
   `DELETE /samples/{id}/` → 409 при `ProtectedError`.
   +7 тестов (`test_sample_actions.py`).
+- ✅ **`2f-4c-1`** — автогенерация `qr_code` для `Section` и
+  `Cell` (`WMSG:SECTION:<id>` / `WMSG:CELL:<id>`);
+  `GET /storage/sections/{id}/qr.pdf/` +
+  `GET /storage/cells/{id}/qr.pdf/` +
+  `POST /storage/sections/qr-batch/`; PDF через
+  `apps/storage/services/qr_topology.py` (A4, сетка 2×3,
+  QR 65×65). Миграция `storage/0007` (AlterField по help_text).
+  +10 тестов (`test_qr_topology.py`).
+- ✅ **`2f-5a-1`** — каскадное удаление `ReceiptItem`:
+  `DELETE /receipt-items/{id}/` одной транзакцией удаляет
+  пробы → тару → строку; `ProtectedError` на пробе → 409.
+  +5 тестов (`test_receipt_item_delete.py`).
+- ✅ **`2f-5c-1`** — новый статус `Container.STATUS_PENDING_FILLING`
+  («Ожидает заполнения»); `bulk-create` и `check_receipt`
+  создают тары в этом статусе; `fill-samples` переводит
+  `PENDING_FILLING → PENDING_PLACEMENT`. Миграция `storage/0008`
+  + data-migration (старые `PENDING_PLACEMENT` без проб →
+  `PENDING_FILLING`). Обновлены тесты `test_bulk_create.py`,
+  `test_fill_samples.py`, `test_receipt_check.py`.
 
 ### Что закрыто (web)
 
@@ -122,6 +141,39 @@ Web первый, Mobile по требованию. Backend на старте с
   (`import.meta.env.DEV`). React Query Devtools **не ставили** —
   корпоративная сеть рабочего ПК блокирует `registry.npmjs.org`
   (ТД-36).
+- ✅ **`2f-3a`** — справочники: CRUD для ТИ, участков,
+  лабораторий. `CatalogEntityDialog` (единый диалог),
+  `CatalogsPage` (3 вкладки), деактивация (`is_active=false`),
+  hard-delete с confirm, обработка 409 при `ProtectedError`.
+- ✅ **`2f-4a`** — топология: новая страница `/topology`
+  (двухпанельный вид: дерево Room → Rack → Section → Tier
+  слева, таблица ячеек справа). CRUD всех 5 уровней через
+  `TopologyEntityDialog`. Автогенерация `Cell.full_address`
+  из пути. Пункт «Топология» в sidebar. UI-защита: нельзя
+  удалить узел с детьми (кнопка disabled).
+- ✅ **`2f-4b`** — поддоны: `PalletDialog` (создание/правка/
+  удаление поддона в ячейке), колонка «Поддон» в таблице
+  ячеек, `usePalletByCell`.
+- ✅ **`2f-4c-2`** — QR топологии в UI: иконка «QR» у Section
+  в дереве (одиночный PDF); иконка «QR» в таблице ячеек
+  (одиночный PDF); чекбоксы в таблице ячеек + кнопка
+  «Печать QR (N)» (batch через `POST /storage/sections/qr-batch/`).
+- ✅ **`2f-5a-2`** — `ReceiptItemEditDialog` (edit строки);
+  колонка действий в таблице тар на `/receiving/:id`
+  (Edit / Delete с обработкой 409); кнопка «Отменить партию»
+  на `/receiving/:id` и на `/receiving/:id/check`.
+- ✅ **`2f-5b-fix`** — после импорта Excel с вопросами
+  (`PARSED` + `questions_count > 0`) → сразу переход
+  на `/receiving/:id/check`, где карточки конфликтов.
+  При `APPLIED` → на карточку рейса.
+- ✅ **`2f-5c-2`** — новый статус `PENDING_FILLING` в UI:
+  метка «Ожидает заполнения», фильтр «Статус» на `/containers`
+  (5 значений), клик по таре в этом статусе → открывает
+  форму заполнения пробами (независимо от того, есть ли
+  номер). Если номер есть — поле предзаполнено и disabled.
+- ✅ **`2f-5c-3`** — `ContainerEditDialog`: добавлены
+  draft-поля (участок, ТИ, Н/З вх./тек.). `UpdateContainerPayload`
+  расширен теми же полями.
 
 ### Что закрыто (docs)
 
@@ -134,6 +186,10 @@ Web первый, Mobile по требованию. Backend на старте с
 - ✅ **`docs/2.x-web-v2-update-3`** (2026-10-16) — CONTEXT / PLAN /
   DECISIONS (1.50 «закрыто», 1.61) / API (receiving-3, 3f,
   2f-1/2a/2b/2c) / PROGRESS / TESTING (ТД-26).
+- ✅ **`docs/2.x-web-v2-update-4`** (2026-10-16) — CONTEXT / PLAN /
+  DECISIONS (1.62 PENDING_FILLING, 1.63 PDF QR топологии,
+  1.64 каскадное удаление ReceiptItem) / API (qr.pdf, qr-batch,
+  delete receipt-items) / PROGRESS / TESTING.
 
 ### В работе
 
@@ -143,44 +199,52 @@ Web первый, Mobile по требованию. Backend на старте с
 
 ### Что дальше
 
-Серия `2f` — полный CRUD в web (см. PLAN.md, 14 заходов):
+Серия `2f` — полный CRUD в web (см. PLAN.md):
 
-- ⬜ **`2f-3a/b/c`** — справочники (ТИ, участки, лаборатории) — CRUD.
-- ⬜ **`2f-4`** — топология (комнаты…поддоны) — CRUD.
-- ⬜ **`2f-5`** — приёмка: edit/delete строк, отмена партии;
-  ТД-31, ТД-32.
-- ⬜ **`2f-5b`** — Excel-загрузка рейса через UI.
-- ⬜ **`2f-6`** — рейсы: edit/delete/отмена.
+- ⬜ **`2f-6`** — рейсы (Shipment): edit/delete/cancel.
 - ⬜ **`2f-7`** — партии печати: hard-delete черновиков,
   сопроводительный PDF; ТД-30.
 - ⬜ **`2f-7b`** — «+ Добавить тару» на экране сверки (3b-3).
+- ⬜ **`2f-7c`** — QR топологии в партиях печати (обсудить
+  в рамках 2f-7).
 - ⬜ **`2f-8`** — Н/З: новая вкладка.
-- ⬜ **`2f-9`** — перемещения.
+- ⬜ **`2f-9`** — перемещения (3 подзахода: пул / экран /
+  печать QR).
 - ⬜ **`2f-10`** — инвентаризация.
 - ⬜ **`2f-11`** — глобальный поиск `/search` (ТД-22).
 - ⬜ **`2f-12`** — макет 4: редактирование скважины.
+- ⬜ **`2f-4c-3`** — batch QR секций (то же, что для ячеек).
+- ⬜ **`2f-14`** — история операций с тарой (создание,
+  перемещения).
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 40.
+- Заходов закрыто (с 2026-10-12): 55.
   - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
     `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
     `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
     `receiving-1c`, `receiving-3a`, `receiving-3b-1`,
     `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
-    `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`.
+    `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`,
+    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`.
   - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
     `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
     `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
-    `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`.
-  - docs: 3.
-- «Не норм» на первом прогоне: 2.
+    `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`,
+    `2f-3a`, `2f-4a`, `2f-4b`, `2f-4c-2`, `2f-5a-2`,
+    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`.
+  - docs: 4.
+- «Не норм» на первом прогоне: 4.
   - 3f-1: `FileResponse` не имеет `.content` — читать
     `streaming_content`.
   - 2f-2b: `get_object()` учитывает фильтры `get_queryset`
     (утилизированные пробы → 404). Решено `_get_sample_any`.
+  - 2f-3a / 2f-4b / 2f-4c-2 / 2f-5c-3: `Object.keys(...) as Type[]`
+    в JSX ломает TS-парсер; вынесено в константы модуля.
+  - 2f-4a: двойной костыль `setDialogKind` при edit комнаты —
+    исправлено в финале.
 - Откатов: 0.
-- **Backend: 744 теста** (было 552 на старте серии).
+- **Backend: 762 теста** (было 552 на старте серии).
 - **Web: 24 юнит-теста** (парсер проб + tokenStorage + authStore).
 - **Mobile: 32 юнит-теста** (без изменений в этой серии).
 

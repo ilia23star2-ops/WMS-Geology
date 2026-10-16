@@ -12,16 +12,30 @@
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
 **Текущий заход:** серия `2f` (полный CRUD в web + полировка).
-Закрыто: `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`. Следующий — `2f-3a`.
+Закрыто: `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`, `2f-3a`, `2f-4a`,
+`2f-4b`, `2f-4c-1`, `2f-4c-2`, `2f-5a-1`, `2f-5a-2`, `2f-5b-fix`,
+`2f-5c-1`, `2f-5c-2`, `2f-5c-3`. Следующий — `2f-6`.
 
 **Предыдущие заходы:**
 - `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
   `conflicts` / `check` / `complete`, PDF «Акт приёмки».
 - `3f-1` / `3f-1b` / `3f-2`: PDF акта, stale tests, кнопка в web.
-- `2f-1`: колонки «Н/З», «ТИ», фильтры, edit/delete тары.
-- `2f-2a`: группированный список проб (Н/З × ТИ).
-- `2f-2b`: CRUD + dispose/restore/delete проб.
-- `2f-2c`: dev-логирование API-запросов.
+- **2f-1**: колонки «Н/З», «ТИ», фильтры, edit/delete тары.
+- **2f-2a**: группированный список проб (Н/З × ТИ).
+- **2f-2b**: CRUD + dispose/restore/delete проб.
+- **2f-2c**: dev-логирование API-запросов.
+- **2f-3a**: CRUD справочников (ТИ, участки, лаборатории).
+- **2f-4a**: топология (Room → Rack → Section → Tier → Cell).
+- **2f-4b**: поддоны в ячейках (`PalletDialog`).
+- **2f-4c-1**: автогенерация QR Section/Cell + PDF-рендер
+  (сетка 2×3, QR 65×65).
+- **2f-4c-2**: QR-кнопки в UI топологии (одиночные + batch ячеек).
+- **2f-5a-1**: backend — каскадное удаление `ReceiptItem`.
+- **2f-5a-2**: web — edit/delete строк приёмки, отмена партии.
+- **2f-5b-fix**: после импорта с вопросами → сразу на экран сверки.
+- **2f-5c-1**: backend — статус `PENDING_FILLING` + data-migration.
+- **2f-5c-2**: web — статус «Ожидает заполнения» в UI.
+- **2f-5c-3**: web — draft-поля в `ContainerEditDialog`.
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`,
@@ -62,6 +76,23 @@
   - `POST /samples/{id}/dispose/` — soft-утилизация с аудитом.
   - `POST /samples/{id}/restore/` — вернуть из утилизации.
   - `DELETE /samples/{id}/` → 409 при `ProtectedError`.
+- **Пачка 2f-4c-1 (2026-10-16):**
+  - `Section.save()`, `Cell.save()` — автогенерация `qr_code`
+    (payload `WMSG:SECTION:<id>` / `WMSG:CELL:<id>`).
+  - `GET /storage/sections/{id}/qr.pdf/` — PDF с QR секции.
+  - `GET /storage/cells/{id}/qr.pdf/` — PDF с QR ячейки.
+  - `POST /storage/sections/qr-batch/` — PDF с партией QR
+    (Section + Cell, сетка 2×3, QR 65×65).
+- **Пачка 2f-5a-1 (2026-10-16):**
+  - `DELETE /receipt-items/{id}/` — каскадное удаление
+    (тара + её пробы + строка) одной транзакцией.
+- **Пачка 2f-5c-1 (2026-10-16):**
+  - `Container.STATUS_PENDING_FILLING` («Ожидает заполнения») —
+    новый начальный статус. Миграция `storage/0008` +
+    data-migration: старые `PENDING_PLACEMENT` без проб →
+    `PENDING_FILLING`.
+  - `bulk-create` и `check_receipt` создают тары в этом статусе.
+  - `fill-samples` переводит `PENDING_FILLING → PENDING_PLACEMENT`.
 
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники
@@ -94,22 +125,56 @@
   - Клик по чипу пробы в группированном списке.
 - **Пачка 2f-2c (2026-10-16):**
   - Dev-логирование API-запросов в консоль (`import.meta.env.DEV`).
+- **Пачка 2f-3a (2026-10-16):**
+  - `CatalogsPage` — CRUD справочников (ТИ, участки, лаборатории).
+  - `CatalogEntityDialog` — единый диалог создания/правки.
+  - Удаление с обработкой PROTECT (409).
+  - Деактивация (`is_active=false`).
+- **Пачка 2f-4a (2026-10-16):**
+  - Новая страница `/topology` — двухпанельный вид: дерево
+    (Room → Rack → Section → Tier) слева, таблица ячеек справа.
+  - CRUD на всех пяти уровнях: Room, Rack, Section, Tier, Cell.
+  - `TopologyEntityDialog` — единый диалог для всех сущностей.
+  - Автогенерация `Cell.full_address` из пути + ручная правка.
+  - Пункт «Топология» в sidebar.
+- **Пачка 2f-4b (2026-10-16):**
+  - `PalletDialog` — создание/правка/удаление поддона в ячейке.
+  - Колонка «Поддон» в таблице ячеек.
+- **Пачка 2f-4c-2 (2026-10-16):**
+  - Иконка «QR» у Section в дереве (одиночный PDF).
+  - Иконка «QR» в таблице ячеек (одиночный PDF).
+  - Чекбоксы в таблице ячеек + кнопка «Печать QR (N)»
+    (batch, `POST /storage/sections/qr-batch/`).
+- **Пачка 2f-5a-2 (2026-10-16):**
+  - `ReceiptItemEditDialog` — edit строки приёмки.
+  - Иконки Edit/Delete в таблице тар на `/receiving/:id`.
+  - Кнопка «Отменить партию» на `/receiving/:id` и `/check`.
+  - Обработка 409 при удалении (проба в отгрузке).
+- **Пачка 2f-5b-fix (2026-10-16):**
+  - После импорта Excel с вопросами → сразу переход
+    на `/receiving/:id/check`, где карточки конфликтов.
+- **Пачка 2f-5c-2 (2026-10-16):**
+  - Статус `PENDING_FILLING` в UI: метка «Ожидает заполнения».
+  - Клик по таре в этом статусе → открывает форму заполнения
+    пробами (независимо от того, есть ли номер).
+  - Фильтр «Статус» на `/containers` — 5 значений.
+- **Пачка 2f-5c-3 (2026-10-16):**
+  - `ContainerEditDialog` — добавлены draft-поля (участок, ТИ,
+    Н/З вх./тек.).
 
-**Что нужно добавить (web, серия 2f — 14 заходов):**
-- **2f-3a/b/c:** справочники (ТИ, участки, лаборатории) — CRUD.
-- **2f-4:** топология (комнаты…поддоны) — CRUD.
-- **2f-5:** приёмка — edit/delete строк, отмена партии;
-  ТД-31 (экран `NEEDS_CONFIRMATION`), ТД-32.
-- **2f-5b:** Excel-загрузка рейса через UI.
+**Что нужно добавить (web, серия 2f — осталось):**
 - **2f-6:** рейсы — edit/delete/отмена.
 - **2f-7:** партии печати — hard-delete черновиков,
   сопроводительный PDF; ТД-30.
 - **2f-7b:** «+ Добавить тару» на экране сверки (3b-3).
+- **2f-7c:** QR топологии в партиях печати (обсудить в 2f-7).
 - **2f-8:** Н/З — новая вкладка (создание/правка).
-- **2f-9:** перемещения — новая вкладка.
+- **2f-9:** перемещения — 3 подзахода (пул / экран / печать QR).
 - **2f-10:** инвентаризация — новая вкладка.
 - **2f-11:** глобальный поиск `/search` (ТД-22).
 - **2f-12:** макет 4 — редактирование скважины.
+- **2f-4c-3:** batch QR секций (то же, что для ячеек).
+- **2f-14:** история операций с тарой (создание, перемещения).
 - ТД-28 (fallback в парсере), ТД-29 (hint префиксов) — низкий
   приоритет.
 
@@ -117,14 +182,12 @@
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри (серия `2.x-mobile`).
 
-**Backend:** 744 теста.
+**Backend:** 762 теста.
 **Web:** 24 юнит-теста.
 **Mobile:** 32 юнит-теста.
 
 **Ближайшая работа:**
-- `2f-3a` — справочник ТИ (CRUD).
-- `2f-3b` — участки.
-- `2f-3c` — лаборатории.
+- `2f-6` — рейсы (Shipment): edit/delete/cancel.
 - Дальше — по таблице 2f в `PLAN.md`.
 - ТД-28, ТД-29 — отложить до появления реальной необходимости.
 
@@ -151,14 +214,14 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (744 теста)
+### Backend (762 теста)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number, **без unique**), ContainerComment, QR-этикетка (PDF), bulk-create + fill-samples |
+| `storage` | Топология A–D, Pallet, ContainerType, Container (+draft-поля, nullable number, **без unique**, `PENDING_FILLING`), ContainerComment, QR-этикетка (PDF), QR топологии (`/qr.pdf/` для Section/Cell, `qr-batch`), bulk-create + fill-samples |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample (+`PENDING_PLACEMENT`, dispose/restore), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site) |
-| `receiving` | Receipt, ReceiptItem (+`container_type`), ImportSession + Excel-парсер (+группы, тип тары) + сервис импорта + `apply_shipment_import` + `import-shipment`; actions `conflicts`, `resolve-conflicts`, `check`, `complete`, `act` |
+| `receiving` | Receipt, ReceiptItem (+`container_type`, каскадное удаление), ImportSession + Excel-парсер (+группы, тип тары) + сервис импорта + `apply_shipment_import` + `import-shipment`; actions `conflicts`, `resolve-conflicts`, `check`, `complete`, `act` |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
 | `inventory` | InventorySession, InventoryScan, InventoryIssue |
@@ -172,14 +235,15 @@
 | Аутентификация | Zustand-стор, login-форма, protected routes, JWT-интерцептор с авто-refresh |
 | Layout | MUI sidebar + header, адаптив |
 | Главная | 4 карточки со счётчиками |
-| Тара | DataGrid, фильтры (статус, тип, «Н/З», «ТИ»), edit/delete, PDF-этикетка, выбор в партию печати, форма «Создать тару», форма «Заполнить пробами», preview с 3 вкладками |
+| Тара | DataGrid, фильтры (статус, тип, «Н/З», «ТИ»), edit (включая draft-поля), delete, PDF-этикетка, выбор в партию печати, форма «Создать тару», форма «Заполнить пробами», preview с 3 вкладками |
 | Пробы | **Группированный список** (Н/З × ТИ), `SampleEditDialog` (edit / dispose / restore / delete) |
 | Печать | Список партий, детали, add/remove тар, PDF |
-| Справочники | Типы исследования, участки, лаборатории (просмотр; CRUD — 2f-3) |
-| Приёмка | Список рейсов, детали, экран сверки `/receiving/:id/check`, кнопка «Акт приёмки» |
+| Справочники | **CRUD** (ТИ, участки, лаборатории) — создать/править/деактивировать/удалить |
+| Приёмка | Список рейсов, детали, экран сверки `/receiving/:id/check`, кнопка «Акт приёмки», edit/delete строк, отмена партии |
+| **Топология** | Дерево Room→Rack→Section→Tier + таблица ячеек, CRUD всех уровней, поддоны, QR-печать (одиночная + batch) |
 | Dev-инфра | Логирование API в консоль (`import.meta.env.DEV`) |
 
-**Чего нет:** CRUD справочников и топологии, экраны Н/З / перемещений / инвентаризации, глобальный поиск.
+**Чего нет:** экраны Н/З / перемещений / инвентаризации, глобальный поиск, экран отправки (OUTBOUND).
 
 ### Mobile (Flutter, 32 юнит-теста)
 
@@ -192,7 +256,7 @@
 | Карточка тары | Поля тары + список проб внутри (pull-to-refresh) |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (61), `DATABASE` (v6), `API`,
+- `PROJECT`, `CONTEXT`, `DECISIONS` (64), `DATABASE` (v6), `API`,
   `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
@@ -212,12 +276,15 @@
 - `ProtectedError` при удалении Container с пробами, ContainerType
   с контейнерами, Sample из PickListItem и ShipmentItem,
   Container из PrintBatchItem. ViewSets отдают 409 (2f-1, 2f-2b).
+- **Каскадное удаление `ReceiptItem`** (2f-5a-1): view сам удаляет
+  пробы → тару → строку в одной транзакции. `ProtectedError` на
+  пробе → 409 с текстом.
 - **`poetry lock`** после изменения `pyproject.toml`.
 - **Циклические импорты** — использовать строковые ссылки.
 - **Сортировка кириллицы в БД** — использовать `sort_order`.
 - **`poetry env remove --all && poetry install`** после переезда проекта.
 - **`apps/storage/services/` — пакет**, не модуль
-  (`__init__.py` + `bulk_create.py`).
+  (`__init__.py` + `bulk_create.py` + `qr_topology.py`).
 - **`apps/receiving/parsers/` — пакет** (`__init__.py` +
   `excel_parser.py` + `types.py`).
 - **`apps/receiving/services/` — пакет** (`__init__.py` +
@@ -230,6 +297,8 @@
   которым нужны «скрытые» объекты (утилизированные пробы) —
   брать `Model.objects.filter(pk=pk).first()` напрямую (2f-2b,
   `SampleViewSet._get_sample_any`).
+- **`Section.save()` / `Cell.save()` — двойной `super().save()`**:
+  первый создаёт запись, второй пишет `qr_code` (2f-4c-1).
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
@@ -240,7 +309,7 @@
   `add-containers`, `remove-container`, `mark-ready`, `pdf`,
   `mark-printed`, `bulk-create`, `fill-samples`, `upload`,
   `import-shipment`, `conflicts`, `resolve-conflicts`, `check`,
-  `act`, `dispose`, `restore`.
+  `act`, `dispose`, `restore`, `qr.pdf`, `qr-batch`.
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`,
   остальные приложения — **без префикса** (`/api/v1/samples/...`,
   `/api/v1/research-types/...`, `/api/v1/work-orders/...`,
@@ -263,10 +332,10 @@
   (участок — на `ReceiptItem.site`); один `Receipt` на рейс;
   `Shipment.status = SENT`; `Container.status = IN_TRANSIT`.
 - **`Container.container_number` — НЕ уникален глобально**
-  (DECISIONS 1.61). Семантика: номер тары внутри группы
-  (Н/З × ТИ). У `TST00469/ГД` тары 1..4, у `TST00470/ГД` тоже
-  1..4 — корректно. Идентификатор — `id`
-  (в QR: `WMSG:CONTAINER:<id>`).
+  (DECISIONS 1.61).
+- **`Container.STATUS_PENDING_FILLING`** — новый начальный статус
+  (DECISIONS 1.62): тара создана, пробы ещё не положены.
+  После `fill-samples` → `PENDING_PLACEMENT`.
 
 ### Генератор этикеток
 - QR 25×25 мм в правом верхнем углу шапки.
@@ -286,6 +355,11 @@
   Переиспользует `FONT_PATH`, `_check_font`, `_truncate_to_width`
   из `label_service`. A4 portrait: шапка / метаданные / сводка /
   таблица неприехавших / подписи.
+- **QR топологии (2f-4c-1):** `apps/storage/services/qr_topology.py`.
+  A4, сетка 2×3 = 6 QR на лист, QR 65×65 мм, адрес под QR
+  (10 мм, шрифт 10 pt, обрезка «…»). `render_topology_qr_pdf(items)`.
+  Для Section адрес = `Room / Rack / Section`, для Cell —
+  `full_address`.
 
 ### Web
 - **Vite proxy:** `/api/*` → `http://localhost:8000`. Backend должен
@@ -295,23 +369,23 @@
 - **MUI X v9:** `DataGrid` с `paginationMode="server"` требует
   `rowCount` и `paginationModel`.
 - **MUI 9:** `Grid size={{ xs, sm, md }}` — новый синтаксис.
-- **MUI 9:** `Stack alignItems` через `sx`, не проп (TS ругается).
+- **MUI 9:** `Stack alignItems` и `justifyContent` — через `sx`,
+  не проп (TS ругается).
+- **MUI 9:** `Object.keys(...) as Type[]` внутри JSX ломает парсер.
+  Выносить в константу модуля (пример: `ALL_STATUSES` в
+  `ContainerEditDialog` / `SampleEditDialog` / `PalletDialog`).
 - **React Router v7:** API совместим с v6.
 - **Zustand:** при F5 состояние сбрасывается — race condition
   закрыт флагом `isBootstrapping`.
 - **Vite build:** warning «chunks > 500 kB» — ожидаемо.
-  Code-splitting отложен (ТД-21 / ТД-35). Бандл вырос до
-  ~1271 kB (gzip ~380 kB).
+  Code-splitting отложен (ТД-21 / ТД-35). Бандл ~1300 kB
+  (gzip ~389 kB).
 - **URL справочников:** `/research-types/`, `/sites/`,
   `/laboratories/` — **без префикса** `/samples/`.
 - **MUI icons:** `DeleteOutline` **не существует**, использовать
-  `Delete` (`@mui/icons-material/Delete`).
+  `Delete` (`@mui/icons-material/Delete`). Для топологии: `AccountTree`.
 - **`parseSampleInput`:** префикс ищется **точно** в
-  `Laboratory.prefixes` + `Site.match_patterns`. Если, например,
-  `TAA-A` нет в справочнике — форма отклонит ввод (fallback —
-  ТД-28). В БД на 14.10: `ЛАБ-1 / [ЛАБ1]`, `ЛАБ-2 / [ЛАБ2]`,
-  `TST / [TST, Тест]`, `СЕВ / [СЕВ, Север]` — примеры `TAA-A`
-  из документации в справочнике отсутствуют.
+  `Laboratory.prefixes` + `Site.match_patterns`. Fallback — ТД-28.
 - **Диалог заполнения:** `fillContainerWithSamples` **обнуляет
   draft-поля** тары. `ContainerPreviewDialog` после save
   подтягивает обновлённую тару (с номером, без draft).
@@ -322,6 +396,9 @@
   dev-логирование в `client.ts` (`import.meta.env.DEV`).
 - **Ветка `fix/2.x-web-v2-bundle-7`** — WIP, не мержить, форма
   создания тары переделана в 7a-3.
+- **`TopologyPage`**: `CellPalletChip` делает N+1 запрос (по одному
+  на ячейку). Для 3–5 ячеек яруса — норм. Если будет 50 — добавить
+  `pallet` в `CellSerializer`.
 
 ### Mobile
 - **URL API:** `config.dart`, `_apiHostOverride` — **в git**.

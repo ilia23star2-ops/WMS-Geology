@@ -192,6 +192,55 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
 | `GET` | `/storage/cells?tier_id=` | Ячейки |
 | `GET` | `/storage/cells/{id}` | Одна ячейка |
 | `POST` | `/storage/cells` | Создать (admin) |
+| `GET` | `/storage/sections/{id}/qr.pdf/` | PDF с QR секции (2f-4c-1) |
+| `GET` | `/storage/cells/{id}/qr.pdf/` | PDF с QR ячейки (2f-4c-1) |
+| `POST` | `/storage/sections/qr-batch/` | PDF с партией QR (2f-4c-1) |
+
+### QR топологии
+
+`Section.qr_code` и `Cell.qr_code` **автогенерируются** при
+создании, если не заданы явно. Payload:
+`WMSG:SECTION:<id>` / `WMSG:CELL:<id>`.
+
+### `GET /storage/sections/{id}/qr.pdf/`
+
+PDF с QR одной секции. Формат: A4, QR 65×65 мм, под ним
+адрес `Room / Rack / Section`.
+
+**Ответ 200:** `application/pdf`.
+
+### `GET /storage/cells/{id}/qr.pdf/`
+
+PDF с QR одной ячейки. Под QR — `full_address`.
+
+**Ответ 200:** `application/pdf`.
+
+### `POST /storage/sections/qr-batch/`
+
+PDF с партией QR (Section + Cell). Раскладка 2 × 3 = 6 QR на
+лист A4. Адреса собираются на сервере.
+
+**Тело запроса:**
+
+    {
+      "items": [
+        {"type": "SECTION", "id": 12},
+        {"type": "CELL", "id": 45},
+        {"type": "CELL", "id": 46}
+      ]
+    }
+
+**Логика:**
+- `type` — `SECTION` или `CELL`;
+- для `SECTION` адрес собирается из `Room / Rack / Section`;
+- для `CELL` — `full_address`.
+
+**Ответ 200:** `application/pdf`.
+
+**Ошибки:**
+- 400 — `items` пустой или не список;
+- 404 — объект по id не найден;
+- 400 — неизвестный `type`.
 
 ---
 
@@ -214,6 +263,13 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
 `container_type_id`, `status`, `comment_template_id`,
 `draft_work_order_coded` (icontains), `draft_research_type_id`.
 
+**Статусы контейнера (2f-5c-1):**
+- `PENDING_FILLING` — «Ожидает заполнения» (создана, проб нет);
+- `PENDING_PLACEMENT` — «Ожидает размещения» (пробы есть, места нет);
+- `ACTIVE` — «Размещена»;
+- `IN_TRANSIT` — «В пути»;
+- `ISSUED` — «Выдана».
+
 **`DELETE /storage/containers/{id}/`** (2f-1):
 
 Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
@@ -224,14 +280,9 @@ Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
 - 409 — `{"error": "Нельзя удалить тару: на неё ссылаются связанные объекты (N)."}`.
 
 **Draft-фильтры** (2f-1):
-
 - `?draft_work_order_coded=TST0001` — частичный поиск по
-  draft-номеру входящего Н/З (`icontains`);
-- `?draft_research_type_id=3` — точное совпадение по ID
-  draft-ТИ.
-
-Используются в реестре тары, чтобы различать одинаковые номера
-из разных групп (Н/З × ТИ) — см. DECISIONS 1.61.
+  draft-номеру (`icontains`);
+- `?draft_research_type_id=3` — точное совпадение по ID.
 
 ### `POST /storage/containers/bulk-create/`
 
@@ -239,8 +290,7 @@ Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
 отдельным запросом — `fill-samples` (см. ниже).
 
 Draft-поля (участок, ТИ, Н/З) — общие для всей партии, сохраняются
-на каждой таре. Используются для предзаполнения формы fill-samples,
-обнуляются после успешного заполнения.
+на каждой таре. Обнуляются после успешного заполнения.
 
 **Тело запроса:**
 
@@ -260,11 +310,10 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       "draft_work_order_incoming": "02-Тест001"
     }
 
-**Логика:**
-- Каждая тара создаётся со статусом `PENDING_PLACEMENT`.
-- `container_number` **опционален**: если не указан (или пустая
-  строка) — тара создаётся без номера (заготовка). Номер
-  присваивается на шаге `fill-samples`.
+**Логика (обновлено в 2f-5c-1):**
+- Каждая тара создаётся со статусом **`PENDING_FILLING`**.
+- `container_number` **опционален**: если не указан — тара без
+  номера (заготовка). Номер присваивается на шаге `fill-samples`.
 - Draft-поля сохраняются на каждой таре.
 - `status` в теле запроса **не принимается**.
 
@@ -275,13 +324,8 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       "total_containers": 2
     }
 
-`ContainerSerializer` дополнительно возвращает:
-`draft_site`, `draft_site_name`, `draft_research_type`,
-`draft_research_type_name`, `draft_work_order_coded`,
-`draft_work_order_incoming`.
-
 **Ошибки:**
-- 400 — номер тары уже существует в системе;
+- 400 — номер тары уже существует;
 - 400 — `container_type_id` не найден;
 - 400 — `draft_site_id` / `draft_research_type_id` не найдены;
 - 400 — номера тар в запросе не уникальны;
@@ -322,22 +366,13 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 - Найти или создать `WorkOrder` (CODED) по `work_order_coded`.
 - Если задан `work_order_incoming` — найти/создать INCOMING
   и связать `linked_order` в обе стороны.
-- **Одна тара = один тип исследования.** При попытке добавить
-  пробы другого ТИ в тару, где уже есть пробы — 400.
-- Повторное заполнение **тем же** ТИ — разрешено.
-- Для каждой группы проб: если задан `well_name` — найти/создать
-  `Well`; сгенерировать полные номера и создать `Sample`.
+- **Одна тара = один тип исследования.** Пробы другого ТИ — 400.
+- Повторное заполнение тем же ТИ — разрешено.
 - **`container_number`** — опционален. Если задан и у тары номер
-  ещё не присвоен — присваивается (с проверкой уникальности).
-  Если у тары уже есть номер — не перезаписывается.
-- **Draft-поля тары обнуляются** после успешного заполнения.
-- Статус проб синхронизируется со статусом тары
-  (`ACTIVE → IN_STORAGE`, `PENDING_PLACEMENT → PENDING_PLACEMENT`,
-  `IN_TRANSIT → IN_TRANSIT`, `ISSUED → ISSUED`).
-
-**Формат полного номера:**
-- шифрованная: `TAA-A` + `34076` + `001` = `TAA-A34076001`;
-- нешифрованная: `TST` + `124` + `001` = `TST124001`.
+  пуст — присваивается. Если уже есть — не перезаписывается.
+- **Draft-поля обнуляются** после успешного заполнения.
+- **Статус тары (2f-5c-1):** `PENDING_FILLING` → `PENDING_PLACEMENT`.
+- Статус проб синхронизируется со статусом тары.
 
 **Ответ (201 Created):**
 
@@ -357,7 +392,7 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 - 400 — `sequence_from > sequence_to`;
 - 400 — диапазон > 1000 проб в одной группе;
 - 400 — в таре уже есть пробы другого типа исследования;
-- 400 — присваиваемый `container_number` уже занят другой тарой.
+- 400 — присваиваемый `container_number` уже занят.
 
 ---
 
@@ -445,12 +480,13 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 | `GET` | `/receipts/{id}` | Одна партия |
 | `POST` | `/receipts/{id}/confirm` | Подтвердить приёмку (ручной override) |
 | `POST` | `/receipts/{id}/cancel` | Отменить |
-| `GET` | `/receipts/{id}/conflicts/` | Неразобранные `NEEDS_CONFIRMATION` + `suggested_count` |
+| `GET` | `/receipts/{id}/conflicts/` | Неразобранные `NEEDS_CONFIRMATION` |
 | `POST` | `/receipts/{id}/resolve-conflicts/` | Разобрать конфликты |
 | `POST` | `/receipts/{id}/check/` | Сверка тары (batch) |
 | `POST` | `/receipts/{id}/complete/` | Завершить приёмку |
 | `GET` | `/receipts/{id}/act/` | PDF «Акт приёмки» (только `CONFIRMED`) |
 | `GET` | `/receipt-items` | Строки партии |
+| `DELETE` | `/receipt-items/{id}` | Удалить строку (каскад, 2f-5a-1) |
 | `GET` | `/import-sessions` | Сессии импорта |
 | `POST` | `/import-sessions/upload/` | Excel → Receipt + ReceiptItem |
 | `POST` | `/import-sessions/import-shipment/` | Excel → Shipment + Receipt + Container |
@@ -530,9 +566,10 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       ]
     }
 
-**Логика:**
+**Логика (обновлено в 2f-5c-1):**
 - `matched=true` → создать/обновить `Container`
-  (`status=PENDING_PLACEMENT`), присвоить номер,
+  со статусом **`PENDING_FILLING`** («Ожидает заполнения» —
+  тара есть, проб нет), присвоить номер,
   `ReceiptItem.status=MATCHED`.
 - `matched=false` → удалить `Container` (если нет проб),
   `ReceiptItem.status=MISSING`.
@@ -596,11 +633,27 @@ filename="act_<receipt_number>.pdf"`.
 - шапка: «АКТ ПРИЁМКИ № <receipt_number>»;
 - метаданные: дата рейса, рейс, лаборатория, участок;
 - сводка: всего / принято / не пришло / прочее;
-- таблица «Не приехало» (`№ | Участок | Н/З | Иссл. | Тип тары |
-  Кол-во`);
-- подписи: «Сдал: ___» / «Принял: ___».
+- таблица «Не приехало»;
+- подписи.
 
 **Ошибки 400:** статус не `CONFIRMED`.
+
+### `DELETE /receipt-items/{id}/` (2f-5a-1)
+
+Каскадное удаление строки приёмки. Одна транзакция:
+1. Если у строки есть `Container`:
+   - удалить все её пробы (по одной, чтобы поймать
+     `ProtectedError` на конкретной пробе);
+   - удалить `Container`.
+2. Удалить саму строку.
+
+**Ответ 204:** пустое тело.
+
+**Ошибки:**
+- 404 — строки нет;
+- 409 — `{"error": "Нельзя удалить тару: проба «...» уже используется (…)."}`
+  или
+  `{"error": "Нельзя удалить тару: на неё ссылаются связанные объекты (N)."}`.
 
 ### `POST /import-sessions/upload/`
 
@@ -632,8 +685,8 @@ rows_count, containers_count, parse_errors, receipts}`.
   `Р-{year}-NNN`;
 - `laboratory_id` — опционален (откуда).
 
-**Спорные ячейки** (несколько дат, `target_date` не входит, дат нет) —
-пишутся в `parse_errors` с `code=NEEDS_CONFIRMATION` и `reason`:
+**Спорные ячейки** — пишутся в `parse_errors` с
+`code=NEEDS_CONFIRMATION` и `reason`:
 - `no_dates` — в ячейке нет ни одной даты;
 - `multi_date_match` — несколько дат, `target_date` входит;
 - `target_date_not_matched` — даты есть, `target_date` не входит.
@@ -656,21 +709,18 @@ rows_count, containers_count, parse_errors, receipts}`.
 
 **Ошибки:**
 - 400 — нет файла / плохая дата / неподдерживаемый формат;
-- 200 + `status=ERROR`, `shipment_id=null` — нечего создавать
-  (нет данных, нет участка, нет ТИ).
+- 200 + `status=ERROR`, `shipment_id=null` — нечего создавать.
 
-**Формат Excel** (уточнение к 1.49):
+**Формат Excel:**
 - Файл может содержать 1–2 строки «шапки» до заголовков
-  (`АКТ сдачи-приема` и т.п.) — парсер их пропускает
   (`MAX_HEADER_SEARCH=20`).
 - Строка заголовков: `№ Наряд-заказа` / `Н/З` / `Наряд` + блоки
   типов + `Дата`.
 - **Сразу после заголовков** — строка **типа тары** (`Ящики`,
-  `Биг-бэг`). Она обязательна для каждой колонки типа. Признак:
-  под Н/З пусто, а другие значения есть.
-- Каждый блок «типы + Дата» — своя дата. В одной ячейке «Дата»
-  может быть список через запятую (`13.08,02.09,25.05`).
-- Количество тары: число, или `1+1` (сумма).
+  `Биг-бэг`). Обязательна для каждой колонки типа.
+- Каждый блок «типы + Дата» — своя дата. В ячейке «Дата» —
+  список через запятую (`13.08,02.09,25.05`).
+- Количество тары: число или `1+1` (сумма).
 - Дата без года (`13.08`) — текущий год.
 
 ---
@@ -706,7 +756,7 @@ rows_count, containers_count, parse_errors, receipts}`.
     {"error": "<строка>"}
 
 Так делают: `check`, `complete`, `act`, `dispose`, `restore`,
-`destroy` (409) — короткое сообщение без кода.
+`destroy` (409), `delete receipt-item` (409), `qr-batch` (400/404).
 
 ---
 
