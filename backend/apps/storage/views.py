@@ -414,7 +414,8 @@ class ContainerViewSet(viewsets.ModelViewSet):
         Заполнить существующую тару пробами.
 
         Присваивает `container_number`, если у тары он ещё не задан.
-        Обнуляет draft-поля.
+        Обновляет draft-поля тары (Н/З, ТИ, участок), чтобы они
+        не терялись в интерфейсе (фикс 2f-7f).
         Одна тара = один тип исследования.
         """
         container = self.get_object()
@@ -439,6 +440,20 @@ class ContainerViewSet(viewsets.ModelViewSet):
             )
 
         container.refresh_from_db()
+        
+        # ФИКС (2f-7f): восстанавливаем draft-поля из запроса,
+        # так как сервис fill_container_with_samples их обнуляет.
+        container.draft_site_id = data.get("site_id")
+        container.draft_research_type_id = data["research_type_id"]
+        container.draft_work_order_coded = data["work_order_coded"]
+        container.draft_work_order_incoming = data.get(
+            "work_order_incoming", ""
+        )
+        container.save(update_fields=[
+            "draft_site", "draft_research_type", 
+            "draft_work_order_coded", "draft_work_order_incoming"
+        ])
+
         return Response(
             {
                 "container_id": container.pk,

@@ -497,3 +497,54 @@ def test_container_label_pdf_with_samples(
     assert response.status_code == 200
     content = b"".join(response.streaming_content)
     assert content[:4] == b"%PDF"
+
+
+# ============================================================
+# Container — fill-samples (2f-7f)
+# ============================================================
+def test_fill_samples_retains_draft_fields(auth_client, container_type):
+    """
+    Проверяет, что после заполнения тары пробами, черновые поля
+    (draft_work_order_coded, draft_work_order_incoming, draft_research_type_id,
+    draft_site_id) не обнуляются, а сохраняются согласно переданным данным.
+    """
+    from apps.samples.catalogs import ResearchType, Site
+    
+    rt = ResearchType.objects.create(code="ШЛ", name="Шлифы")
+    site = Site.objects.create(code="TST", name="Тест")
+    
+    # Создаём пустую тару-заготовку
+    c = Container.objects.create(
+        container_type=container_type,
+    )
+    
+    payload = {
+        "container_number": "T-FIX-001",
+        "work_order_coded": "CODED-123",
+        "work_order_incoming": "INC-456",
+        "research_type_id": rt.pk,
+        "site_id": site.pk,
+        "sample_groups": [
+            {
+                "prefix": "TAA",
+                "middle": "123",
+                "sequence_from": 1,
+                "sequence_to": 2
+            }
+        ]
+    }
+    
+    response = auth_client.post(
+        f"/api/v1/storage/containers/{c.pk}/fill-samples/",
+        payload,
+        format="json"
+    )
+    
+    assert response.status_code == 201
+    
+    # Проверяем, что draft-поля не потерялись (баг 2f-7f)
+    c.refresh_from_db()
+    assert c.draft_work_order_coded == "CODED-123"
+    assert c.draft_work_order_incoming == "INC-456"
+    assert c.draft_research_type_id == rt.pk
+    assert c.draft_site_id == site.pk
