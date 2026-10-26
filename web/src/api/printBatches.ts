@@ -1,12 +1,5 @@
 /**
  * API партий печати.
- *
- * - Список с пагинацией.
- * - Создание черновика.
- * - Детали партии.
- * - add-containers / remove-container / mark-ready / cancel.
- * - PDF (авто-помечает PRINTED) / mark-printed (ручной).
- * - delete (2f-7c).
  */
 import {
     keepPreviousData,
@@ -61,9 +54,6 @@ export interface PrintBatch {
     updated_at: string;
 }
 
-// ------------------------------------------------------------
-// Список
-// ------------------------------------------------------------
 export interface PrintBatchesListParams {
     page: number;
     status?: PrintBatchStatus;
@@ -91,9 +81,6 @@ export function usePrintBatches(params: PrintBatchesListParams) {
     });
 }
 
-// ------------------------------------------------------------
-// Детали
-// ------------------------------------------------------------
 export async function fetchPrintBatch(id: number): Promise<PrintBatch> {
     const { data } = await apiClient.get<PrintBatch>(
         `/labels/print-batches/${id}/`,
@@ -110,9 +97,6 @@ export function usePrintBatch(id: number | undefined) {
     });
 }
 
-// ------------------------------------------------------------
-// Мутации
-// ------------------------------------------------------------
 export function useCreatePrintBatch() {
     const qc = useQueryClient();
     return useMutation({
@@ -132,10 +116,16 @@ export function useCreatePrintBatch() {
 export function useAddContainers(batchId: number) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (containerIds: number[]) => {
+        mutationFn: async ({
+            containerIds,
+            force = false
+        }: {
+            containerIds: number[];
+            force?: boolean;
+        }) => {
             const { data } = await apiClient.post<PrintBatch>(
                 `/labels/print-batches/${batchId}/add-containers/`,
-                { container_ids: containerIds },
+                { container_ids: containerIds, force },
             );
             return data;
         },
@@ -224,10 +214,6 @@ export function useDeletePrintBatch() {
     });
 }
 
-/**
- * Скачивает PDF партии. Если партия в статусе READY —
- * backend автоматически переводит её в PRINTED.
- */
 export async function downloadBatchPdf(batchId: number): Promise<void> {
     const { data } = await apiClient.get(
         `/labels/print-batches/${batchId}/pdf/`,

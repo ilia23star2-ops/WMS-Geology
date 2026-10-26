@@ -1,11 +1,7 @@
 /**
- * Диалог добавления тар в партию печати (из реестра тары).
- *
- * Два режима:
- * - Создать новую партию (выбор типа: этикетки / QR-сетка).
- * - Добавить в существующий черновик.
+ * Диалог создания партии печати и добавления в неё выбранных тар.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Alert,
     Button,
@@ -16,23 +12,15 @@ import {
     FormControl,
     FormControlLabel,
     FormLabel,
-    MenuItem,
     Radio,
     RadioGroup,
-    Select,
-    Stack,
-    Typography,
 } from "@mui/material";
 
 import {
-    PRINT_TYPE_LABELS,
-    useAddContainers,
+    apiClient,
     useCreatePrintBatch,
-    usePrintBatches,
     type PrintType,
 } from "../api";
-
-type Mode = "new" | "existing";
 
 interface AddToPrintBatchDialogProps {
     open: boolean;
@@ -47,149 +35,91 @@ export default function AddToPrintBatchDialog({
     onClose,
     onSuccess,
 }: AddToPrintBatchDialogProps) {
-    const [mode, setMode] = useState<Mode>("new");
-    const [newType, setNewType] = useState<PrintType>("LABELS");
-    const [existingBatchId, setExistingBatchId] = useState<number | "">("");
+    const [type, setType] = useState<PrintType>("LABELS");
     const [error, setError] = useState<string | null>(null);
 
-    const drafts = usePrintBatches({ page: 1, status: "DRAFT" });
-    const draftList = useMemo(
-        () => (drafts.data?.results ?? []).filter((b) => b.status === "DRAFT"),
-        [drafts.data],
-    );
-
     const createMutation = useCreatePrintBatch();
-    // Хук add-containers привязан к конкретной партии. Меняем batchId,
-    // пересоздаём два хука — один для новой, второй для существующей.
-    // Проще: два независимых хука и вызываем нужный.
-    const addToNew = useAddContainers(0);
-    const addToExisting = useAddContainers(
-        typeof existingBatchId === "number" ? existingBatchId : 0,
-    );
 
-    const isSubmitting = createMutation.isPending || addToNew.isPending || addToExisting.isPending;
+    useEffect(() => {
+        if (!open) {
+            setError(null);
+            setType("LABELS");
+        }
+    }, [open]);
 
-    function handleClose() {
-        if (isSubmitting) return;
-        setError(null);
-        setMode("new");
-        setNewType("LABELS");
-        setExistingBatchId("");
-        onClose();
-    }
-
-    async function handleConfirm() {
+    async function handleCreateAndAdd(force = false) {
         setError(null);
         try {
-            if (mode === "new") {
-                const batch = await createMutation.mutateAsync(newType);
-                await addToNew.mutateAsync(containerIds);
-                onSuccess(batch.id);
-                handleClose();
-            } else {
-                if (typeof existingBatchId !== "number") {
-                    setError("Выберите партию.");
+            // 1. Создаём партию
+            const batch = await createMutation.mutateAsync(type);
+
+            // 2. Добавляем тары
+            await apiClient.post(
+                `/labels/print-batches/${batch.id}/add-containers/`,
+                { container_ids: containerIds, force }
+            );
+
+            onSuccess(batch.id);
+            onClose();
+        } catch (err) {
+            const anyErr = err as {
+                response?: { data?: { error?: string; printed_container_ids?: number[] } };
+            };
+            const printed = anyErr?.response?.data?.printed_container_ids;
+
+            if (printed && printed.length > 0 && !force) {
+                const ok = window.confirm(
+                    `У некоторых выбранных тар (${printed.length}) этикетки уже печатались. Вы уверены, что хотите перепечатать их?`
+                );
+                if (ok) {
+                    await handleCreateAndAdd(true);
                     return;
                 }
-                await addToExisting.mutateAsync(containerIds);
-                onSuccess(existingBatchId);
-                handleClose();
             }
-        } catch {
-            setError("Не удалось добавить тары. Возможно, они уже в партии.");
+            setError(
+                anyErr?.response?.data?.error ?? "Не удалось добавить тары в партию."
+            );
         }
     }
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle>В партию печати</DialogTitle>
+        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle>Новая партия печати</DialogTitle>
             <DialogContent>
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-                    Выбрано тар: <b>{containerIds.length}</b>.
-                </Typography>
-
                 {error && (
                     <Alert severity="error" sx={{ mb: 2 }}>
                         {error}
                     </Alert>
                 )}
-
-                <FormControl>
-                    <FormLabel>Куда добавить</FormLabel>
+                <FormControl sx={{ mt: 1 }}>
+                    <FormLabel>Что печатать</FormLabel>
                     <RadioGroup
-                        value={mode}
-                        onChange={(e) => setMode(e.target.value as Mode)}
+                        value={type}
+                        onChange={(e) => setType(e.target.value as PrintType)}
                     >
                         <FormControlLabel
-                            value="new"
+                            value="LABELS"
                             control={<Radio />}
-                            label="Создать новую партию"
+                            label="Этикетки (адаптивный размер)"
                         />
                         <FormControlLabel
-                            value="existing"
+                            value="QR_ONLY"
                             control={<Radio />}
-                            label="Добавить в существующий черновик"
-                            disabled={draftList.length === 0}
+                            label="Только QR (сетка 8×11)"
                         />
                     </RadioGroup>
                 </FormControl>
-
-                {mode === "new" && (
-                    <Stack sx={{ mt: 2 }}>
-                        <Typography variant="body1" sx={{ mb: 1 }}>
-                            Что печатать:
-                        </Typography>
-                        <FormControl>
-                            <RadioGroup
-                                value={newType}
-                                onChange={(e) => setNewType(e.target.value as PrintType)}
-                            >
-                                <FormControlLabel
-                                    value="LABELS"
-                                    control={<Radio />}
-                                    label={PRINT_TYPE_LABELS.LABELS}
-                                />
-                                <FormControlLabel
-                                    value="QR_ONLY"
-                                    control={<Radio />}
-                                    label={PRINT_TYPE_LABELS.QR_ONLY}
-                                />
-                            </RadioGroup>
-                        </FormControl>
-                    </Stack>
-                )}
-
-                {mode === "existing" && (
-                    <Stack sx={{ mt: 2 }}>
-                        <Typography variant="body1" sx={{ mb: 1 }}>
-                            Партия:
-                        </Typography>
-                        <Select
-                            value={existingBatchId}
-                            onChange={(e) => setExistingBatchId(Number(e.target.value))}
-                            size="small"
-                            fullWidth
-                        >
-                            {draftList.map((b) => (
-                                <MenuItem key={b.id} value={b.id}>
-                                    {b.batch_number} — {PRINT_TYPE_LABELS[b.print_type]} (тар:{" "}
-                                    {b.total_items})
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </Stack>
-                )}
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleClose} disabled={isSubmitting}>
+                <Button onClick={onClose} disabled={createMutation.isPending}>
                     Отмена
                 </Button>
                 <Button
-                    onClick={() => void handleConfirm()}
+                    onClick={() => void handleCreateAndAdd(false)}
                     variant="contained"
-                    disabled={isSubmitting}
+                    disabled={createMutation.isPending}
                 >
-                    {isSubmitting ? "Добавляем..." : "Добавить"}
+                    {createMutation.isPending ? "Создаём..." : "Создать и добавить"}
                 </Button>
             </DialogActions>
         </Dialog>

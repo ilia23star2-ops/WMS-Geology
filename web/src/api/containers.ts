@@ -1,18 +1,5 @@
 /**
- * Хуки списка тары.
- *
- * Server-side пагинация: backend отдаёт фиксированные 50 на
- * страницу (PAGE_SIZE в settings). `?page=` — с 1.
- *
- * Статусы (пачка 2f-5c-2):
- * - PENDING_FILLING  — «Ожидает заполнения» (тара без проб);
- * - PENDING_PLACEMENT — «Ожидает размещения» (пробы есть, ячейка нет);
- * - ACTIVE           — «Размещена» (стоит в ячейке);
- * - IN_TRANSIT       — «В пути»;
- * - ISSUED           — «Выдана».
- *
- * Модель статусов будет пересмотрена в отдельной серии
- * (`2.x-container-lifecycle`, см. PLAN.md).
+ * API тары (`Container`).
  */
 import {
     keepPreviousData,
@@ -34,7 +21,7 @@ export type ContainerStatus =
 export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
     PENDING_FILLING: "Ожидает заполнения",
     PENDING_PLACEMENT: "Ожидает размещения",
-    ACTIVE: "Размещена",
+    ACTIVE: "Активна",
     IN_TRANSIT: "В пути",
     ISSUED: "Выдана",
 };
@@ -57,18 +44,22 @@ export interface Container {
     draft_research_type_name: string | null;
     draft_work_order_coded: string;
     draft_work_order_incoming: string;
+    label_printed_at: string | null;
     created_at: string;
 }
 
 export interface ContainerFilters {
-    status?: ContainerStatus;
+    pallet_id?: number;
+    floor_room_id?: number;
     container_type_id?: number;
+    status?: ContainerStatus;
+    comment_template_id?: number;
     draft_work_order_coded?: string;
     draft_research_type_id?: number;
 }
 
 export interface ContainersListParams {
-    page: number; // 1-based
+    page: number;
     filters: ContainerFilters;
 }
 
@@ -76,18 +67,15 @@ export async function fetchContainers(
     params: ContainersListParams,
 ): Promise<PaginatedResponse<Container>> {
     const query: Record<string, string | number> = { page: params.page };
-    if (params.filters.status) {
-        query.status = params.filters.status;
-    }
-    if (params.filters.container_type_id) {
-        query.container_type_id = params.filters.container_type_id;
-    }
-    if (params.filters.draft_work_order_coded) {
-        query.draft_work_order_coded = params.filters.draft_work_order_coded;
-    }
-    if (params.filters.draft_research_type_id) {
-        query.draft_research_type_id = params.filters.draft_research_type_id;
-    }
+    const f = params.filters;
+
+    if (f.pallet_id !== undefined) query.pallet_id = f.pallet_id;
+    if (f.floor_room_id !== undefined) query.floor_room_id = f.floor_room_id;
+    if (f.container_type_id !== undefined) query.container_type_id = f.container_type_id;
+    if (f.status) query.status = f.status;
+    if (f.comment_template_id !== undefined) query.comment_template_id = f.comment_template_id;
+    if (f.draft_work_order_coded) query.draft_work_order_coded = f.draft_work_order_coded;
+    if (f.draft_research_type_id !== undefined) query.draft_research_type_id = f.draft_research_type_id;
 
     const { data } = await apiClient.get<PaginatedResponse<Container>>(
         "/storage/containers/",
@@ -101,15 +89,10 @@ export function useContainers(params: ContainersListParams) {
         queryKey: ["containers", params],
         queryFn: () => fetchContainers(params),
         placeholderData: keepPreviousData,
-        staleTime: 30_000,
+        staleTime: 10_000,
     });
 }
 
-/**
- * Одна тара по id. Используется для предпросмотра после
- * заполнения: `useFillSamples` инвалидирует `["containers"]`,
- * а этот запрос подтягивает обновлённую тару (с номером).
- */
 export async function fetchContainer(id: number): Promise<Container> {
     const { data } = await apiClient.get<Container>(
         `/storage/containers/${id}/`,
@@ -122,17 +105,51 @@ export function useContainer(id: number | null) {
         queryKey: ["container", id],
         queryFn: () => fetchContainer(id as number),
         enabled: typeof id === "number" && !Number.isNaN(id),
-        staleTime: 10_000,
+        staleTime: 5_000,
     });
 }
 
-/**
- * Скачивает PDF-этикетку тары через авторизованный запрос.
- * Открывает blob в новой вкладке.
- */
-export async function downloadLabelPdf(containerId: number): Promise<void> {
+export async function updateContainer(
+    id: number,
+    payload: UpdateContainerPayload,
+): Promise<Container> {
+    const { data } = await apiClient.patch<Container>(
+        `/storage/containers/${id}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdateContainer() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, payload }: { id: number; payload: UpdateContainerPayload }) =>
+            updateContainer(id, payload),
+        onSuccess: (data) => {
+            qc.setQueryData(["container", data.id], data);
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+        },
+    });
+}
+
+export async function deleteContainer(id: number): Promise<void> {
+    await apiClient.delete(`/storage/containers/${id}/`);
+}
+
+export function useDeleteContainer() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: number) => deleteContainer(id),
+        onSuccess: (_void, id) => {
+            qc.removeQueries({ queryKey: ["container", id] });
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+        },
+    });
+}
+
+export async function downloadLabelPdf(id: number): Promise<void> {
     const { data } = await apiClient.get(
-        `/storage/containers/${containerId}/label.pdf/`,
+        `/storage/containers/${id}/label.pdf/`,
         { responseType: "blob" },
     );
     const blob = new Blob([data as BlobPart], { type: "application/pdf" });
@@ -141,25 +158,13 @@ export async function downloadLabelPdf(containerId: number): Promise<void> {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/**
- * Скачивает PDF-этикетку тары и возвращает object URL
- * (для встраивания в `<iframe>`).
- * Вызывающий код отвечает за `URL.revokeObjectURL`.
- */
-export async function fetchLabelPdfUrl(
-    containerId: number,
-): Promise<string> {
+export async function fetchLabelPdfUrl(id: number): Promise<string> {
     const { data } = await apiClient.get(
-        `/storage/containers/${containerId}/label.pdf/`,
+        `/storage/containers/${id}/label.pdf/`,
         { responseType: "blob" },
     );
-    const blob = new Blob([data as BlobPart], { type: "application/pdf" });
-    return URL.createObjectURL(blob);
+    return URL.createObjectURL(data);
 }
-
-// ============================================================
-// Bulk create — создание партии тары-заготовок
-// ============================================================
 
 export interface BulkCreateContainerItem {
     container_number?: string | null;
@@ -190,18 +195,14 @@ export async function bulkCreateContainers(
 }
 
 export function useBulkCreateContainers() {
-    const queryClient = useQueryClient();
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: bulkCreateContainers,
         onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void qc.invalidateQueries({ queryKey: ["containers"] });
         },
     });
 }
-
-// ============================================================
-// Fill samples — заполнение существующей тары пробами
-// ============================================================
 
 export interface FillSamplesGroup {
     prefix: string;
@@ -209,7 +210,7 @@ export interface FillSamplesGroup {
     sequence_from: number;
     sequence_to: number;
     sequence_digits: number;
-    well_name: string | null;
+    well_name?: string | null;
 }
 
 export interface FillSamplesRequest {
@@ -223,94 +224,46 @@ export interface FillSamplesRequest {
 
 export interface FillSamplesResponse {
     container_id: number;
-    container_number: string | null;
-    created_samples: Array<{
-        id: number;
-        sample_number: string;
-        status: string;
-    }>;
+    container_number: string;
+    created_samples: { id: number; sample_number: string; status: string }[];
     total_samples: number;
 }
 
 export async function fillContainerWithSamples(
-    containerId: number,
+    id: number,
     payload: FillSamplesRequest,
 ): Promise<FillSamplesResponse> {
     const { data } = await apiClient.post<FillSamplesResponse>(
-        `/storage/containers/${containerId}/fill-samples/`,
+        `/storage/containers/${id}/fill-samples/`,
         payload,
     );
     return data;
 }
 
 export function useFillSamples(containerId: number) {
-    const queryClient = useQueryClient();
+    const qc = useQueryClient();
     return useMutation({
         mutationFn: (payload: FillSamplesRequest) =>
             fillContainerWithSamples(containerId, payload),
         onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: ["containers"] });
-            void queryClient.invalidateQueries({
-                queryKey: ["container", containerId],
-            });
-            void queryClient.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["container", containerId] });
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+            void qc.invalidateQueries({ queryKey: ["samples"] });
         },
     });
 }
-
-// ============================================================
-// Update / Delete (пачки 2f-1 + 2f-5c-3)
-// ============================================================
 
 export interface UpdateContainerPayload {
     container_number?: string | null;
     container_type?: number;
+    pallet?: number | null;
+    floor_room?: number | null;
+    position_on_pallet?: number | null;
     status?: ContainerStatus;
     comment?: string;
-    // Draft-поля (2f-5c-3).
+    comment_template?: number | null;
     draft_site?: number | null;
     draft_research_type?: number | null;
     draft_work_order_coded?: string;
     draft_work_order_incoming?: string;
-}
-
-export async function updateContainer(
-    id: number,
-    payload: UpdateContainerPayload,
-): Promise<Container> {
-    const { data } = await apiClient.patch<Container>(
-        `/storage/containers/${id}/`,
-        payload,
-    );
-    return data;
-}
-
-export function useUpdateContainer() {
-    const queryClient = useQueryClient();
-    return useMutation({
-        mutationFn: ({ id, payload }: {
-            id: number;
-            payload: UpdateContainerPayload;
-        }) => updateContainer(id, payload),
-        onSuccess: (_data, variables) => {
-            void queryClient.invalidateQueries({ queryKey: ["containers"] });
-            void queryClient.invalidateQueries({
-                queryKey: ["container", variables.id],
-            });
-        },
-    });
-}
-
-export async function deleteContainer(id: number): Promise<void> {
-    await apiClient.delete(`/storage/containers/${id}/`);
-}
-
-export function useDeleteContainer() {
-    const queryClient = useQueryClient();
-    return useMutation({
-        mutationFn: (id: number) => deleteContainer(id),
-        onSuccess: () => {
-            void queryClient.invalidateQueries({ queryKey: ["containers"] });
-        },
-    });
 }

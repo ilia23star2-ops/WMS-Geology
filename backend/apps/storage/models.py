@@ -1,30 +1,11 @@
 """
-Модели приложения "Склад" (v7).
+Модели приложения "Склад" (v8).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
-
-Изменения v3 (этап 1.3, bundle-8b):
-- `ContainerType.laboratory` — FK (nullable) на Laboratory.
-- Уникальность: `(name, laboratory)` вместо `name`.
-
-Изменения v4 (серия 2.x-web-v2, bundle-7a-2b):
-- `Container.container_number` — nullable.
-- +4 draft-поля: `draft_site`, `draft_research_type`,
-  `draft_work_order_coded`, `draft_work_order_incoming`.
-
-Изменения v5 (серия 2.x-web-v2, bundle-3d-3-fix-2):
-- `Container.container_number` — больше **не уникален** глобально.
-
-Изменения v6 (серия 2.x-web-v2, пачка 2f-4c-1):
-- `Section.save()` и `Cell.save()` — автогенерация `qr_code`
-  при создании, если не задан явно.
-
-Изменения v7 (серия 2.x-web-v2, пачка 2f-5c-1):
-- `Container.STATUS_PENDING_FILLING` — тара создана (импортом
-  или вручную), но пробы в неё ещё не положены.
-- `bulk-create` и `check_receipt` создают тары в этом статусе;
-  `fill-samples` переводит в `PENDING_PLACEMENT`.
+...
+Изменения v8 (серия 2.x-web-v2, пачка 2f-7d):
+- `Container.label_printed_at` — время последней печати этикетки.
 """
 
 from django.db import models
@@ -324,20 +305,7 @@ class ContainerType(models.Model):
 class Container(models.Model):
     """
     Тара — физический контейнер с пробами одного типа исследования.
-
-    Жизненный цикл:
-    1. **Создание** (bulk-create или check_receipt при приёмке).
-       `container_number` может быть пустым или заданным.
-       Статус — `PENDING_FILLING` («Ожидает заполнения»):
-       тара есть физически, но проб внутри нет.
-    2. **Заполнение** (fill-samples). Присваивается `container_number`
-       (если был пуст). Пробы создаются. Статус → `PENDING_PLACEMENT`.
-    3. **Размещение** (отдельный шаг в будущем). Ячейка присвоена.
-       Статус → `ACTIVE`.
-
-    `container_number` — **не уникален** глобально: это «этикетка
-    внутри группы (Н/З × ТИ)». Номера `1, 2, 3` могут встречаться
-    у разных групп. Уникальный идентификатор — `id` (в QR).
+    ...
     """
 
     STATUS_PENDING_FILLING = "PENDING_FILLING"
@@ -437,6 +405,14 @@ class Container(models.Model):
         blank=True,
         default="",
         help_text="Входящий Н/З (черновик).",
+    )
+
+    # --- Пачка 2f-7d: защита от повторной печати ---
+    label_printed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата печати этикетки",
+        help_text="Время последней печати. Если NULL — этикетка не печаталась.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

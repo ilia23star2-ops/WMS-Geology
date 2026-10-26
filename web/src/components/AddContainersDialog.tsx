@@ -1,10 +1,7 @@
 /**
  * Диалог выбора тар для добавления в партию печати.
- *
  * Загружает список тар, исключает уже добавленные, даёт
  * выбрать чекбоксами и подтвердить.
- *
- * MUI X v9: GridRowSelectionModel = { type, ids: Set<GridRowId> }.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -28,7 +25,7 @@ interface AddContainersDialogProps {
     open: boolean;
     excludedContainerIds: number[];
     onClose: () => void;
-    onConfirm: (containerIds: number[]) => Promise<void> | void;
+    onConfirm: (containerIds: number[], force?: boolean) => Promise<void> | void;
     isSubmitting: boolean;
 }
 
@@ -85,16 +82,33 @@ export default function AddContainersDialog({
         [selection],
     );
 
-    async function handleConfirm() {
+    async function handleConfirm(force = false) {
         if (selectedIds.length === 0) {
             setError("Выберите хотя бы одну тару.");
             return;
         }
+        setError(null);
         try {
-            await onConfirm(selectedIds);
+            await onConfirm(selectedIds, force);
             onClose();
-        } catch {
-            setError("Не удалось добавить тары.");
+        } catch (err) {
+            const anyErr = err as {
+                response?: { data?: { error?: string; printed_container_ids?: number[] } };
+            };
+            const printed = anyErr?.response?.data?.printed_container_ids;
+
+            if (printed && printed.length > 0 && !force) {
+                const ok = window.confirm(
+                    `У некоторых выбранных тар (${printed.length}) этикетки уже печатались. Вы уверены, что хотите перепечатать их?`
+                );
+                if (ok) {
+                    await handleConfirm(true);
+                    return;
+                }
+            }
+            setError(
+                anyErr?.response?.data?.error ?? "Не удалось добавить тары."
+            );
         }
     }
 
@@ -155,7 +169,7 @@ export default function AddContainersDialog({
                     Отмена
                 </Button>
                 <Button
-                    onClick={() => void handleConfirm()}
+                    onClick={() => void handleConfirm(false)}
                     variant="contained"
                     disabled={isSubmitting}
                 >

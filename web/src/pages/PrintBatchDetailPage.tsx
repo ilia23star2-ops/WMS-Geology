@@ -1,11 +1,5 @@
 /**
  * Детали партии печати.
- *
- * В зависимости от статуса — набор действий:
- * - DRAFT: добавить/убрать тары, «Перевести в готов», «Отменить», «Удалить».
- * - READY: скачать PDF, «Отметить как напечатанный», «Отменить».
- * - PRINTED: скачать PDF повторно.
- * - CANCELLED: «Удалить», только просмотр.
  */
 import { useState } from "react";
 import {
@@ -354,8 +348,11 @@ export default function PrintBatchDetailPage() {
                     open={dialogOpen}
                     excludedContainerIds={data.items.map((it) => it.container)}
                     onClose={() => setDialogOpen(false)}
-                    onConfirm={async (ids) => {
-                        await addMutation.mutateAsync(ids);
+                    onConfirm={async (ids, force) => {
+                        await addMutation.mutateAsync({
+                            containerIds: ids,
+                            force: force
+                        });
                     }}
                     isSubmitting={addMutation.isPending}
                 />
