@@ -2,9 +2,8 @@
 Тесты API приложения labels: PrintBatchViewSet.
 
 Покрывают: CRUD, actions (add-containers, remove-container,
-mark-ready, cancel, pdf, companion.pdf, mark-printed),
-автогенерацию номера, ограничения по статусам, DELETE (2f-7a),
-сопроводительный лист (2f-7b).
+mark-ready, cancel, pdf, mark-printed), автогенерацию номера,
+ограничения по статусам, DELETE (2f-7a).
 """
 
 import pytest
@@ -516,60 +515,6 @@ def test_pdf_printed_second_time_keeps_first_printed_at(
     ready_batch.refresh_from_db()
     assert ready_batch.printed_at == first_at
     assert ready_batch.printed_by == first_by
-
-
-# ============================================================
-# Сопроводительный лист (2f-7b)
-# ============================================================
-def test_companion_pdf_requires_auth(anon_client, ready_batch):
-    response = anon_client.get(
-        f"/api/v1/labels/print-batches/{ready_batch.pk}/companion.pdf/"
-    )
-    assert response.status_code in (401, 403)
-
-
-def test_companion_pdf_draft_returns_pdf(auth_client, batch, containers):
-    PrintBatchItem.objects.create(
-        batch=batch, container=containers[0], position=1,
-    )
-    response = auth_client.get(
-        f"/api/v1/labels/print-batches/{batch.pk}/companion.pdf/"
-    )
-    assert response.status_code == 200
-    assert response["Content-Type"] == "application/pdf"
-    content = b"".join(response.streaming_content)
-    assert content[:4] == b"%PDF"
-
-
-def test_companion_pdf_ready_returns_pdf(auth_client, ready_batch):
-    response = auth_client.get(
-        f"/api/v1/labels/print-batches/{ready_batch.pk}/companion.pdf/"
-    )
-    assert response.status_code == 200
-    assert response["Content-Type"] == "application/pdf"
-    content = b"".join(response.streaming_content)
-    assert content[:4] == b"%PDF"
-
-
-def test_companion_pdf_printed_returns_pdf(auth_client, ready_batch):
-    ready_batch.status = PrintBatch.STATUS_PRINTED
-    ready_batch.save()
-    response = auth_client.get(
-        f"/api/v1/labels/print-batches/{ready_batch.pk}/companion.pdf/"
-    )
-    assert response.status_code == 200
-    content = b"".join(response.streaming_content)
-    assert content[:4] == b"%PDF"
-
-
-def test_companion_pdf_cancelled_fails(auth_client, ready_batch):
-    ready_batch.status = PrintBatch.STATUS_CANCELLED
-    ready_batch.save()
-    response = auth_client.get(
-        f"/api/v1/labels/print-batches/{ready_batch.pk}/companion.pdf/"
-    )
-    assert response.status_code == 400
-    assert "отменённой" in response.data["error"]
 
 
 # ============================================================

@@ -153,6 +153,7 @@ export {
     useAddContainers,
     useCancelBatch,
     useCreatePrintBatch,
+    useDeletePrintBatch,
     useMarkPrinted,
     useMarkReady,
     usePrintBatch,
