@@ -1,12 +1,7 @@
 /**
- * Реестр проб: сгруппированный список (пачка 2f-2a).
+ * Реестр проб: сгруппированный список.
  *
- * Единый вид — группировка по (Н/З × ТИ). Внутри группы —
- * карточки тар, в каждой — пробы-чипы. Пагинация — по 20 групп.
- *
- * Фильтры (номер, ТИ, участок, статус, «показать утилизированные»)
- * общие для всех групп. По умолчанию backend исключает
- * утилизированные пробы.
+ * Пачка 2f-8: заменен компонент списка на дерево-таблицу.
  */
 import { useState } from "react";
 import {
@@ -31,7 +26,7 @@ import {
     type SampleFilters,
     type SampleStatus,
 } from "../api";
-import SamplesGroupedList from "../components/SamplesGroupedList";
+import SamplesTreeTable from "../components/SamplesTreeTable";
 
 export default function SamplesPage() {
     const [filters, setFilters] = useState<SampleFilters>({});
@@ -200,7 +195,7 @@ export default function SamplesPage() {
                 </CardContent>
             </Card>
 
-            <SamplesGroupedList filters={filters} />
+            <SamplesTreeTable filters={filters} />
         </Box>
     );
 }

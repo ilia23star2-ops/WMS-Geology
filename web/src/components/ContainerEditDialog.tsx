@@ -9,7 +9,7 @@
  * - `comment` — комментарий;
  * - `draft_site` — участок (draft);
  * - `draft_research_type` — ТИ (draft);
- * - `draft_work_order_coded` — зашифрованный Н/З (draft);
+ * - `draft_work_order_coded` — текущий Н/З (draft);
  * - `draft_work_order_incoming` — входящий Н/З (draft).
  *
  * Не редактируем: `qr_code` (генерируется backend),
@@ -341,7 +341,7 @@ export default function ContainerEditDialog({
                     </FormControl>
 
                     <TextField
-                        label="Н/З (зашифрованный)"
+                        label="Н/З (текущий)"
                         size="small"
                         fullWidth
                         value={form.draftWorkOrderCoded}
