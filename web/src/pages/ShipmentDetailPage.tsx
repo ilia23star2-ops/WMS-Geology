@@ -7,7 +7,8 @@
  * - связанный Receipt (один на рейс, `site=NULL`);
  * - список ReceiptItem (по одной строке на тару);
  * - кнопки «Начать сверку», «Отменить партию» (2f-5a-2);
- * - edit/delete строк (2f-5a-2).
+ * - edit/delete строк (2f-5a-2);
+ * - (2f-6c) Edit / Delete рейса, «Отменить рейс».
  */
 import { useState } from "react";
 import {
@@ -23,6 +24,7 @@ import {
     Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CancelIcon from "@mui/icons-material/Cancel";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
@@ -39,7 +41,9 @@ import {
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
     useCancelReceipt,
+    useCancelShipment,
     useDeleteReceiptItem,
+    useDeleteShipment,
     useReceiptItems,
     useReceipts,
     useShipment,
@@ -49,6 +53,7 @@ import {
     type ShipmentStatus,
 } from "../api";
 import ReceiptItemEditDialog from "../components/ReceiptItemEditDialog";
+import ShipmentEditDialog from "../components/ShipmentEditDialog";
 
 const SHIPMENT_STATUS_COLORS: Record<
     ShipmentStatus,
@@ -274,10 +279,13 @@ export default function ShipmentDetailPage() {
         page: 1,
         filters: { shipment_id: shipmentId ?? undefined },
     });
-    const cancelMutation = useCancelReceipt();
+    const cancelReceiptMutation = useCancelReceipt();
+    const cancelShipmentMutation = useCancelShipment();
+    const deleteShipmentMutation = useDeleteShipment();
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [editOpen, setEditOpen] = useState(false);
 
     const receipt: Receipt | null = receipts.data?.results[0] ?? null;
 
@@ -289,11 +297,51 @@ export default function ShipmentDetailPage() {
         );
         if (!ok) return;
         try {
-            await cancelMutation.mutateAsync(receipt.id);
+            await cancelReceiptMutation.mutateAsync(receipt.id);
             setMessage(`Партия ${receipt.receipt_number} отменена.`);
         } catch (err) {
             setError(
                 extractError(err) ?? "Не удалось отменить партию.",
+            );
+        }
+    }
+
+    async function handleCancelShipment() {
+        if (!shipment.data) return;
+        const reason = window.prompt(
+            `Отменить рейс ${shipment.data.shipment_number}?\n`
+            + "Необязательно: укажите причину.",
+            "",
+        );
+        // null — пользователь нажал «Отмена» в prompt.
+        if (reason === null) return;
+        try {
+            await cancelShipmentMutation.mutateAsync({
+                id: shipment.data.id,
+                reason: reason.trim() || undefined,
+            });
+            setMessage(`Рейс ${shipment.data.shipment_number} отменён.`);
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось отменить рейс.",
+            );
+        }
+    }
+
+    async function handleDeleteShipment() {
+        if (!shipment.data) return;
+        const ok = window.confirm(
+            `Удалить рейс ${shipment.data.shipment_number}? `
+            + "Связанные партии приёмки останутся, но потеряют связь "
+            + "с рейсом. Действие необратимо.",
+        );
+        if (!ok) return;
+        try {
+            await deleteShipmentMutation.mutateAsync(shipment.data.id);
+            navigate("/receiving");
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось удалить рейс.",
             );
         }
     }
@@ -320,11 +368,21 @@ export default function ShipmentDetailPage() {
 
     const data = shipment.data;
 
-    const canCancel =
+    const canCancelReceipt =
         receipt !== null
         && receipt.status !== "CONFIRMED"
         && receipt.status !== "CANCELLED"
-        && !cancelMutation.isPending;
+        && !cancelReceiptMutation.isPending;
+
+    const canCancelShipment =
+        data.status !== "RECEIVED"
+        && data.status !== "PARTIALLY_RECEIVED"
+        && data.status !== "CANCELLED"
+        && !cancelShipmentMutation.isPending;
+
+    const busyShipment =
+        deleteShipmentMutation.isPending
+        || cancelShipmentMutation.isPending;
 
     return (
         <Box>
@@ -342,6 +400,8 @@ export default function ShipmentDetailPage() {
                     alignItems: "center",
                     gap: 2,
                     mb: 2,
+                    flexWrap: "wrap",
+                    rowGap: 1,
                 }}
             >
                 <Typography variant="h2" component="h1">
@@ -351,6 +411,24 @@ export default function ShipmentDetailPage() {
                     label={SHIPMENT_STATUS_LABELS[data.status] ?? data.status}
                     color={SHIPMENT_STATUS_COLORS[data.status] ?? "default"}
                 />
+                <Box sx={{ flexGrow: 1 }} />
+                <Tooltip title="Редактировать рейс">
+                    <IconButton
+                        onClick={() => setEditOpen(true)}
+                        disabled={busyShipment}
+                    >
+                        <EditIcon />
+                    </IconButton>
+                </Tooltip>
+                <Tooltip title="Удалить рейс">
+                    <IconButton
+                        color="error"
+                        onClick={() => void handleDeleteShipment()}
+                        disabled={busyShipment}
+                    >
+                        <DeleteIcon />
+                    </IconButton>
+                </Tooltip>
             </Box>
 
             {message && (
@@ -387,6 +465,9 @@ export default function ShipmentDetailPage() {
                             <b>{data.laboratory_name ?? "—"}</b>
                         </Typography>
                         <Typography variant="body1">
+                            Участок: <b>{data.site_name ?? "—"}</b>
+                        </Typography>
+                        <Typography variant="body1">
                             Дата рейса: <b>{formatDate(data.shipment_date)}</b>
                         </Typography>
                         {data.driver_name && (
@@ -399,6 +480,19 @@ export default function ShipmentDetailPage() {
                                 Машина: <b>{data.vehicle_number}</b>
                             </Typography>
                         )}
+                        {data.destination && (
+                            <Typography variant="body1">
+                                Назначение: <b>{data.destination}</b>
+                            </Typography>
+                        )}
+                        {data.cancel_reason && (
+                            <Typography
+                                variant="body1"
+                                color="warning.main"
+                            >
+                                Причина отмены: {data.cancel_reason}
+                            </Typography>
+                        )}
                         {data.note && (
                             <Typography
                                 variant="body1"
@@ -407,6 +501,35 @@ export default function ShipmentDetailPage() {
                                 Примечание: {data.note}
                             </Typography>
                         )}
+                    </Stack>
+
+                    <Stack
+                        direction="row"
+                        spacing={2}
+                        sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}
+                    >
+                        <Tooltip
+                            title={
+                                canCancelShipment
+                                    ? "Статус станет «Отменён»"
+                                    : "Принятый, частично принятый или "
+                                    + "отменённый рейс отменить нельзя"
+                            }
+                        >
+                            <span>
+                                <Button
+                                    variant="outlined"
+                                    color="warning"
+                                    startIcon={<CancelIcon />}
+                                    onClick={() => void handleCancelShipment()}
+                                    disabled={!canCancelShipment}
+                                >
+                                    {cancelShipmentMutation.isPending
+                                        ? "Отменяем..."
+                                        : "Отменить рейс"}
+                                </Button>
+                            </span>
+                        </Tooltip>
                     </Stack>
                 </CardContent>
             </Card>
@@ -458,7 +581,7 @@ export default function ShipmentDetailPage() {
                                 </Button>
                                 <Tooltip
                                     title={
-                                        canCancel
+                                        canCancelReceipt
                                             ? "Статус станет «Отменена»"
                                             : "Подтверждённую или отменённую партию отменить нельзя"
                                     }
@@ -471,9 +594,9 @@ export default function ShipmentDetailPage() {
                                             onClick={() =>
                                                 void handleCancelReceipt()
                                             }
-                                            disabled={!canCancel}
+                                            disabled={!canCancelReceipt}
                                         >
-                                            {cancelMutation.isPending
+                                            {cancelReceiptMutation.isPending
                                                 ? "Отменяем..."
                                                 : "Отменить партию"}
                                         </Button>
@@ -496,6 +619,13 @@ export default function ShipmentDetailPage() {
                     У рейса пока нет связанной партии приёмки.
                 </Alert>
             )}
+
+            <ShipmentEditDialog
+                open={editOpen}
+                shipment={data}
+                onClose={() => setEditOpen(false)}
+                onSuccess={setMessage}
+            />
         </Box>
     );
 }
