@@ -1,5 +1,11 @@
 /**
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
+ * 
+ * Пачка 2f-7h: компактный вид.
+ * - Убрана колонка ID.
+ * - Статус и печать этикетки — иконки с тултипами.
+ * - Комментарий обрезается.
+ * - Колонка «Создана» скрыта по умолчанию (можно включить через настройки колонок).
  */
 import { useMemo, useState } from "react";
 import {
@@ -25,6 +31,12 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import PrintIcon from "@mui/icons-material/Print";
+import PrintDisabledIcon from "@mui/icons-material/PrintDisabled";
+import EditNoteIcon from "@mui/icons-material/EditNote";
+import Inventory2Icon from "@mui/icons-material/Inventory2";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import OutputIcon from "@mui/icons-material/Output";
 import {
     DataGrid,
     type GridColDef,
@@ -53,15 +65,12 @@ import ContainerPreviewDialog from "../components/ContainerPreviewDialog";
 
 const PAGE_SIZE = 50;
 
-const STATUS_COLORS: Record<
-    ContainerStatus,
-    "success" | "warning" | "info" | "default"
-> = {
-    PENDING_FILLING: "warning",
-    PENDING_PLACEMENT: "warning",
-    ACTIVE: "success",
-    IN_TRANSIT: "info",
-    ISSUED: "default",
+const STATUS_ICONS: Record<ContainerStatus, React.ReactElement> = {
+    PENDING_FILLING: <EditNoteIcon fontSize="small" color="warning" />,
+    PENDING_PLACEMENT: <Inventory2Icon fontSize="small" color="warning" />,
+    ACTIVE: <CheckCircleIcon fontSize="small" color="success" />,
+    IN_TRANSIT: <LocalShippingIcon fontSize="small" color="info" />,
+    ISSUED: <OutputIcon fontSize="small" color="disabled" />,
 };
 
 function formatDate(value: string): string {
@@ -143,7 +152,6 @@ export default function ContainersPage() {
     }
 
     const columns: GridColDef<Container>[] = [
-        { field: "id", headerName: "ID", width: 80 },
         {
             field: "container_number",
             headerName: "Номер",
@@ -173,51 +181,72 @@ export default function ContainersPage() {
             field: "draft_work_order_coded",
             headerName: "Н/З",
             flex: 1,
-            minWidth: 140,
+            minWidth: 130,
             valueGetter: (value) => value || "—",
         },
         {
             field: "draft_research_type_name",
             headerName: "ТИ",
-            width: 140,
+            width: 120,
             valueGetter: (value) => value || "—",
         },
         {
             field: "status",
             headerName: "Статус",
-            width: 180,
+            width: 70,
+            align: "center",
+            headerAlign: "center",
             renderCell: (params) => {
                 const status = params.value as ContainerStatus;
                 return (
-                    <Chip
-                        label={CONTAINER_STATUS_LABELS[status] ?? status}
-                        color={STATUS_COLORS[status] ?? "default"}
-                        size="small"
-                    />
+                    <Tooltip title={CONTAINER_STATUS_LABELS[status] ?? status}>
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                            {STATUS_ICONS[status] ?? status}
+                        </Box>
+                    </Tooltip>
                 );
             },
         },
         {
             field: "label_printed_at",
             headerName: "Этикетка",
-            width: 140,
+            width: 80,
+            align: "center",
+            headerAlign: "center",
             renderCell: (params) => {
                 if (params.value) {
                     return (
-                        <Tooltip title={`Напечатана: ${new Date(params.value).toLocaleString("ru-RU")}`}>
-                            <Chip label="Напечатана" color="success" size="small" variant="outlined" />
+                        <Tooltip title={`Напечатана: ${formatDate(params.value as string)}`}>
+                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                                <PrintIcon fontSize="small" color="success" />
+                            </Box>
                         </Tooltip>
                     );
                 }
-                return <Chip label="Нет" size="small" variant="outlined" />;
+                return (
+                    <Tooltip title="Не напечатана">
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                            <PrintDisabledIcon fontSize="small" color="disabled" />
+                        </Box>
+                    </Tooltip>
+                );
             },
         },
         {
             field: "comment_template_text",
             headerName: "Комментарий",
             flex: 1,
-            minWidth: 140,
-            valueGetter: (value) => value ?? "—",
+            minWidth: 120,
+            renderCell: (params) => {
+                if (!params.value) return "—";
+                return (
+                    <Tooltip title={params.value}>
+                        <Typography variant="body2" noWrap sx={{ width: "100%" }}>
+                            {params.value}
+                        </Typography>
+                    </Tooltip>
+                );
+            },
         },
         {
             field: "created_at",
@@ -228,7 +257,7 @@ export default function ContainersPage() {
         {
             field: "actions",
             headerName: "",
-            width: 130,
+            width: 120,
             sortable: false,
             filterable: false,
             disableColumnMenu: true,
@@ -465,6 +494,13 @@ export default function ContainersPage() {
                         disableColumnFilter
                         disableColumnSelector
                         disableDensitySelector
+                        initialState={{
+                            columns: {
+                                columnVisibilityModel: {
+                                    created_at: false, // Скрываем по умолчанию
+                                },
+                            },
+                        }}
                         onRowClick={(params) => handleRowClick(params.row)}
                         sx={{
                             "& .MuiDataGrid-row": {
