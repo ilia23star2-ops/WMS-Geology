@@ -124,7 +124,7 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
-    """Тара. Read-only: `comment_template_text`, `draft_*_name`."""
+    """Тара. Read-only: `comment_template_text`, `draft_*_name`, `label_printed_at`."""
 
     comment_template_text = serializers.CharField(
         source="comment_template.text", read_only=True, default=None,
@@ -156,9 +156,10 @@ class ContainerSerializer(serializers.ModelSerializer):
             "draft_research_type_name",
             "draft_work_order_coded",
             "draft_work_order_incoming",
+            "label_printed_at",  # <--- Добавлено (2f-7d)
             "created_at",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["created_at", "label_printed_at"]
 
     def validate(self, attrs):
         pallet = (
@@ -285,16 +286,6 @@ class BulkCreateSerializer(serializers.Serializer):
 class BulkSampleGroupSerializer(serializers.Serializer):
     """
     Диапазон проб одной скважины (или одной серии для шифрованной).
-
-    Полный номер пробы = `prefix` + `middle` + `sequence`.
-
-    Примеры:
-    - шифрованная:   TAA-A + 34076 + 001 = TAA-A34076001
-    - нешифрованная: TST   + 124   + 001 = TST124001
-
-    `well_name`:
-    - задан — создаём/используем `Well` (для нешифрованных);
-    - null — `Well` не создаём (шифрованные — скважина неизвестна).
     """
 
     prefix = serializers.CharField(max_length=50)
@@ -326,9 +317,6 @@ class BulkSampleGroupSerializer(serializers.Serializer):
 class FillSamplesSerializer(serializers.Serializer):
     """
     Запрос на заполнение существующей тары пробами.
-
-    `container_number` опционален: если у тары номер ещё не присвоен
-    (заготовка) — присваивается. Если присвоен — не перезаписывается.
     """
 
     container_number = serializers.CharField(

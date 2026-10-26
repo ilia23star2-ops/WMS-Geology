@@ -11,6 +11,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.storage.models import Container
+
 from .models import PrintBatch, PrintBatchItem
 from .serializers import AddContainersSerializer, PrintBatchSerializer
 from .services.label_service import (
@@ -27,8 +29,7 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
 
     Особенности:
     - `PUT` запрещён.
-    - `DELETE` разрешён только для DRAFT и CANCELLED (2f-7a).
-      Отмена — через action `cancel` (soft: статус CANCELLED).
+    - `DELETE` разрешён только для DRAFT и CANCELLED.
     - Номер партии генерируется автоматически.
     - Изменять (PATCH) и наполнять можно только черновик.
 
@@ -79,8 +80,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
         Hard-delete партии (2f-7a).
 
         Разрешено только для `DRAFT` и `CANCELLED`.
-        Для `READY` и `PRINTED` — 400 (сначала отмените через `cancel`).
-        `PrintBatchItem` удаляются каскадом, сами `Container` остаются целы.
         """
         batch = self.get_object()
         if batch.status in (
@@ -102,7 +101,11 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     # ------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="add-containers")
     def add_containers(self, request, pk=None):
-        """Добавляет список тар в корзину. Только для черновика."""
+        """
+        Добавляет список тар в корзину. Только для черновика.
+        Если у тары уже печаталась этикетка, и не передан force=true,
+        вернёт 400 со списком таких тар (2f-7d).
+        """
         batch = self.get_object()
         if batch.status != PrintBatch.STATUS_DRAFT:
             return Response(
@@ -113,6 +116,22 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
         ser = AddContainersSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         container_ids = ser.validated_data["container_ids"]
+        force = request.data.get("force", False) is True
+
+        # Проверка на уже напечатанные этикетки
+        if not force:
+            already_printed = Container.objects.filter(
+                pk__in=container_ids, label_printed_at__isnull=False
+            ).values_list("id", flat=True)
+            
+            if already_printed:
+                return Response(
+                    {
+                        "error": "Некоторые тары уже имеют напечатанные этикетки.",
+                        "printed_container_ids": list(already_printed),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         already = set(
             PrintBatchItem.objects
@@ -227,18 +246,11 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     def pdf(self, request, pk=None):
         """
         Отдаёт PDF партии. Гибридная логика:
-
-        - `DRAFT` → 400 (сначала `mark-ready`).
-        - `CANCELLED` → 400.
-        - Пустая корзина → 400.
         - `READY` → отдаёт PDF и **автоматически** переводит в
           `PRINTED`: `printed_at=now`, `printed_by=user`,
           `total_items`, `total_pages`.
         - `PRINTED` → отдаёт PDF повторно, но не меняет
           `printed_at`/`printed_by` (первая печать — решающая).
-
-        Ручная пометка для случаев, когда печатали не через
-        систему — action `mark-printed`.
         """
         batch = self.get_object()
 
@@ -276,6 +288,11 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
                 "total_pages",
                 "updated_at",
             ])
+            
+            # 2f-7d: Обновляем label_printed_at для всех тар
+            Container.objects.filter(
+                print_batch_items__batch=batch
+            ).update(label_printed_at=timezone.now())
 
         filename = f"batch-{batch.batch_number}.pdf"
         return FileResponse(
@@ -289,10 +306,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     def mark_printed(self, request, pk=None):
         """
         Ручная пометка `READY → PRINTED`.
-
-        Нужна, когда PDF ушёл не через `GET /pdf/` (например,
-        печатали из другого инструмента). Считает `total_pages`
-        тем же сервисом, что и авто-печать.
         """
         batch = self.get_object()
 
@@ -322,6 +335,11 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
             "total_pages",
             "updated_at",
         ])
+        
+        # 2f-7d: Обновляем label_printed_at для всех тар
+        Container.objects.filter(
+            print_batch_items__batch=batch
+        ).update(label_printed_at=timezone.now())
 
         batch = self.get_queryset().get(pk=batch.pk)
         return Response(
@@ -333,13 +351,7 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     # ------------------------------------------------------------
     @staticmethod
     def _refresh_totals(batch: PrintBatch) -> None:
-        """
-        Пересчитывает `total_items` и сохраняет партию.
-
-        Считает через явный queryset, а не через `batch.items.count()`:
-        у prefetch-кэша значение устаревает после создания/удаления
-        элементов партии.
-        """
+        """Пересчитывает `total_items` и сохраняет партию."""
         batch.total_items = (
             PrintBatchItem.objects.filter(batch=batch).count()
         )
@@ -347,11 +359,7 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _render_pdf(batch: PrintBatch):
-        """
-        Рендерит PDF партии по `print_type`.
-
-        :returns: (BytesIO с PDF, число страниц A4).
-        """
+        """Рендерит PDF партии по `print_type`."""
         if batch.print_type == PrintBatch.PRINT_TYPE_QR_ONLY:
             buf = render_batch_qr_pdf(batch)
         else:

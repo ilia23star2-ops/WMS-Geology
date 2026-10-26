@@ -1,17 +1,5 @@
 /**
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
- *
- * - Кнопка «Создать тару» → диалог создания заготовок.
- * - Клик по строке в статусе `PENDING_FILLING` (тара без проб) →
- *   форма заполнения пробами. Номер не важен: если он был задан
- *   при импорте, поле в форме будет предзаполнено.
- * - При выборе тар — кнопка «В партию печати (N)».
- * - Edit/Delete — кнопки в колонке действий (пачка 2f-1).
- * - Колонки «Н/З», «ТИ» — draft-контекст.
- *
- * Статусы (2f-5c-2): `PENDING_FILLING` («Ожидает заполнения») —
- * новая начальная точка после импорта/создания. После `fill-samples`
- * тара переходит в `PENDING_PLACEMENT`.
  */
 import { useMemo, useState } from "react";
 import {
@@ -207,6 +195,21 @@ export default function ContainersPage() {
                         size="small"
                     />
                 );
+            },
+        },
+        {
+            field: "label_printed_at",
+            headerName: "Этикетка",
+            width: 140,
+            renderCell: (params) => {
+                if (params.value) {
+                    return (
+                        <Tooltip title={`Напечатана: ${new Date(params.value).toLocaleString("ru-RU")}`}>
+                            <Chip label="Напечатана" color="success" size="small" variant="outlined" />
+                        </Tooltip>
+                    );
+                }
+                return <Chip label="Нет" size="small" variant="outlined" />;
             },
         },
         {
