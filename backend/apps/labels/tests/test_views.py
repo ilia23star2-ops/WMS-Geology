@@ -3,7 +3,7 @@
 
 Покрывают: CRUD, actions (add-containers, remove-container,
 mark-ready, cancel, pdf, mark-printed), автогенерацию номера,
-ограничения по статусам, отсутствие DELETE.
+ограничения по статусам, DELETE (2f-7a).
 """
 
 import pytest
@@ -360,13 +360,60 @@ def test_batch_number_is_read_only(auth_client, batch):
 
 
 # ============================================================
-# DELETE не разрешён
+# DELETE (2f-7a)
 # ============================================================
-def test_delete_method_not_allowed(auth_client, batch):
+def test_delete_draft_success(auth_client, batch, containers):
+    # Добавим тару, чтобы проверить каскад и сохранность тары
+    auth_client.post(
+        f"/api/v1/labels/print-batches/{batch.pk}/add-containers/",
+        {"container_ids": [containers[0].pk]}, format="json",
+    )
     response = auth_client.delete(
         f"/api/v1/labels/print-batches/{batch.pk}/"
     )
-    assert response.status_code == 405
+    assert response.status_code == 204
+    assert not PrintBatch.objects.filter(pk=batch.pk).exists()
+    assert not PrintBatchItem.objects.filter(batch_id=batch.pk).exists()
+    # Тара не должна удалиться (PROTECT на уровне модели)
+    assert Container.objects.filter(pk=containers[0].pk).exists()
+
+
+def test_delete_cancelled_success(auth_client, batch):
+    batch.status = PrintBatch.STATUS_CANCELLED
+    batch.save()
+    response = auth_client.delete(
+        f"/api/v1/labels/print-batches/{batch.pk}/"
+    )
+    assert response.status_code == 204
+    assert not PrintBatch.objects.filter(pk=batch.pk).exists()
+
+
+def test_delete_ready_fails(auth_client, batch):
+    batch.status = PrintBatch.STATUS_READY
+    batch.save()
+    response = auth_client.delete(
+        f"/api/v1/labels/print-batches/{batch.pk}/"
+    )
+    assert response.status_code == 400
+    assert "Сначала отмените" in response.data["error"]
+    assert PrintBatch.objects.filter(pk=batch.pk).exists()
+
+
+def test_delete_printed_fails(auth_client, batch):
+    batch.status = PrintBatch.STATUS_PRINTED
+    batch.save()
+    response = auth_client.delete(
+        f"/api/v1/labels/print-batches/{batch.pk}/"
+    )
+    assert response.status_code == 400
+    assert PrintBatch.objects.filter(pk=batch.pk).exists()
+
+
+def test_delete_not_found(auth_client, db):
+    response = auth_client.delete(
+        "/api/v1/labels/print-batches/99999/"
+    )
+    assert response.status_code == 404
 
 
 def test_put_method_not_allowed(auth_client, batch):
