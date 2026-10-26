@@ -95,7 +95,7 @@ export default function CreateContainersDialog({
 
         const coded = workOrderCoded.trim();
         if (!coded) {
-            setError("Укажите зашифрованный Н/З.");
+            setError("Укажите текущий Н/З.");
             return;
         }
 
@@ -184,7 +184,7 @@ export default function CreateContainersDialog({
 
                     <Grid size={{ xs: 12 }}>
                         <TextField
-                            label="Н/З (зашифрованный)"
+                            label="Н/З (текущий)"
                             size="small"
                             fullWidth
                             required

@@ -7,8 +7,6 @@
  * 3. Номер тары — обязательное поле (присваивается один раз).
  * 4. Строка ввода проб → parseSampleInput → список добавленных.
  * 5. Сохранение: POST /storage/containers/{id}/fill-samples/.
- *
- * Предпросмотр этикетки и печать — в отдельном заходе (7a-4c-2).
  */
 import { useMemo, useState } from "react";
 import {
@@ -195,7 +193,7 @@ export default function FillContainerDialog({
 
         if (!workOrderCoded) {
             setSubmitError(
-                "У заготовки не задан зашифрованный Н/З. Обратитесь к администратору.",
+                "У заготовки не задан текущий Н/З. Обратитесь к администратору.",
             );
             return;
         }
@@ -280,7 +278,7 @@ export default function FillContainerDialog({
                         </Box>
                         <Box>
                             <Typography variant="caption" color="text.secondary">
-                                Н/З (тек.)
+                                Н/З (текущий)
                             </Typography>
                             <Typography variant="body2">
                                 {container.draft_work_order_coded || "—"}
@@ -424,7 +422,7 @@ export default function FillContainerDialog({
                                         <TableCell>
                                             {r.parsed.wellName ?? (
                                                 <Chip
-                                                    label="шифр."
+                                                    label="текущий"
                                                     size="small"
                                                     variant="outlined"
                                                 />
