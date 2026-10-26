@@ -6,6 +6,7 @@
  * - Детали партии.
  * - add-containers / remove-container / mark-ready / cancel.
  * - PDF (авто-помечает PRINTED) / mark-printed (ручной).
+ * - delete (2f-7c).
  */
 import {
     keepPreviousData,
@@ -205,6 +206,19 @@ export function useMarkPrinted(batchId: number) {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ["print-batch", batchId] });
+            void qc.invalidateQueries({ queryKey: ["print-batches"] });
+        },
+    });
+}
+
+export function useDeletePrintBatch() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (batchId: number) => {
+            await apiClient.delete(`/labels/print-batches/${batchId}/`);
+        },
+        onSuccess: (_void, batchId) => {
+            qc.removeQueries({ queryKey: ["print-batch", batchId] });
             void qc.invalidateQueries({ queryKey: ["print-batches"] });
         },
     });

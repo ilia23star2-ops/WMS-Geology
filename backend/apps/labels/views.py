@@ -13,7 +13,6 @@ from rest_framework.response import Response
 
 from .models import PrintBatch, PrintBatchItem
 from .serializers import AddContainersSerializer, PrintBatchSerializer
-from .services.companion_service import render_batch_companion_pdf
 from .services.label_service import (
     count_pdf_pages,
     render_batch_labels_pdf,
@@ -39,7 +38,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     - POST /print-batches/{id}/mark-ready/
     - POST /print-batches/{id}/cancel/
     - GET  /print-batches/{id}/pdf/      (гибрид: авто-пометка)
-    - GET  /print-batches/{id}/companion.pdf/ (сопроводительный лист, 2f-7b)
     - POST /print-batches/{id}/mark-printed/  (ручная пометка)
     """
 
@@ -280,33 +278,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
             ])
 
         filename = f"batch-{batch.batch_number}.pdf"
-        return FileResponse(
-            buf,
-            as_attachment=False,
-            filename=filename,
-            content_type="application/pdf",
-        )
-
-    @action(detail=True, methods=["get"], url_path="companion.pdf")
-    def companion_pdf(self, request, pk=None):
-        """
-        Отдаёт сопроводительный лист к партии (2f-7b).
-
-        Можно скачать для `DRAFT`, `READY`, `PRINTED`.
-        Для `CANCELLED` — 400.
-        """
-        batch = self.get_object()
-
-        if batch.status == PrintBatch.STATUS_CANCELLED:
-            return Response(
-                {"error": "Нельзя скачать сопроводительный лист "
-                          "отменённой партии."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        buf = render_batch_companion_pdf(batch)
-        filename = f"companion-{batch.batch_number}.pdf"
-        
         return FileResponse(
             buf,
             as_attachment=False,

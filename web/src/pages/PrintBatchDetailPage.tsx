@@ -2,10 +2,10 @@
  * Детали партии печати.
  *
  * В зависимости от статуса — набор действий:
- * - DRAFT: добавить/убрать тары, «Перевести в готов», «Отменить».
+ * - DRAFT: добавить/убрать тары, «Перевести в готов», «Отменить», «Удалить».
  * - READY: скачать PDF, «Отметить как напечатанный», «Отменить».
  * - PRINTED: скачать PDF повторно.
- * - CANCELLED: только просмотр.
+ * - CANCELLED: «Удалить», только просмотр.
  */
 import { useState } from "react";
 import {
@@ -37,6 +37,7 @@ import {
     downloadBatchPdf,
     useAddContainers,
     useCancelBatch,
+    useDeletePrintBatch,
     useMarkPrinted,
     useMarkReady,
     usePrintBatch,
@@ -69,16 +70,12 @@ export default function PrintBatchDetailPage() {
     const markReadyMutation = useMarkReady(batchId ?? 0);
     const cancelMutation = useCancelBatch(batchId ?? 0);
     const markPrintedMutation = useMarkPrinted(batchId ?? 0);
+    const deleteMutation = useDeletePrintBatch();
 
     async function handleDownload() {
         if (batchId === undefined) return;
         try {
             await downloadBatchPdf(batchId);
-            // PDF-скачивание переводит READY → PRINTED, обновляем кэш.
-            if (data?.status === "READY") {
-                // Простое решение — обновить страницу через invalidation.
-                // markPrintedMutation используется только для ручной пометки.
-            }
         } catch {
             setError("Не удалось скачать PDF.");
         }
@@ -93,10 +90,28 @@ export default function PrintBatchDetailPage() {
     }
 
     async function handleCancel() {
+        const ok = window.confirm(
+            "Отменить эту партию? Это действие нельзя отменить (партия перейдёт в статус «Отменён»)."
+        );
+        if (!ok) return;
         try {
             await cancelMutation.mutateAsync();
         } catch {
             setError("Не удалось отменить партию.");
+        }
+    }
+
+    async function handleDelete() {
+        if (batchId === undefined) return;
+        const ok = window.confirm(
+            "Удалить эту партию? Действие необратимо (тары внутри останутся в системе)."
+        );
+        if (!ok) return;
+        try {
+            await deleteMutation.mutateAsync(batchId);
+            navigate("/print");
+        } catch {
+            setError("Не удалось удалить партию.");
         }
     }
 
@@ -135,6 +150,8 @@ export default function PrintBatchDetailPage() {
     const isReady = data.status === "READY";
     const isPrinted = data.status === "PRINTED";
     const isCancelled = data.status === "CANCELLED";
+
+    const isDeleting = deleteMutation.isPending;
 
     const itemColumns: GridColDef<PrintBatchItem>[] = [
         {
@@ -219,7 +236,7 @@ export default function PrintBatchDetailPage() {
             </Card>
 
             {isDraft && (
-                <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: "wrap", rowGap: 1 }}>
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
@@ -240,16 +257,25 @@ export default function PrintBatchDetailPage() {
                         variant="outlined"
                         color="error"
                         startIcon={<CancelIcon />}
-                        disabled={cancelMutation.isPending}
+                        disabled={cancelMutation.isPending || isDeleting}
                         onClick={() => void handleCancel()}
                     >
                         Отменить
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        disabled={isDeleting}
+                        onClick={() => void handleDelete()}
+                    >
+                        Удалить
                     </Button>
                 </Stack>
             )}
 
             {isReady && (
-                <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: "wrap", rowGap: 1 }}>
                     <Button
                         variant="contained"
                         startIcon={<DownloadIcon />}
@@ -278,7 +304,7 @@ export default function PrintBatchDetailPage() {
             )}
 
             {isPrinted && (
-                <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+                <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: "wrap", rowGap: 1 }}>
                     <Button
                         variant="outlined"
                         startIcon={<DownloadIcon />}
@@ -290,9 +316,22 @@ export default function PrintBatchDetailPage() {
             )}
 
             {isCancelled && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                    Партия отменена.
-                </Alert>
+                <Stack spacing={2} sx={{ mb: 2 }}>
+                    <Alert severity="warning">
+                        Партия отменена.
+                    </Alert>
+                    <Box>
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            disabled={isDeleting}
+                            onClick={() => void handleDelete()}
+                        >
+                            Удалить партию
+                        </Button>
+                    </Box>
+                </Stack>
             )}
 
             <Card>
