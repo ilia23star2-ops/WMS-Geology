@@ -26,7 +26,8 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     CRUD для партий печати (корзины этикеток).
 
     Особенности:
-    - `PUT` и `DELETE` запрещены: только `GET/POST/PATCH`.
+    - `PUT` запрещён.
+    - `DELETE` разрешён только для DRAFT и CANCELLED (2f-7a).
       Отмена — через action `cancel` (soft: статус CANCELLED).
     - Номер партии генерируется автоматически.
     - Изменять (PATCH) и наполнять можно только черновик.
@@ -42,7 +43,7 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
 
     serializer_class = PrintBatchSerializer
     permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = (
@@ -72,6 +73,29 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Hard-delete партии (2f-7a).
+
+        Разрешено только для `DRAFT` и `CANCELLED`.
+        Для `READY` и `PRINTED` — 400 (сначала отмените через `cancel`).
+        `PrintBatchItem` удаляются каскадом, сами `Container` остаются целы.
+        """
+        batch = self.get_object()
+        if batch.status in (
+            PrintBatch.STATUS_READY,
+            PrintBatch.STATUS_PRINTED,
+        ):
+            return Response(
+                {
+                    "error": "Удалить можно только черновик или отменённую "
+                             "партию. Сначала отмените её (POST /cancel/)."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        batch.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ------------------------------------------------------------
     # Actions: наполнение корзины
