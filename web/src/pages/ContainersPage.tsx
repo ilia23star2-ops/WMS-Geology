@@ -1,6 +1,3 @@
-/**
- * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
- */
 import { useMemo, useState } from "react";
 import {
     Box,
@@ -31,6 +28,7 @@ import Inventory2Icon from "@mui/icons-material/Inventory2";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import OutputIcon from "@mui/icons-material/Output";
+import PlaceIcon from "@mui/icons-material/Place";
 import {
     DataGrid,
     type GridColDef,
@@ -56,6 +54,7 @@ import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import FillContainerDialog from "../components/FillContainerDialog";
 import ContainerPreviewDialog from "../components/ContainerPreviewDialog";
+import PlaceContainerDialog from "../components/PlaceContainerDialog";
 
 const PAGE_SIZE = 50;
 
@@ -89,12 +88,14 @@ export default function ContainersPage() {
         page: 0,
         pageSize: PAGE_SIZE,
     });
-    const [selection, setSelection] =
-        useState<GridRowSelectionModel>(emptySelection());
+    const [selection, setSelection] = useState<GridRowSelectionModel>(emptySelection());
+
     const [pdfError, setPdfError] = useState<string | null>(null);
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogOpen, setDialogOpen] = useState(false); // Print
+    const [placeDialogOpen, setPlaceDialogOpen] = useState(false); // Place
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [createMessage, setCreateMessage] = useState<string | null>(null);
+
     const [fillContainer, setFillContainer] = useState<Container | null>(null);
     const [fillMessage, setFillMessage] = useState<string | null>(null);
     const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
@@ -121,6 +122,12 @@ export default function ContainersPage() {
         () => Array.from(selection.ids).map((id) => Number(id)),
         [selection],
     );
+
+    // Для размещения выбираем только тары со статусом PENDING_FILLING или PENDING_PLACEMENT
+    const selectedForPlacement = useMemo(() => {
+        const all = data?.results ?? [];
+        return all.filter(c => selectedIds.includes(c.id) && (c.status === "PENDING_FILLING" || c.status === "PENDING_PLACEMENT"));
+    }, [data, selectedIds]);
 
     async function handleDelete(row: Container) {
         const label = row.container_number
@@ -251,59 +258,77 @@ export default function ContainersPage() {
         {
             field: "actions",
             headerName: "",
-            width: 120,
+            width: 150,
             sortable: false,
             filterable: false,
             disableColumnMenu: true,
-            renderCell: (params) => (
-                <Stack direction="row" spacing={0.5}>
-                    <Tooltip title="Редактировать">
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setEditContainer(params.row);
-                            }}
-                        >
-                            <EditIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="PDF этикетки">
-                        <IconButton
-                            size="small"
-                            onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                    await downloadLabelPdf(params.row.id);
-                                } catch {
-                                    setPdfError(
-                                        `Не удалось сформировать PDF для тары ${params.row.container_number ?? `#${params.row.id}`}.`,
-                                    );
-                                }
-                            }}
-                        >
-                            <PictureAsPdfIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Удалить">
-                        <IconButton
-                            size="small"
-                            color="error"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                void handleDelete(params.row);
-                            }}
-                        >
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </Stack>
-            ),
+            renderCell: (params) => {
+                const isPlaced = params.row.status === "ACTIVE";
+                return (
+                    <Stack direction="row" spacing={0.5}>
+                        <Tooltip title="Разместить">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    color="primary"
+                                    disabled={isPlaced}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelection({ type: "include", ids: new Set([params.row.id]) });
+                                        setPlaceDialogOpen(true);
+                                    }}
+                                >
+                                    <PlaceIcon fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title="Редактировать">
+                            <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditContainer(params.row);
+                                }}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="PDF этикетки">
+                            <IconButton
+                                size="small"
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                        await downloadLabelPdf(params.row.id);
+                                    } catch {
+                                        setPdfError(
+                                            `Не удалось сформировать PDF для тары ${params.row.container_number ?? `#${params.row.id}`}.`,
+                                        );
+                                    }
+                                }}
+                            >
+                                <PictureAsPdfIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Удалить">
+                            <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleDelete(params.row);
+                                }}
+                            >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
+                );
+            },
         },
     ];
 
     function handleRowClick(row: Container) {
-        // 2f-9c: Клик по любой таре открывает диалог управления пробами
         setFillContainer(row);
     }
 
@@ -330,13 +355,25 @@ export default function ContainersPage() {
                             <Typography variant="body1" color="text.secondary">
                                 Выбрано: {selectedIds.length}
                             </Typography>
-                            <IconButton
-                                color="primary"
-                                onClick={() => setDialogOpen(true)}
-                                title="В партию печати"
-                            >
-                                <PrintIcon />
-                            </IconButton>
+                            <Tooltip title="В партию печати">
+                                <IconButton
+                                    color="primary"
+                                    onClick={() => setDialogOpen(true)}
+                                >
+                                    <PrintIcon />
+                                </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Разместить выбранные">
+                                <span>
+                                    <IconButton
+                                        color="secondary"
+                                        disabled={selectedForPlacement.length === 0}
+                                        onClick={() => setPlaceDialogOpen(true)}
+                                    >
+                                        <PlaceIcon />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
                         </>
                     )}
                     <Button
@@ -555,6 +592,16 @@ export default function ContainersPage() {
                 onSuccess={(batchId) => {
                     setSelection(emptySelection());
                     navigate(`/print/${batchId}`);
+                }}
+            />
+
+            <PlaceContainerDialog
+                open={placeDialogOpen}
+                containerIds={selectedForPlacement.map(c => c.id)}
+                onClose={() => setPlaceDialogOpen(false)}
+                onSuccess={(msg) => {
+                    setSelection(emptySelection());
+                    setEditMessage(msg);
                 }}
             />
 
