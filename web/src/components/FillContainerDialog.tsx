@@ -1,5 +1,5 @@
 /**
- * Диалог заполнения тары-заготовки пробами.
+ * Диалог управления пробами в таре (2f-9c).
  */
 import { useMemo, useState } from "react";
 import {
@@ -28,14 +28,19 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
     useContainerTypes,
     useFillSamples,
     useLaboratories,
+    useSamples,
     useSites,
+    deleteSample,
+    SAMPLE_STATUS_LABELS,
     type Container,
     type FillSamplesGroup,
+    type SampleStatus,
 } from "../api";
 import {
     buildSampleNumbers,
@@ -43,6 +48,7 @@ import {
 } from "../utils/parseSampleInput";
 import RangeEditDialog from "./RangeEditDialog";
 import LocalPreviewDialog from "./LocalPreviewDialog";
+import SampleEditDialog from "./SampleEditDialog";
 
 interface FillContainerDialogProps {
     open: boolean;
@@ -64,6 +70,18 @@ interface AddedRange {
     skippedSeqs: number[];
     selectedSeqs: number[];
 }
+
+const STATUS_COLORS: Record<
+    SampleStatus,
+    "success" | "warning" | "info" | "default" | "error"
+> = {
+    IN_STORAGE: "success",
+    IN_TRANSIT: "info",
+    CONSUMED: "warning",
+    DISPOSED: "error",
+    PENDING_PLACEMENT: "warning",
+    SELECTED: "default",
+};
 
 function groupSeqsToRanges(range: AddedRange, seqs: number[], status: string): FillSamplesGroup[] {
     if (seqs.length === 0) return [];
@@ -136,18 +154,30 @@ export default function FillContainerDialog({
     onClose,
     onSuccess,
 }: FillContainerDialogProps) {
+    const queryClient = useQueryClient();
     const [containerNumber, setContainerNumber] = useState("");
     const [input, setInput] = useState("");
     const [ranges, setRanges] = useState<AddedRange[]>([]);
+    const [deletedIds, setDeletedIds] = useState<number[]>([]);
     const [inputError, setInputError] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [editingRange, setEditingRange] = useState<AddedRange | null>(null);
     const [previewOpen, setPreviewOpen] = useState(false);
+    const [editingSampleId, setEditingSampleId] = useState<number | null>(null);
 
     const containerTypes = useContainerTypes();
     const laboratories = useLaboratories();
     const sites = useSites();
     const fillMutation = useFillSamples(container?.id ?? 0);
+
+    const samplesQuery = useSamples({
+        page: 1,
+        filters: { container_id: container?.id, show_disposed: true },
+    });
+
+    const existingSamples = useMemo(() => {
+        return (samplesQuery.data?.results ?? []).filter(s => !deletedIds.includes(s.id));
+    }, [samplesQuery.data, deletedIds]);
 
     const containerTypeName = useMemo(() => {
         if (!container) return "—";
@@ -159,6 +189,9 @@ export default function FillContainerDialog({
 
     const existingNumbers = useMemo(() => {
         const set = new Set<string>();
+        for (const s of samplesQuery.data?.results ?? []) {
+            if (!deletedIds.includes(s.id)) set.add(s.sample_number);
+        }
         for (const r of ranges) {
             const valid = r.allSeqs.filter(s => !r.skippedSeqs.includes(s));
             for (const seq of valid) {
@@ -166,7 +199,7 @@ export default function FillContainerDialog({
             }
         }
         return set;
-    }, [ranges]);
+    }, [ranges, samplesQuery.data, deletedIds]);
 
     const labPrefixes = useMemo(() => (laboratories.data ?? []).flatMap((l) => l.prefixes ?? []), [laboratories.data]);
     const sitePatterns = useMemo(() => (sites.data ?? []).flatMap((s) => s.match_patterns ?? []), [sites.data]);
@@ -177,16 +210,24 @@ export default function FillContainerDialog({
         setContainerNumber("");
         setInput("");
         setRanges([]);
+        setDeletedIds([]);
         setInputError(null);
         setSubmitError(null);
         setEditingRange(null);
         setPreviewOpen(false);
+        setEditingSampleId(null);
     }
 
     function handleClose() {
         if (fillMutation.isPending) return;
         reset();
         onClose();
+    }
+
+    function handleDeleteExisting(id: number) {
+        if (window.confirm("Удалить эту пробу?")) {
+            setDeletedIds(prev => [...prev, id]);
+        }
     }
 
     function handleAddRange() {
@@ -281,8 +322,8 @@ export default function FillContainerDialog({
         setSubmitError(null);
 
         const trimmedNumber = containerNumber.trim();
-        if (!container.container_number && !trimmedNumber) {
-            setSubmitError("Укажите номер тары.");
+        if (!container.container_number && !trimmedNumber && existingSamples.length === 0) {
+            setSubmitError("Укажите номер тары или добавьте пробы.");
             return;
         }
 
@@ -302,55 +343,58 @@ export default function FillContainerDialog({
             totalToCreate += normal.length + selArr.length;
         }
 
-        if (totalToCreate === 0) {
-            setSubmitError("Нет выбранных проб (все пропущены).");
-            return;
-        }
-
-        const workOrderCoded = container.draft_work_order_coded?.trim();
-        const researchTypeId = container.draft_research_type;
-        const siteId = container.draft_site;
-
-        if (!workOrderCoded) {
-            setSubmitError("У заготовки не задан текущий Н/З.");
-            return;
-        }
-        if (!researchTypeId) {
-            setSubmitError("У заготовки не задан тип исследования.");
-            return;
-        }
-
         try {
-            const result = await fillMutation.mutateAsync({
-                container_number: container.container_number ? null : trimmedNumber,
-                work_order_coded: workOrderCoded,
-                work_order_incoming: container.draft_work_order_incoming,
-                research_type_id: researchTypeId,
-                site_id: siteId,
-                sample_groups: sampleGroups,
-            });
-            onSuccess(container.id, result.total_samples);
+            if (deletedIds.length > 0) {
+                for (const id of deletedIds) {
+                    await deleteSample(id);
+                }
+            }
+
+            if (totalToCreate > 0) {
+                const workOrderCoded = container.draft_work_order_coded?.trim();
+                const researchTypeId = container.draft_research_type;
+                const siteId = container.draft_site;
+
+                if (!workOrderCoded || !researchTypeId) {
+                    setSubmitError("У тары отсутствуют данные для создания новых проб (Н/З или ТИ).");
+                    return;
+                }
+
+                await fillMutation.mutateAsync({
+                    container_number: container.container_number ? null : trimmedNumber,
+                    work_order_coded: workOrderCoded,
+                    work_order_incoming: container.draft_work_order_incoming,
+                    research_type_id: researchTypeId,
+                    site_id: siteId,
+                    sample_groups: sampleGroups,
+                });
+            }
+
+            queryClient.invalidateQueries({ queryKey: ["containers"] });
+            queryClient.invalidateQueries({ queryKey: ["container", container.id] });
+            queryClient.invalidateQueries({ queryKey: ["samples"] });
+
+            onSuccess(container.id, existingSamples.length + totalToCreate - deletedIds.length);
             reset();
             onClose();
         } catch (err) {
-            const anyErr = err as any;
+            const anyErr = err as { response?: { data?: { error?: string; detail?: string } } };
             const data = anyErr?.response?.data;
-            let msg = "Не удалось заполнить тару. Проверьте данные.";
+            let msg = "Не удалось сохранить данные.";
 
             if (typeof data === "string") msg = data;
             else if (data?.error) msg = data.error;
             else if (data?.detail) msg = data.detail;
             else if (data) msg = JSON.stringify(data);
 
-            // ВРЕМЕННО: Показываем alert, чтобы увидеть точную ошибку
             alert("ОШИБКА СЕРВЕРА: " + msg);
             setSubmitError(msg);
         }
     }
 
     const totalSamples = useMemo(
-        () => ranges.reduce((acc, r) => acc + r.allSeqs.length - r.skippedSeqs.length, 0),
-        [ranges],
+        () => existingSamples.length + ranges.reduce((acc, r) => acc + r.allSeqs.length - r.skippedSeqs.length, 0),
+        [ranges, existingSamples],
     );
 
     if (!container) return null;
@@ -358,7 +402,9 @@ export default function FillContainerDialog({
     return (
         <>
             <Dialog open={open && editingRange === null} onClose={handleClose} maxWidth="md" fullWidth>
-                <DialogTitle>Заполнить тару пробами</DialogTitle>
+                <DialogTitle>
+                    Управление пробами в таре {container.container_number ? `№${container.container_number}` : ""}
+                </DialogTitle>
                 <DialogContent>
                     {submitError && <Alert severity="error" sx={{ mb: 2, mt: 1 }}>{submitError}</Alert>}
 
@@ -387,7 +433,50 @@ export default function FillContainerDialog({
 
                     <Divider sx={{ my: 2 }} />
 
-                    <Typography variant="subtitle1" sx={{ mb: 1 }}>Пробы</Typography>
+                    {samplesQuery.isLoading && <Typography>Загрузка проб...</Typography>}
+
+                    {existingSamples.length > 0 && (
+                        <Box sx={{ mb: 3 }}>
+                            <Typography variant="subtitle1" sx={{ mb: 1 }}>Пробы в таре ({existingSamples.length})</Typography>
+                            <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Номер пробы</TableCell>
+                                            <TableCell>Статус</TableCell>
+                                            <TableCell width={100} />
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {existingSamples.map((s) => (
+                                            <TableRow key={s.id}>
+                                                <TableCell sx={{ fontFamily: "monospace" }}>{s.sample_number}</TableCell>
+                                                <TableCell>
+                                                    <Chip size="small" label={SAMPLE_STATUS_LABELS[s.status] ?? s.status} color={STATUS_COLORS[s.status] ?? "default"} />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Stack direction="row" spacing={0.5}>
+                                                        <Tooltip title="Редактировать">
+                                                            <IconButton size="small" onClick={() => setEditingSampleId(s.id)}>
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        <Tooltip title="Удалить">
+                                                            <IconButton size="small" color="error" onClick={() => handleDeleteExisting(s.id)}>
+                                                                <DeleteIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Stack>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
+                    )}
+
+                    <Typography variant="subtitle1" sx={{ mb: 1 }}>Добавить новые пробы</Typography>
 
                     <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", mb: 1 }}>
                         <TextField
@@ -406,7 +495,7 @@ export default function FillContainerDialog({
                     </Stack>
 
                     {ranges.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Пока ничего не добавлено.</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Новые диапазоны не добавлены.</Typography>
                     ) : (
                         <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, mb: 2 }}>
                             <Table size="small">
@@ -463,7 +552,7 @@ export default function FillContainerDialog({
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleClose} disabled={fillMutation.isPending}>Отмена</Button>
-                    <Button onClick={() => void handleSubmit()} variant="contained" disabled={fillMutation.isPending || totalSamples === 0}>
+                    <Button onClick={() => void handleSubmit()} variant="contained" disabled={fillMutation.isPending || (totalSamples === 0 && deletedIds.length === 0)}>
                         {fillMutation.isPending ? "Сохраняем..." : "Сохранить"}
                     </Button>
                 </DialogActions>
@@ -487,6 +576,14 @@ export default function FillContainerDialog({
                     ranges={ranges}
                     containerNumberOverride={containerNumber}
                     onClose={() => setPreviewOpen(false)}
+                />
+            )}
+
+            {editingSampleId !== null && (
+                <SampleEditDialog
+                    open={true}
+                    sampleId={editingSampleId}
+                    onClose={() => setEditingSampleId(null)}
                 />
             )}
         </>

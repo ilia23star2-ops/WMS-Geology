@@ -1,20 +1,5 @@
 """
-Модели приложения "Пробы" (v4).
-
-- Well — справочник скважин.
-- Sample — физическая единица хранения (навеска).
-- SampleWorkOrder — M:N-связь пробы с наряд-заказами.
-
-Изменения v3:
-- `Sample.research_type` — FK на `ResearchType` (было CharField).
-- `Sample.site` — FK на `Site` (было CharField).
-
-Изменения 2.x-web-v2 (bundle-7a-1):
-- Добавлен `Sample.STATUS_PENDING_PLACEMENT` — синхронизируется
-  со статусом тары `Container.STATUS_PENDING_PLACEMENT`.
-
-Изменения 2f-9b:
-- Добавлен `Sample.STATUS_SELECTED` — проба выбрана на доп. исследование.
+Модели приложения "Пробы" (v5).
 """
 
 from django.conf import settings
@@ -47,28 +32,22 @@ class Well(models.Model):
 class Sample(models.Model):
     """
     Проба — физическая единица хранения (навеска).
-
-    Одна строка = одна проба с конкретным типом исследования
-    в конкретной таре. Номер пробы не уникален.
     """
 
     STATUS_IN_STORAGE = "IN_STORAGE"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
-    STATUS_ISSUED = "ISSUED"
     STATUS_CONSUMED = "CONSUMED"
     STATUS_DISPOSED = "DISPOSED"
-    STATUS_PENDING_DECRYPTION = "PENDING_DECRYPTION"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
-    STATUS_SELECTED = "SELECTED"  # <--- 2f-9b
+    STATUS_SELECTED = "SELECTED"
+    
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
-        (STATUS_ISSUED, "Выдана"),
         (STATUS_CONSUMED, "Израсходована"),
         (STATUS_DISPOSED, "Утилизирована"),
-        (STATUS_PENDING_DECRYPTION, "Ожидает расшифровки"),
         (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
-        (STATUS_SELECTED, "Выбрана"),  # <--- 2f-9b
+        (STATUS_SELECTED, "Выбрана"),
     ]
 
     sample_number = models.CharField(
@@ -150,7 +129,6 @@ class Sample(models.Model):
 
 class SampleWorkOrder(models.Model):
     """M:N-связь пробы с наряд-заказами."""
-
     sample = models.ForeignKey(
         Sample,
         on_delete=models.CASCADE,

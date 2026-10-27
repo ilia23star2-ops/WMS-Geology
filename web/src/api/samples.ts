@@ -1,18 +1,7 @@
 /**
  * Хуки списка проб.
- *
- * Server-side пагинация: backend отдаёт 50 на страницу.
- *
- * ВАЖНО: метки `SAMPLE_STATUS_LABELS` — только UI. Технические
- * значения в БД — из модели Sample. Модель статусов будет
- * пересмотрена в серии `2.x-lifecycle` (см. PLAN.md).
- *
- * Группировка (`2f-2a`): `useSamplesGrouped` — группы по
- * (Н/З × ТИ), пагинация по 20 групп.
- *
- * CRUD + действия (`2f-2b`): `useUpdateSample`, `useDeleteSample`,
- * `useDisposeSample`, `useRestoreSample`.
  */
+
 import {
     keepPreviousData,
     useMutation,
@@ -26,20 +15,18 @@ import type { PaginatedResponse } from "./types";
 export type SampleStatus =
     | "IN_STORAGE"
     | "IN_TRANSIT"
-    | "ISSUED"
     | "CONSUMED"
     | "DISPOSED"
-    | "PENDING_DECRYPTION"
-    | "PENDING_PLACEMENT";
+    | "PENDING_PLACEMENT"
+    | "SELECTED";
 
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
-    IN_STORAGE: "В хранении",
+    IN_STORAGE: "На хранении",
     IN_TRANSIT: "В пути",
-    ISSUED: "Выдана",
     CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
-    PENDING_DECRYPTION: "Ожидает расшифровки",
-    PENDING_PLACEMENT: "Выбрана", // 2f-9a: изменено с «Ожидает размещения»
+    PENDING_PLACEMENT: "Ожидает размещения",
+    SELECTED: "Выбрана",
 };
 
 export interface Sample {
@@ -114,7 +101,7 @@ export function useSamples(params: SamplesListParams) {
 }
 
 // ============================================================
-// Группировка проб (пачка 2f-2a)
+// Группировка проб
 // ============================================================
 
 export interface GroupedWorkOrder {
@@ -156,7 +143,7 @@ export interface SampleGroup {
 }
 
 export interface SamplesGroupedResponse {
-    count: number;   // всего групп
+    count: number;
     next: string | null;
     previous: string | null;
     page_size: number;
@@ -164,7 +151,7 @@ export interface SamplesGroupedResponse {
 }
 
 export interface SamplesGroupedParams {
-    page: number; // 1-based, по группам
+    page: number;
     filters: SampleFilters;
 }
 
@@ -198,7 +185,7 @@ export function useSamplesGrouped(params: SamplesGroupedParams) {
 }
 
 // ============================================================
-// CRUD + действия (пачка 2f-2b)
+// CRUD + действия
 // ============================================================
 
 export async function fetchSample(id: number): Promise<Sample> {

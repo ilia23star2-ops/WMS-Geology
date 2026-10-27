@@ -1,11 +1,5 @@
 /**
  * Реестр тары: DataGrid + фильтры + пагинация + bulk-действия.
- * 
- * Пачка 2f-7h: компактный вид.
- * - Убрана колонка ID.
- * - Статус и печать этикетки — иконки с тултипами.
- * - Комментарий обрезается.
- * - Колонка «Создана» скрыта по умолчанию (можно включить через настройки колонок).
  */
 import { useMemo, useState } from "react";
 import {
@@ -309,12 +303,8 @@ export default function ContainersPage() {
     ];
 
     function handleRowClick(row: Container) {
-        // Тары без проб (в статусе «Ожидает заполнения») — открываем
-        // форму заполнения пробами. Номер не важен: если был задан
-        // при импорте, поле предзаполнится.
-        if (row.status === "PENDING_FILLING") {
-            setFillContainer(row);
-        }
+        // 2f-9c: Клик по любой таре открывает диалог управления пробами
+        setFillContainer(row);
     }
 
     return (
@@ -497,7 +487,7 @@ export default function ContainersPage() {
                         initialState={{
                             columns: {
                                 columnVisibilityModel: {
-                                    created_at: false, // Скрываем по умолчанию
+                                    created_at: false,
                                 },
                             },
                         }}
@@ -533,7 +523,7 @@ export default function ContainersPage() {
                 onClose={() => setFillContainer(null)}
                 onSuccess={(containerId, totalSamples) => {
                     setFillMessage(
-                        `В тару добавлено проб: ${totalSamples}.`,
+                        `В таре сохранено проб: ${totalSamples}.`,
                     );
                     setFillContainer(null);
                     setPreviewContainerId(containerId);
