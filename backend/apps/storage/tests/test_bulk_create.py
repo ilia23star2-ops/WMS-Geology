@@ -10,9 +10,9 @@
 Покрывают:
 - успешное создание тары с номером и без;
 - сохранение draft-полей на таре;
-- ошибки: существующая тара, дубликаты в запросе,
-  несуществующий container_type / draft_site / draft_research_type,
-  пустой список.
+- глобальный дубликат container_number разрешён (1.61);
+- ошибки: дубликаты в одном запросе, несуществующий
+  container_type / draft_site / draft_research_type, пустой список.
 """
 
 import pytest
@@ -176,10 +176,11 @@ def test_bulk_create_mixed_numbers(auth_client, container_type):
 
 
 # ============================================================
-# Ошибки
+# Дубликат container_number — разрешён (1.61)
 # ============================================================
 @pytest.mark.django_db
-def test_bulk_create_existing_container(auth_client, container_type):
+def test_bulk_create_duplicate_number_allowed(auth_client, container_type):
+    """Глобальный UNIQUE снят (1.61): второй раз тот же номер — валиден."""
     Container.objects.create(
         container_number="T-BULK-001", container_type=container_type,
     )
@@ -188,9 +189,13 @@ def test_bulk_create_existing_container(auth_client, container_type):
         _payload(container_type),
         format="json",
     )
-    assert response.status_code == 400
+    assert response.status_code == 201
+    assert Container.objects.filter(container_number="T-BULK-001").count() == 2
 
 
+# ============================================================
+# Ошибки
+# ============================================================
 @pytest.mark.django_db
 def test_bulk_create_duplicate_numbers_in_request(auth_client, container_type):
     payload = {
