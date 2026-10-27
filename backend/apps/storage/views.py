@@ -3,14 +3,14 @@ ViewSets приложения storage.
 """
 
 from django.db import transaction
-from django.db.models import ProtectedError
-from django.db.models import Q
+from django.db.models import Prefetch, ProtectedError, Q
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.labels.models import PrintBatchItem
 from apps.labels.services import render_container_label
 from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
@@ -411,6 +411,19 @@ class ContainerViewSet(viewsets.ModelViewSet):
         qs = Container.objects.select_related(
             "pallet", "floor_room", "container_type", "comment_template",
             "draft_site", "draft_research_type",
+        ).prefetch_related(
+            # 2f-17b: статус последней не-CANCELLED партии — без N+1.
+            # `related_name="print_batch_items"` (см. apps/labels/models.py).
+            Prefetch(
+                "print_batch_items",
+                queryset=(
+                    PrintBatchItem.objects
+                    .select_related("batch")
+                    .exclude(batch__status="CANCELLED")
+                    .order_by("-batch__created_at")
+                ),
+                to_attr="active_print_items",
+            )
         ).all()
         p = self.request.query_params
 

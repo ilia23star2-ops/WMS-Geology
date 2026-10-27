@@ -26,6 +26,8 @@ export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
     ISSUED: "Выдана",
 };
 
+export type PrintBatchStatus = "DRAFT" | "READY" | "PRINTED" | "CANCELLED";
+
 export interface Container {
     id: number;
     container_number: string | null;
@@ -46,6 +48,9 @@ export interface Container {
     draft_work_order_coded: string;
     draft_work_order_incoming: string;
     label_printed_at: string | null;
+    // 2f-17b: статус последней не-CANCELLED партии печати.
+    // null — не в активной партии.
+    print_batch_status: PrintBatchStatus | null;
     created_at: string;
 }
 

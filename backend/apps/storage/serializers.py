@@ -4,6 +4,8 @@
 
 from rest_framework import serializers
 
+from apps.labels.models import PrintBatchItem
+
 from .catalogs import ContainerComment
 from .models import (
     Cell,
@@ -134,6 +136,9 @@ class ContainerSerializer(serializers.ModelSerializer):
     cell_id = serializers.IntegerField(
         source="pallet.cell_id", read_only=True, default=None,
     )
+    # 2f-17b: статус последней не-CANCELLED партии печати.
+    # None — тара не в активной партии.
+    print_batch_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Container
@@ -157,9 +162,38 @@ class ContainerSerializer(serializers.ModelSerializer):
             "draft_work_order_coded",
             "draft_work_order_incoming",
             "label_printed_at",
+            "print_batch_status",
             "created_at",
         ]
-        read_only_fields = ["created_at", "label_printed_at", "cell_id"]
+        read_only_fields = [
+            "created_at",
+            "label_printed_at",
+            "cell_id",
+            "print_batch_status",
+        ]
+
+    def get_print_batch_status(self, obj) -> str | None:
+        """
+        Статус последней не-CANCELLED партии, в которую входит тара.
+        None — тара не в активной партии.
+
+        При наличии prefetch `active_print_items` (см. views.py)
+        используется кэш, без N+1. Иначе — точечный запрос.
+        """
+        items = getattr(obj, "active_print_items", None)
+        if items is not None:
+            return items[0].batch.status if items else None
+
+        # Fallback (одиночный запрос без prefetch)
+        item = (
+            PrintBatchItem.objects
+            .filter(container=obj)
+            .exclude(batch__status="CANCELLED")
+            .select_related("batch")
+            .order_by("-batch__created_at")
+            .first()
+        )
+        return item.batch.status if item else None
 
     def validate(self, attrs):
         pallet = (
@@ -336,7 +370,7 @@ class FillSamplesSerializer(serializers.Serializer):
 # ============================================================
 class CreateInCellSerializer(serializers.Serializer):
     """Входной сериализатор для POST /storage/containers/create-in-cell/."""
-    
+
     cell_id = serializers.IntegerField(min_value=1)
     container_type_id = serializers.IntegerField(min_value=1)
     container_number = serializers.CharField(
