@@ -147,7 +147,13 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
           "total_samples": 31,
           "containers": [
             {
-              "container": {"id": 10, "number": "T-001", "status": "ACTIVE"},
+              "container": {
+                "id": 10, 
+                "number": "T-001", 
+                "status": "ACTIVE",
+                "cell_id": 15,
+                "pallet_id": 3
+              },
               "location": "Комната 1 / A / S1 / A / 5",
               "samples": [
                 {
@@ -164,6 +170,8 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
     }
 
 Все фильтры `GET /samples` работают и для `grouped`.
+Поля `cell_id` и `pallet_id` добавлены в `container` (2f-11c)
+для сквозной навигации на вкладку «Топология».
 
 ---
 
@@ -252,10 +260,12 @@ PDF с партией QR (Section + Cell). Раскладка 2 × 3 = 6 QR на
 | `GET` | `/storage/containers/{id}` | Одна тара + пробы внутри |
 | `POST` | `/storage/containers` | Создать одну |
 | `PATCH` | `/storage/containers/{id}` | Обновить |
-| `DELETE` | `/storage/containers/{id}` | Удалить (409 при `ProtectedError`) |
+| `DELETE` | `/storage/containers/{id}` | Удалить (409 при `ProtectedError` или `?force=true`) |
 | `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
 | `POST` | `/storage/containers/bulk-create/` | Создать N тар-заготовок (без проб) |
 | `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить тару пробами |
+| `POST` | `/storage/containers/bulk-place/` | Разместить тары в ячейку или на пол (2f-10) |
+| `POST` | `/storage/containers/create-in-cell/` | Создать тару с пробами прямо в ячейке (2f-12a) |
 | `GET` | `/storage/pallets` | Список поддонов |
 | `POST` | `/storage/pallets` | Создать поддон |
 
@@ -270,10 +280,12 @@ PDF с партией QR (Section + Cell). Раскладка 2 × 3 = 6 QR на
 - `IN_TRANSIT` — «В пути»;
 - `ISSUED` — «Выдана».
 
-**`DELETE /storage/containers/{id}/`** (2f-1):
+**`DELETE /storage/containers/{id}/`** (2f-1, 2f-12b):
 
 Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
 ней есть пробы) → 409.
+Если передан `?force=true`, бэкенд сначала удаляет все пробы
+тары, а затем саму тару (в одной транзакции).
 
 **Ошибки:**
 - 404 — тара не найдена;
@@ -350,14 +362,16 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
           "sequence_from": 1,
           "sequence_to": 5,
           "sequence_digits": 3,
-          "well_name": null
+          "well_name": null,
+          "status": "NORMAL"
         },
         {
           "prefix": "TST",
           "middle": "124",
           "sequence_from": 1,
           "sequence_to": 3,
-          "well_name": "124"
+          "well_name": "124",
+          "status": "SELECTED"
         }
       ]
     }
@@ -370,9 +384,10 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 - Повторное заполнение тем же ТИ — разрешено.
 - **`container_number`** — опционален. Если задан и у тары номер
   пуст — присваивается. Если уже есть — не перезаписывается.
-- **Draft-поля обнуляются** после успешного заполнения.
-- **Статус тары (2f-5c-1):** `PENDING_FILLING` → `PENDING_PLACEMENT`.
-- Статус проб синхронизируется со статусом тары.
+- **Статус тары:** `PENDING_FILLING` → `PENDING_PLACEMENT`.
+- Статус проб синхронизируется со статусом тары (кроме
+  `SELECTED` и `DISPOSED`).
+- `status` в группе: `"NORMAL"` (обычная) или `"SELECTED"` (выбрана на доп. исследование).
 
 **Ответ (201 Created):**
 
@@ -391,8 +406,71 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 - 400 — `research_type_id` / `site_id` не найдены;
 - 400 — `sequence_from > sequence_to`;
 - 400 — диапазон > 1000 проб в одной группе;
-- 400 — в таре уже есть пробы другого типа исследования;
-- 400 — присваиваемый `container_number` уже занят.
+- 400 — в таре уже есть пробы другого типа исследования.
+
+### `POST /storage/containers/bulk-place/`
+
+Разместить одну или несколько тар в ячейку (через поддон) или на пол
+в комнате (2f-10).
+
+**Тело запроса:**
+
+    {
+      "container_ids": [10, 11, 12],
+      "cell_id": 5
+    }
+
+или 
+
+    {
+      "container_ids": [10],
+      "floor_room_id": 2
+    }
+
+**Логика:**
+- Если `cell_id`: в ячейке создается поддон (если нет), тары
+  привязываются к нему, статус меняется на `ACTIVE`.
+- Если `floor_room_id`: тары привязываются к комнате на полу,
+  статус меняется на `ACTIVE`.
+
+**Ответ 200:**
+
+    {
+      "message": "Успешно размещено в ячейку Комната 1 / A / S1 / A / 5: 3 тар."
+    }
+
+### `POST /storage/containers/create-in-cell/` (2f-12a)
+
+Создать тару, заполнить её пробами и сразу привязать к поддону
+в указанной ячейке (атомарно).
+
+**Тело запроса:**
+
+    {
+      "cell_id": 5,
+      "container_type_id": 1,
+      "container_number": "T-123",
+      "work_order_coded": "Sev00544",
+      "research_type_id": 1,
+      "site_id": 1,
+      "sample_groups": [
+        {
+          "prefix": "TST",
+          "middle": "124",
+          "sequence_from": 1,
+          "sequence_to": 5,
+          "status": "NORMAL"
+        }
+      ]
+    }
+
+**Ответ 201 Created:**
+
+    {
+      "container_id": 15,
+      "container_number": "T-123",
+      "total_samples": 5
+    }
 
 ---
 
@@ -403,72 +481,22 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 | `GET` | `/labels/print-batches` | Список партий |
 | `GET` | `/labels/print-batches/{id}` | Одна партия с items |
 | `POST` | `/labels/print-batches` | Создать черновик |
-| `PATCH` | `/labels/print-batches/{id}` | Изменить (только DRAFT) |
+| `PATCH` | `/labels/print-batches/{id}` | Изменить (`name`, `comment` — в любом статусе) |
+| `DELETE` | `/labels/print-batches/{id}` | Hard-delete (только DRAFT / CANCELLED) |
 | `POST` | `/labels/print-batches/{id}/add-containers/` | Добавить тары |
 | `POST` | `/labels/print-batches/{id}/remove-container/` | Убрать тару |
 | `POST` | `/labels/print-batches/{id}/mark-ready/` | DRAFT → READY |
 | `POST` | `/labels/print-batches/{id}/cancel/` | Отмена (soft) |
 | `GET` | `/labels/print-batches/{id}/pdf/` | PDF (READY → PRINTED авто) |
+| `GET` | `/labels/print-batches/{id}/companion.pdf/` | Сопроводительный лист |
 | `POST` | `/labels/print-batches/{id}/mark-printed/` | Ручная пометка PRINTED |
 
 **Ограничения:**
-- `PUT`, `DELETE` — запрещены (405).
+- `PUT` — запрещён (405).
 - Изменять/наполнять можно только `DRAFT`.
 - Отменить можно `DRAFT` и `READY`, нельзя `PRINTED` и `CANCELLED`.
 
 **Фильтры:** `?status=`, `?print_type=`.
-
----
-
-## Сканирование и перемещения
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `POST` | `/scan` | Обработать сканирование |
-| `POST` | `/move` | Переместить тару/поддон |
-
-**Пример `POST /scan`:**
-
-    {
-      "qr_code": "WMSG:CONTAINER:10",
-      "context": "receiving"
-    }
-
-**Ответ:**
-
-    {
-      "entity_type": "Container",
-      "entity_id": 10,
-      "container_number": "T-001",
-      "location": {"cell": "A-01-03-05", "pallet": "P-001"},
-      "samples": [
-        {"sample_id": 1, "sample_number": "12345", "research_type": "Шлифы"}
-      ],
-      "suggested_action": "confirm_placement"
-    }
-
----
-
-## Инвентаризация
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `POST` | `/inventory/sessions` | Старт сессии |
-| `GET` | `/inventory/sessions/{id}` | Статус |
-| `POST` | `/inventory/sessions/{id}/scan` | Скан в сессии |
-| `POST` | `/inventory/sessions/{id}/complete` | Завершить |
-| `GET` | `/inventory/sessions/{id}/report` | Отчёт по расхождениям |
-
----
-
-## Отчёты
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `GET` | `/reports/movements?from=&to=` | Движение |
-| `GET` | `/reports/storage-load` | Загрузка склада |
-| `GET` | `/reports/lifecycle/{sample_id}` | Жизненный цикл |
-| `GET` | `/reports/export?type=csv` | Экспорт |
 
 ---
 
@@ -725,17 +753,6 @@ rows_count, containers_count, parse_errors, receipts}`.
 
 ---
 
-## Пользователи и роли
-
-| Метод | Путь | Что делает |
-|---|---|---|
-| `GET` | `/users` | Список (admin) |
-| `POST` | `/users` | Создать (admin) |
-| `PATCH` | `/users/{id}` | Обновить (admin) |
-| `GET` | `/roles` | Роли |
-
----
-
 ## Формат ошибок
 
 Единый формат для всех 4xx/5xx:
@@ -756,7 +773,8 @@ rows_count, containers_count, parse_errors, receipts}`.
     {"error": "<строка>"}
 
 Так делают: `check`, `complete`, `act`, `dispose`, `restore`,
-`destroy` (409), `delete receipt-item` (409), `qr-batch` (400/404).
+`destroy` (409), `delete receipt-item` (409), `qr-batch` (400/404),
+`bulk-place`, `create-in-cell`.
 
 ---
 

@@ -99,6 +99,13 @@ Web первый, Mobile по требованию. Backend на старте с
   + data-migration (старые `PENDING_PLACEMENT` без проб →
   `PENDING_FILLING`). Обновлены тесты `test_bulk_create.py`,
   `test_fill_samples.py`, `test_receipt_check.py`.
+- ✅ **`2f-10`** — `POST /storage/containers/bulk-place/`
+  (размещение в ячейку или на пол).
+- ✅ **`2f-11c`** — `SampleGroupSerializer` и `ContainerSerializer`
+  отдают `cell_id` и `pallet_id` для перехода в Топологию.
+- ✅ **`2f-12a`** — `POST /storage/containers/create-in-cell/` —
+  атомарное создание тары, проб и размещение.
+  `?force=true` в `DELETE` тары (1.65, 1.67).
 
 ### Что закрыто (web)
 
@@ -174,6 +181,26 @@ Web первый, Mobile по требованию. Backend на старте с
 - ✅ **`2f-5c-3`** — `ContainerEditDialog`: добавлены
   draft-поля (участок, ТИ, Н/З вх./тек.). `UpdateContainerPayload`
   расширен теми же полями.
+- ✅ **`2f-7h`** — компактный реестр тары: иконки статусов,
+  тултипы, убраны лишние колонки.
+- ✅ **`2f-8`** — дерево-таблица проб (`SamplesTreeTable`):
+  группы Н/З × ТИ, тары, пробы. Единый вид `/samples`.
+- ✅ **`2f-9a`** — пропуски и редактирование диапазонов
+  (`RangeEditDialog`), карандашик.
+- ✅ **`2f-9b`** — выбранные пробы (`SELECTED`), черная галочка
+  на этикетке.
+- ✅ **`2f-9c`** — управление пробами в таре
+  (`FillContainerDialog` для существующих тар).
+- ✅ **`2f-10`** — `PlaceContainerDialog` (в ячейку / на пол),
+  массовое перемещение из `ContainersPage`.
+- ✅ **`2f-11a`** — `CellContentsDialog` (поиск, группировка,
+  чекбоксы, массовое перемещение).
+- ✅ **`2f-11b`** — `ContainerPreviewDialog` (фильтр по пробам,
+  массовая смена статуса).
+- ✅ **`2f-11c`** — переходы из дерева проб и реестра тары
+  в Топологию (`?cell_id=`).
+- ✅ **`2f-12b`** — `CreateInCellDialog` (создание тары прямо
+  в ячейке) + предпросмотр после заполнения, force-удаление тары.
 
 ### Что закрыто (docs)
 
@@ -190,6 +217,9 @@ Web первый, Mobile по требованию. Backend на старте с
   DECISIONS (1.62 PENDING_FILLING, 1.63 PDF QR топологии,
   1.64 каскадное удаление ReceiptItem) / API (qr.pdf, qr-batch,
   delete receipt-items) / PROGRESS / TESTING.
+- ✅ **`docs/2.x-web-v2-update-5`** (2026-10-27) — CONTEXT / PLAN /
+  DECISIONS (1.65-1.68) / API (bulk-place, create-in-cell,
+  force-удаление, cell_id) / PROGRESS / TESTING.
 
 ### В работе
 
@@ -201,39 +231,30 @@ Web первый, Mobile по требованию. Backend на старте с
 
 Серия `2f` — полный CRUD в web (см. PLAN.md):
 
-- ⬜ **`2f-6`** — рейсы (Shipment): edit/delete/cancel.
-- ⬜ **`2f-7`** — партии печати: hard-delete черновиков,
-  сопроводительный PDF; ТД-30.
-- ⬜ **`2f-7b`** — «+ Добавить тару» на экране сверки (3b-3).
-- ⬜ **`2f-7c`** — QR топологии в партиях печати (обсудить
-  в рамках 2f-7).
-- ⬜ **`2f-8`** — Н/З: новая вкладка.
-- ⬜ **`2f-9`** — перемещения (3 подзахода: пул / экран /
-  печать QR).
-- ⬜ **`2f-10`** — инвентаризация.
-- ⬜ **`2f-11`** — глобальный поиск `/search` (ТД-22).
-- ⬜ **`2f-12`** — макет 4: редактирование скважины.
-- ⬜ **`2f-4c-3`** — batch QR секций (то же, что для ячеек).
+- ⬜ **`2f-8`** — Н/З (WorkOrder): создание/правка.
 - ⬜ **`2f-14`** — история операций с тарой (создание,
   перемещения).
+- ⬜ **`2f-15`** — ТД-30 (предпросмотр этикетки до save).
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 55.
+- Заходов закрыто (с 2026-10-12): 59.
   - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
     `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
     `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
     `receiving-1c`, `receiving-3a`, `receiving-3b-1`,
     `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
     `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`,
-    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`.
+    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`, `2f-10`, `2f-11c`, `2f-12a`.
   - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
     `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
     `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
     `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`,
     `2f-3a`, `2f-4a`, `2f-4b`, `2f-4c-2`, `2f-5a-2`,
-    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`.
-  - docs: 4.
+    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`, `2f-7h`, `2f-8`,
+    `2f-9a`, `2f-9b`, `2f-9c`, `2f-10`, `2f-11a`, `2f-11b`,
+    `2f-11c`, `2f-12b`.
+  - docs: 5.
 - «Не норм» на первом прогоне: 4.
   - 3f-1: `FileResponse` не имеет `.content` — читать
     `streaming_content`.
@@ -244,7 +265,7 @@ Web первый, Mobile по требованию. Backend на старте с
   - 2f-4a: двойной костыль `setDialogKind` при edit комнаты —
     исправлено в финале.
 - Откатов: 0.
-- **Backend: 762 теста** (было 552 на старте серии).
+- **Backend: 762+ теста** (было 552 на старте серии).
 - **Web: 24 юнит-теста** (парсер проб + tokenStorage + authStore).
 - **Mobile: 32 юнит-теста** (без изменений в этой серии).
 

@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-10-16
+**Дата обновления:** 2026-10-27
 
 ---
 
@@ -29,89 +29,46 @@
 **Активная серия:** `feature/2.x-web-v2` (React + backend, продолжение
 web).
 
-**План серии 7a (закрыта 2026-10-14):**
+**План серии 2f (текущий):**
 
 | # | Заход | Что делает | Статус |
 |---|---|---|---|
-| 1 | `bundle-1` — backend | `current_location` + фильтры `?q=`, `?no_work_order=` | ✅ |
-| 2 | `bundle-2` — backend | `grouped` action | ✅ |
-| 5 | `bundle-5` — backend | `bulk-create` (тара + пробы) | ✅ заменён 7a-1/7a-2 |
-| 6a | `bundle-6a` — backend | фильтр даты в Excel-импорте, `expected_date` | ✅ |
-| 6b | `bundle-6b` — backend | `target_date` + `duplicate_action` + 409 | ✅ |
-| 7a-1 | `bundle-7a-1` — backend | `Sample.STATUS_PENDING_PLACEMENT` + sync-сервис | ✅ |
-| 7a-2 | `bundle-7a-2` — backend | разделение bulk-create + fill-samples | ✅ |
-| 7a-2b | `bundle-7a-2b` — backend | Container draft-поля + nullable number | ✅ |
-| 7a-3 | `bundle-7a-3` — web | форма «Создать тару» (заготовки) | ✅ |
-| 7a-4ab | `bundle-7a-4ab` — web | парсер проб + `useFillSamples` | ✅ |
-| 7a-4c-1 | `bundle-7a-4c-1` — web | форма «Заполнить тару пробами» | ✅ |
-| 7a-4c-2a | `bundle-7a-4c-2a` — web | `useContainer`, `container_id` фильтр, `fetchLabelPdfUrl` | ✅ |
-| 7a-4c-2b | `bundle-7a-4c-2b` — web | `ContainerPreviewDialog` (3 вкладки) | ✅ |
-| 7a-4c-2c | `bundle-7a-4c-2c` — web | интеграция preview после fill-samples | ✅ |
-| — | `bundle-7` — web | форма создания тары (WIP, неверный UX) | ❌ отменён |
-
-**Серия 7a закрыта полностью (2026-10-14).**
-
-**Подсерия 2.x-receiving — backend закрыт (2026-10-14):**
-
-| Заход | Что делает | Статус |
-|---|---|---|
-| `receiving-1a` — backend | Парсер: группы «типы + Дата», список дат, `1+1` | ✅ |
-| `receiving-1a-2` — backend | Парсер: шапка, строка типа тары | ✅ |
-| `receiving-1b` — backend | Сервис `apply_shipment_import` | ✅ |
-| `receiving-1c` — backend | `POST /import-sessions/import-shipment/` | ✅ |
-
-**Серия receiving-3 — закрыта (2026-10-14 — 2026-10-15):**
-
-| Заход | Что делает | Статус |
-|---|---|---|
-| `receiving-3a` | `multi_date_match` → только вопрос, без `ReceiptItem`/`Container` | ✅ |
-| `receiving-3b-1` | `receipts/{id}/conflicts/` + `resolve-conflicts` + `suggested_count` | ✅ |
-| `receiving-3b-1-2a` | `ReceiptItem.container_type` (FK, nullable), миграция `0002` | ✅ |
-| `receiving-3b-2` | `receipts/{id}/check/` (сверка, batch) | ✅ |
-| `receiving-3c` | `receipts/{id}/complete/` (блокирует при unresolved/EXPECTED) | ✅ |
-| `receiving-3d-1` | web API-хуки (`useReceiptConflicts`, `useResolveConflicts`, `useCheckReceipt`, `useCompleteReceipt`) | ✅ |
-| `receiving-3d-2` | web `ReceiptCheckPage` | ✅ |
-| `receiving-3d-3` | интеграция (роут, кнопка «Начать сверку», удаление `/questions`) | ✅ |
-| `receiving-3d-3-fix-2` | backend: снять `unique=True` с `Container.container_number`; web: реальные ошибки в Alert | ✅ |
-
-**Серия 3f — закрыта (2026-10-15):**
-
-| Заход | Что делает | Статус |
-|---|---|---|
-| `3f-1` | backend: `GET /receipts/{id}/act/` — PDF «Акт приёмки» | ✅ |
-| `3f-1b` | stale tests: `Container.container_number` без unique | ✅ |
-| `3f-2` | web: кнопка «Акт приёмки» на `ReceiptCheckPage` | ✅ |
-
-**Серия 2f — полный CRUD в web:**
-
-| # | Заход | Что делает | Статус |
-|---|---|---|---|
-| 2f-1 | Тара | колонки «Н/З», «ТИ», фильтры, edit/delete; backend: `?draft_work_order_coded=`, `?draft_research_type_id=`, 409 при PROTECT | ✅ |
-| 2f-2a | Пробы — группировка | `SamplesGroupedList` (Н/З × ТИ), единый вид `/samples` | ✅ |
-| 2f-2b | Пробы — CRUD | edit / dispose / restore / delete; backend: `dispose`/`restore`, 409 при delete | ✅ |
-| 2f-2c | Dev-инфра | логирование API в консоль (`import.meta.env.DEV`) | ✅ |
-| 2f-3a | Справочники | CRUD для ТИ, участков, лабораторий; `CatalogEntityDialog`, деактивация, hard-delete с 409 | ✅ |
-| 2f-4a | Топология | страница `/topology` (дерево Room → Rack → Section → Tier + таблица ячеек), CRUD 5 уровней | ✅ |
-| 2f-4b | Поддоны | `PalletDialog`, колонка «Поддон», `usePalletByCell` | ✅ |
-| 2f-4c-1 | QR топологии — backend | авто-`qr_code` для Section/Cell, `qr.pdf` для Section и Cell, `qr-batch`, PDF-рендер (A4, 2×3, QR 65×65) | ✅ |
-| 2f-4c-2 | QR топологии — web | иконка «QR» у Section и в таблице ячеек, batch-печать (чекбоксы + кнопка) | ✅ |
-| 2f-5a-1 | Backend: каскад ReceiptItem | `DELETE /receipt-items/{id}/` — тара + пробы + строка, одна транзакция | ✅ |
-| 2f-5a-2 | Web: edit/delete строк приёмки | `ReceiptItemEditDialog`, кнопки Edit/Delete на `/receiving/:id`, «Отменить партию» на обоих экранах | ✅ |
-| 2f-5b-fix | После импорта с вопросами | сразу на `/receiving/:id/check`, где карточки конфликтов | ✅ |
-| 2f-5c-1 | Backend: `PENDING_FILLING` | новый статус тары «Ожидает заполнения», миграция `storage/0008` + data-migration | ✅ |
-| 2f-5c-2 | Web: `PENDING_FILLING` в UI | метка, фильтр, клик по таре → форма заполнения (независимо от номера) | ✅ |
-| 2f-5c-3 | Web: draft-поля в ContainerEditDialog | участок, ТИ, Н/З вх./тек. | ✅ |
-| 2f-6 | Рейсы | edit/delete/cancel | ⬜ следующий |
-| 2f-7 | Партии печати | hard-delete черновиков, сопроводительный PDF; ТД-30 | ⬜ |
-| 2f-7b | «+ Добавить тару» на сверке (3b-3) | мелкий заход | ⬜ |
-| 2f-7c | QR топологии в партиях печати | обсудить в рамках 2f-7 | ⬜ |
-| 2f-8 | Н/З — новая вкладка | создание/правка | ⬜ |
-| 2f-9 | Перемещения — новая вкладка | 3 подзахода (пул / экран / печать QR) | ⬜ |
-| 2f-10 | Инвентаризация — новая вкладка | — | ⬜ |
-| 2f-11 | Глобальный поиск `/search` (ТД-22) | новая вкладка | ⬜ |
-| 2f-12 | Макет 4 — редактирование скважины | диапазоны проб | ⬜ |
-| 2f-4c-3 | batch QR секций | как для ячеек, но для Section | ⬜ |
-| 2f-14 | История операций с тарой | создание, перемещения, статусы | ⬜ |
+| 2f-1 | Тара | колонки «Н/З», «ТИ», фильтры, edit/delete | ✅ |
+| 2f-2a | Пробы | `SamplesGroupedList` (Н/З × ТИ) | ✅ |
+| 2f-2b | Пробы | edit / dispose / restore / delete | ✅ |
+| 2f-2c | Dev-инфра | логирование API | ✅ |
+| 2f-3a | Справочники | CRUD (ТИ, участки, лаборатории) | ✅ |
+| 2f-4a | Топология | страница `/topology`, CRUD 5 уровней | ✅ |
+| 2f-4b | Поддоны | `PalletDialog` | ✅ |
+| 2f-4c-1 | QR топологии — backend | авто-`qr_code`, `qr.pdf`, `qr-batch` | ✅ |
+| 2f-4c-2 | QR топологии — web | иконки и batch-печать | ✅ |
+| 2f-5a-1 | Backend: каскад ReceiptItem | `DELETE /receipt-items/{id}/` | ✅ |
+| 2f-5a-2 | Web: edit/delete строк приёмки | `ReceiptItemEditDialog` | ✅ |
+| 2f-5b-fix | После импорта с вопросами | сразу на `/receiving/:id/check` | ✅ |
+| 2f-5c-1 | Backend: `PENDING_FILLING` | новый статус тары | ✅ |
+| 2f-5c-2 | Web: `PENDING_FILLING` в UI | метка, фильтр, клик | ✅ |
+| 2f-5c-3 | Web: draft-поля в ContainerEditDialog | участок, ТИ, Н/З | ✅ |
+| 2f-6 | Рейсы | edit/delete/cancel | ✅ |
+| 2f-7a | Партии печати | hard-delete DRAFT/CANCELLED | ✅ |
+| 2f-7b | Сопроводительный PDF | `companion.pdf` | ✅ (откат) |
+| 2f-7c | Web: удаление партий | кнопка «Удалить» | ✅ |
+| 2f-7d | Защита от повторной печати | `label_printed_at`, `force=true` | ✅ |
+| 2f-7e | Название партии печати | `PrintBatch.name` | ✅ |
+| 2f-7f | Фикс: сохранение draft-полей | после fill-samples | ✅ |
+| 2f-7h | Компактный реестр тары | иконки статусов, тултипы | ✅ |
+| 2f-8 | Н/З — новая вкладка | создание/правка WorkOrder | ⬜ |
+| 2f-9a | Диапазоны: пропуски | `RangeEditDialog`, карандаш | ✅ |
+| 2f-9b | Выбранные пробы | `SELECTED`, черная галочка | ✅ |
+| 2f-9c | Редактирование существующих | управление пробами в таре | ✅ |
+| 2f-10 | Размещение | в ячейку и на пол | ✅ |
+| 2f-11a | Просмотр ячейки | `CellContentsDialog` | ✅ |
+| 2f-11b | Просмотр тары | фильтр, массовый статус | ✅ |
+| 2f-11c | Переходы | из проб/тары в Топологию | ✅ |
+| 2f-12a | Создание в ячейке — backend | `create-in-cell` | ✅ |
+| 2f-12b | Создание в ячейке — web | `CreateInCellDialog` + preview | ✅ |
+| 2f-14 | История операций с тарой | аудит | ⬜ |
+| 2f-15 | ТД-30 | предпросмотр этикетки до save | ⬜ |
+| 2f-16 | Batch QR секций | как для ячеек | ⬜ |
 
 Легенда: ⬜ не начат · 🟡 в работе · ✅ закрыт · ❌ отменён
 
@@ -129,8 +86,9 @@ React Router 7 + axios + Vitest.
 | 3 | `feature/2.x-sorting` | Помощник сортировки | 3–4 |
 | 4 | `feature/3.x-migration` | Миграция старых этикеток (OCR) | 4–5 |
 | 5 | `feature/3.x-lims` | Прямая интеграция с ЛИМС (Уровень 3) | 5–7 |
-| 6 | `feature/3.x-deploy` | Сборка web + backend в единый installer | 3–5 |
-| 7 | `feature/2.x-rbac` | Роли и права (детализация по эндпоинтам) | 5–7 |
+| 6 | `feature/3.x-offline` | Офлайн-режим для мобильного приложения (SQLite + SyncQueue) | 5–7 |
+| 7 | `feature/3.x-deploy` | Сборка web + backend в единый installer | 3–5 |
+| 8 | `feature/2.x-rbac` | Роли и права (детализация по эндпоинтам) | 5–7 |
 
 ---
 
@@ -153,6 +111,7 @@ React Router 7 + axios + Vitest.
 - `IN_STORAGE`, `IN_TRANSIT`, `ISSUED`, `CONSUMED`, `DISPOSED`,
   `PENDING_DECRYPTION`, `PENDING_PLACEMENT`.
 - Что значит каждый? Семантика размыта.
+- *(По факту ISSUED и PENDING_DECRYPTION удалены в 2f-9c, но IN_TRANSIT, CONSUMED, DISPOSED остались).*
 
 **3. Отправка в лабораторию.**
 - Тара едет с пробами или пробы перекладываются?
@@ -200,12 +159,10 @@ React Router 7 + axios + Vitest.
 - [ ] **Логика керна** (нельзя керновый поддон в обычную ячейку).
 - [ ] **Загрузка файлов**: MEDIA_ROOT, валидация размера.
 - [ ] **Сопроводительный документ** при печати партии.
-- [x] **Акт приёмки** (PDF с расхождениями) — решение 1.50.
-  Реализовано в 3f-1.
+- [x] **Акт приёмки** (PDF с расхождениями) — решение 1.50. Реализовано в 3f-1.
 - [ ] **Печать на A5** (сейчас только A4).
 - [ ] **Тёмная тема** web/mobile.
 - [ ] **Экран отправки** в web (Shipment OUTBOUND).
-- [ ] **Экран перемещения** в web и mobile.
 - [ ] **Экран инвентаризации** в web и mobile.
 - [ ] **Н/З: создание и редактирование** в web.
 - [ ] **Десктоп-сборка** (installer с авто-запуском backend).
@@ -216,46 +173,39 @@ React Router 7 + axios + Vitest.
 
 | # | Задача | Приоритет | Когда |
 |---|---|---|---|
-| ТД-1 – ТД-5 | (закрыты) | ✅ | — |
 | ТД-6 | Формат `legacy_data` (JSONB) | высокий | перед 3.x |
 | ТД-7 | ERD-диаграмма БД | низкий | по запросу |
-| ТД-8 | Локаль `Russian_Russia.1251` (рабочий ПК) | средний | перед прод |
+| ТД-8 | Локаль `Russian_Russia.1251` | средний | перед прод |
 | ТД-9 | Скрипт запуска портативного PG | низкий | по желанию |
 | ТД-10 | Django admin для всех моделей | ✅ закрыт | 1.3 |
 | ТД-11 | Формат ШК ЛИМС | высокий | перед 3.x |
 | ТД-12 | `PROJECT.md` §Многомашинность | ✅ закрыт | — |
 | ТД-13 | `django-cors-headers` | средний | перед прод |
-| ТД-14 | Throttling / rate limiting на API | средний | перед прод |
-| ТД-15 | Warning `drf-spectacular` (Python 3.17) | низкий | при обновлении |
-| ТД-16 | `MEDIA_ROOT` — где хранить загруженные файлы | средний | серия 2.x |
+| ТД-14 | Throttling / rate limiting | средний | перед прод |
+| ТД-15 | Warning `drf-spectacular` | низкий | при обновлении |
+| ТД-16 | `MEDIA_ROOT` | средний | серия 2.x |
 | ТД-17 | Парсер Excel приёмки | ✅ закрыт | 2.0 |
-| ТД-18 | `.env` — вынести порт БД | низкий | перед прод |
-| ТД-19 | `.vscode/settings.json` — снять исключение из `.gitignore` | низкий | при чистке |
-| ТД-20 | `django-cors-headers` в web-режиме | ✅ объединён с ТД-13 | — |
-| ТД-21 | Web: code-splitting (chunks > 500 kB) | средний | см. ТД-35 |
-| ТД-22 | Web: глобальный поиск (`/search`) | низкий | 2f-11 |
+| ТД-18 | `.env` — порт БД | низкий | перед прод |
+| ТД-19 | `.vscode/settings.json` | низкий | при чистке |
+| ТД-20 | `django-cors-headers` в web | ✅ объединён с ТД-13 | — |
+| ТД-21/35 | Web: code-splitting | средний | когда жалобы на скорость |
+| ТД-22 | Web: глобальный поиск | низкий | 2f-11 |
 | ТД-23 | Web: экран приёмки и отправки | ✅ закрыт | 2f-5 / 2f-6 |
-| ТД-24 | Mobile: `config.dart` с IP в git — сломается при смене сети | средний | перед сборкой релиза |
-| ТД-25 | Mobile: не задокументирован минимум NDK 28.2.13676358 в README | низкий | при рефакторинге доков |
-| ТД-26 | `TESTING.md` устарел | ✅ закрыт | docs-пачка 2026-10-16 |
-| ТД-27 | `Container.container_number = NULL` — фильтр `?status=PENDING_PLACEMENT` в web | ✅ закрыт | 7a-3 |
-| ТД-28 | Web: `parseSampleInput` — fallback-эвристика regex | низкий | когда появится нужда |
-| ТД-29 | Web: `FillContainerDialog` — hint префиксов | низкий | при доработке UX |
-| ТД-30 | Web: предпросмотр этикетки **до** сохранения тары | низкий | 2f-7 |
-| ТД-31 | Web: экран разбора `NEEDS_CONFIRMATION` (3 reason) | средний | — (частично закрыт 2f-5b-fix) |
-| ТД-32 | Формат `Receipt.expected_samples_count` при multi-date | низкий | по требованию |
-| ТД-33 | Решение 1.61 зафиксировано в DECISIONS | ✅ закрыт | docs-пачка 2026-10-16 |
-| ТД-34 | Web: `console.error` в catch-блоках перед Alert | низкий | при доработке UI |
-| ТД-35 | Web: code-splitting (объединение с ТД-21) | средний | когда жалобы на скорость |
-| ТД-36 | Сеть рабочего ПК блокирует `registry.npmjs.org` | средний | перед вводом новых зависимостей |
-| ТД-37 | `TopologyPage` — N+1 запрос в `CellPalletChip` | низкий | если ячеек >30 на ярус |
-| ТД-38 | `2f-4a` UI-защита удаления: сейчас по `hasChildren` в дереве, но каскад в БД (CASCADE). Возможен PROTECT-migration в отдельном заходе | средний | до продакшена |
-
-**Источник ТД-28/29:** пачка `7a-4c-1`, 2026-10-14.
-**Источник ТД-30:** пачка `7a-4c-2b`, 2026-10-14.
-**Источник ТД-31/32/33:** серия `2.x-receiving`, 2026-10-14.
-**Источник ТД-34/35/36:** пачка `2f-2c`, 2026-10-16.
-**Источник ТД-37/38:** серии `2f-4a` / `2f-4b`, 2026-10-16.
+| ТД-24 | Mobile: `config.dart` с IP в git | средний | перед сборкой |
+| ТД-25 | Mobile: NDK 28.2.13676358 в README | низкий | при рефакторинге |
+| ТД-26 | `TESTING.md` устарел | ✅ закрыт | docs |
+| ТД-27 | Web: фильтр `?status=PENDING_PLACEMENT` | ✅ закрыт | 7a-3 |
+| ТД-28 | Web: `parseSampleInput` — fallback | низкий | когда появится нужда |
+| ТД-29 | Web: `FillContainerDialog` — hint | низкий | при доработке UX |
+| ТД-30 | Web: предпросмотр этикетки до save | низкий | 2f-15 |
+| ТД-31 | Web: экран разбора `NEEDS_CONFIRMATION` | средний | — (частично закрыт) |
+| ТД-32 | Формат `Receipt.expected_samples_count` | низкий | по требованию |
+| ТД-33 | Решение 1.61 в DECISIONS | ✅ закрыт | docs |
+| ТД-34 | Web: `console.error` в catch | низкий | при доработке UI |
+| ТД-36 | Сеть блокирует `registry.npmjs.org` | средний | перед новыми deps |
+| ТД-37 | `TopologyPage` — N+1 в `CellPalletChip` | низкий | если ячеек >30 |
+| ТД-38 | `2f-4a` UI-защита удаления (CASCADE vs PROTECT) | средний | до продакшена |
+| ТД-39 | ID не переиспользуются (BigAutoField) | низкий | не требует фикса |
 
 ---
 
