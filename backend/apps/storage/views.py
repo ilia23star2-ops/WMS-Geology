@@ -4,6 +4,7 @@ ViewSets приложения storage.
 
 from django.db import transaction
 from django.db.models import ProtectedError
+from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.labels.services import render_container_label
+from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
 
 from .catalogs import ContainerComment
@@ -49,7 +51,21 @@ def _section_address(section: Section) -> str:
     )
 
 
+def _handle_protected_error(exc: ProtectedError) -> Response:
+    return Response(
+        {
+            "error": (
+                "Нельзя удалить: на объекты ссылаются "
+                f"связанные записи ({len(exc.protected_objects)})."
+            ),
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 class ContainerCommentViewSet(viewsets.ModelViewSet):
+    """CRUD для шаблонов комментариев. Фильтр: ?is_active="""
+
     serializer_class = ContainerCommentSerializer
     permission_classes = [IsAuthenticated]
 
@@ -66,6 +82,32 @@ class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
     permission_classes = [IsAuthenticated]
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        if force:
+            try:
+                with transaction.atomic():
+                    containers = Container.objects.filter(
+                        Q(pallet__cell__tier__section__rack__room=instance) |
+                        Q(floor_room=instance)
+                    )
+                    Sample.objects.filter(container__in=containers).delete()
+                    containers.delete()
+                    Pallet.objects.filter(
+                        Q(cell__tier__section__rack__room=instance) |
+                        Q(floor_room=instance)
+                    ).delete()
+                    instance.delete()
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        else:
+            try:
+                self.perform_destroy(instance)
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class RackViewSet(viewsets.ModelViewSet):
     serializer_class = RackSerializer
@@ -78,6 +120,28 @@ class RackViewSet(viewsets.ModelViewSet):
             qs = qs.filter(room_id=room_id)
         return qs
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        if force:
+            try:
+                with transaction.atomic():
+                    containers = Container.objects.filter(
+                        pallet__cell__tier__section__rack=instance
+                    )
+                    Sample.objects.filter(container__in=containers).delete()
+                    containers.delete()
+                    Pallet.objects.filter(cell__tier__section__rack=instance).delete()
+                    instance.delete()
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        else:
+            try:
+                self.perform_destroy(instance)
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class SectionViewSet(viewsets.ModelViewSet):
     serializer_class = SectionSerializer
@@ -89,6 +153,28 @@ class SectionViewSet(viewsets.ModelViewSet):
         if rack_id:
             qs = qs.filter(rack_id=rack_id)
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        if force:
+            try:
+                with transaction.atomic():
+                    containers = Container.objects.filter(
+                        pallet__cell__tier__section=instance
+                    )
+                    Sample.objects.filter(container__in=containers).delete()
+                    containers.delete()
+                    Pallet.objects.filter(cell__tier__section=instance).delete()
+                    instance.delete()
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        else:
+            try:
+                self.perform_destroy(instance)
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="qr.pdf")
     def qr_pdf(self, request, pk=None):
@@ -177,6 +263,28 @@ class TierViewSet(viewsets.ModelViewSet):
             qs = qs.filter(section_id=section_id)
         return qs
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        if force:
+            try:
+                with transaction.atomic():
+                    containers = Container.objects.filter(
+                        pallet__cell__tier=instance
+                    )
+                    Sample.objects.filter(container__in=containers).delete()
+                    containers.delete()
+                    Pallet.objects.filter(cell__tier=instance).delete()
+                    instance.delete()
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        else:
+            try:
+                self.perform_destroy(instance)
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CellViewSet(viewsets.ModelViewSet):
     serializer_class = CellSerializer
@@ -191,6 +299,26 @@ class CellViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             qs = qs.filter(is_active=is_active.lower() in ("1", "true", "yes"))
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        if force:
+            try:
+                with transaction.atomic():
+                    containers = Container.objects.filter(pallet__cell=instance)
+                    Sample.objects.filter(container__in=containers).delete()
+                    containers.delete()
+                    Pallet.objects.filter(cell=instance).delete()
+                    instance.delete()
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        else:
+            try:
+                self.perform_destroy(instance)
+            except ProtectedError as exc:
+                return _handle_protected_error(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="qr.pdf")
     def qr_pdf(self, request, pk=None):
@@ -236,7 +364,6 @@ class ContainerTypeViewSet(viewsets.ModelViewSet):
 
         laboratory_id = p.get("laboratory_id")
         if laboratory_id:
-            from django.db.models import Q
             qs = qs.filter(
                 Q(laboratory__isnull=True) | Q(laboratory_id=laboratory_id)
             )
@@ -287,31 +414,15 @@ class ContainerViewSet(viewsets.ModelViewSet):
         return qs
 
     def destroy(self, request, *args, **kwargs):
-        """
-        Удаление тары. 
-        Если передан ?force=true, сначала удаляются все пробы в этой таре.
-        """
         instance = self.get_object()
         force = request.query_params.get("force", "false").lower() in ("true", "1")
-        
         try:
             with transaction.atomic():
                 if force:
-                    # Принудительно удаляем пробы (если они не защищены отгрузкой)
                     instance.samples.all().delete()
-                
                 self.perform_destroy(instance)
-                
         except ProtectedError as exc:
-            return Response(
-                {
-                    "error": (
-                        "Нельзя удалить тару: на неё ссылаются "
-                        f"связанные объекты ({len(exc.protected_objects)})."
-                    ),
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
+            return _handle_protected_error(exc)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="label.pdf")

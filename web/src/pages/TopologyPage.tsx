@@ -1,5 +1,5 @@
 /**
- * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11 + 2f-11c).
+ * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11).
  */
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -165,8 +165,6 @@ export default function TopologyPage() {
     const targetTierQuery = useTier(targetCellQuery.data?.tier ?? null);
     const targetSectionQuery = useSection(targetTierQuery.data?.section ?? null);
     const targetRackQuery = useRack(targetSectionQuery.data?.rack ?? null);
-
-    // Хук для авто-открытия диалога содержимого
     const targetPalletQuery = usePalletByCell(targetCellId);
 
     useEffect(() => {
@@ -183,7 +181,6 @@ export default function TopologyPage() {
         }
     }, [targetCellQuery.data, targetTierQuery.data, targetSectionQuery.data, targetRackQuery.data]);
 
-    // Эффект для автоматического открытия окна просмотра ячейки
     useEffect(() => {
         if (targetCellQuery.data && targetPalletQuery.data) {
             setViewCell(targetCellQuery.data);
@@ -224,14 +221,17 @@ export default function TopologyPage() {
     }
 
     async function handleDelete(kind: TopologyKind, id: number, label: string) {
-        const ok = window.confirm(`Удалить «${label}»? Вложенные объекты тоже удалятся.`);
+        const ok = window.confirm(
+            `Удалить «${label}»?\n\n` +
+            `ВНИМАНИЕ: Все вложенные объекты (секции, ярусы, ячейки, тары и пробы) также будут удалены. Это действие необратимо!`
+        );
         if (!ok) return;
         try {
-            if (kind === "room") await delRoom.mutateAsync(id);
-            else if (kind === "rack") await delRack.mutateAsync(id);
-            else if (kind === "section") await delSection.mutateAsync(id);
-            else if (kind === "tier") await delTier.mutateAsync(id);
-            else await delCell.mutateAsync(id);
+            if (kind === "room") await delRoom.mutateAsync({ id, force: true });
+            else if (kind === "rack") await delRack.mutateAsync({ id, force: true });
+            else if (kind === "section") await delSection.mutateAsync({ id, force: true });
+            else if (kind === "tier") await delTier.mutateAsync({ id, force: true });
+            else await delCell.mutateAsync({ id, force: true });
             setMessage(`«${label}» удалено.`);
         } catch (err) {
             setError(extractError(err) ?? "Не удалось удалить.");
@@ -370,12 +370,10 @@ export default function TopologyPage() {
                         <EditIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip title={hasChildren ? "Сначала удалите вложенные объекты" : "Удалить"}>
-                    <span>
-                        <IconButton size="small" color="error" disabled={hasChildren} onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </span>
+                <Tooltip title="Удалить">
+                    <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
+                        <DeleteIcon fontSize="small" />
+                    </IconButton>
                 </Tooltip>
             </ListItemButton>
         );
@@ -571,7 +569,6 @@ export default function TopologyPage() {
                 onClose={() => {
                     setViewCell(null);
                     setViewPalletId(null);
-                    // Очищаем URL от cell_id, чтобы при обновлении страницы не открывалось снова
                     window.history.replaceState(null, "", "/topology");
                 }}
             />

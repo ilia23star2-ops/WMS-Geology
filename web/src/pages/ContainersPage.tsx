@@ -159,7 +159,10 @@ export default function ContainersPage() {
                     await deleteMutation.mutateAsync({ id: row.id, force: true });
                     setEditMessage(`Тара ${label} удалена вместе с пробами.`);
                 } catch (err2) {
-                    const msg2 = (err2 as any)?.response?.data?.error ?? "Не удалось удалить тару даже с force.";
+                    const anyErr2 = err2 as {
+                        response?: { data?: { error?: string } };
+                    };
+                    const msg2 = anyErr2?.response?.data?.error ?? "Не удалось удалить тару даже с force.";
                     setDeleteError(msg2);
                 }
             } else {

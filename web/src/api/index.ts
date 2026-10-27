@@ -272,6 +272,29 @@ export type {
     ResolveQuestionsResponse,
 } from "./importSessions";
 
+// Наряд-заказы (WorkOrder).
+export {
+    WORK_ORDER_STATUS_LABELS,
+    WORK_ORDER_TYPE_LABELS,
+    createWorkOrder,
+    deleteWorkOrder,
+    fetchWorkOrders,
+    linkWorkOrder,
+    updateWorkOrder,
+    useCreateWorkOrder,
+    useDeleteWorkOrder,
+    useLinkWorkOrder,
+    useUpdateWorkOrder,
+    useWorkOrders,
+} from "./workOrders";
+export type {
+    UpdateWorkOrderPayload,
+    WorkOrder,
+    WorkOrdersListParams,
+    WorkOrderStatus,
+    WorkOrderType,
+} from "./workOrders";
+
 export type {
     ApiError,
     LoginPayload,

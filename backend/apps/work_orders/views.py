@@ -1,8 +1,5 @@
 """
 ViewSets приложения work_orders.
-
-WorkOrderViewSet — CRUD + custom action `link`.
-Фильтры: ?order_number=, ?order_type=, ?status=, ?site_id=, ?site_code=
 """
 
 from django.shortcuts import get_object_or_404
@@ -18,15 +15,24 @@ from .serializers import WorkOrderLinkSerializer, WorkOrderSerializer
 class WorkOrderViewSet(viewsets.ModelViewSet):
     """
     CRUD для наряд-заказов.
-
-    Фильтры: ?order_number=, ?order_type=, ?status=, ?site_id=, ?site_code=
     """
 
     serializer_class = WorkOrderSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = WorkOrder.objects.select_related("linked_order", "site").all()
+        qs = (
+            WorkOrder.objects
+            .select_related("linked_order", "site")
+            .prefetch_related(
+                "current_samples__container",
+                "current_samples__container__container_type",
+                "current_samples__container__pallet",
+                "current_samples__container__pallet__cell",
+                "current_samples__container__floor_room",
+            )
+            .all()
+        )
         p = self.request.query_params
 
         if p.get("order_number"):

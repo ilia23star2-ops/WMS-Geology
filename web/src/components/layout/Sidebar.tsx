@@ -21,6 +21,7 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import PrintIcon from "@mui/icons-material/Print";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import AssignmentIcon from "@mui/icons-material/Assignment"; // <--- Добавлено
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -36,6 +37,7 @@ const MENU: MenuItem[] = [
     { label: "Главная", path: "/", icon: <HomeIcon /> },
     { label: "Тара", path: "/containers", icon: <Inventory2Icon /> },
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
+    { label: "Наряд-заказы", path: "/work-orders", icon: <AssignmentIcon /> }, // <--- Добавлено
     { label: "Приёмка", path: "/receiving", icon: <LocalShippingIcon /> },
     { label: "Печать", path: "/print", icon: <PrintIcon /> },
     { label: "Топология", path: "/topology", icon: <AccountTreeIcon /> },

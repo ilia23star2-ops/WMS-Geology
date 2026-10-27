@@ -1,5 +1,5 @@
 /**
- * API топологии склада: Room → Rack → Section → Tier → Cell → Pallet.
+ * API топологии склада.
  */
 import {
     keepPreviousData,
@@ -141,7 +141,7 @@ export interface QrBatchItem {
 }
 
 // ============================================================
-// Списки (с фильтрами по родителю)
+// Списки
 // ============================================================
 
 async function fetchList<T>(
@@ -214,9 +214,6 @@ export function useCells(tierId: number | null) {
     });
 }
 
-/**
- * Поддон, стоящий в ячейке (или `null`, если пусто).
- */
 export function usePalletByCell(cellId: number | null) {
     return useQuery({
         queryKey: ["topology", "pallet-by-cell", cellId],
@@ -232,7 +229,7 @@ export function usePalletByCell(cellId: number | null) {
 }
 
 // ============================================================
-// Одиночные сущности (2f-11c)
+// Одиночные сущности
 // ============================================================
 
 export function useRoom(id: number | null) {
@@ -291,7 +288,7 @@ export function useCell(id: number | null) {
 }
 
 // ============================================================
-// CRUD (мутации остаются без изменений)
+// CRUD (мутации)
 // ============================================================
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>): void {
@@ -323,8 +320,9 @@ export function useUpdateRoom() {
 export function useDeleteRoom() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (id: number) => {
-            await apiClient.delete(`/storage/rooms/${id}/`);
+        mutationFn: async ({ id, force }: { id: number; force?: boolean }) => {
+            const query = force ? { force: "true" } : {};
+            await apiClient.delete(`/storage/rooms/${id}/`, { params: query });
         },
         onSuccess: () => invalidateAll(qc),
     });
@@ -355,8 +353,9 @@ export function useUpdateRack() {
 export function useDeleteRack() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (id: number) => {
-            await apiClient.delete(`/storage/racks/${id}/`);
+        mutationFn: async ({ id, force }: { id: number; force?: boolean }) => {
+            const query = force ? { force: "true" } : {};
+            await apiClient.delete(`/storage/racks/${id}/`, { params: query });
         },
         onSuccess: () => invalidateAll(qc),
     });
@@ -387,8 +386,9 @@ export function useUpdateSection() {
 export function useDeleteSection() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (id: number) => {
-            await apiClient.delete(`/storage/sections/${id}/`);
+        mutationFn: async ({ id, force }: { id: number; force?: boolean }) => {
+            const query = force ? { force: "true" } : {};
+            await apiClient.delete(`/storage/sections/${id}/`, { params: query });
         },
         onSuccess: () => invalidateAll(qc),
     });
@@ -419,8 +419,9 @@ export function useUpdateTier() {
 export function useDeleteTier() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (id: number) => {
-            await apiClient.delete(`/storage/tiers/${id}/`);
+        mutationFn: async ({ id, force }: { id: number; force?: boolean }) => {
+            const query = force ? { force: "true" } : {};
+            await apiClient.delete(`/storage/tiers/${id}/`, { params: query });
         },
         onSuccess: () => invalidateAll(qc),
     });
@@ -451,8 +452,9 @@ export function useUpdateCell() {
 export function useDeleteCell() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (id: number) => {
-            await apiClient.delete(`/storage/cells/${id}/`);
+        mutationFn: async ({ id, force }: { id: number; force?: boolean }) => {
+            const query = force ? { force: "true" } : {};
+            await apiClient.delete(`/storage/cells/${id}/`, { params: query });
         },
         onSuccess: () => invalidateAll(qc),
     });

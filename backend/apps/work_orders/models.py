@@ -3,7 +3,7 @@
 
 WorkOrder — наряд-заказ. Типы:
 - INCOMING — название до шифровки;
-- CODED — название после шифровки.
+- CODED — название после шифровки (текущий).
 
 Изменения v2 (этап 1.3):
 - `WorkOrder.site` — FK на `Site` (nullable) — авто-определение участка.
@@ -15,13 +15,13 @@ from django.db import models
 
 
 class WorkOrder(models.Model):
-    """Наряд-заказ. Типы: INCOMING, CODED."""
+    """Наряд-заказ. Типы: INCOMING, CODED (текущий)."""
 
     TYPE_INCOMING = "INCOMING"
     TYPE_CODED = "CODED"
     TYPE_CHOICES = [
         (TYPE_INCOMING, "Входящий"),
-        (TYPE_CODED, "Зашифрованный"),
+        (TYPE_CODED, "Текущий"),
     ]
 
     STATUS_ACTIVE = "ACTIVE"
@@ -48,7 +48,7 @@ class WorkOrder(models.Model):
         null=True,
         blank=True,
         related_name="linked_from",
-        help_text="Парный Н/З: для INCOMING — зашифрованный, для CODED — входящий.",
+        help_text="Парный Н/З: для INCOMING — текущий, для CODED — входящий.",
     )
     site = models.ForeignKey(
         "samples.Site",
