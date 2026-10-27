@@ -52,14 +52,12 @@ export default function PlaceContainerDialog({
     const queryClient = useQueryClient();
     const [mode, setMode] = useState<PlaceMode>("cell");
 
-    // Для ячейки
     const [roomId, setRoomId] = useState<number | "">("");
     const [rackId, setRackId] = useState<number | "">("");
     const [sectionId, setSectionId] = useState<number | "">("");
     const [tierId, setTierId] = useState<number | "">("");
     const [cellId, setCellId] = useState<number | "">("");
 
-    // Для пола
     const [floorRoomId, setFloorRoomId] = useState<number | "">("");
 
     const [error, setError] = useState<string | null>(null);
@@ -112,7 +110,7 @@ export default function PlaceContainerDialog({
             reset();
             onClose();
         } catch (err) {
-            const anyErr = err as any;
+            const anyErr = err as { response?: { data?: { error?: string } } };
             const msg = anyErr?.response?.data?.error ?? "Не удалось разместить тары.";
             setError(msg);
         } finally {

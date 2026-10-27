@@ -1,18 +1,5 @@
 /**
- * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2).
- *
- * Двухпанельный вид:
- * - Слева — дерево: Комната → Стеллаж → Секция → Ярус.
- * - Справа — таблица ячеек выбранного яруса.
- *
- * CRUD на всех уровнях + поддон на ячейке (2f-4b).
- * QR-кнопки (2f-4c-2):
- * - у Section в дереве — PDF одной секции;
- * - у Cell в таблице — PDF одной ячейки;
- * - чекбоксы + «Печать QR (N)» — batch.
- *
- * Если у узла есть дети, кнопка «Удалить» задизейблена
- * (UI-защита; backend — CASCADE).
+ * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11).
  */
 import { useMemo, useState } from "react";
 import {
@@ -39,6 +26,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PrintIcon from "@mui/icons-material/Print";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
+import VisibilityIcon from "@mui/icons-material/Visibility"; // <--- Добавлено
 import {
     DataGrid,
     type GridColDef,
@@ -75,6 +63,7 @@ import TopologyEntityDialog, {
     type TopologyInitial,
     type TopologyKind,
 } from "../components/TopologyEntityDialog";
+import CellContentsDialog from "../components/CellContentsDialog";
 
 function extractError(err: unknown): string | null {
     const anyErr = err as {
@@ -92,15 +81,17 @@ function emptySelection(): GridRowSelectionModel {
 }
 
 /**
- * Ячейка колонки «Поддон»: chip с номером/статусом или кнопка
- * «Добавить». Клик открывает `PalletDialog`.
+ * Ячейка колонки «Поддон»: chip с номером/статусом и кнопки
+ * «Посмотреть» (глаз) / «Настроить» (карандаш).
  */
 function CellPalletChip({
     cell,
-    onOpen,
+    onOpenPallet,
+    onViewContents,
 }: {
     cell: Cell;
-    onOpen: (cell: Cell) => void;
+    onOpenPallet: (cell: Cell) => void;
+    onViewContents: (cell: Cell, palletId: number) => void;
 }) {
     const { data: pallet, isLoading } = usePalletByCell(cell.id);
 
@@ -113,7 +104,7 @@ function CellPalletChip({
             <Button
                 size="small"
                 variant="text"
-                onClick={() => onOpen(cell)}
+                onClick={() => onOpenPallet(cell)}
                 sx={{ textTransform: "none" }}
             >
                 Добавить
@@ -122,13 +113,25 @@ function CellPalletChip({
     }
 
     return (
-        <Chip
-            size="small"
-            label={`#${pallet.id} · ${PALLET_STATUS_LABELS[pallet.status]}`}
-            color={pallet.status === "ACTIVE" ? "success" : "default"}
-            onClick={() => onOpen(cell)}
-            clickable
-        />
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+            <Chip
+                size="small"
+                label={`#${pallet.id} · ${PALLET_STATUS_LABELS[pallet.status]}`}
+                color={pallet.status === "ACTIVE" ? "success" : "default"}
+                onClick={() => onViewContents(cell, pallet.id)}
+                clickable
+            />
+            <Tooltip title="Посмотреть содержимое">
+                <IconButton size="small" onClick={() => onViewContents(cell, pallet.id)}>
+                    <VisibilityIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+            </Tooltip>
+            <Tooltip title="Настроить поддон">
+                <IconButton size="small" onClick={() => onOpenPallet(cell)}>
+                    <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+            </Tooltip>
+        </Stack>
     );
 }
 
@@ -147,6 +150,8 @@ export default function TopologyPage() {
         useState<string>("");
 
     const [palletCell, setPalletCell] = useState<Cell | null>(null);
+    const [viewCell, setViewCell] = useState<Cell | null>(null);
+    const [viewPalletId, setViewPalletId] = useState<number | null>(null);
 
     const [cellSelection, setCellSelection] =
         useState<GridRowSelectionModel>(emptySelection());
@@ -262,13 +267,17 @@ export default function TopologyPage() {
         {
             field: "pallet",
             headerName: "Поддон",
-            width: 200,
+            width: 240,
             sortable: false,
             filterable: false,
             renderCell: (params) => (
                 <CellPalletChip
                     cell={params.row}
-                    onOpen={(c) => setPalletCell(c)}
+                    onOpenPallet={(c) => setPalletCell(c)}
+                    onViewContents={(c, pId) => {
+                        setViewCell(c);
+                        setViewPalletId(pId);
+                    }}
                 />
             ),
         },
@@ -775,6 +784,16 @@ export default function TopologyPage() {
                 cell={palletCell}
                 onClose={() => setPalletCell(null)}
                 onSuccess={(msg) => setMessage(msg)}
+            />
+
+            <CellContentsDialog
+                open={viewCell !== null}
+                cell={viewCell}
+                palletId={viewPalletId}
+                onClose={() => {
+                    setViewCell(null);
+                    setViewPalletId(null);
+                }}
             />
 
             <Snackbar
