@@ -2,6 +2,7 @@
 ViewSets приложения storage.
 """
 
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import FileResponse
 from rest_framework import status, viewsets
@@ -10,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.labels.services import render_container_label
+from apps.samples.services import sync_sample_status_for_container
 
 from .catalogs import ContainerComment
 from .models import (
@@ -295,7 +297,6 @@ class ContainerViewSet(viewsets.ModelViewSet):
         if p.get("comment_template_id"):
             qs = qs.filter(comment_template_id=p["comment_template_id"])
 
-        # Draft-контекст группы (Н/З × ТИ) — для реестра тары.
         draft_wo = p.get("draft_work_order_coded")
         if draft_wo:
             qs = qs.filter(draft_work_order_coded__icontains=draft_wo)
@@ -406,8 +407,6 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
         container.refresh_from_db()
         
-        # ФИКС (2f-7f): восстанавливаем draft-поля из запроса,
-        # так как сервис fill_container_with_samples их обнуляет.
         container.draft_site_id = data.get("site_id")
         container.draft_research_type_id = data["research_type_id"]
         container.draft_work_order_coded = data["work_order_coded"]
@@ -435,3 +434,75 @@ class ContainerViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=False, methods=["post"], url_path="bulk-place")
+    def bulk_place(self, request):
+        """
+        Размещение одной или нескольких тар (2f-10a).
+        Принимает либо cell_id (в ячейку), либо floor_room_id (на пол).
+        """
+        container_ids = request.data.get("container_ids", [])
+        cell_id = request.data.get("cell_id")
+        floor_room_id = request.data.get("floor_room_id")
+
+        if not container_ids:
+            return Response(
+                {"error": "Укажите container_ids."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not cell_id and not floor_room_id:
+            return Response(
+                {"error": "Укажите cell_id (в ячейку) или floor_room_id (на пол)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        containers = Container.objects.filter(pk__in=container_ids)
+        if not containers.exists():
+            return Response(
+                {"error": "Тары не найдены."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        target_pallet = None
+        target_cell = None
+        target_room = None
+        msg = ""
+
+        if cell_id:
+            target_cell = Cell.objects.filter(pk=cell_id, is_active=True).first()
+            if not target_cell:
+                return Response(
+                    {"error": "Ячейка не найдена или неактивна."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            # Для ячейки должен быть поддон (OneToOne). Создаем, если нет.
+            target_pallet, _ = Pallet.objects.get_or_create(
+                cell=target_cell,
+                defaults={"status": Pallet.STATUS_ACTIVE},
+            )
+            msg = f"Успешно размещено в ячейку {target_cell.full_address}: {len(containers)} тар."
+        else:
+            target_room = Room.objects.filter(pk=floor_room_id).first()
+            if not target_room:
+                return Response(
+                    {"error": "Комната не найдена."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            msg = f"Успешно размещено на пол в комнате {target_room.name}: {len(containers)} тар."
+
+        with transaction.atomic():
+            for c in containers:
+                if target_cell:
+                    c.pallet = target_pallet
+                    c.floor_room = None
+                else:
+                    c.pallet = None
+                    c.floor_room = target_room
+                
+                c.status = Container.STATUS_ACTIVE
+                c.save(update_fields=["pallet", "floor_room", "status"])
+                
+                sync_sample_status_for_container(c)
+
+        return Response({"message": msg})
