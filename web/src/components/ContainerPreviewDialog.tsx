@@ -1,6 +1,6 @@
 /**
- * Диалог предпросмотра тары (2f-11b).
- * Добавлены: фильтр, чекбоксы и массовая смена статуса проб.
+ * Диалог предпросмотра тары (2f-11b + 2f-14b).
+ * Вкладки: Список проб / Этикетка / QR / История.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -49,6 +49,7 @@ import {
 } from "../api";
 import AddToPrintBatchDialog from "./AddToPrintBatchDialog";
 import SampleEditDialog from "./SampleEditDialog";
+import ContainerHistoryTab from "./ContainerHistoryTab";
 
 interface ContainerPreviewDialogProps {
     open: boolean;
@@ -56,7 +57,7 @@ interface ContainerPreviewDialogProps {
     onClose: () => void;
 }
 
-type TabKey = "list" | "label" | "qr";
+type TabKey = "list" | "label" | "qr" | "history";
 
 const ALL_SAMPLE_STATUSES = Object.keys(SAMPLE_STATUS_LABELS) as SampleStatus[];
 
@@ -204,6 +205,7 @@ export default function ContainerPreviewDialog({
                         <Tab value="list" label="Список проб" />
                         <Tab value="label" label="Этикетка" />
                         <Tab value="qr" label="QR" />
+                        <Tab value="history" label="История" />
                     </Tabs>
 
                     {tab === "list" && (
@@ -351,6 +353,10 @@ export default function ContainerPreviewDialog({
                                 </Stack>
                             )}
                         </Box>
+                    )}
+
+                    {tab === "history" && (
+                        <ContainerHistoryTab containerId={containerId} />
                     )}
                 </DialogContent>
                 <DialogActions>
