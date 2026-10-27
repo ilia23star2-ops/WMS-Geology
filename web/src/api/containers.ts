@@ -129,6 +129,7 @@ export function useUpdateContainer() {
         onSuccess: (data) => {
             qc.setQueryData(["container", data.id], data);
             void qc.invalidateQueries({ queryKey: ["containers"] });
+            void qc.invalidateQueries({ queryKey: ["container-history", data.id] });
         },
     });
 }
@@ -255,6 +256,7 @@ export function useFillSamples(containerId: number) {
             void qc.invalidateQueries({ queryKey: ["container", containerId] });
             void qc.invalidateQueries({ queryKey: ["containers"] });
             void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["container-history", containerId] });
         },
     });
 }
@@ -310,5 +312,40 @@ export function useCreateInCell() {
             void qc.invalidateQueries({ queryKey: ["samples"] });
             void qc.invalidateQueries({ queryKey: ["topology"] });
         },
+    });
+}
+
+// ============================================================
+// История тары (2f-14b)
+// ============================================================
+
+export interface ContainerHistoryEntry {
+    id: number;
+    user: number | null;
+    username: string | null;
+    action: string;
+    action_display: string;
+    entity_type: string;
+    entity_id: number | null;
+    old_value: Record<string, unknown> | null;
+    new_value: Record<string, unknown> | null;
+    created_at: string;
+}
+
+export async function fetchContainerHistory(
+    id: number,
+): Promise<ContainerHistoryEntry[]> {
+    const { data } = await apiClient.get<ContainerHistoryEntry[]>(
+        `/storage/containers/${id}/history/`,
+    );
+    return data;
+}
+
+export function useContainerHistory(id: number | null) {
+    return useQuery({
+        queryKey: ["container-history", id],
+        queryFn: () => fetchContainerHistory(id as number),
+        enabled: typeof id === "number" && !Number.isNaN(id),
+        staleTime: 5_000,
     });
 }
