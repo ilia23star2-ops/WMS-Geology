@@ -17,7 +17,6 @@ import pytest
 from apps.labels.models import PrintBatch, PrintBatchItem
 from apps.labels.services.label_service import (
     A4_H_MM,
-    A4_LABEL_GAP_MM,
     FONT_PATH,
     HEIGHTS_MM,
     MAX_CONTINUATIONS,
@@ -32,7 +31,6 @@ from apps.labels.services.label_service import (
     _make_measurer,
     _pack_on_sheets,
     _paginate,
-    _qr_grid_capacity,
     _qr_grid_dimensions,
     _rows_count,
     _split_columns,
@@ -408,8 +406,9 @@ def test_qr_grid_dimensions_8x11():
 
 
 def test_qr_grid_capacity_88():
-    """Ёмкость листа — 88 QR-кодов."""
-    assert _qr_grid_capacity() == 88
+    """Ёмкость листа — 88 QR-кодов (8 × 11)."""
+    cols, rows = _qr_grid_dimensions()
+    assert cols * rows == 88
 
 
 def test_qr_grid_size_matches_label_qr():
