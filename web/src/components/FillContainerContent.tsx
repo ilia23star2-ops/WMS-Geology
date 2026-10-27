@@ -4,11 +4,16 @@
  * Вынесено из FillContainerDialog, чтобы использовать один и тот же
  * компонент:
  * - как тело диалога (`FillContainerDialog`);
- * - как вкладку «Редактирование» в `ContainerPreviewDialog` (2f-17b).
+ * - как вкладку «Редактирование» в `ContainerDetailDialog` (2f-17c).
  *
  * Без <Dialog>/<DialogContent>/<DialogActions> — кнопки в <Box> в конце.
- * Все внутренние модалки (RangeEditDialog, LocalPreviewDialog,
- * SampleEditDialog) рендерятся как есть — MUI stacking через portal.
+ * Все внутренние модалки (RangeEditDialog, SampleEditDialog)
+ * рендерятся как есть — MUI stacking через portal.
+ *
+ * 2f-17c: порядок блоков — сначала строка добавления диапазонов
+ * (и таблица добавленных), потом список существующих проб.
+ * 2f-17c-fix: убрана кнопка «Предпросмотр» внизу — она теперь
+ * только в шапке ContainerDetailDialog (этикетка/QR).
  */
 import { useMemo, useState } from "react";
 import {
@@ -32,7 +37,6 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
-import VisibilityIcon from "@mui/icons-material/Visibility";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -51,7 +55,6 @@ import {
     parseSampleInput,
 } from "../utils/parseSampleInput";
 import RangeEditDialog from "./RangeEditDialog";
-import LocalPreviewDialog from "./LocalPreviewDialog";
 import SampleEditDialog from "./SampleEditDialog";
 
 interface FillContainerContentProps {
@@ -164,7 +167,6 @@ export default function FillContainerContent({
     const [inputError, setInputError] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [editingRange, setEditingRange] = useState<AddedRange | null>(null);
-    const [previewOpen, setPreviewOpen] = useState(false);
     const [editingSampleId, setEditingSampleId] = useState<number | null>(null);
 
     const laboratories = useLaboratories();
@@ -207,7 +209,6 @@ export default function FillContainerContent({
         setInputError(null);
         setSubmitError(null);
         setEditingRange(null);
-        setPreviewOpen(false);
         setEditingSampleId(null);
     }
 
@@ -405,51 +406,7 @@ export default function FillContainerContent({
                 />
             )}
 
-            <Divider sx={{ my: 2 }} />
-
-            {samplesQuery.isLoading && <Typography>Загрузка проб...</Typography>}
-
-            {existingSamples.length > 0 && (
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle1" sx={{ mb: 1 }}>Пробы в таре ({existingSamples.length})</Typography>
-                    <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
-                        <Table size="small">
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell>Номер пробы</TableCell>
-                                    <TableCell>Статус</TableCell>
-                                    <TableCell width={100} />
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {existingSamples.map((s) => (
-                                    <TableRow key={s.id}>
-                                        <TableCell sx={{ fontFamily: "monospace" }}>{s.sample_number}</TableCell>
-                                        <TableCell>
-                                            <Chip size="small" label={SAMPLE_STATUS_LABELS[s.status] ?? s.status} color={STATUS_COLORS[s.status] ?? "default"} />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Stack direction="row" spacing={0.5}>
-                                                <Tooltip title="Редактировать">
-                                                    <IconButton size="small" onClick={() => setEditingSampleId(s.id)}>
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Удалить">
-                                                    <IconButton size="small" color="error" onClick={() => handleDeleteExisting(s.id)}>
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Stack>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                </Box>
-            )}
-
+            {/* ── Блок «Добавить новые пробы» — вверху (2f-17c) ── */}
             <Typography variant="subtitle1" sx={{ mb: 1 }}>Добавить новые пробы</Typography>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", mb: 1 }}>
@@ -511,28 +468,65 @@ export default function FillContainerContent({
                 </TableContainer>
             )}
 
-            <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                <Button
-                    variant="outlined"
-                    color="info"
-                    startIcon={<VisibilityIcon />}
-                    disabled={totalSamples === 0}
-                    onClick={() => setPreviewOpen(true)}
-                >
-                    Предпросмотр
-                </Button>
-                <Typography variant="body2" color="text.secondary">Итого проб: <b>{totalSamples}</b></Typography>
-            </Stack>
+            <Divider sx={{ my: 2 }} />
 
-            <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, pt: 1 }}>
-                <Button onClick={handleClose} disabled={fillMutation.isPending}>Отмена</Button>
-                <Button
-                    onClick={() => void handleSubmit()}
-                    variant="contained"
-                    disabled={fillMutation.isPending || (totalSamples === 0 && deletedIds.length === 0)}
-                >
-                    {fillMutation.isPending ? "Сохраняем..." : "Сохранить"}
-                </Button>
+            {/* ── Существующие пробы — ниже ── */}
+            {samplesQuery.isLoading && <Typography>Загрузка проб...</Typography>}
+
+            {existingSamples.length > 0 && (
+                <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle1" sx={{ mb: 1 }}>Пробы в таре ({existingSamples.length})</Typography>
+                    <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>Номер пробы</TableCell>
+                                    <TableCell>Статус</TableCell>
+                                    <TableCell width={100} />
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {existingSamples.map((s) => (
+                                    <TableRow key={s.id}>
+                                        <TableCell sx={{ fontFamily: "monospace" }}>{s.sample_number}</TableCell>
+                                        <TableCell>
+                                            <Chip size="small" label={SAMPLE_STATUS_LABELS[s.status] ?? s.status} color={STATUS_COLORS[s.status] ?? "default"} />
+                                        </TableCell>
+                                        <TableCell>
+                                            <Stack direction="row" spacing={0.5}>
+                                                <Tooltip title="Редактировать">
+                                                    <IconButton size="small" onClick={() => setEditingSampleId(s.id)}>
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Удалить">
+                                                    <IconButton size="small" color="error" onClick={() => handleDeleteExisting(s.id)}>
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </Stack>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </Box>
+            )}
+
+            {/* ── Итого + кнопки ── */}
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">Итого проб: <b>{totalSamples}</b></Typography>
+                <Stack direction="row" spacing={1}>
+                    <Button onClick={handleClose} disabled={fillMutation.isPending}>Отмена</Button>
+                    <Button
+                        onClick={() => void handleSubmit()}
+                        variant="contained"
+                        disabled={fillMutation.isPending || (totalSamples === 0 && deletedIds.length === 0)}
+                    >
+                        {fillMutation.isPending ? "Сохраняем..." : "Сохранить"}
+                    </Button>
+                </Stack>
             </Box>
 
             {editingRange !== null && (
@@ -543,16 +537,6 @@ export default function FillContainerContent({
                     initialSelected={editingRange.selectedSeqs.join(" ")}
                     onClose={() => setEditingRange(null)}
                     onSave={handleSaveRangeEdit}
-                />
-            )}
-
-            {previewOpen && (
-                <LocalPreviewDialog
-                    open={true}
-                    container={container}
-                    ranges={ranges}
-                    containerNumberOverride={containerNumber}
-                    onClose={() => setPreviewOpen(false)}
                 />
             )}
 

@@ -48,12 +48,12 @@ import {
     type Container,
     type ContainerFilters,
     type ContainerStatus,
+    type PrintBatchStatus,
 } from "../api";
 import AddToPrintBatchDialog from "../components/AddToPrintBatchDialog";
+import ContainerDetailDialog from "../components/ContainerDetailDialog";
 import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
-import FillContainerDialog from "../components/FillContainerDialog";
-import ContainerPreviewDialog from "../components/ContainerPreviewDialog";
 import PlaceContainerDialog from "../components/PlaceContainerDialog";
 
 const PAGE_SIZE = 50;
@@ -65,6 +65,44 @@ const STATUS_ICONS: Record<ContainerStatus, React.ReactElement> = {
     IN_TRANSIT: <LocalShippingIcon fontSize="small" color="info" />,
     ISSUED: <OutputIcon fontSize="small" color="disabled" />,
 };
+
+// 2f-17c: иконка печати по статусу последней не-CANCELLED партии.
+function renderPrintIcon(status: PrintBatchStatus | null) {
+    if (status === "PRINTED") {
+        return (
+            <Tooltip title="Напечатана">
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                    <PrintIcon fontSize="small" color="success" />
+                </Box>
+            </Tooltip>
+        );
+    }
+    if (status === "READY") {
+        return (
+            <Tooltip title="Готова к печати">
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                    <PrintIcon fontSize="small" color="info" />
+                </Box>
+            </Tooltip>
+        );
+    }
+    if (status === "DRAFT") {
+        return (
+            <Tooltip title="Черновик партии">
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                    <PrintIcon fontSize="small" color="warning" />
+                </Box>
+            </Tooltip>
+        );
+    }
+    return (
+        <Tooltip title="Не в партии">
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                <PrintDisabledIcon fontSize="small" color="disabled" />
+            </Box>
+        </Tooltip>
+    );
+}
 
 function formatDate(value: string): string {
     try {
@@ -96,9 +134,7 @@ export default function ContainersPage() {
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [createMessage, setCreateMessage] = useState<string | null>(null);
 
-    const [fillContainer, setFillContainer] = useState<Container | null>(null);
-    const [fillMessage, setFillMessage] = useState<string | null>(null);
-    const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
+    const [detailContainerId, setDetailContainerId] = useState<number | null>(null);
     const [editContainer, setEditContainer] = useState<Container | null>(null);
     const [editMessage, setEditMessage] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -139,7 +175,6 @@ export default function ContainersPage() {
         if (!ok) return;
 
         try {
-            // Первая попытка (обычное удаление)
             await deleteMutation.mutateAsync({ id: row.id, force: false });
             setEditMessage(`Тара ${label} удалена.`);
         } catch (err) {
@@ -147,7 +182,6 @@ export default function ContainersPage() {
                 response?: { status?: number; data?: { error?: string } };
             };
 
-            // Если ошибка 409 (ProtectedError), предлагаем force-удаление
             if (anyErr?.response?.status === 409) {
                 const forceOk = window.confirm(
                     `В таре ${label} есть связанные пробы или другие объекты.\n\n` +
@@ -229,29 +263,13 @@ export default function ContainersPage() {
             },
         },
         {
-            field: "label_printed_at",
+            field: "print_batch_status",
             headerName: "Этикетка",
             width: 80,
             align: "center",
             headerAlign: "center",
-            renderCell: (params) => {
-                if (params.value) {
-                    return (
-                        <Tooltip title={`Напечатана: ${formatDate(params.value as string)}`}>
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                                <PrintIcon fontSize="small" color="success" />
-                            </Box>
-                        </Tooltip>
-                    );
-                }
-                return (
-                    <Tooltip title="Не напечатана">
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                            <PrintDisabledIcon fontSize="small" color="disabled" />
-                        </Box>
-                    </Tooltip>
-                );
-            },
+            sortable: false,
+            renderCell: (params) => renderPrintIcon(params.row.print_batch_status),
         },
         {
             field: "comment_template_text",
@@ -365,7 +383,7 @@ export default function ContainersPage() {
     ];
 
     function handleRowClick(row: Container) {
-        setFillContainer(row);
+        setDetailContainerId(row.id);
     }
 
     return (
@@ -590,23 +608,10 @@ export default function ContainersPage() {
                 }}
             />
 
-            <FillContainerDialog
-                open={fillContainer !== null}
-                container={fillContainer}
-                onClose={() => setFillContainer(null)}
-                onSuccess={(containerId, totalSamples) => {
-                    setFillMessage(
-                        `В таре сохранено проб: ${totalSamples}.`,
-                    );
-                    setFillContainer(null);
-                    setPreviewContainerId(containerId);
-                }}
-            />
-
-            <ContainerPreviewDialog
-                open={previewContainerId !== null}
-                containerId={previewContainerId}
-                onClose={() => setPreviewContainerId(null)}
+            <ContainerDetailDialog
+                open={detailContainerId !== null}
+                containerId={detailContainerId}
+                onClose={() => setDetailContainerId(null)}
             />
 
             <ContainerEditDialog
@@ -653,13 +658,6 @@ export default function ContainersPage() {
                 autoHideDuration={6000}
                 onClose={() => setCreateMessage(null)}
                 message={createMessage ?? ""}
-            />
-
-            <Snackbar
-                open={fillMessage !== null}
-                autoHideDuration={6000}
-                onClose={() => setFillMessage(null)}
-                message={fillMessage ?? ""}
             />
 
             <Snackbar

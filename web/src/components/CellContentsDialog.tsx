@@ -1,5 +1,6 @@
 /**
  * Диалог просмотра содержимого ячейки (2f-11a + 2f-12b).
+ * 2f-17c: клик на тару → ContainerDetailDialog.
  */
 import { useState, useMemo } from "react";
 import {
@@ -43,7 +44,7 @@ import {
     type Container,
     type ContainerStatus,
 } from "../api";
-import ContainerPreviewDialog from "./ContainerPreviewDialog";
+import ContainerDetailDialog from "./ContainerDetailDialog";
 import PlaceContainerDialog from "./PlaceContainerDialog";
 import CreateInCellDialog from "./CreateInCellDialog";
 import FillContainerDialog from "./FillContainerDialog";
@@ -74,11 +75,10 @@ export default function CellContentsDialog({
 }: CellContentsDialogProps) {
     const queryClient = useQueryClient();
 
-    const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
+    const [detailContainerId, setDetailContainerId] = useState<number | null>(null);
     const [placeDialogOpen, setPlaceDialogOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-    // Состояние для связки создания и заполнения
     const [draftContainer, setDraftContainer] = useState<Container | null>(null);
 
     const [error, setError] = useState<string | null>(null);
@@ -158,7 +158,7 @@ export default function CellContentsDialog({
         }
     }
 
-    // Коллбэк после заполнения тары пробами
+    // Коллбэк после заполнения тары пробами (из CreateInCellDialog → FillContainerDialog)
     async function handleFillSuccess(containerId: number) {
         setDraftContainer(null);
         try {
@@ -170,8 +170,8 @@ export default function CellContentsDialog({
             queryClient.invalidateQueries({ queryKey: ["topology"] });
             queryClient.invalidateQueries({ queryKey: ["samples"] });
 
-            // 2f-12b: Открываем предпросмотр после успешного сохранения
-            setPreviewContainerId(containerId);
+            // 2f-17c: открываем единое окно после успешного заполнения
+            setDetailContainerId(containerId);
         } catch {
             alert("Тара создана и заполнена, но не удалось автоматически разместить её в ячейке. Попробуйте переместить её вручную.");
         }
@@ -182,7 +182,7 @@ export default function CellContentsDialog({
     return (
         <>
             <Dialog
-                open={open && previewContainerId === null && !placeDialogOpen && !createDialogOpen && draftContainer === null}
+                open={open && detailContainerId === null && !placeDialogOpen && !createDialogOpen && draftContainer === null}
                 onClose={onClose}
                 maxWidth="md"
                 fullWidth
@@ -295,8 +295,8 @@ export default function CellContentsDialog({
                                                             </TableCell>
                                                             <TableCell align="right" sx={{ py: 0.5 }}>
                                                                 <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end" }}>
-                                                                    <Tooltip title="Посмотреть (пробы, этикетка)">
-                                                                        <IconButton size="small" onClick={() => setPreviewContainerId(c.id)}>
+                                                                    <Tooltip title="Открыть">
+                                                                        <IconButton size="small" onClick={() => setDetailContainerId(c.id)}>
                                                                             <VisibilityIcon fontSize="small" />
                                                                         </IconButton>
                                                                     </Tooltip>
@@ -336,11 +336,11 @@ export default function CellContentsDialog({
                 </DialogActions>
             </Dialog>
 
-            {previewContainerId !== null && (
-                <ContainerPreviewDialog
+            {detailContainerId !== null && (
+                <ContainerDetailDialog
                     open={true}
-                    containerId={previewContainerId}
-                    onClose={() => setPreviewContainerId(null)}
+                    containerId={detailContainerId}
+                    onClose={() => setDetailContainerId(null)}
                 />
             )}
 
