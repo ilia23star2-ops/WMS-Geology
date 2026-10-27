@@ -25,27 +25,27 @@
 
 ### Backend
 
-cd backend
-poetry run pytest -q                 # все тесты
-poetry run pytest -v                 # подробно
-poetry run pytest apps/<app>/tests/test_<file>.py -v
-poetry run pytest -k "search"        # тесты по имени
-poetry run python manage.py check
-poetry run python manage.py makemigrations --check --dry-run
+    cd backend
+    poetry run pytest -q                 # все тесты
+    poetry run pytest -v                 # подробно
+    poetry run pytest apps/<app>/tests/test_<file>.py -v
+    poetry run pytest -k "search"        # тесты по имени
+    poetry run python manage.py check
+    poetry run python manage.py makemigrations --check --dry-run
 
 ### Web
 
-cd web
-npm test                # Vitest (single run)
-npm run test:watch      # Vitest (watch)
-npm run lint
-npm run build
+    cd web
+    npm test                # Vitest (single run)
+    npm run test:watch      # Vitest (watch)
+    npm run lint
+    npm run build
 
 ### Mobile
 
-cd mobile
-flutter test
-flutter analyze
+    cd mobile
+    flutter test
+    flutter analyze
 
 ### Автоматически
 
@@ -57,7 +57,7 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 
 ## Текущее состояние
 
-**Backend: 762 теста.**
+**Backend: 762+ теста.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
 **Mobile: 32 юнит-теста.**
 
@@ -65,8 +65,8 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 
 | Приложение | Ключевые тесты |
 |---|---|
-| `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**, `PENDING_FILLING`), bulk-create, fill-samples, фильтры `?draft_*`, `DELETE` + 409, QR топологии (авто-`qr_code`, PDF, batch) |
-| `samples` | Модели, `Sample` (+`dispose`/`restore`, 409 при delete), `grouped` action, фильтры, поиск, seeds |
+| `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**, `PENDING_FILLING`), bulk-create, fill-samples, `bulk-place`, `create-in-cell`, фильтры `?draft_*`, `DELETE` + 409 + `?force=true`, QR топологии (авто-`qr_code`, PDF, batch) |
+| `samples` | Модели, `Sample` (+`dispose`/`restore`, `SELECTED`, 409 при delete), `grouped` action, фильтры, поиск, seeds |
 | `receiving` | Парсер Excel (группы, тип тары, `1+1`), `apply_shipment_import`, `receipts/{id}/conflicts/`, `resolve-conflicts`, `check`, `complete`, `act` (PDF), `import-shipment`, каскадное удаление `ReceiptItem` |
 | `picking` | Модели + API, фильтр `?work_order=` (с `linked_order`) |
 | `labels` | QR-сервис, PDF-этикетки, раскладка, QR-сетка, партии печати, `act_service` |
@@ -119,6 +119,8 @@ UI (экраны, сканер) — device-check на планшете.
 - `test_check_all_matched_creates_containers` — при сверке
   `matched=true` создаётся `Container` со `PENDING_FILLING`
   (2f-5c-1).
+- `test_sync_sample_status_protects_selected` — `SELECTED` пробы
+  не перезаписываются при синхронизации (2f-9b).
 
 ### Поиск и фильтры
 
@@ -179,6 +181,9 @@ UI (экраны, сканер) — device-check на планшете.
   `test_delete_item_returns_404_for_unknown`,
   `test_delete_item_returns_409_if_sample_protected` — 2f-5a-1
   (каскадное удаление `ReceiptItem`).
+- `test_bulk_place_to_cell`, `test_bulk_place_to_floor` — 2f-10.
+- `test_create_in_cell` — 2f-12a.
+- `test_delete_container_force_with_samples` — 2f-12b.
 
 ---
 
@@ -256,7 +261,7 @@ UI (экраны, сканер) — device-check на планшете.
 
 **Сделано:**
 - Три уровня тестов (unit / integration / contract) — действуют.
-- 762 backend + 24 web + 32 mobile = **818 тестов**.
+- 762+ backend + 24 web + 32 mobile = **818+ тестов**.
 - Contract-тесты OpenAPI.
 
 **Осталось:**
