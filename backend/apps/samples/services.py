@@ -15,7 +15,7 @@ from apps.storage.models import Container
 _PROTECTED_SAMPLE_STATUSES = frozenset({
     Sample.STATUS_DISPOSED,
     Sample.STATUS_CONSUMED,
-    Sample.STATUS_PENDING_DECRYPTION,
+    Sample.STATUS_SELECTED,  # 2f-9c: Защищаем "выбранные" пробы
 })
 
 
@@ -24,7 +24,6 @@ _CONTAINER_TO_SAMPLE_STATUS = {
     Container.STATUS_ACTIVE: Sample.STATUS_IN_STORAGE,
     Container.STATUS_PENDING_PLACEMENT: Sample.STATUS_PENDING_PLACEMENT,
     Container.STATUS_IN_TRANSIT: Sample.STATUS_IN_TRANSIT,
-    Container.STATUS_ISSUED: Sample.STATUS_ISSUED,
 }
 
 
@@ -35,12 +34,12 @@ def sync_sample_status_for_container(container: Container) -> int:
     Возвращает количество обновлённых проб.
 
     Правила:
-    - Пробы в «защищённых» статусах (DISPOSED, CONSUMED,
-      PENDING_DECRYPTION) не трогаются — они управляются отдельно.
+    - Пробы в «защищённых» статусах (DISPOSED, CONSUMED, SELECTED)
+      не трогаются — они управляются отдельно.
     - Неизвестный статус тары → 0 обновлений, без исключений.
 
     Вызывается явно из view / сервисов после изменения статуса тары.
-    Django signals не используются (решение варианта Б).
+    Django signals не используются.
     """
     new_status = _CONTAINER_TO_SAMPLE_STATUS.get(container.status)
     if new_status is None:
