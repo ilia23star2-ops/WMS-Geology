@@ -37,6 +37,7 @@ export interface PrintBatchItem {
 export interface PrintBatch {
     id: number;
     batch_number: string;
+    name: string;
     print_type: PrintType;
     print_type_display: string;
     status: PrintBatchStatus;
@@ -54,6 +55,9 @@ export interface PrintBatch {
     updated_at: string;
 }
 
+// ------------------------------------------------------------
+// Список
+// ------------------------------------------------------------
 export interface PrintBatchesListParams {
     page: number;
     status?: PrintBatchStatus;
@@ -81,6 +85,9 @@ export function usePrintBatches(params: PrintBatchesListParams) {
     });
 }
 
+// ------------------------------------------------------------
+// Детали
+// ------------------------------------------------------------
 export async function fetchPrintBatch(id: number): Promise<PrintBatch> {
     const { data } = await apiClient.get<PrintBatch>(
         `/labels/print-batches/${id}/`,
@@ -97,6 +104,9 @@ export function usePrintBatch(id: number | undefined) {
     });
 }
 
+// ------------------------------------------------------------
+// Мутации
+// ------------------------------------------------------------
 export function useCreatePrintBatch() {
     const qc = useQueryClient();
     return useMutation({
@@ -108,6 +118,34 @@ export function useCreatePrintBatch() {
             return data;
         },
         onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["print-batches"] });
+        },
+    });
+}
+
+export interface UpdatePrintBatchPayload {
+    name?: string;
+    comment?: string;
+}
+
+export async function updatePrintBatch(
+    batchId: number,
+    payload: UpdatePrintBatchPayload,
+): Promise<PrintBatch> {
+    const { data } = await apiClient.patch<PrintBatch>(
+        `/labels/print-batches/${batchId}/`,
+        payload,
+    );
+    return data;
+}
+
+export function useUpdatePrintBatch(batchId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: UpdatePrintBatchPayload) =>
+            updatePrintBatch(batchId, payload),
+        onSuccess: (data) => {
+            qc.setQueryData(["print-batch", batchId], data);
             void qc.invalidateQueries({ queryKey: ["print-batches"] });
         },
     });

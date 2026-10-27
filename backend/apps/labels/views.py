@@ -26,20 +26,6 @@ from .services.print_batch_service import generate_batch_number
 class PrintBatchViewSet(viewsets.ModelViewSet):
     """
     CRUD для партий печати (корзины этикеток).
-
-    Особенности:
-    - `PUT` запрещён.
-    - `DELETE` разрешён только для DRAFT и CANCELLED.
-    - Номер партии генерируется автоматически.
-    - Изменять (PATCH) и наполнять можно только черновик.
-
-    Custom actions:
-    - POST /print-batches/{id}/add-containers/
-    - POST /print-batches/{id}/remove-container/
-    - POST /print-batches/{id}/mark-ready/
-    - POST /print-batches/{id}/cancel/
-    - GET  /print-batches/{id}/pdf/      (гибрид: авто-пометка)
-    - POST /print-batches/{id}/mark-printed/  (ручная пометка)
     """
 
     serializer_class = PrintBatchSerializer
@@ -67,19 +53,13 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
         )
 
     def update(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status != PrintBatch.STATUS_DRAFT:
-            return Response(
-                {"error": "Изменять можно только партию в статусе «Черновик»."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # Разрешаем редактировать название и комментарий в любом статусе (2f-7e).
+        # Ограничение на редактирование тар (только DRAFT) проверяется в add-containers.
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         """
         Hard-delete партии (2f-7a).
-
-        Разрешено только для `DRAFT` и `CANCELLED`.
         """
         batch = self.get_object()
         if batch.status in (
@@ -103,8 +83,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     def add_containers(self, request, pk=None):
         """
         Добавляет список тар в корзину. Только для черновика.
-        Если у тары уже печаталась этикетка, и не передан force=true,
-        вернёт 400 со списком таких тар (2f-7d).
         """
         batch = self.get_object()
         if batch.status != PrintBatch.STATUS_DRAFT:
@@ -246,11 +224,6 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
     def pdf(self, request, pk=None):
         """
         Отдаёт PDF партии. Гибридная логика:
-        - `READY` → отдаёт PDF и **автоматически** переводит в
-          `PRINTED`: `printed_at=now`, `printed_by=user`,
-          `total_items`, `total_pages`.
-        - `PRINTED` → отдаёт PDF повторно, но не меняет
-          `printed_at`/`printed_by` (первая печать — решающая).
         """
         batch = self.get_object()
 

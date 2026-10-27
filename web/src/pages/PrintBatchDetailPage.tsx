@@ -9,9 +9,14 @@ import {
     Card,
     CardContent,
     Chip,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     IconButton,
     Snackbar,
     Stack,
+    TextField,
     Tooltip,
     Typography,
 } from "@mui/material";
@@ -21,6 +26,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import DoneIcon from "@mui/icons-material/Done";
 import CancelIcon from "@mui/icons-material/Cancel";
+import EditIcon from "@mui/icons-material/Edit";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -36,6 +42,7 @@ import {
     useMarkReady,
     usePrintBatch,
     useRemoveContainer,
+    useUpdatePrintBatch,
     type PrintBatchItem,
     type PrintBatchStatus,
 } from "../api";
@@ -58,6 +65,11 @@ export default function PrintBatchDetailPage() {
     const { data, isLoading, isError } = usePrintBatch(batchId);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Для редактирования названия
+    const [editNameOpen, setEditNameOpen] = useState(false);
+    const [nameInput, setNameInput] = useState("");
+    const updateNameMutation = useUpdatePrintBatch(batchId ?? 0);
 
     const addMutation = useAddContainers(batchId ?? 0);
     const removeMutation = useRemoveContainer(batchId ?? 0);
@@ -122,6 +134,21 @@ export default function PrintBatchDetailPage() {
             await removeMutation.mutateAsync(containerId);
         } catch {
             setError("Не удалось убрать тару.");
+        }
+    }
+
+    function openEditName() {
+        if (!data) return;
+        setNameInput(data.name);
+        setEditNameOpen(true);
+    }
+
+    async function saveName() {
+        try {
+            await updateNameMutation.mutateAsync({ name: nameInput.trim() });
+            setEditNameOpen(false);
+        } catch {
+            setError("Не удалось сохранить название.");
         }
     }
 
@@ -194,10 +221,22 @@ export default function PrintBatchDetailPage() {
                 К списку партий
             </Button>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2, flexWrap: "wrap" }}>
                 <Typography variant="h2" component="h1">
-                    {data.batch_number}
+                    {data.name || data.batch_number}
                 </Typography>
+                {data.name && (
+                    <Typography variant="h4" color="text.secondary">
+                        ({data.batch_number})
+                    </Typography>
+                )}
+
+                <Tooltip title="Редактировать название">
+                    <IconButton onClick={openEditName} size="small" color="primary">
+                        <EditIcon />
+                    </IconButton>
+                </Tooltip>
+
                 <Chip
                     label={PRINT_BATCH_STATUS_LABELS[data.status] ?? data.status}
                     color={STATUS_COLORS[data.status] ?? "default"}
@@ -357,6 +396,29 @@ export default function PrintBatchDetailPage() {
                     isSubmitting={addMutation.isPending}
                 />
             )}
+
+            <Dialog open={editNameOpen} onClose={() => setEditNameOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Название партии</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        label="Название"
+                        fullWidth
+                        variant="outlined"
+                        value={nameInput}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        placeholder="Например: Партия для лаборатории А"
+                        sx={{ mt: 1 }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setEditNameOpen(false)}>Отмена</Button>
+                    <Button onClick={() => void saveName()} variant="contained" disabled={updateNameMutation.isPending}>
+                        Сохранить
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {error && (
                 <Snackbar
