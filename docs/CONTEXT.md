@@ -12,9 +12,11 @@
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
 **Текущий заход:** серия `2f` (полный CRUD в web + полировка).
-Закрыто: `2f-1` ... `2f-6c`, `2f-7a` ... `2f-7h`, `2f-8`, 
-`2f-9a` ... `2f-9c`, `2f-10`, `2f-11a` ... `2f-11c`, `2f-12a` ... `2f-12b`.
-Следующий — `2f-8` (Н/З — новая вкладка) или `2f-14` (История операций).
+Закрыто: `2f-1` ... `2f-6c`, `2f-7a` ... `2f-7h`, `2f-8a` (дерево-таблица
+проб), `2f-8` (Н/З — WorkOrder), `2f-9a` ... `2f-9c`, `2f-10`,
+`2f-11a` ... `2f-11c`, `2f-12a` ... `2f-12b`.
+Следующий — `2f-14` (История операций с тарой), `3.x-offline` (мобильный
+офлайн) или `2f-15` (ТД-30 предпросмотр этикетки до save).
 
 **Предыдущие заходы:**
 - `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
@@ -36,11 +38,17 @@
 - **2f-5c-2**: web — статус «Ожидает заполнения» в UI.
 - **2f-5c-3**: web — draft-поля в `ContainerEditDialog`.
 - **2f-7e**: название партии печати (поле `name`).
-- **2f-8**: дерево-таблица проб (Группа → Тара → Проба).
-- **2f-9a/9b/9c**: пропуски, выбранные пробы (`SELECTED`), карандашик, редактирование существующих.
+- **2f-8a** (историч., ранее `2f-8`): дерево-таблица проб
+  (Группа → Тара → Проба).
+- **2f-8**: Наряд-заказы (WorkOrder) — новая вкладка, связывание,
+  сводка по тарам, «Глаз»; Топология: force-удаление иерархии.
+- **2f-9a/9b/9c**: пропуски, выбранные пробы (`SELECTED`),
+  карандашик, редактирование существующих.
 - **2f-10**: размещение тары в ячейку (через поддон) и на пол.
-- **2f-11a/b/c**: просмотр содержимого ячейки, фильтры, массовое перемещение, переходы по геометке.
-- **2f-12a/b**: атомарное создание тары с пробами прямо в ячейке, предпросмотр, force-удаление.
+- **2f-11a/b/c**: просмотр содержимого ячейки, фильтры, массовое
+  перемещение, переходы по геометке.
+- **2f-12a/b**: атомарное создание тары с пробами прямо в ячейке,
+  предпросмотр, force-удаление.
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`, `?no_work_order=`).
@@ -51,6 +59,9 @@
 - `POST /storage/containers/bulk-place/` — размещение в ячейку или на пол.
 - `POST /storage/containers/create-in-cell/` — атомарное создание тары + проб + размещение.
 - `DELETE /storage/containers/{id}/?force=true` — удаление тары вместе с пробами.
+- **`WorkOrder`**: admin, `samples_count` / `containers` / `linked_order_number`
+  в сериализаторах, `prefetch_related` в `views.py`. `TYPE_CODED` label = «Текущий».
+- **Force-удаление топологии**: Room / Rack / Section / Tier / Cell.
 - Excel-импорт: `target_date`, `duplicate_action`, 409 на дубликат.
 - **Приёмка:** `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`.
 - **Печать:** `pdf`, `mark-printed`, `companion.pdf`, `label_printed_at`.
@@ -59,10 +70,10 @@
 - Логин, layout, главная, тара, пробы, печать, справочники, топология, приёмка.
 - **Тара:** DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание заготовок, заполнение (с пропусками/выбранными), предпросмотр, геометка в Топологию.
 - **Пробы:** Дерево-таблица (Группа → Тара → Проба), `SampleEditDialog`, геометка в Топологию.
-- **Топология:** Дерево + ячейки. `CellContentsDialog` (поиск, группировка, чекбоксы, массовое перемещение), `CreateInCellDialog` (создание тары в ячейке), переход по `?cell_id=`.
+- **Топология:** Дерево + ячейки. `CellContentsDialog` (поиск, группировка, чекбоксы, массовое перемещение), `CreateInCellDialog` (создание тары в ячейке), переход по `?cell_id=`, force-удаление иерархии в дереве.
+- **Наряд-заказы:** страница `/work-orders`, `WorkOrderDialog`, `LinkWorkOrderDialog` (фильтр + «создать новый»), `WorkOrderContainersDialog` (список тар Н/З), колонка «Проб», кнопка «Глаз», sidebar.
 
 **Что нужно добавить (web, серия 2f — осталось):**
-- **2f-8:** Н/З — новая вкладка (создание/правка).
 - **2f-14:** История операций с тарой (аудит).
 - **2f-15:** ТД-30 (предпросмотр этикетки до save).
 
@@ -70,12 +81,12 @@
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри.
 
-**Backend:** 762+ теста.
+**Backend:** 767 тестов.
 **Web:** 24 юнит-теста.
 **Mobile:** 32 юнит-теста.
 
 **Ближайшая работа:**
-- `2f-8` — Н/З (WorkOrder).
+- `2f-14` — История операций с тарой.
 - Дальше — `3.x-offline` (мобильный офлайн).
 
 ---
@@ -100,12 +111,12 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (762 теста)
+### Backend (767 тестов)
 | Приложение | Что внутри |
 |---|---|
 | `storage` | Топология, Pallet, ContainerType, Container (+draft, nullable number, PENDING_FILLING), ContainerComment, QR-этикетка, QR топологии, bulk-create, fill-samples, bulk-place, create-in-cell |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample (+PENDING_PLACEMENT, SELECTED, dispose/restore), SampleWorkOrder, sync-сервис |
-| `work_orders` | WorkOrder (self-ref + site) |
+| `work_orders` | WorkOrder (self-ref + site, admin, samples_count) |
 | `receiving` | Receipt, ReceiptItem (+container_type), ImportSession + Excel-парсер + apply_shipment_import, conflicts, resolve-conflicts, check, complete, act |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
@@ -121,10 +132,11 @@
 | Главная | 4 карточки. |
 | Тара | DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание, заполнение, предпросмотр, геометка. |
 | Пробы | Дерево-таблица, `SampleEditDialog`, геометка. |
+| Наряд-заказы | `WorkOrdersPage`, диалоги создания / связывания / сводки по тарам. |
 | Печать | Партии, детали, PDF, переименование. |
 | Справочники | CRUD. |
 | Приёмка | Список, детали, сверка, акт. |
-| Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`. |
+| Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`, force-удаление. |
 
 ### Mobile (Flutter, 32 юнит-теста)
 | Раздел | Что внутри |
@@ -136,7 +148,7 @@
 | Карточка тары | Поля тары + список проб внутри. |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (66), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (67), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -163,6 +175,7 @@
 - **`transaction.set_rollback(True)` несовместим с `import_session.save()`**.
 - **`get_object()` уважает фильтры `get_queryset`.** Для утилизированных проб — `Model.objects.filter(pk=pk).first()` (2f-2b).
 - **`Section.save()` / `Cell.save()` — двойной `super().save()`**.
+- **stale-тесты при полном прогоне** — копятся, если долго гонять только `apps/<app>/`. Перед закрытием захода — `pytest -q` целиком (2f-8-fix-2).
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
@@ -187,6 +200,7 @@
 - **`Container.STATUS_PENDING_FILLING`** — начальный статус (1.62).
 - **ID объектов (BigAutoField)** не переиспользуются после удаления — это норма (1.68).
 - **`Sample.STATUS_SELECTED`** защищен от перезаписи синхронизатором (1.66).
+- **`fill-samples` обновляет draft-поля из запроса** (2f-7f + 1.69) — не обнуляет, не замораживает.
 
 ### Web
 - **Vite proxy:** `/api/*` → `http://localhost:8000`.
@@ -206,6 +220,7 @@
 - **React Query Devtools не ставим** (ТД-36).
 - **`TopologyPage`**: `CellPalletChip` делает N+1 запрос. Для 3–5 ячеек — норм.
 - **Force-удаление тары:** при 409 ошибке `ContainersPage` предлагает удалить вместе с пробами (`?force=true`).
+- **`tsconfig.json` без `baseUrl`:** `paths` работают от самого tsconfig (TS ≥4.4). При миграции на TS 7 — обязательное требование.
 
 ### Mobile
 - **URL API:** `config.dart`, `_apiHostOverride` — в git.
@@ -228,6 +243,7 @@
 - **`cat > file << 'EOF'`** — надёжный способ заменить файл в MSYS2.
 - **`ipconfig`** в MSYS2 ломается на кодировке.
 - **`git checkout -b` может упасть** на «already exists».
+- **`tail` буферизует вывод** — для прогресса `pytest` без пайпа или `| tee`.
 
 ---
 

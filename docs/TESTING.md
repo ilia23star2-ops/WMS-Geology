@@ -53,11 +53,18 @@ GitHub Actions: на каждый push в `feature/**` и `fix/**` —
 unit + integration. На merge в `main` — все три уровня. Конфиг —
 `.github/workflows/ci.yml`.
 
+### Быстрый прогресс и отладка
+
+- **`| tail` буферизует вывод.** Для прогресса — запускать `pytest -q`
+  без пайпа, или `pytest -q 2>&1 | tee /tmp/pytest.log`.
+- **Полный прогон — перед закрытием захода** (см. §12.5, stale-тесты
+  копятся, если долго гонять только `apps/<app>/`).
+
 ---
 
 ## Текущее состояние
 
-**Backend: 762+ теста.**
+**Backend: 767 тестов.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
 **Mobile: 32 юнит-теста.**
 
@@ -66,12 +73,12 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 | Приложение | Ключевые тесты |
 |---|---|
 | `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**, `PENDING_FILLING`), bulk-create, fill-samples, `bulk-place`, `create-in-cell`, фильтры `?draft_*`, `DELETE` + 409 + `?force=true`, QR топологии (авто-`qr_code`, PDF, batch) |
-| `samples` | Модели, `Sample` (+`dispose`/`restore`, `SELECTED`, 409 при delete), `grouped` action, фильтры, поиск, seeds |
+| `samples` | Модели, `Sample` (+`dispose`/`restore`, `SELECTED`, 409 при delete), `grouped` action, фильтры, поиск, seeds, `sync_sample_status_for_container` |
 | `receiving` | Парсер Excel (группы, тип тары, `1+1`), `apply_shipment_import`, `receipts/{id}/conflicts/`, `resolve-conflicts`, `check`, `complete`, `act` (PDF), `import-shipment`, каскадное удаление `ReceiptItem` |
 | `picking` | Модели + API, фильтр `?work_order=` (с `linked_order`) |
 | `labels` | QR-сервис, PDF-этикетки, раскладка, QR-сетка, партии печати, `act_service` |
 | `users` | JWT, `UserProfile`, `Role`, `AuditLog`, seeds |
-| `movements`, `inventory`, `work_orders` | Модели + API |
+| `movements`, `inventory`, `work_orders` | Модели + API, `WorkOrder` `__str__` (TYPE_CODED = «Текущий»), admin |
 | `tests/test_openapi.py` | Contract-тесты: схема OpenAPI соответствует контрактам |
 
 ### Web — покрытие
@@ -113,14 +120,28 @@ UI (экраны, сканер) — device-check на планшете.
   сериализатора (2f-1b).
 - `test_bulk_create_success` — после bulk-create `Container.status`
   = `PENDING_FILLING` (2f-5c-1).
+- `test_bulk_create_duplicate_number_allowed` — второй раз тот же
+  `container_number` → 201 (1.61, `2f-8-fix-2`).
 - `test_fill_samples_pending_filling_to_pending_placement` —
-  `fill-samples` переводит `PENDING_FILLING → PENDING_PLACEMENT`
-  (2f-5c-1).
+  `fill-samples` переводит `PENDING_FILLING → PENDING_PLACEMENT`,
+  пробы создаются в `PENDING_PLACEMENT` (2f-5c-1).
+- `test_fill_samples_active_container_still_creates_pending_placement` —
+  `ACTIVE` тары → пробы `PENDING_PLACEMENT` (sync не вызывается,
+  2f-5c-1 + `2f-8-fix-2`).
+- `test_fill_samples_updates_draft_fields` — draft-поля после
+  `fill-samples` обновляются из запроса (2f-7f + 1.69,
+  `2f-8-fix-2`).
+- `test_fill_samples_duplicate_number_allowed` — дубликат номера
+  принимается (1.61, `2f-8-fix-2`).
 - `test_check_all_matched_creates_containers` — при сверке
   `matched=true` создаётся `Container` со `PENDING_FILLING`
   (2f-5c-1).
 - `test_sync_sample_status_protects_selected` — `SELECTED` пробы
   не перезаписываются при синхронизации (2f-9b).
+- `test_issued_container_does_not_touch_sample` — для `Container.STATUS_ISSUED`
+  маппинга нет, sync не обновляет (2f-9c, `2f-8-fix-2`).
+- `test_work_order_str_coded` — `TYPE_CODED` label = «Текущий»
+  (2f-8, `2f-8-fix-2`).
 
 ### Поиск и фильтры
 
@@ -155,6 +176,7 @@ UI (экраны, сканер) — device-check на планшете.
 - `test_qr_batch_empty_items_returns_400`,
   `test_qr_batch_unknown_id_returns_404`,
   `test_qr_batch_unknown_type_returns_400`.
+- `test_qr_grid_capacity_88` — композиция `_qr_grid_dimensions()` == 8×11.
 
 ### Парсеры
 
@@ -184,6 +206,8 @@ UI (экраны, сканер) — device-check на планшете.
 - `test_bulk_place_to_cell`, `test_bulk_place_to_floor` — 2f-10.
 - `test_create_in_cell` — 2f-12a.
 - `test_delete_container_force_with_samples` — 2f-12b.
+- `test_patch_comment_non_draft_allowed` — `name`/`comment` в любом
+  статусе партии печати (2f-7e, `2f-8-fix-2`).
 
 ---
 
@@ -244,6 +268,11 @@ UI (экраны, сканер) — device-check на планшете.
   Проверяется вручную в shell (31 тара на тестовой БД).
 - **MSYS2 (UCRT64):** `manage.py shell -c "..."` ломается —
   писать тесты или временный скрипт.
+- **stale-тесты** — копятся, если долго гонять только `apps/<app>/`
+  (2f-8-fix-2: 8 stale-тестов от 2f-5c-1, 2f-7e, 2f-7f, 2f-9c,
+  1.61, `TYPE_CODED`). Перед закрытием захода — `pytest -q` целиком.
+- **`tail` буферизует** — для прогресса `pytest -q` без пайпа
+  или `| tee`.
 
 ---
 
@@ -261,12 +290,14 @@ UI (экраны, сканер) — device-check на планшете.
 
 **Сделано:**
 - Три уровня тестов (unit / integration / contract) — действуют.
-- 762+ backend + 24 web + 32 mobile = **818+ тестов**.
+- **767 backend** + 24 web + 32 mobile = **823 теста**.
 - Contract-тесты OpenAPI.
+- Все stale-тесты после серии 2f починены (`2f-8-fix-2`).
 
 **Осталось:**
 - **ТД-34.** `console.error` в catch-блоках web-компонентов — низкий.
 - **ТД-28.** Fallback `parseSampleInput` — низкий.
+- **ТД-40.** `A4_H_MM` — unused import в `test_label_service.py` — низкий.
 - Покрытие новых заходов серии 2f — по мере реализации.
 - Покрытие custom actions приёмки (`check`/`complete`) — точечное.
 - Покрытие `qr-batch` при отказе одного item — есть.

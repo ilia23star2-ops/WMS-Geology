@@ -106,6 +106,31 @@ Web первый, Mobile по требованию. Backend на старте с
 - ✅ **`2f-12a`** — `POST /storage/containers/create-in-cell/` —
   атомарное создание тары, проб и размещение.
   `?force=true` в `DELETE` тары (1.65, 1.67).
+- ✅ **`2f-8 (backend)`** — `WorkOrder`: admin-регистрация
+  (`apps/work_orders/admin.py` — новый), миграция
+  `0003_alter_workorder_linked_order_and_more`, сериализаторы
+  с `samples_count`, `containers`, `linked_order_number`,
+  `prefetch_related` в `views.py`, `TYPE_CODED` label → «Текущий».
+- ✅ **`2f-8-fix`** — stale-импорты в `test_label_service.py`:
+  удалены `A4_LABEL_GAP_MM` (удалён в 2f-9b) и `_qr_grid_capacity`
+  (удалён в 2f-9b), `test_qr_grid_capacity_88` переписан
+  через `_qr_grid_dimensions()`.
+- ✅ **`2f-8-fix-2`** — stale-тесты под правки прошлых заходов:
+  - `test_patch_non_draft_fails` → `..._comment_non_draft_allowed`
+    (2f-7e: `name`/`comment` в любом статусе);
+  - `test_bulk_create_existing_container` → `..._duplicate_number_allowed`
+    (1.61: глобальный UNIQUE снят);
+  - `test_fill_samples_number_conflict` → `..._duplicate_number_allowed` (1.61);
+  - `test_fill_samples_active_container` → `..._still_creates_pending_placement`
+    (2f-5c-1);
+  - `test_fill_samples_clears_draft_fields` → `..._updates_draft_fields`
+    (2f-7f: draft-поля обновляются из запроса, не обнуляются);
+  - `test_issued_container_sets_sample_issued` → `..._does_not_touch_sample`
+    (2f-9c: маппинга нет);
+  - `test_pending_decryption_sample_not_touched` — **удалён**
+    (2f-9c: статуса нет);
+  - `test_work_order_str_coded` — «Зашифрованный» → «Текущий»
+    (2f-8: `TYPE_CODED` label).
 
 ### Что закрыто (web)
 
@@ -183,8 +208,9 @@ Web первый, Mobile по требованию. Backend на старте с
   расширен теми же полями.
 - ✅ **`2f-7h`** — компактный реестр тары: иконки статусов,
   тултипы, убраны лишние колонки.
-- ✅ **`2f-8`** — дерево-таблица проб (`SamplesTreeTable`):
-  группы Н/З × ТИ, тары, пробы. Единый вид `/samples`.
+- ✅ **`2f-8a`** (историч., ранее `2f-8`) — дерево-таблица проб
+  (`SamplesTreeTable`): группы Н/З × ТИ, тары, пробы.
+  Единый вид `/samples`.
 - ✅ **`2f-9a`** — пропуски и редактирование диапазонов
   (`RangeEditDialog`), карандашик.
 - ✅ **`2f-9b`** — выбранные пробы (`SELECTED`), черная галочка
@@ -201,6 +227,18 @@ Web первый, Mobile по требованию. Backend на старте с
   в Топологию (`?cell_id=`).
 - ✅ **`2f-12b`** — `CreateInCellDialog` (создание тары прямо
   в ячейке) + предпросмотр после заполнения, force-удаление тары.
+- ✅ **`2f-8`** (закрыт 2026-10-27) — Наряд-заказы:
+  - страница `/work-orders` (`WorkOrdersPage.tsx`);
+  - `WorkOrderDialog`, `LinkWorkOrderDialog` (фильтр по номеру +
+    «создать новый»), `WorkOrderContainersDialog` (список тар Н/З);
+  - `workOrders.ts` — хуки React Query;
+  - колонка «Проб» с числом, кнопка «Глаз»;
+  - sidebar — пункт «Наряд-заказы»;
+  - Топология: force-удаление Room / Rack / Section / Tier / Cell
+    в дереве, автораскрытие, `?cell_id=` в `CellContentsDialog`;
+  - `ContainersPage` — фикс `any` в force-удалении.
+- ✅ **`2f-8-fix (tsconfig)`** — `web/tsconfig.json`: убран
+  deprecated `baseUrl` (TS 6 → 7 миграция). `paths` не тронуты.
 
 ### Что закрыто (docs)
 
@@ -220,6 +258,10 @@ Web первый, Mobile по требованию. Backend на старте с
 - ✅ **`docs/2.x-web-v2-update-5`** (2026-10-27) — CONTEXT / PLAN /
   DECISIONS (1.65-1.68) / API (bulk-place, create-in-cell,
   force-удаление, cell_id) / PROGRESS / TESTING.
+- ✅ **`docs/2f-8-closed`** (2026-10-27) — CONTEXT / PLAN /
+  PROGRESS / TESTING / DECISIONS (1.69 — draft-поля после
+  fill-samples; переименование `2f-8` (дерево-таблица) →
+  `2f-8a`).
 
 ### В работе
 
@@ -231,30 +273,30 @@ Web первый, Mobile по требованию. Backend на старте с
 
 Серия `2f` — полный CRUD в web (см. PLAN.md):
 
-- ⬜ **`2f-8`** — Н/З (WorkOrder): создание/правка.
 - ⬜ **`2f-14`** — история операций с тарой (создание,
-  перемещения).
+  перемещения, изменение статусов).
 - ⬜ **`2f-15`** — ТД-30 (предпросмотр этикетки до save).
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 59.
+- Заходов закрыто (с 2026-10-12): 63.
   - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
     `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
     `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
     `receiving-1c`, `receiving-3a`, `receiving-3b-1`,
     `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
     `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`,
-    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`, `2f-10`, `2f-11c`, `2f-12a`.
+    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`, `2f-10`, `2f-11c`, `2f-12a`,
+    `2f-8 (backend)`, `2f-8-fix`, `2f-8-fix-2`.
   - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
     `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
     `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
     `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`,
     `2f-3a`, `2f-4a`, `2f-4b`, `2f-4c-2`, `2f-5a-2`,
-    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`, `2f-7h`, `2f-8`,
+    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`, `2f-7h`, `2f-8a`,
     `2f-9a`, `2f-9b`, `2f-9c`, `2f-10`, `2f-11a`, `2f-11b`,
-    `2f-11c`, `2f-12b`.
-  - docs: 5.
+    `2f-11c`, `2f-12b`, `2f-8`, `2f-8-fix (tsconfig)`.
+  - docs: 6 (`...-update` … `...-update-5`, `docs/2f-8-closed`).
 - «Не норм» на первом прогоне: 4.
   - 3f-1: `FileResponse` не имеет `.content` — читать
     `streaming_content`.
@@ -265,9 +307,11 @@ Web первый, Mobile по требованию. Backend на старте с
   - 2f-4a: двойной костыль `setDialogKind` при edit комнаты —
     исправлено в финале.
 - Откатов: 0.
-- **Backend: 762+ теста** (было 552 на старте серии).
-- **Web: 24 юнит-теста** (парсер проб + tokenStorage + authStore).
-- **Mobile: 32 юнит-теста** (без изменений в этой серии).
+- **Backend: 767 тестов** (было «762+» в доках — расхождение
+  исправлено: stale-тесты копились с 2f-7e / 2f-7f / 2f-9c / 1.61,
+  починены в `2f-8-fix-2`).
+- **Web: 24 юнит-теста** (без изменений).
+- **Mobile: 32 юнит-теста** (без изменений).
 
 ---
 
