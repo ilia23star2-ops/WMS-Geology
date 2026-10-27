@@ -1,5 +1,5 @@
 """
-Модели приложения "Пробы" (v3).
+Модели приложения "Пробы" (v4).
 
 - Well — справочник скважин.
 - Sample — физическая единица хранения (навеска).
@@ -12,6 +12,9 @@
 Изменения 2.x-web-v2 (bundle-7a-1):
 - Добавлен `Sample.STATUS_PENDING_PLACEMENT` — синхронизируется
   со статусом тары `Container.STATUS_PENDING_PLACEMENT`.
+
+Изменения 2f-9b:
+- Добавлен `Sample.STATUS_SELECTED` — проба выбрана на доп. исследование.
 """
 
 from django.conf import settings
@@ -56,6 +59,7 @@ class Sample(models.Model):
     STATUS_DISPOSED = "DISPOSED"
     STATUS_PENDING_DECRYPTION = "PENDING_DECRYPTION"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
+    STATUS_SELECTED = "SELECTED"  # <--- 2f-9b
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
@@ -64,6 +68,7 @@ class Sample(models.Model):
         (STATUS_DISPOSED, "Утилизирована"),
         (STATUS_PENDING_DECRYPTION, "Ожидает расшифровки"),
         (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
+        (STATUS_SELECTED, "Выбрана"),  # <--- 2f-9b
     ]
 
     sample_number = models.CharField(

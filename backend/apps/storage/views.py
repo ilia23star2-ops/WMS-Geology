@@ -113,13 +113,7 @@ class SectionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="qr-batch")
     def qr_batch(self, request):
-        """
-        PDF с партией QR (Section + Cell).
-
-        Тело: `{"items": [{"type": "SECTION"|"CELL", "id": int}, ...]}`.
-        Адреса собираются на сервере: Section — из пути,
-        Cell — `full_address`.
-        """
+        """PDF с партией QR (Section + Cell)."""
         items = request.data.get("items")
         if not isinstance(items, list) or not items:
             return Response(
@@ -278,23 +272,6 @@ class ContainerTypeViewSet(viewsets.ModelViewSet):
 class ContainerViewSet(viewsets.ModelViewSet):
     """
     CRUD для тары.
-
-    Фильтры: ?pallet_id=, ?floor_room_id=, ?container_type_id=,
-             ?status=, ?comment_template_id=,
-             ?draft_work_order_coded= (icontains),
-             ?draft_research_type_id=
-
-    Custom actions:
-      - GET  /storage/containers/{id}/label.pdf/     — PDF этикетки.
-      - POST /storage/containers/bulk-create/        — создание партии
-        тары-заготовок (без проб).
-      - POST /storage/containers/{id}/fill-samples/  — заполнение
-        тары пробами (с присвоением номера).
-
-    `DELETE` защищён: если на тару ссылаются пробы (`Sample`),
-    элементы партии печати (`PrintBatchItem`) или строки приёмки
-    (`ReceiptItem`) — вернётся 409 с пояснением. Это осознанно:
-    тару, оставившую след в истории, не удаляем молча.
     """
 
     serializer_class = ContainerSerializer
@@ -347,9 +324,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="label.pdf")
     def label_pdf(self, request, pk=None):
-        """
-        Возвращает PDF-этикетку тары.
-        """
+        """Возвращает PDF-этикетку тары."""
         container = self.get_object()
 
         try:
@@ -372,12 +347,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-create")
     def bulk_create(self, request):
-        """
-        Создать партию тары-заготовок (без проб).
-
-        Draft-поля (участок, ТИ, Н/З) сохраняются на каждой таре.
-        `container_number` опционален.
-        """
+        """Создать партию тары-заготовок (без проб)."""
         ser = BulkCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
@@ -412,11 +382,6 @@ class ContainerViewSet(viewsets.ModelViewSet):
     def fill_samples(self, request, pk=None):
         """
         Заполнить существующую тару пробами.
-
-        Присваивает `container_number`, если у тары он ещё не задан.
-        Обновляет draft-поля тары (Н/З, ТИ, участок), чтобы они
-        не терялись в интерфейсе (фикс 2f-7f).
-        Одна тара = один тип исследования.
         """
         container = self.get_object()
         ser = FillSamplesSerializer(data=request.data)
