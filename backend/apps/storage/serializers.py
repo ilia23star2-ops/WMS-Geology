@@ -122,8 +122,6 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
-    """Тара. Read-only: `comment_template_text`, `draft_*_name`, `label_printed_at`, `cell_id`."""
-
     comment_template_text = serializers.CharField(
         source="comment_template.text", read_only=True, default=None,
     )
@@ -133,7 +131,6 @@ class ContainerSerializer(serializers.ModelSerializer):
     draft_research_type_name = serializers.CharField(
         source="draft_research_type.name", read_only=True, default=None,
     )
-    # 2f-11c: Вычисляемое поле для перехода в Топологию
     cell_id = serializers.IntegerField(
         source="pallet.cell_id", read_only=True, default=None,
     )
@@ -146,7 +143,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "container_type",
             "qr_code",
             "pallet",
-            "cell_id",  # <--- Новое поле
+            "cell_id",
             "floor_room",
             "position_on_pallet",
             "status",
@@ -317,6 +314,52 @@ class FillSamplesSerializer(serializers.Serializer):
         value = value.strip()
         if not value:
             raise serializers.ValidationError("Номер зашифрованного Н/З обязателен.")
+        return value
+
+    def validate_research_type_id(self, value):
+        from apps.samples.catalogs import ResearchType
+        if not ResearchType.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(f"Тип исследования #{value} не найден.")
+        return value
+
+    def validate_site_id(self, value):
+        if value is None:
+            return None
+        from apps.samples.catalogs import Site
+        if not Site.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(f"Участок #{value} не найден.")
+        return value
+
+
+# ============================================================
+# Create in cell — создание и заполнение тары в ячейке (2f-12a)
+# ============================================================
+class CreateInCellSerializer(serializers.Serializer):
+    """Входной сериализатор для POST /storage/containers/create-in-cell/."""
+    
+    cell_id = serializers.IntegerField(min_value=1)
+    container_type_id = serializers.IntegerField(min_value=1)
+    container_number = serializers.CharField(
+        max_length=100, required=False, allow_null=True, allow_blank=True, default=None
+    )
+    work_order_coded = serializers.CharField(max_length=100)
+    work_order_incoming = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default=""
+    )
+    research_type_id = serializers.IntegerField(min_value=1)
+    site_id = serializers.IntegerField(
+        min_value=1, required=False, allow_null=True, default=None
+    )
+    sample_groups = BulkSampleGroupSerializer(many=True, allow_empty=False)
+
+    def validate_cell_id(self, value):
+        if not Cell.objects.filter(pk=value, is_active=True).exists():
+            raise serializers.ValidationError(f"Ячейка #{value} не найдена или неактивна.")
+        return value
+
+    def validate_container_type_id(self, value):
+        if not ContainerType.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(f"Тип тары #{value} не найден.")
         return value
 
     def validate_research_type_id(self, value):

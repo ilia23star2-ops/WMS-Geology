@@ -40,10 +40,10 @@ import { useNavigate } from "react-router-dom";
 
 import {
     CONTAINER_STATUS_LABELS,
-    deleteContainer,
     downloadLabelPdf,
     useContainers,
     useContainerTypes,
+    useDeleteContainer,
     useResearchTypes,
     type Container,
     type ContainerFilters,
@@ -110,6 +110,8 @@ export default function ContainersPage() {
     const containerTypes = useContainerTypes();
     const researchTypes = useResearchTypes();
 
+    const deleteMutation = useDeleteContainer();
+
     const typesMap = useMemo(() => {
         const map = new Map<number, string>();
         for (const t of containerTypes.data ?? []) {
@@ -132,22 +134,38 @@ export default function ContainersPage() {
         const label = row.container_number
             ? `№ ${row.container_number}`
             : `#${row.id}`;
-        const ok = window.confirm(
-            `Удалить тару ${label}? Действие необратимо.`,
-        );
+
+        const ok = window.confirm(`Удалить тару ${label}?`);
         if (!ok) return;
+
         try {
-            await deleteContainer(row.id);
+            // Первая попытка (обычное удаление)
+            await deleteMutation.mutateAsync({ id: row.id, force: false });
             setEditMessage(`Тара ${label} удалена.`);
         } catch (err) {
             const anyErr = err as {
-                response?: { data?: { error?: string; detail?: string } };
+                response?: { status?: number; data?: { error?: string } };
             };
-            const msg =
-                anyErr?.response?.data?.error
-                ?? anyErr?.response?.data?.detail
-                ?? `Не удалось удалить тару ${label}.`;
-            setDeleteError(msg);
+
+            // Если ошибка 409 (ProtectedError), предлагаем force-удаление
+            if (anyErr?.response?.status === 409) {
+                const forceOk = window.confirm(
+                    `В таре ${label} есть связанные пробы или другие объекты.\n\n` +
+                    `Удалить тару ВМЕСТЕ со всеми пробами и связями? Это действие необратимо!`
+                );
+                if (!forceOk) return;
+
+                try {
+                    await deleteMutation.mutateAsync({ id: row.id, force: true });
+                    setEditMessage(`Тара ${label} удалена вместе с пробами.`);
+                } catch (err2) {
+                    const msg2 = (err2 as any)?.response?.data?.error ?? "Не удалось удалить тару даже с force.";
+                    setDeleteError(msg2);
+                }
+            } else {
+                const msg = anyErr?.response?.data?.error ?? `Не удалось удалить тару ${label}.`;
+                setDeleteError(msg);
+            }
         }
     }
 
