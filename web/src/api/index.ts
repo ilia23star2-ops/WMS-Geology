@@ -90,7 +90,7 @@ export type {
     Site,
 } from "./catalogs";
 
-// Топология склада (2f-4a + 2f-4b + 2f-4c-2).
+// Топология склада (2f-4a + 2f-4b + 2f-4c-2 + 2f-11c).
 export {
     CELL_TYPE_LABELS,
     PALLET_STATUS_LABELS,
@@ -98,6 +98,7 @@ export {
     downloadCellQrPdf,
     downloadCellsBatchQrPdf,
     downloadSectionQrPdf,
+    useCell,
     useCells,
     useCreateCell,
     useCreatePallet,
@@ -112,9 +113,13 @@ export {
     useDeleteSection,
     useDeleteTier,
     usePalletByCell,
+    useRack,
     useRacks,
+    useRoom,
     useRooms,
+    useSection,
     useSections,
+    useTier,
     useTiers,
     useUpdateCell,
     useUpdatePallet,

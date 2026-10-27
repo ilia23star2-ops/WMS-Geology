@@ -1,8 +1,5 @@
 """
 ViewSets приложения samples.
-
-Справочники: ResearchTypeViewSet, SiteViewSet, LaboratoryViewSet.
-Модели: WellViewSet, SampleViewSet, SampleWorkOrderViewSet.
 """
 
 from collections import OrderedDict
@@ -93,7 +90,6 @@ class WellViewSet(viewsets.ModelViewSet):
 
 
 def _describe_protected(objects) -> str:
-    """Человекочитаемое описание объектов, блокирующих удаление."""
     counts: dict[str, int] = {}
     for obj in objects:
         label = str(obj._meta.verbose_name_plural)
@@ -104,17 +100,7 @@ def _describe_protected(objects) -> str:
 class SampleViewSet(viewsets.ModelViewSet):
     """
     CRUD для проб.
-
-    Фильтры (см. get_queryset).
-    Custom actions:
-    - GET  /samples/grouped/       — сгруппированный список.
-    - POST /samples/{id}/dispose/  — утилизация (2f-2b).
-    - POST /samples/{id}/restore/  — возврат из утилизации (2f-2b).
-
-    `destroy` защищён: если проба фигурирует в `PickListItem` или
-    `ShipmentItem` — вернётся 409.
     """
-
     serializer_class = SampleSerializer
     permission_classes = [IsAuthenticated]
 
@@ -163,8 +149,6 @@ class SampleViewSet(viewsets.ModelViewSet):
         ):
             qs = qs.filter(current_work_order__isnull=True)
 
-        # Фильтр по Н/З (с учётом linked_order) — единственный случай,
-        # когда нужен `.distinct()` из-за JOIN на work_order_links.
         work_order_number = p.get("work_order")
         if work_order_number:
             work_order_ids = set(
@@ -186,14 +170,7 @@ class SampleViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    # ------------------------------------------------------------
-    # Удаление (2f-2b)
-    # ------------------------------------------------------------
     def destroy(self, request, *args, **kwargs):
-        """
-        Удаление пробы. Если проба фигурирует в `PickListItem` или
-        `ShipmentItem` — `ProtectedError` → 409 с пояснением.
-        """
         instance = self.get_object()
         try:
             self.perform_destroy(instance)
@@ -209,26 +186,11 @@ class SampleViewSet(viewsets.ModelViewSet):
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # ------------------------------------------------------------
-    # Утилизация / возврат (2f-2b)
-    # ------------------------------------------------------------
     def _get_sample_any(self, pk: int) -> Sample | None:
-        """
-        Достаёт пробу независимо от фильтров `get_queryset`.
-
-        Нужно для `dispose` / `restore`: утилизированные пробы
-        исключены из основного queryset, но эти экшены должны
-        их видеть.
-        """
         return Sample.objects.filter(pk=pk).first()
 
     @action(detail=True, methods=["post"], url_path="dispose")
     def dispose(self, request, pk=None):
-        """
-        Утилизировать пробу (soft, с аудитом).
-
-        Тело: `{disposal_reason: str}` (опционально).
-        """
         sample = self._get_sample_any(pk)
         if sample is None:
             return Response(
@@ -256,7 +218,6 @@ class SampleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="restore")
     def restore(self, request, pk=None):
-        """Вернуть пробу из утилизации (статус → `IN_STORAGE`)."""
         sample = self._get_sample_any(pk)
         if sample is None:
             return Response(
@@ -280,22 +241,10 @@ class SampleViewSet(viewsets.ModelViewSet):
 
         return Response(SampleSerializer(sample).data)
 
-    # ------------------------------------------------------------
-    # Группированный список
-    # ------------------------------------------------------------
     @action(detail=False, methods=["get"], url_path="grouped")
     def grouped(self, request):
         """
         Сгруппированный список проб.
-
-        Группа = (Н/З, тип исследования). Внутри — тары с пробами.
-
-        Сортировка:
-        - сначала группы с Н/З, по `order_number` (алфавит);
-        - внутри одного Н/З — по коду типа исследования;
-        - пробы без Н/З — в конце, по коду типа.
-
-        Пагинация — по 20 групп.
         """
         per_page = 20
         qs = self.get_queryset()
@@ -365,11 +314,18 @@ class SampleViewSet(viewsets.ModelViewSet):
             containers_data = []
             for cdata in g["containers"].values():
                 c = cdata["container"]
+                # 2f-11c: Достаем cell_id и pallet_id для перехода
+                pallet = c.pallet
+                cell_id = pallet.cell_id if pallet else None
+                pallet_id = pallet.id if pallet else None
+
                 containers_data.append({
                     "container": {
                         "id": c.id,
                         "number": c.container_number,
                         "status": c.status,
+                        "cell_id": cell_id,
+                        "pallet_id": pallet_id,
                     },
                     "location": compute_sample_location(c),
                     "samples": [
@@ -418,8 +374,6 @@ class SampleViewSet(viewsets.ModelViewSet):
 
 
 class SampleWorkOrderViewSet(viewsets.ModelViewSet):
-    """CRUD для связей проба ↔ Н/З. Фильтры: ?sample_id=, ?work_order_id="""
-
     serializer_class = SampleWorkOrderSerializer
     permission_classes = [IsAuthenticated]
 

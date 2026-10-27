@@ -1,7 +1,8 @@
 /**
- * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11).
+ * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11 + 2f-11c).
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
     Alert,
     Box,
@@ -26,7 +27,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PrintIcon from "@mui/icons-material/Print";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
-import VisibilityIcon from "@mui/icons-material/Visibility"; // <--- Добавлено
+import VisibilityIcon from "@mui/icons-material/Visibility";
 import {
     DataGrid,
     type GridColDef,
@@ -51,6 +52,10 @@ import {
     useRooms,
     useSections,
     useTiers,
+    useCell,
+    useTier,
+    useSection,
+    useRack,
     type Cell,
     type QrBatchItem,
     type Rack,
@@ -80,10 +85,6 @@ function emptySelection(): GridRowSelectionModel {
     return { type: "include", ids: new Set<GridRowId>() };
 }
 
-/**
- * Ячейка колонки «Поддон»: chip с номером/статусом и кнопки
- * «Посмотреть» (глаз) / «Настроить» (карандаш).
- */
 function CellPalletChip({
     cell,
     onOpenPallet,
@@ -136,6 +137,9 @@ function CellPalletChip({
 }
 
 export default function TopologyPage() {
+    const [searchParams] = useSearchParams();
+    const targetCellId = searchParams.get("cell_id") ? Number(searchParams.get("cell_id")) : null;
+
     const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
     const [selectedRack, setSelectedRack] = useState<number | null>(null);
     const [selectedSection, setSelectedSection] = useState<number | null>(null);
@@ -144,20 +148,48 @@ export default function TopologyPage() {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogKind, setDialogKind] = useState<TopologyKind>("room");
     const [dialogParentId, setDialogParentId] = useState<number | null>(null);
-    const [dialogInitial, setDialogInitial] =
-        useState<TopologyInitial | null>(null);
-    const [dialogAddressPrefix, setDialogAddressPrefix] =
-        useState<string>("");
+    const [dialogInitial, setDialogInitial] = useState<TopologyInitial | null>(null);
+    const [dialogAddressPrefix, setDialogAddressPrefix] = useState<string>("");
 
     const [palletCell, setPalletCell] = useState<Cell | null>(null);
     const [viewCell, setViewCell] = useState<Cell | null>(null);
     const [viewPalletId, setViewPalletId] = useState<number | null>(null);
 
-    const [cellSelection, setCellSelection] =
-        useState<GridRowSelectionModel>(emptySelection());
+    const [cellSelection, setCellSelection] = useState<GridRowSelectionModel>(emptySelection());
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+
+    // Хуки для авто-раскрытия
+    const targetCellQuery = useCell(targetCellId);
+    const targetTierQuery = useTier(targetCellQuery.data?.tier ?? null);
+    const targetSectionQuery = useSection(targetTierQuery.data?.section ?? null);
+    const targetRackQuery = useRack(targetSectionQuery.data?.rack ?? null);
+
+    // Хук для авто-открытия диалога содержимого
+    const targetPalletQuery = usePalletByCell(targetCellId);
+
+    useEffect(() => {
+        if (
+            targetCellQuery.data &&
+            targetTierQuery.data &&
+            targetSectionQuery.data &&
+            targetRackQuery.data
+        ) {
+            setSelectedRoom(targetRackQuery.data.room);
+            setSelectedRack(targetRackQuery.data.id);
+            setSelectedSection(targetSectionQuery.data.id);
+            setSelectedTier(targetTierQuery.data.id);
+        }
+    }, [targetCellQuery.data, targetTierQuery.data, targetSectionQuery.data, targetRackQuery.data]);
+
+    // Эффект для автоматического открытия окна просмотра ячейки
+    useEffect(() => {
+        if (targetCellQuery.data && targetPalletQuery.data) {
+            setViewCell(targetCellQuery.data);
+            setViewPalletId(targetPalletQuery.data.id);
+        }
+    }, [targetCellQuery.data, targetPalletQuery.data]);
 
     const rooms = useRooms();
     const racks = useRacks(selectedRoom);
@@ -176,11 +208,7 @@ export default function TopologyPage() {
         [cellSelection],
     );
 
-    function openCreate(
-        kind: TopologyKind,
-        parentId: number | null,
-        addressPrefix?: string,
-    ) {
+    function openCreate(kind: TopologyKind, parentId: number | null, addressPrefix?: string) {
         setDialogKind(kind);
         setDialogParentId(parentId);
         setDialogInitial(null);
@@ -195,14 +223,8 @@ export default function TopologyPage() {
         setDialogOpen(true);
     }
 
-    async function handleDelete(
-        kind: TopologyKind,
-        id: number,
-        label: string,
-    ) {
-        const ok = window.confirm(
-            `Удалить «${label}»? Вложенные объекты тоже удалятся.`,
-        );
+    async function handleDelete(kind: TopologyKind, id: number, label: string) {
+        const ok = window.confirm(`Удалить «${label}»? Вложенные объекты тоже удалятся.`);
         if (!ok) return;
         try {
             if (kind === "room") await delRoom.mutateAsync(id);
@@ -217,52 +239,33 @@ export default function TopologyPage() {
     }
 
     async function handleSectionQr(section: Section) {
-        try {
-            await downloadSectionQrPdf(section.id);
-        } catch {
-            setError(`Не удалось открыть QR секции «${section.code}».`);
-        }
+        try { await downloadSectionQrPdf(section.id); }
+        catch { setError(`Не удалось открыть QR секции «${section.code}».`); }
     }
 
     async function handleCellQr(cell: Cell) {
-        try {
-            await downloadCellQrPdf(cell.id);
-        } catch {
-            setError(`Не удалось открыть QR ячейки «${cell.code}».`);
-        }
+        try { await downloadCellQrPdf(cell.id); }
+        catch { setError(`Не удалось открыть QR ячейки «${cell.code}».`); }
     }
 
     async function handleBatchQr() {
         if (selectedCellIds.length === 0) return;
-        const items: QrBatchItem[] = selectedCellIds.map((id) => ({
-            type: "CELL",
-            id,
-        }));
+        const items: QrBatchItem[] = selectedCellIds.map((id) => ({ type: "CELL", id }));
         try {
             await downloadCellsBatchQrPdf(items);
             setCellSelection(emptySelection());
-        } catch {
-            setError("Не удалось сформировать PDF с QR.");
-        }
+        } catch { setError("Не удалось сформировать PDF с QR."); }
     }
 
-    // Ячейки выбранного яруса
     const cellColumns: GridColDef<Cell>[] = [
         { field: "id", headerName: "ID", width: 70 },
         { field: "code", headerName: "Код", width: 90 },
-        {
-            field: "full_address",
-            headerName: "Адрес",
-            flex: 1,
-            minWidth: 240,
-        },
+        { field: "full_address", headerName: "Адрес", flex: 1, minWidth: 240 },
         {
             field: "cell_type",
             headerName: "Тип",
             width: 110,
-            valueGetter: (value) =>
-                CELL_TYPE_LABELS[value as keyof typeof CELL_TYPE_LABELS]
-                ?? value,
+            valueGetter: (value) => CELL_TYPE_LABELS[value as keyof typeof CELL_TYPE_LABELS] ?? value,
         },
         {
             field: "pallet",
@@ -302,42 +305,17 @@ export default function TopologyPage() {
             renderCell: (params) => (
                 <Stack direction="row" spacing={0.5}>
                     <Tooltip title="QR-код">
-                        <IconButton
-                            size="small"
-                            onClick={() => void handleCellQr(params.row)}
-                        >
+                        <IconButton size="small" onClick={() => void handleCellQr(params.row)}>
                             <QrCode2Icon fontSize="small" />
                         </IconButton>
                     </Tooltip>
                     <Tooltip title="Редактировать">
-                        <IconButton
-                            size="small"
-                            onClick={() =>
-                                openEdit("cell", {
-                                    id: params.row.id,
-                                    code: params.row.code,
-                                    full_address: params.row.full_address,
-                                    cell_type: params.row.cell_type,
-                                    qr_code: params.row.qr_code,
-                                    is_active: params.row.is_active,
-                                })
-                            }
-                        >
+                        <IconButton size="small" onClick={() => openEdit("cell", { ...params.row })}>
                             <EditIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
                     <Tooltip title="Удалить">
-                        <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() =>
-                                void handleDelete(
-                                    "cell",
-                                    params.row.id,
-                                    params.row.full_address,
-                                )
-                            }
-                        >
+                        <IconButton size="small" color="error" onClick={() => void handleDelete("cell", params.row.id, params.row.full_address)}>
                             <DeleteIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
@@ -346,7 +324,6 @@ export default function TopologyPage() {
         },
     ];
 
-    // Строка дерева
     function TreeNode({
         label,
         depth,
@@ -369,76 +346,33 @@ export default function TopologyPage() {
         selected?: boolean;
     }) {
         return (
-            <ListItemButton
-                selected={selected}
-                onClick={onSelect}
-                sx={{ pl: 2 + depth * 2 }}
-            >
+            <ListItemButton selected={selected} onClick={onSelect} sx={{ pl: 2 + depth * 2 }}>
                 {hasChildren ? (
-                    selected
-                        ? <ExpandMoreIcon fontSize="small" />
-                        : <ChevronRightIcon fontSize="small" />
+                    selected ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />
                 ) : (
                     <Box sx={{ width: 20 }} />
                 )}
-                <ListItemText
-                    primary={label}
-                    slotProps={{
-                        primary: { variant: "body2" },
-                    }}
-                />
+                <ListItemText primary={label} slotProps={{ primary: { variant: "body2" } }} />
                 <Tooltip title="Добавить вложенное">
-                    <IconButton
-                        size="small"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onAdd();
-                        }}
-                    >
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); onAdd(); }}>
                         <AddIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
                 {onQr && (
                     <Tooltip title="QR-код">
-                        <IconButton
-                            size="small"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onQr();
-                            }}
-                        >
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); onQr(); }}>
                             <QrCode2Icon fontSize="small" />
                         </IconButton>
                     </Tooltip>
                 )}
                 <Tooltip title="Редактировать">
-                    <IconButton
-                        size="small"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onEdit();
-                        }}
-                    >
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); onEdit(); }}>
                         <EditIcon fontSize="small" />
                     </IconButton>
                 </Tooltip>
-                <Tooltip
-                    title={
-                        hasChildren
-                            ? "Сначала удалите вложенные объекты"
-                            : "Удалить"
-                    }
-                >
+                <Tooltip title={hasChildren ? "Сначала удалите вложенные объекты" : "Удалить"}>
                     <span>
-                        <IconButton
-                            size="small"
-                            color="error"
-                            disabled={hasChildren}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete();
-                            }}
-                        >
+                        <IconButton size="small" color="error" disabled={hasChildren} onClick={(e) => { e.stopPropagation(); onDelete(); }}>
                             <DeleteIcon fontSize="small" />
                         </IconButton>
                     </span>
@@ -449,56 +383,23 @@ export default function TopologyPage() {
 
     return (
         <Box>
-            <Box
-                sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    mb: 2,
-                    flexWrap: "wrap",
-                    rowGap: 1,
-                }}
-            >
-                <Typography variant="h2" component="h1">
-                    Топология склада
-                </Typography>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", rowGap: 1 }}>
+                <Typography variant="h2" component="h1">Топология склада</Typography>
                 <Tooltip title="Добавить комнату">
-                    <IconButton
-                        color="primary"
-                        onClick={() => openCreate("room", null)}
-                    >
-                        <AddIcon />
-                    </IconButton>
+                    <IconButton color="primary" onClick={() => openCreate("room", null)}><AddIcon /></IconButton>
                 </Tooltip>
             </Box>
 
-            {error && (
-                <Alert
-                    severity="error"
-                    sx={{ mb: 2 }}
-                    onClose={() => setError(null)}
-                >
-                    {error}
-                </Alert>
-            )}
+            {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-            <Stack
-                direction={{ xs: "column", md: "row" }}
-                spacing={2}
-                sx={{ alignItems: "flex-start" }}
-            >
-                {/* Дерево */}
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
                 <Card sx={{ width: { xs: "100%", md: 460 }, flexShrink: 0 }}>
                     <CardContent>
-                        <Typography variant="h3" sx={{ mb: 1 }}>
-                            Иерархия
-                        </Typography>
+                        <Typography variant="h3" sx={{ mb: 1 }}>Иерархия</Typography>
                         <List dense disablePadding>
                             {(rooms.data ?? []).map((room: Room) => {
                                 const roomSelected = selectedRoom === room.id;
-                                const roomRacks = roomSelected
-                                    ? racks.data ?? []
-                                    : [];
+                                const roomRacks = roomSelected ? racks.data ?? [] : [];
                                 return (
                                     <Box key={room.id}>
                                         <TreeNode
@@ -512,235 +413,112 @@ export default function TopologyPage() {
                                                 setSelectedSection(null);
                                                 setSelectedTier(null);
                                             }}
-                                            onAdd={() =>
-                                                openCreate("rack", room.id)
-                                            }
-                                            onEdit={() =>
-                                                openEdit("room", {
-                                                    id: room.id,
-                                                    name: room.name,
-                                                    description: room.description,
-                                                })
-                                            }
-                                            onDelete={() =>
-                                                void handleDelete(
-                                                    "room",
-                                                    room.id,
-                                                    room.name,
-                                                )
-                                            }
+                                            onAdd={() => openCreate("rack", room.id)}
+                                            onEdit={() => openEdit("room", { id: room.id, name: room.name, description: room.description })}
+                                            onDelete={() => void handleDelete("room", room.id, room.name)}
                                         />
 
-                                        {roomSelected
-                                            && roomRacks.map((rack: Rack) => {
-                                                const rackSelected =
-                                                    selectedRack === rack.id;
-                                                const rackSections =
-                                                    rackSelected
-                                                        ? sections.data ?? []
-                                                        : [];
-                                                return (
-                                                    <Box key={rack.id}>
-                                                        <TreeNode
-                                                            label={`Стеллаж ${rack.code}`}
-                                                            depth={1}
-                                                            hasChildren={true}
-                                                            selected={rackSelected}
-                                                            onSelect={() => {
-                                                                setSelectedRack(rack.id);
-                                                                setSelectedSection(null);
-                                                                setSelectedTier(null);
-                                                            }}
-                                                            onAdd={() =>
-                                                                openCreate(
-                                                                    "section",
-                                                                    rack.id,
-                                                                )
-                                                            }
-                                                            onEdit={() =>
-                                                                openEdit("rack", {
-                                                                    id: rack.id,
-                                                                    code: rack.code,
-                                                                    description: rack.description,
-                                                                })
-                                                            }
-                                                            onDelete={() =>
-                                                                void handleDelete(
-                                                                    "rack",
-                                                                    rack.id,
-                                                                    `Стеллаж ${rack.code}`,
-                                                                )
-                                                            }
-                                                        />
+                                        {roomSelected && roomRacks.map((rack: Rack) => {
+                                            const rackSelected = selectedRack === rack.id;
+                                            const rackSections = rackSelected ? sections.data ?? [] : [];
+                                            return (
+                                                <Box key={rack.id}>
+                                                    <TreeNode
+                                                        label={`Стеллаж ${rack.code}`}
+                                                        depth={1}
+                                                        hasChildren={true}
+                                                        selected={rackSelected}
+                                                        onSelect={() => {
+                                                            setSelectedRack(rack.id);
+                                                            setSelectedSection(null);
+                                                            setSelectedTier(null);
+                                                        }}
+                                                        onAdd={() => openCreate("section", rack.id)}
+                                                        onEdit={() => openEdit("rack", { id: rack.id, code: rack.code, description: rack.description })}
+                                                        onDelete={() => void handleDelete("rack", rack.id, `Стеллаж ${rack.code}`)}
+                                                    />
 
-                                                        {rackSelected
-                                                            && rackSections.map((section: Section) => {
-                                                                const sectionSelected =
-                                                                    selectedSection === section.id;
-                                                                const sectionTiers =
-                                                                    sectionSelected
-                                                                        ? tiers.data ?? []
-                                                                        : [];
-                                                                return (
-                                                                    <Box key={section.id}>
+                                                    {rackSelected && rackSections.map((section: Section) => {
+                                                        const sectionSelected = selectedSection === section.id;
+                                                        const sectionTiers = sectionSelected ? tiers.data ?? [] : [];
+                                                        return (
+                                                            <Box key={section.id}>
+                                                                <TreeNode
+                                                                    label={`Секция ${section.code}`}
+                                                                    depth={2}
+                                                                    hasChildren={true}
+                                                                    selected={sectionSelected}
+                                                                    onSelect={() => {
+                                                                        setSelectedSection(section.id);
+                                                                        setSelectedTier(null);
+                                                                    }}
+                                                                    onAdd={() => openCreate("tier", section.id)}
+                                                                    onQr={() => void handleSectionQr(section)}
+                                                                    onEdit={() => openEdit("section", { id: section.id, code: section.code, qr_code: section.qr_code, description: section.description })}
+                                                                    onDelete={() => void handleDelete("section", section.id, `Секция ${section.code}`)}
+                                                                />
+
+                                                                {sectionSelected && sectionTiers.map((tier: Tier) => {
+                                                                    const tierSelected = selectedTier === tier.id;
+                                                                    return (
                                                                         <TreeNode
-                                                                            label={`Секция ${section.code}`}
-                                                                            depth={2}
-                                                                            hasChildren={true}
-                                                                            selected={sectionSelected}
+                                                                            key={tier.id}
+                                                                            label={`Ярус ${tier.code}`}
+                                                                            depth={3}
+                                                                            hasChildren={false}
+                                                                            selected={tierSelected}
                                                                             onSelect={() => {
-                                                                                setSelectedSection(section.id);
-                                                                                setSelectedTier(null);
+                                                                                setSelectedTier(tier.id);
+                                                                                setCellSelection(emptySelection());
                                                                             }}
-                                                                            onAdd={() =>
-                                                                                openCreate(
-                                                                                    "tier",
-                                                                                    section.id,
-                                                                                )
-                                                                            }
-                                                                            onQr={() =>
-                                                                                void handleSectionQr(section)
-                                                                            }
-                                                                            onEdit={() =>
-                                                                                openEdit("section", {
-                                                                                    id: section.id,
-                                                                                    code: section.code,
-                                                                                    qr_code: section.qr_code,
-                                                                                    description: section.description,
-                                                                                })
-                                                                            }
-                                                                            onDelete={() =>
-                                                                                void handleDelete(
-                                                                                    "section",
-                                                                                    section.id,
-                                                                                    `Секция ${section.code}`,
-                                                                                )
-                                                                            }
+                                                                            onAdd={() => openCreate("cell", tier.id, `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`)}
+                                                                            onEdit={() => openEdit("tier", { id: tier.id, code: tier.code, level_number: tier.level_number, description: tier.description })}
+                                                                            onDelete={() => void handleDelete("tier", tier.id, `Ярус ${tier.code}`)}
                                                                         />
-
-                                                                        {sectionSelected
-                                                                            && sectionTiers.map((tier: Tier) => {
-                                                                                const tierSelected =
-                                                                                    selectedTier === tier.id;
-                                                                                return (
-                                                                                    <TreeNode
-                                                                                        key={tier.id}
-                                                                                        label={`Ярус ${tier.code}`}
-                                                                                        depth={3}
-                                                                                        hasChildren={false}
-                                                                                        selected={tierSelected}
-                                                                                        onSelect={() => {
-                                                                                            setSelectedTier(tier.id);
-                                                                                            setCellSelection(emptySelection());
-                                                                                        }}
-                                                                                        onAdd={() =>
-                                                                                            openCreate(
-                                                                                                "cell",
-                                                                                                tier.id,
-                                                                                                `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`,
-                                                                                            )
-                                                                                        }
-                                                                                        onEdit={() =>
-                                                                                            openEdit("tier", {
-                                                                                                id: tier.id,
-                                                                                                code: tier.code,
-                                                                                                level_number: tier.level_number,
-                                                                                                description: tier.description,
-                                                                                            })
-                                                                                        }
-                                                                                        onDelete={() =>
-                                                                                            void handleDelete(
-                                                                                                "tier",
-                                                                                                tier.id,
-                                                                                                `Ярус ${tier.code}`,
-                                                                                            )
-                                                                                        }
-                                                                                    />
-                                                                                );
-                                                                            })}
-                                                                    </Box>
-                                                                );
-                                                            })}
-                                                    </Box>
-                                                );
-                                            })}
+                                                                    );
+                                                                })}
+                                                            </Box>
+                                                        );
+                                                    })}
+                                                </Box>
+                                            );
+                                        })}
                                     </Box>
                                 );
                             })}
                         </List>
 
-                        {rooms.isLoading && (
-                            <Typography variant="body2" color="text.secondary">
-                                Загрузка...
-                            </Typography>
-                        )}
+                        {rooms.isLoading && <Typography variant="body2" color="text.secondary">Загрузка...</Typography>}
                         {!rooms.isLoading && (rooms.data?.length ?? 0) === 0 && (
-                            <Alert severity="info">
-                                Пока нет ни одной комнаты. Начните с «+» в шапке.
-                            </Alert>
+                            <Alert severity="info">Пока нет ни одной комнаты. Начните с «+» в шапке.</Alert>
                         )}
                     </CardContent>
                 </Card>
 
-                {/* Ячейки */}
                 <Card sx={{ flex: 1, minWidth: 0 }}>
                     <CardContent>
-                        <Typography variant="h3" sx={{ mb: 1 }}>
-                            Ячейки{" "}
-                            {selectedTier !== null && `яруса #${selectedTier}`}
-                        </Typography>
+                        <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
                         {selectedTier === null ? (
-                            <Alert severity="info">
-                                Выберите ярус в дереве, чтобы увидеть ячейки.
-                            </Alert>
+                            <Alert severity="info">Выберите ярус в дереве, чтобы увидеть ячейки.</Alert>
                         ) : (
                             <>
-                                <Stack
-                                    direction="row"
-                                    spacing={1}
-                                    sx={{
-                                        justifyContent: "flex-end",
-                                        alignItems: "center",
-                                        mb: 1,
-                                        flexWrap: "wrap",
-                                        rowGap: 1,
-                                    }}
-                                >
+                                <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center", mb: 1, flexWrap: "wrap", rowGap: 1 }}>
                                     {selectedCellIds.length > 0 && (
                                         <>
-                                            <Typography
-                                                variant="body2"
-                                                color="text.secondary"
-                                            >
-                                                Выбрано: {selectedCellIds.length}
-                                            </Typography>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                startIcon={<PrintIcon />}
-                                                onClick={() => void handleBatchQr()}
-                                            >
-                                                Печать QR ({selectedCellIds.length})
-                                            </Button>
+                                            <Typography variant="body2" color="text.secondary">Выбрано: {selectedCellIds.length}</Typography>
+                                            <Button variant="outlined" size="small" startIcon={<PrintIcon />} onClick={() => void handleBatchQr()}>Печать QR ({selectedCellIds.length})</Button>
                                         </>
                                     )}
                                     <Tooltip title="Добавить ячейку">
                                         <IconButton
                                             color="primary"
                                             onClick={() => {
-                                                const tier = (tiers.data ?? [])
-                                                    .find((t) => t.id === selectedTier);
-                                                const section = (sections.data ?? [])
-                                                    .find((s) => s.id === tier?.section);
-                                                const rack = (racks.data ?? [])
-                                                    .find((r) => r.id === section?.rack);
-                                                const room = (rooms.data ?? [])
-                                                    .find((r) => r.id === rack?.room);
-                                                const prefix =
-                                                    room && rack && section && tier
-                                                        ? `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`
-                                                        : "";
+                                                const tier = (tiers.data ?? []).find((t) => t.id === selectedTier);
+                                                const section = (sections.data ?? []).find((s) => s.id === tier?.section);
+                                                const rack = (racks.data ?? []).find((r) => r.id === section?.rack);
+                                                const room = (rooms.data ?? []).find((r) => r.id === rack?.room);
+                                                const prefix = room && rack && section && tier ? `${room.name} / ${rack.code} / ${section.code} / ${tier.code}` : "";
                                                 openCreate("cell", selectedTier, prefix);
                                             }}
                                         >
@@ -793,15 +571,12 @@ export default function TopologyPage() {
                 onClose={() => {
                     setViewCell(null);
                     setViewPalletId(null);
+                    // Очищаем URL от cell_id, чтобы при обновлении страницы не открывалось снова
+                    window.history.replaceState(null, "", "/topology");
                 }}
             />
 
-            <Snackbar
-                open={message !== null}
-                autoHideDuration={6000}
-                onClose={() => setMessage(null)}
-                message={message ?? ""}
-            />
+            <Snackbar open={message !== null} autoHideDuration={6000} onClose={() => setMessage(null)} message={message ?? ""} />
         </Box>
     );
 }

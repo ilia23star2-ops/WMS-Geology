@@ -1,9 +1,5 @@
 """
 Сериализаторы приложения samples.
-
-Справочники: ResearchTypeSerializer, SiteSerializer, LaboratorySerializer.
-Модели: WellSerializer, SampleSerializer, SampleWorkOrderSerializer.
-Группировка: SampleGroupSerializer и вспомогательные.
 """
 
 from rest_framework import serializers
@@ -16,13 +12,7 @@ from .models import Sample, SampleWorkOrder, Well
 # Вспомогательные
 # ============================================================
 def compute_sample_location(container) -> str:
-    """
-    Адрес хранения тары для отображения в UI.
-
-    - тара на поддоне в ячейке → `cell.full_address`;
-    - тара на полу в комнате → «На полу: <комната>»;
-    - иначе → «Место не указано».
-    """
+    """Адрес хранения тары для отображения в UI."""
     if container is None:
         return "—"
 
@@ -77,18 +67,6 @@ class WellSerializer(serializers.ModelSerializer):
 
 
 class SampleSerializer(serializers.ModelSerializer):
-    """
-    Проба (навеска).
-
-    Read-only:
-    - `container_number`;
-    - `well_name`;
-    - `current_work_order_number`;
-    - `research_type_name`;
-    - `site_name`;
-    - `current_location` — адрес хранения (вычисляется).
-    """
-
     container_number = serializers.CharField(
         source="container.container_number", read_only=True,
     )
@@ -151,35 +129,31 @@ class SampleWorkOrderSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# Группировка проб (для action `grouped`)
+# Группировка проб
 # ============================================================
 class GroupedWorkOrderSerializer(serializers.Serializer):
-    """Н/З в группированном ответе. Может быть None."""
-
     id = serializers.IntegerField()
     number = serializers.CharField()
     type = serializers.CharField()
 
 
 class GroupedResearchTypeSerializer(serializers.Serializer):
-    """Тип исследования в группированном ответе."""
-
     id = serializers.IntegerField()
     code = serializers.CharField()
     name = serializers.CharField()
 
 
 class GroupedContainerBriefSerializer(serializers.Serializer):
-    """Краткая инфа о таре внутри группы."""
+    """Краткая инфа о таре. Добавлены cell_id и pallet_id (2f-11c)."""
 
     id = serializers.IntegerField()
     number = serializers.CharField()
     status = serializers.CharField()
+    cell_id = serializers.IntegerField(allow_null=True, required=False)
+    pallet_id = serializers.IntegerField(allow_null=True, required=False)
 
 
 class GroupedSampleBriefSerializer(serializers.Serializer):
-    """Проба в группированном ответе."""
-
     id = serializers.IntegerField()
     sample_number = serializers.CharField()
     status = serializers.CharField()
@@ -187,20 +161,12 @@ class GroupedSampleBriefSerializer(serializers.Serializer):
 
 
 class GroupedContainerSerializer(serializers.Serializer):
-    """Тара с пробами и адресом хранения."""
-
     container = GroupedContainerBriefSerializer()
     location = serializers.CharField()
     samples = GroupedSampleBriefSerializer(many=True)
 
 
 class SampleGroupSerializer(serializers.Serializer):
-    """
-    Одна группа проб: (Н/З, тип исследования).
-
-    `work_order` может быть None — группа «Без Н/З».
-    """
-
     work_order = GroupedWorkOrderSerializer(allow_null=True)
     research_type = GroupedResearchTypeSerializer()
     total_samples = serializers.IntegerField()

@@ -122,6 +122,8 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
+    """Тара. Read-only: `comment_template_text`, `draft_*_name`, `label_printed_at`, `cell_id`."""
+
     comment_template_text = serializers.CharField(
         source="comment_template.text", read_only=True, default=None,
     )
@@ -130,6 +132,10 @@ class ContainerSerializer(serializers.ModelSerializer):
     )
     draft_research_type_name = serializers.CharField(
         source="draft_research_type.name", read_only=True, default=None,
+    )
+    # 2f-11c: Вычисляемое поле для перехода в Топологию
+    cell_id = serializers.IntegerField(
+        source="pallet.cell_id", read_only=True, default=None,
     )
 
     class Meta:
@@ -140,6 +146,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "container_type",
             "qr_code",
             "pallet",
+            "cell_id",  # <--- Новое поле
             "floor_room",
             "position_on_pallet",
             "status",
@@ -155,7 +162,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "label_printed_at",
             "created_at",
         ]
-        read_only_fields = ["created_at", "label_printed_at"]
+        read_only_fields = ["created_at", "label_printed_at", "cell_id"]
 
     def validate(self, attrs):
         pallet = (
@@ -234,8 +241,6 @@ class BulkCreateSerializer(serializers.Serializer):
         return value
 
     def validate_containers(self, value):
-        # 2f-9b-fix: Убрана проверка на существующие номера в БД.
-        # Номер уникален только внутри группы (Н/З × ТИ), а не глобально.
         nums = [
             c["container_number"]
             for c in value
