@@ -14,6 +14,9 @@ from rest_framework.response import Response
 from apps.labels.services import render_container_label
 from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
+from apps.users.models import AuditLog
+from apps.users.serializers import AuditLogSerializer
+from apps.users.services import log_audit
 
 from .catalogs import ContainerComment
 from .models import (
@@ -61,6 +64,24 @@ def _handle_protected_error(exc: ProtectedError) -> Response:
         },
         status=status.HTTP_409_CONFLICT,
     )
+
+
+def _container_snapshot(container: Container) -> dict:
+    """
+    Компактный снимок тары для AuditLog (2f-14a, вариант А).
+
+    Единый формат `old_value` / `new_value` для всех действий.
+    `sample_count` — реальный из БД; для удалённой тары вызывается
+    ДО удаления, снимок верен.
+    """
+    return {
+        "status": container.status,
+        "container_number": container.container_number,
+        "container_type_id": container.container_type_id,
+        "pallet_id": container.pallet_id,
+        "floor_room_id": container.floor_room_id,
+        "sample_count": container.samples.count() if container.pk else 0,
+    }
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
@@ -413,9 +434,46 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    # ------------------------------------------------------------
+    # Аудит: CREATE / UPDATE / DELETE (2f-14a)
+    # ------------------------------------------------------------
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        container = serializer.instance
+        if container is not None:
+            log_audit(
+                user=self.request.user,
+                action="CREATE",
+                entity_type="Container",
+                entity_id=container.pk,
+                old_value=None,
+                new_value=_container_snapshot(container),
+            )
+
+    def perform_update(self, serializer):
+        old_value = (
+            _container_snapshot(serializer.instance)
+            if serializer.instance is not None
+            else None
+        )
+        super().perform_update(serializer)
+        container = serializer.instance
+        if container is not None:
+            log_audit(
+                user=self.request.user,
+                action="UPDATE",
+                entity_type="Container",
+                entity_id=container.pk,
+                old_value=old_value,
+                new_value=_container_snapshot(container),
+            )
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         force = request.query_params.get("force", "false").lower() in ("true", "1")
+        # Снимок ДО удаления (после pk станет None)
+        pk = instance.pk
+        snapshot = _container_snapshot(instance)
         try:
             with transaction.atomic():
                 if force:
@@ -423,8 +481,33 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 self.perform_destroy(instance)
         except ProtectedError as exc:
             return _handle_protected_error(exc)
+        log_audit(
+            user=request.user,
+            action="DELETE",
+            entity_type="Container",
+            entity_id=pk,
+            old_value=snapshot,
+            new_value=None,
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # ------------------------------------------------------------
+    # Аудит: история (2f-14a)
+    # ------------------------------------------------------------
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        container = self.get_object()
+        logs = (
+            AuditLog.objects
+            .filter(entity_type="Container", entity_id=container.pk)
+            .select_related("user")
+            .order_by("-created_at")
+        )
+        return Response(AuditLogSerializer(logs, many=True).data)
+
+    # ------------------------------------------------------------
+    # Этикетка
+    # ------------------------------------------------------------
     @action(detail=True, methods=["get"], url_path="label.pdf")
     def label_pdf(self, request, pk=None):
         container = self.get_object()
@@ -444,6 +527,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
             content_type="application/pdf",
         )
 
+    # ------------------------------------------------------------
+    # Actions: создание тары-заготовки (аудит → CREATE для каждой)
+    # ------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="bulk-create")
     def bulk_create(self, request):
         ser = BulkCreateSerializer(data=request.data)
@@ -459,14 +545,30 @@ class ContainerViewSet(viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        for c in containers:
+            log_audit(
+                user=request.user,
+                action="CREATE",
+                entity_type="Container",
+                entity_id=c.pk,
+                old_value=None,
+                new_value=_container_snapshot(c),
+            )
+
         return Response(
             {
-                "created_containers": ContainerSerializer(containers, many=True, context={"request": request}).data,
+                "created_containers": ContainerSerializer(
+                    containers, many=True, context={"request": request},
+                ).data,
                 "total_containers": len(containers),
             },
             status=status.HTTP_201_CREATED,
         )
 
+    # ------------------------------------------------------------
+    # Actions: заполнение пробами (аудит → FILL_SAMPLES)
+    # ------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="fill-samples")
     def fill_samples(self, request, pk=None):
         container = self.get_object()
@@ -485,16 +587,29 @@ class ContainerViewSet(viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         container.refresh_from_db()
         container.draft_site_id = data.get("site_id")
         container.draft_research_type_id = data["research_type_id"]
         container.draft_work_order_coded = data["work_order_coded"]
         container.draft_work_order_incoming = data.get("work_order_incoming", "")
         container.save(update_fields=[
-            "draft_site", "draft_research_type", 
-            "draft_work_order_coded", "draft_work_order_incoming"
+            "draft_site", "draft_research_type",
+            "draft_work_order_coded", "draft_work_order_incoming",
         ])
+
+        log_audit(
+            user=request.user,
+            action="FILL_SAMPLES",
+            entity_type="Container",
+            entity_id=container.pk,
+            old_value=None,
+            new_value={
+                **_container_snapshot(container),
+                "created_samples": len(samples),
+            },
+        )
+
         return Response(
             {
                 "container_id": container.pk,
@@ -508,6 +623,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    # ------------------------------------------------------------
+    # Actions: размещение (аудит → PLACE для каждой)
+    # ------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="bulk-place")
     def bulk_place(self, request):
         container_ids = request.data.get("container_ids", [])
@@ -545,19 +663,31 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             for c in containers:
+                old_value = _container_snapshot(c)
                 if target_cell:
                     c.pallet = target_pallet
                     c.floor_room = None
                 else:
                     c.pallet = None
                     c.floor_room = target_room
-                
+
                 c.status = Container.STATUS_ACTIVE
                 c.save(update_fields=["pallet", "floor_room", "status"])
                 sync_sample_status_for_container(c)
+                log_audit(
+                    user=request.user,
+                    action="PLACE",
+                    entity_type="Container",
+                    entity_id=c.pk,
+                    old_value=old_value,
+                    new_value=_container_snapshot(c),
+                )
 
         return Response({"message": msg})
 
+    # ------------------------------------------------------------
+    # Actions: создать в ячейке (аудит → CREATE_IN_CELL)
+    # ------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="create-in-cell")
     def create_in_cell(self, request):
         ser = CreateInCellSerializer(data=request.data)
@@ -594,6 +724,19 @@ class ContainerViewSet(viewsets.ModelViewSet):
             container.floor_room = None
             container.save(update_fields=["pallet", "floor_room"])
             sync_sample_status_for_container(container)
+
+            log_audit(
+                user=request.user,
+                action="CREATE_IN_CELL",
+                entity_type="Container",
+                entity_id=container.pk,
+                old_value=None,
+                new_value={
+                    **_container_snapshot(container),
+                    "created_samples": len(samples),
+                    "cell_id": cell.pk,
+                },
+            )
 
         return Response(
             {

@@ -5,10 +5,13 @@
   добавляет username и role в ответ.
 - LogoutRequestSerializer — body для logout (refresh).
 - UserInfoSerializer — информация о текущем пользователе (/me).
+- AuditLogSerializer — запись журнала аудита (2f-14a).
 """
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from .models import AuditLog
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -63,3 +66,43 @@ class UserInfoSerializer(serializers.Serializer):
     email = serializers.EmailField(allow_blank=True)
     full_name = serializers.CharField(allow_blank=True)
     role = serializers.CharField(allow_null=True, allow_blank=True)
+
+
+# ============================================================
+# AuditLog (2f-14a)
+# ============================================================
+class AuditLogSerializer(serializers.ModelSerializer):
+    """Запись журнала аудита."""
+
+    username = serializers.SerializerMethodField()
+    action_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "user",
+            "username",
+            "action",
+            "action_display",
+            "entity_type",
+            "entity_id",
+            "old_value",
+            "new_value",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_username(self, obj) -> str | None:
+        return obj.user.username if obj.user else None
+
+    def get_action_display(self, obj) -> str:
+        labels = {
+            "CREATE": "Создана",
+            "FILL_SAMPLES": "Заполнена пробами",
+            "PLACE": "Размещена",
+            "CREATE_IN_CELL": "Создана в ячейке",
+            "UPDATE": "Изменена",
+            "DELETE": "Удалена",
+        }
+        return labels.get(obj.action, obj.action)
