@@ -1,5 +1,5 @@
 /**
- * Дерево-таблица проб (пачка 2f-8).
+ * Дерево-таблица проб (пачка 2f-8 + 2f-11c).
  */
 import React, { useState } from "react";
 import {
@@ -18,12 +18,15 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import ScienceIcon from "@mui/icons-material/Science";
+import PlaceIcon from "@mui/icons-material/Place"; // <--- Добавлено
+import { useNavigate } from "react-router-dom"; // <--- Добавлено
 
 import {
     SAMPLE_STATUS_LABELS,
@@ -77,6 +80,7 @@ interface SamplesTreeTableProps {
 }
 
 export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
+    const navigate = useNavigate();
     const [page, setPage] = useState(1);
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [expandedContainers, setExpandedContainers] = useState<Set<number>>(new Set());
@@ -184,6 +188,7 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                                     <TableBody>
                                                         {group.containers.map((c) => {
                                                             const isContainerExpanded = expandedContainers.has(c.container.id);
+                                                            const hasLocation = c.container.cell_id !== null && c.container.cell_id !== undefined;
 
                                                             return (
                                                                 <React.Fragment key={c.container.id}>
@@ -214,9 +219,25 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                                                             />
                                                                         </TableCell>
                                                                         <TableCell>
-                                                                            <Typography variant="body2" color="text.secondary">
-                                                                                {c.location}
-                                                                            </Typography>
+                                                                            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                                                                                <Typography variant="body2" color="text.secondary">
+                                                                                    {c.location}
+                                                                                </Typography>
+                                                                                {hasLocation && (
+                                                                                    <Tooltip title="Перейти к ячейке">
+                                                                                        <IconButton
+                                                                                            size="small"
+                                                                                            color="primary"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                navigate(`/topology?cell_id=${c.container.cell_id}`);
+                                                                                            }}
+                                                                                        >
+                                                                                            <PlaceIcon fontSize="small" />
+                                                                                        </IconButton>
+                                                                                    </Tooltip>
+                                                                                )}
+                                                                            </Stack>
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             <Typography variant="caption" color="text.secondary">

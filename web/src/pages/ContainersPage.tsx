@@ -91,8 +91,8 @@ export default function ContainersPage() {
     const [selection, setSelection] = useState<GridRowSelectionModel>(emptySelection());
 
     const [pdfError, setPdfError] = useState<string | null>(null);
-    const [dialogOpen, setDialogOpen] = useState(false); // Print
-    const [placeDialogOpen, setPlaceDialogOpen] = useState(false); // Place
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [placeDialogOpen, setPlaceDialogOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [createMessage, setCreateMessage] = useState<string | null>(null);
 
@@ -123,7 +123,6 @@ export default function ContainersPage() {
         [selection],
     );
 
-    // Для размещения выбираем только тары со статусом PENDING_FILLING или PENDING_PLACEMENT
     const selectedForPlacement = useMemo(() => {
         const all = data?.results ?? [];
         return all.filter(c => selectedIds.includes(c.id) && (c.status === "PENDING_FILLING" || c.status === "PENDING_PLACEMENT"));
@@ -258,14 +257,30 @@ export default function ContainersPage() {
         {
             field: "actions",
             headerName: "",
-            width: 150,
+            width: 180,
             sortable: false,
             filterable: false,
             disableColumnMenu: true,
             renderCell: (params) => {
                 const isPlaced = params.row.status === "ACTIVE";
+                const hasCell = params.row.cell_id !== null && params.row.cell_id !== undefined;
                 return (
                     <Stack direction="row" spacing={0.5}>
+                        <Tooltip title="Показать в Топологии">
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    color="info"
+                                    disabled={!hasCell}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate(`/topology?cell_id=${params.row.cell_id}`);
+                                    }}
+                                >
+                                    <PlaceIcon fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                         <Tooltip title="Разместить">
                             <span>
                                 <IconButton
@@ -278,7 +293,7 @@ export default function ContainersPage() {
                                         setPlaceDialogOpen(true);
                                     }}
                                 >
-                                    <PlaceIcon fontSize="small" />
+                                    <Inventory2Icon fontSize="small" />
                                 </IconButton>
                             </span>
                         </Tooltip>
@@ -370,7 +385,7 @@ export default function ContainersPage() {
                                         disabled={selectedForPlacement.length === 0}
                                         onClick={() => setPlaceDialogOpen(true)}
                                     >
-                                        <PlaceIcon />
+                                        <Inventory2Icon />
                                     </IconButton>
                                 </span>
                             </Tooltip>

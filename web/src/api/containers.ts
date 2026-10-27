@@ -32,6 +32,7 @@ export interface Container {
     container_type: number;
     qr_code: string | null;
     pallet: number | null;
+    cell_id: number | null; // <--- Добавлено (2f-11c)
     floor_room: number | null;
     position_on_pallet: number | null;
     status: ContainerStatus;
@@ -211,6 +212,7 @@ export interface FillSamplesGroup {
     sequence_to: number;
     sequence_digits: number;
     well_name?: string | null;
+    status?: string;
 }
 
 export interface FillSamplesRequest {

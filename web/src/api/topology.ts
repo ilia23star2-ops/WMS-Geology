@@ -1,12 +1,5 @@
 /**
  * API топологии склада: Room → Rack → Section → Tier → Cell → Pallet.
- *
- * CRUD для всех шести сущностей (Pallet добавлен в 2f-4b).
- *
- * QR (2f-4c-2):
- * - `downloadSectionQrPdf` — PDF с QR одной секции.
- * - `downloadCellQrPdf` — PDF с QR одной ячейки.
- * - `downloadCellsBatchQrPdf` — POST-батч, PDF с несколькими QR.
  */
 import {
     keepPreviousData,
@@ -223,9 +216,6 @@ export function useCells(tierId: number | null) {
 
 /**
  * Поддон, стоящий в ячейке (или `null`, если пусто).
- *
- * `Pallet.cell` — OneToOne, максимум один поддон на ячейку.
- * Фильтр `?cell_id=` возвращает 0 или 1 запись.
  */
 export function usePalletByCell(cellId: number | null) {
     return useQuery({
@@ -242,23 +232,77 @@ export function usePalletByCell(cellId: number | null) {
 }
 
 // ============================================================
-// CRUD
+// Одиночные сущности (2f-11c)
 // ============================================================
 
-/** Инвалидирует все запросы топологии (после любой мутации). */
+export function useRoom(id: number | null) {
+    return useQuery({
+        queryKey: ["topology", "room", id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Room>(`/storage/rooms/${id}/`);
+            return data;
+        },
+        enabled: id !== null,
+    });
+}
+
+export function useRack(id: number | null) {
+    return useQuery({
+        queryKey: ["topology", "rack", id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Rack>(`/storage/racks/${id}/`);
+            return data;
+        },
+        enabled: id !== null,
+    });
+}
+
+export function useSection(id: number | null) {
+    return useQuery({
+        queryKey: ["topology", "section", id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Section>(`/storage/sections/${id}/`);
+            return data;
+        },
+        enabled: id !== null,
+    });
+}
+
+export function useTier(id: number | null) {
+    return useQuery({
+        queryKey: ["topology", "tier", id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Tier>(`/storage/tiers/${id}/`);
+            return data;
+        },
+        enabled: id !== null,
+    });
+}
+
+export function useCell(id: number | null) {
+    return useQuery({
+        queryKey: ["topology", "cell", id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<Cell>(`/storage/cells/${id}/`);
+            return data;
+        },
+        enabled: id !== null,
+    });
+}
+
+// ============================================================
+// CRUD (мутации остаются без изменений)
+// ============================================================
+
 function invalidateAll(qc: ReturnType<typeof useQueryClient>): void {
     void qc.invalidateQueries({ queryKey: ["topology"] });
 }
 
-// --- Rooms ---
 export function useCreateRoom() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: RoomPayload) => {
-            const { data } = await apiClient.post<Room>(
-                "/storage/rooms/",
-                payload,
-            );
+            const { data } = await apiClient.post<Room>("/storage/rooms/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -268,14 +312,8 @@ export function useCreateRoom() {
 export function useUpdateRoom() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: RoomPayload;
-        }) => {
-            const { data } = await apiClient.patch<Room>(
-                `/storage/rooms/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: RoomPayload }) => {
+            const { data } = await apiClient.patch<Room>(`/storage/rooms/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -292,15 +330,11 @@ export function useDeleteRoom() {
     });
 }
 
-// --- Racks ---
 export function useCreateRack() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: RackPayload) => {
-            const { data } = await apiClient.post<Rack>(
-                "/storage/racks/",
-                payload,
-            );
+            const { data } = await apiClient.post<Rack>("/storage/racks/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -310,14 +344,8 @@ export function useCreateRack() {
 export function useUpdateRack() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: RackPayload;
-        }) => {
-            const { data } = await apiClient.patch<Rack>(
-                `/storage/racks/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: RackPayload }) => {
+            const { data } = await apiClient.patch<Rack>(`/storage/racks/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -334,15 +362,11 @@ export function useDeleteRack() {
     });
 }
 
-// --- Sections ---
 export function useCreateSection() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: SectionPayload) => {
-            const { data } = await apiClient.post<Section>(
-                "/storage/sections/",
-                payload,
-            );
+            const { data } = await apiClient.post<Section>("/storage/sections/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -352,14 +376,8 @@ export function useCreateSection() {
 export function useUpdateSection() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: SectionPayload;
-        }) => {
-            const { data } = await apiClient.patch<Section>(
-                `/storage/sections/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: SectionPayload }) => {
+            const { data } = await apiClient.patch<Section>(`/storage/sections/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -376,15 +394,11 @@ export function useDeleteSection() {
     });
 }
 
-// --- Tiers ---
 export function useCreateTier() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: TierPayload) => {
-            const { data } = await apiClient.post<Tier>(
-                "/storage/tiers/",
-                payload,
-            );
+            const { data } = await apiClient.post<Tier>("/storage/tiers/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -394,14 +408,8 @@ export function useCreateTier() {
 export function useUpdateTier() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: TierPayload;
-        }) => {
-            const { data } = await apiClient.patch<Tier>(
-                `/storage/tiers/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: TierPayload }) => {
+            const { data } = await apiClient.patch<Tier>(`/storage/tiers/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -418,15 +426,11 @@ export function useDeleteTier() {
     });
 }
 
-// --- Cells ---
 export function useCreateCell() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: CellPayload) => {
-            const { data } = await apiClient.post<Cell>(
-                "/storage/cells/",
-                payload,
-            );
+            const { data } = await apiClient.post<Cell>("/storage/cells/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -436,14 +440,8 @@ export function useCreateCell() {
 export function useUpdateCell() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: CellPayload;
-        }) => {
-            const { data } = await apiClient.patch<Cell>(
-                `/storage/cells/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: CellPayload }) => {
+            const { data } = await apiClient.patch<Cell>(`/storage/cells/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -460,15 +458,11 @@ export function useDeleteCell() {
     });
 }
 
-// --- Pallets (2f-4b) ---
 export function useCreatePallet() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: PalletPayload) => {
-            const { data } = await apiClient.post<Pallet>(
-                "/storage/pallets/",
-                payload,
-            );
+            const { data } = await apiClient.post<Pallet>("/storage/pallets/", payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -478,14 +472,8 @@ export function useCreatePallet() {
 export function useUpdatePallet() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async ({ id, payload }: {
-            id: number;
-            payload: Partial<PalletPayload>;
-        }) => {
-            const { data } = await apiClient.patch<Pallet>(
-                `/storage/pallets/${id}/`,
-                payload,
-            );
+        mutationFn: async ({ id, payload }: { id: number; payload: Partial<PalletPayload> }) => {
+            const { data } = await apiClient.patch<Pallet>(`/storage/pallets/${id}/`, payload);
             return data;
         },
         onSuccess: () => invalidateAll(qc),
@@ -503,52 +491,27 @@ export function useDeletePallet() {
 }
 
 // ============================================================
-// QR (2f-4c-2)
+// QR
 // ============================================================
 
-/**
- * Открывает в новой вкладке PDF с QR одной секции.
- *
- * Паттерн тот же, что в `containers.ts` → `downloadLabelPdf`.
- * URL живёт 60 секунд — вкладка успевает подхватить.
- */
 export async function downloadSectionQrPdf(id: number): Promise<void> {
-    const { data } = await apiClient.get(
-        `/storage/sections/${id}/qr.pdf/`,
-        { responseType: "blob" },
-    );
+    const { data } = await apiClient.get(`/storage/sections/${id}/qr.pdf/`, { responseType: "blob" });
     const blob = new Blob([data as BlobPart], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Открывает в новой вкладке PDF с QR одной ячейки. */
 export async function downloadCellQrPdf(id: number): Promise<void> {
-    const { data } = await apiClient.get(
-        `/storage/cells/${id}/qr.pdf/`,
-        { responseType: "blob" },
-    );
+    const { data } = await apiClient.get(`/storage/cells/${id}/qr.pdf/`, { responseType: "blob" });
     const blob = new Blob([data as BlobPart], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/**
- * POST-батч: PDF с несколькими QR.
- *
- * `items` — массив `{type, id}` (Section / Cell).
- * Backend сам собирает адреса под каждым QR.
- */
-export async function downloadCellsBatchQrPdf(
-    items: QrBatchItem[],
-): Promise<void> {
-    const { data } = await apiClient.post(
-        "/storage/sections/qr-batch/",
-        { items },
-        { responseType: "blob" },
-    );
+export async function downloadCellsBatchQrPdf(items: QrBatchItem[]): Promise<void> {
+    const { data } = await apiClient.post("/storage/sections/qr-batch/", { items }, { responseType: "blob" });
     const blob = new Blob([data as BlobPart], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");

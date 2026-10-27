@@ -66,7 +66,7 @@ export interface SampleFilters {
 }
 
 export interface SamplesListParams {
-    page: number; // 1-based
+    page: number;
     filters: SampleFilters;
 }
 
@@ -120,6 +120,8 @@ export interface GroupedContainerBrief {
     id: number;
     number: string | null;
     status: string;
+    cell_id?: number | null;
+    pallet_id?: number | null;
 }
 
 export interface GroupedSampleBrief {
