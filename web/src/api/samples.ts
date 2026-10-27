@@ -39,7 +39,7 @@ export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
     CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
     PENDING_DECRYPTION: "Ожидает расшифровки",
-    PENDING_PLACEMENT: "Ожидает размещения",
+    PENDING_PLACEMENT: "Выбрана", // 2f-9a: изменено с «Ожидает размещения»
 };
 
 export interface Sample {

@@ -14,7 +14,7 @@
 - Шапка 28 мм: QR 25×25 справа, 4 строки слева.
 - Рабочая область растягивается на всю ширину.
 - Лист A4: этикетки от левого верхнего угла (без отступов).
-- Пунктирный периметр + рамка таблицы + чекбоксы.
+- Пунктирный периметр + рамка таблицы + галочки (2f-9a).
 
 QR-сетка (4d-3):
 - QR 25×25 мм (тот же, что на этикетке).
@@ -104,7 +104,7 @@ def _text_width_mm(pdf: FPDF, text: str) -> float:
 
 
 def _truncate_to_width(pdf: FPDF, text: str, max_mm: float) -> str:
-    """Обрезает текст до max_mm, добавляя «…» в конце."""
+    """Обрезает текст до max_mm, добавляя «...» в конце."""
     if _text_width_mm(pdf, text) <= max_mm:
         return text
     ellipsis = "..."
@@ -134,9 +134,8 @@ def _working_height_mm(label_h: float) -> float:
 
 def _column_width_mm(pdf: FPDF, samples) -> float:
     """
-    Минимальная ширина колонки: п/п + чекбокс + самый длинный
-    номер + padding. Используется только для расчёта кол-ва
-    колонок; фактическая ширина растягивается.
+    Минимальная ширина колонки: п/п + галочка + самый длинный
+    номер + padding.
     """
     max_num_w = 0.0
     for s in samples:
@@ -183,9 +182,6 @@ def _choose_size(pdf: FPDF, samples) -> tuple[int, int]:
 def _qr_grid_dimensions() -> tuple[int, int]:
     """
     Сколько QR влезает на A4: (cols, rows).
-
-    Формула: `(usable + gap) // (size + gap)` — зазор считается
-    только между QR, а не после последнего.
     """
     cell = QR_GRID_SIZE_MM + QR_GRID_GAP_MM
     usable_w = A4_W_MM - 2 * QR_GRID_MARGIN_MM
@@ -472,7 +468,21 @@ def _draw_working_area(
             pdf.cell(PNP_W_MM - 1, ROW_H_MM - 1.5, f"{num}.", border=0)
             box_x = cx + PNP_W_MM + 1
             box_y = row_y + (ROW_H_MM - CHECKBOX_SIZE_MM) / 2
-            pdf.rect(box_x, box_y, CHECKBOX_SIZE_MM, CHECKBOX_SIZE_MM)
+            
+            # 2f-9a: Рисуем зелёную галочку вместо пустого квадрата
+            pdf.set_draw_color(0, 128, 0)
+            pdf.set_line_width(0.4)
+            pdf.line(
+                box_x + 0.1, box_y + CHECKBOX_SIZE_MM / 2,
+                box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2
+            )
+            pdf.line(
+                box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2,
+                box_x + CHECKBOX_SIZE_MM - 0.1, box_y + 0.2
+            )
+            pdf.set_draw_color(0, 0, 0)
+            pdf.set_line_width(0.2)
+
             text_x = box_x + CHECKBOX_SIZE_MM + 1
             text_w = col_w - (text_x - cx) - 1
             pdf.set_xy(text_x, row_y + 0.7)
@@ -588,13 +598,6 @@ def render_batch_labels_pdf(batch) -> BytesIO:
 def _draw_qr_grid_cut_lines(pdf: FPDF, cols: int, n_items: int) -> None:
     """
     Общие пунктирные линии реза для QR-сетки (4d-3).
-
-    Между соседними QR — ОДНА линия (а не две). Внешний контур
-    рисуется один раз. Линии идут по границе ячейки
-    (`size + gap/2`), то есть по центру зазора между QR.
-
-    :param cols: число колонок в сетке.
-    :param n_items: сколько QR фактически на странице.
     """
     cell = QR_GRID_SIZE_MM + QR_GRID_GAP_MM
     half_gap = QR_GRID_GAP_MM / 2
@@ -609,25 +612,20 @@ def _draw_qr_grid_cut_lines(pdf: FPDF, cols: int, n_items: int) -> None:
             x = QR_GRID_MARGIN_MM + col * cell
             y = QR_GRID_MARGIN_MM + row * cell
 
-            # Верхняя граница — только для первой строки.
             if row == 0:
                 pdf.line(
                     x - half_gap, y - half_gap,
                     x + size + half_gap, y - half_gap,
                 )
-            # Левая граница — только для первой колонки.
             if col == 0:
                 pdf.line(
                     x - half_gap, y - half_gap,
                     x - half_gap, y + size + half_gap,
                 )
-            # Правая граница — всегда. Между соседними QR это
-            # одна общая линия.
             pdf.line(
                 x + size + half_gap, y - half_gap,
                 x + size + half_gap, y + size + half_gap,
             )
-            # Нижняя граница — всегда.
             pdf.line(
                 x - half_gap, y + size + half_gap,
                 x + size + half_gap, y + size + half_gap,
@@ -639,13 +637,6 @@ def _draw_qr_grid_cut_lines(pdf: FPDF, cols: int, n_items: int) -> None:
 def render_batch_qr_pdf(batch) -> BytesIO:
     """
     PDF партии в режиме «только QR» (4d-3).
-
-    Каждая тара — один QR 25×25 мм, тот же payload, что на
-    этикетке. Раскладка — сетка 8×11 = 88 QR на лист A4.
-    Общие пунктирные линии реза — по одной между соседними QR.
-
-    :param batch: экземпляр PrintBatch.
-    :returns: BytesIO с PDF (указатель в начале).
     """
     items = list(
         batch.items.select_related("container").order_by("position", "id")
@@ -680,7 +671,6 @@ def render_batch_qr_pdf(batch) -> BytesIO:
                 w=QR_GRID_SIZE_MM,
                 h=QR_GRID_SIZE_MM,
             )
-        # Один раз на страницу — общие линии реза.
         _draw_qr_grid_cut_lines(pdf, cols, len(page_containers))
 
     return BytesIO(bytes(pdf.output()))
