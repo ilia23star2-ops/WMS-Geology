@@ -1,5 +1,5 @@
 /**
- * Диалог просмотра содержимого ячейки (2f-11a).
+ * Диалог просмотра содержимого ячейки (2f-11a + 2f-12b).
  */
 import { useState, useMemo } from "react";
 import {
@@ -31,8 +31,11 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import PlaceIcon from "@mui/icons-material/Place";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import AddIcon from "@mui/icons-material/Add";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
+    apiClient,
     CONTAINER_STATUS_LABELS,
     useContainers,
     useUpdateContainer,
@@ -42,6 +45,8 @@ import {
 } from "../api";
 import ContainerPreviewDialog from "./ContainerPreviewDialog";
 import PlaceContainerDialog from "./PlaceContainerDialog";
+import CreateInCellDialog from "./CreateInCellDialog";
+import FillContainerDialog from "./FillContainerDialog";
 
 interface CellContentsDialogProps {
     open: boolean;
@@ -67,10 +72,16 @@ export default function CellContentsDialog({
     palletId,
     onClose,
 }: CellContentsDialogProps) {
+    const queryClient = useQueryClient();
+
     const [previewContainerId, setPreviewContainerId] = useState<number | null>(null);
     const [placeDialogOpen, setPlaceDialogOpen] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
+    // Состояние для связки создания и заполнения
+    const [draftContainer, setDraftContainer] = useState<Container | null>(null);
+
+    const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState("");
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -135,10 +146,7 @@ export default function CellContentsDialog({
         try {
             await updateMutation.mutateAsync({
                 id: container.id,
-                payload: {
-                    pallet: null,
-                    status: "PENDING_PLACEMENT",
-                },
+                payload: { pallet: null, status: "PENDING_PLACEMENT" },
             });
             setSelectedIds(prev => {
                 const next = new Set(prev);
@@ -150,17 +158,49 @@ export default function CellContentsDialog({
         }
     }
 
+    // Коллбэк после заполнения тары пробами
+    async function handleFillSuccess(containerId: number) {
+        setDraftContainer(null);
+        try {
+            await apiClient.post("/storage/containers/bulk-place/", {
+                container_ids: [containerId],
+                cell_id: cell?.id,
+            });
+            queryClient.invalidateQueries({ queryKey: ["containers"] });
+            queryClient.invalidateQueries({ queryKey: ["topology"] });
+            queryClient.invalidateQueries({ queryKey: ["samples"] });
+
+            // 2f-12b: Открываем предпросмотр после успешного сохранения
+            setPreviewContainerId(containerId);
+        } catch {
+            alert("Тара создана и заполнена, но не удалось автоматически разместить её в ячейке. Попробуйте переместить её вручную.");
+        }
+    }
+
     if (!open || !cell) return null;
 
     return (
         <>
-            <Dialog open={open && previewContainerId === null && !placeDialogOpen} onClose={onClose} maxWidth="md" fullWidth>
+            <Dialog
+                open={open && previewContainerId === null && !placeDialogOpen && !createDialogOpen && draftContainer === null}
+                onClose={onClose}
+                maxWidth="md"
+                fullWidth
+            >
                 <DialogTitle sx={{ pb: 1 }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                         <Inventory2Icon color="action" />
-                        <Typography variant="h6" component="div">
+                        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
                             Ячейка: {cell.full_address}
                         </Typography>
+                        <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => setCreateDialogOpen(true)}
+                        >
+                            Создать тару
+                        </Button>
                     </Stack>
                 </DialogTitle>
                 <DialogContent dividers sx={{ p: 0 }}>
@@ -196,7 +236,7 @@ export default function CellContentsDialog({
                     {containersQuery.isLoading ? (
                         <Typography sx={{ p: 2 }}>Загрузка тар...</Typography>
                     ) : filteredContainers.length === 0 ? (
-                        <Alert severity="info" sx={{ m: 2 }}>Тар не найдено.</Alert>
+                        <Alert severity="info" sx={{ m: 2 }}>Тар не найдено. Нажмите «Создать тару», чтобы добавить первую.</Alert>
                     ) : (
                         <Box sx={{ p: 2 }}>
                             {grouped.map((group) => {
@@ -312,6 +352,29 @@ export default function CellContentsDialog({
                     onSuccess={() => {
                         setPlaceDialogOpen(false);
                         setSelectedIds(new Set());
+                    }}
+                />
+            )}
+
+            {createDialogOpen && cell && (
+                <CreateInCellDialog
+                    open={true}
+                    cell={cell}
+                    onClose={() => setCreateDialogOpen(false)}
+                    onSuccess={(container) => {
+                        setCreateDialogOpen(false);
+                        setDraftContainer(container);
+                    }}
+                />
+            )}
+
+            {draftContainer !== null && cell && (
+                <FillContainerDialog
+                    open={true}
+                    container={draftContainer}
+                    onClose={() => setDraftContainer(null)}
+                    onSuccess={(containerId) => {
+                        void handleFillSuccess(containerId);
                     }}
                 />
             )}

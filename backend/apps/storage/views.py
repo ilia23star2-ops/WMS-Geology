@@ -30,6 +30,7 @@ from .serializers import (
     ContainerCommentSerializer,
     ContainerSerializer,
     ContainerTypeSerializer,
+    CreateInCellSerializer,
     FillSamplesSerializer,
     PalletSerializer,
     RackSerializer,
@@ -49,8 +50,6 @@ def _section_address(section: Section) -> str:
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
-    """CRUD для шаблонов комментариев. Фильтр: ?is_active="""
-
     serializer_class = ContainerCommentSerializer
     permission_classes = [IsAuthenticated]
 
@@ -69,8 +68,6 @@ class RoomViewSet(viewsets.ModelViewSet):
 
 
 class RackViewSet(viewsets.ModelViewSet):
-    """Фильтр: ?room_id="""
-
     serializer_class = RackSerializer
     permission_classes = [IsAuthenticated]
 
@@ -83,8 +80,6 @@ class RackViewSet(viewsets.ModelViewSet):
 
 
 class SectionViewSet(viewsets.ModelViewSet):
-    """Фильтр: ?rack_id=. QR: `.qr.pdf`, batch — `.qr-batch`."""
-
     serializer_class = SectionSerializer
     permission_classes = [IsAuthenticated]
 
@@ -97,7 +92,6 @@ class SectionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="qr.pdf")
     def qr_pdf(self, request, pk=None):
-        """PDF с QR-кодом одной секции."""
         section = self.get_object()
         buf = render_topology_qr_pdf([
             {
@@ -115,7 +109,6 @@ class SectionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="qr-batch")
     def qr_batch(self, request):
-        """PDF с партией QR (Section + Cell)."""
         items = request.data.get("items")
         if not isinstance(items, list) or not items:
             return Response(
@@ -174,8 +167,6 @@ class SectionViewSet(viewsets.ModelViewSet):
 
 
 class TierViewSet(viewsets.ModelViewSet):
-    """Фильтр: ?section_id="""
-
     serializer_class = TierSerializer
     permission_classes = [IsAuthenticated]
 
@@ -188,8 +179,6 @@ class TierViewSet(viewsets.ModelViewSet):
 
 
 class CellViewSet(viewsets.ModelViewSet):
-    """Фильтры: ?tier_id=, ?is_active=. QR: `.qr.pdf`."""
-
     serializer_class = CellSerializer
     permission_classes = [IsAuthenticated]
 
@@ -205,7 +194,6 @@ class CellViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="qr.pdf")
     def qr_pdf(self, request, pk=None):
-        """PDF с QR-кодом одной ячейки."""
         cell = self.get_object()
         buf = render_topology_qr_pdf([
             {
@@ -223,8 +211,6 @@ class CellViewSet(viewsets.ModelViewSet):
 
 
 class PalletViewSet(viewsets.ModelViewSet):
-    """Фильтры: ?cell_id=, ?floor_room_id=, ?status="""
-
     serializer_class = PalletSerializer
     permission_classes = [IsAuthenticated]
 
@@ -241,8 +227,6 @@ class PalletViewSet(viewsets.ModelViewSet):
 
 
 class ContainerTypeViewSet(viewsets.ModelViewSet):
-    """CRUD для типов тары."""
-
     serializer_class = ContainerTypeSerializer
     permission_classes = [IsAuthenticated]
 
@@ -272,10 +256,6 @@ class ContainerTypeViewSet(viewsets.ModelViewSet):
 
 
 class ContainerViewSet(viewsets.ModelViewSet):
-    """
-    CRUD для тары.
-    """
-
     serializer_class = ContainerSerializer
     permission_classes = [IsAuthenticated]
 
@@ -307,10 +287,21 @@ class ContainerViewSet(viewsets.ModelViewSet):
         return qs
 
     def destroy(self, request, *args, **kwargs):
-        """Удаление тары с защитой от `ProtectedError`."""
+        """
+        Удаление тары. 
+        Если передан ?force=true, сначала удаляются все пробы в этой таре.
+        """
         instance = self.get_object()
+        force = request.query_params.get("force", "false").lower() in ("true", "1")
+        
         try:
-            self.perform_destroy(instance)
+            with transaction.atomic():
+                if force:
+                    # Принудительно удаляем пробы (если они не защищены отгрузкой)
+                    instance.samples.all().delete()
+                
+                self.perform_destroy(instance)
+                
         except ProtectedError as exc:
             return Response(
                 {
@@ -325,9 +316,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="label.pdf")
     def label_pdf(self, request, pk=None):
-        """Возвращает PDF-этикетку тары."""
         container = self.get_object()
-
         try:
             buf = render_container_label(container)
         except FileNotFoundError as exc:
@@ -335,45 +324,33 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 {"error": str(exc)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
         number = container.container_number or f"draft-{container.pk}"
         filename = f"label-{number}.pdf"
-        response = FileResponse(
+        return FileResponse(
             buf,
             as_attachment=False,
             filename=filename,
             content_type="application/pdf",
         )
-        return response
 
     @action(detail=False, methods=["post"], url_path="bulk-create")
     def bulk_create(self, request):
-        """Создать партию тары-заготовок (без проб)."""
         ser = BulkCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-
         try:
             containers = bulk_create_containers(
                 containers_data=data["containers"],
                 draft_site_id=data.get("draft_site_id"),
                 draft_research_type_id=data.get("draft_research_type_id"),
                 draft_work_order_coded=data.get("draft_work_order_coded", ""),
-                draft_work_order_incoming=data.get(
-                    "draft_work_order_incoming", "",
-                ),
+                draft_work_order_incoming=data.get("draft_work_order_incoming", ""),
             )
         except ValueError as exc:
-            return Response(
-                {"error": str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
-                "created_containers": ContainerSerializer(
-                    containers, many=True, context={"request": request},
-                ).data,
+                "created_containers": ContainerSerializer(containers, many=True, context={"request": request}).data,
                 "total_containers": len(containers),
             },
             status=status.HTTP_201_CREATED,
@@ -381,14 +358,10 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="fill-samples")
     def fill_samples(self, request, pk=None):
-        """
-        Заполнить существующую тару пробами.
-        """
         container = self.get_object()
         ser = FillSamplesSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-
         try:
             samples = fill_container_with_samples(
                 container=container,
@@ -400,34 +373,23 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 sample_groups=data["sample_groups"],
             )
         except ValueError as exc:
-            return Response(
-                {"error": str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        container.refresh_from_db()
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         
+        container.refresh_from_db()
         container.draft_site_id = data.get("site_id")
         container.draft_research_type_id = data["research_type_id"]
         container.draft_work_order_coded = data["work_order_coded"]
-        container.draft_work_order_incoming = data.get(
-            "work_order_incoming", ""
-        )
+        container.draft_work_order_incoming = data.get("work_order_incoming", "")
         container.save(update_fields=[
             "draft_site", "draft_research_type", 
             "draft_work_order_coded", "draft_work_order_incoming"
         ])
-
         return Response(
             {
                 "container_id": container.pk,
                 "container_number": container.container_number,
                 "created_samples": [
-                    {
-                        "id": s.pk,
-                        "sample_number": s.sample_number,
-                        "status": s.status,
-                    }
+                    {"id": s.pk, "sample_number": s.sample_number, "status": s.status}
                     for s in samples
                 ],
                 "total_samples": len(samples),
@@ -437,32 +399,18 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-place")
     def bulk_place(self, request):
-        """
-        Размещение одной или нескольких тар (2f-10a).
-        Принимает либо cell_id (в ячейку), либо floor_room_id (на пол).
-        """
         container_ids = request.data.get("container_ids", [])
         cell_id = request.data.get("cell_id")
         floor_room_id = request.data.get("floor_room_id")
 
         if not container_ids:
-            return Response(
-                {"error": "Укажите container_ids."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({"error": "Укажите container_ids."}, status=status.HTTP_400_BAD_REQUEST)
         if not cell_id and not floor_room_id:
-            return Response(
-                {"error": "Укажите cell_id (в ячейку) или floor_room_id (на пол)."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "Укажите cell_id или floor_room_id."}, status=status.HTTP_400_BAD_REQUEST)
 
         containers = Container.objects.filter(pk__in=container_ids)
         if not containers.exists():
-            return Response(
-                {"error": "Тары не найдены."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response({"error": "Тары не найдены."}, status=status.HTTP_404_NOT_FOUND)
 
         target_pallet = None
         target_cell = None
@@ -472,11 +420,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
         if cell_id:
             target_cell = Cell.objects.filter(pk=cell_id, is_active=True).first()
             if not target_cell:
-                return Response(
-                    {"error": "Ячейка не найдена или неактивна."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-            # Для ячейки должен быть поддон (OneToOne). Создаем, если нет.
+                return Response({"error": "Ячейка не найдена или неактивна."}, status=status.HTTP_404_NOT_FOUND)
             target_pallet, _ = Pallet.objects.get_or_create(
                 cell=target_cell,
                 defaults={"status": Pallet.STATUS_ACTIVE},
@@ -485,10 +429,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
         else:
             target_room = Room.objects.filter(pk=floor_room_id).first()
             if not target_room:
-                return Response(
-                    {"error": "Комната не найдена."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
+                return Response({"error": "Комната не найдена."}, status=status.HTTP_404_NOT_FOUND)
             msg = f"Успешно размещено на пол в комнате {target_room.name}: {len(containers)} тар."
 
         with transaction.atomic():
@@ -502,7 +443,52 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 
                 c.status = Container.STATUS_ACTIVE
                 c.save(update_fields=["pallet", "floor_room", "status"])
-                
                 sync_sample_status_for_container(c)
 
         return Response({"message": msg})
+
+    @action(detail=False, methods=["post"], url_path="create-in-cell")
+    def create_in_cell(self, request):
+        ser = CreateInCellSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        cell = Cell.objects.get(pk=data["cell_id"])
+
+        with transaction.atomic():
+            container = Container.objects.create(
+                container_number=data.get("container_number") or None,
+                container_type_id=data["container_type_id"],
+                status=Container.STATUS_ACTIVE,
+                draft_site_id=data.get("site_id"),
+                draft_research_type_id=data["research_type_id"],
+                draft_work_order_coded=data["work_order_coded"],
+                draft_work_order_incoming=data.get("work_order_incoming", ""),
+            )
+
+            samples = fill_container_with_samples(
+                container=container,
+                container_number=data.get("container_number"),
+                work_order_coded=data["work_order_coded"],
+                work_order_incoming=data.get("work_order_incoming", ""),
+                research_type_id=data["research_type_id"],
+                site_id=data.get("site_id"),
+                sample_groups=data["sample_groups"],
+            )
+
+            pallet, _ = Pallet.objects.get_or_create(
+                cell=cell,
+                defaults={"status": Pallet.STATUS_ACTIVE},
+            )
+            container.pallet = pallet
+            container.floor_room = None
+            container.save(update_fields=["pallet", "floor_room"])
+            sync_sample_status_for_container(container)
+
+        return Response(
+            {
+                "container_id": container.pk,
+                "container_number": container.container_number,
+                "total_samples": len(samples),
+            },
+            status=status.HTTP_201_CREATED,
+        )

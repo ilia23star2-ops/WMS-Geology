@@ -32,7 +32,7 @@ export interface Container {
     container_type: number;
     qr_code: string | null;
     pallet: number | null;
-    cell_id: number | null; // <--- Добавлено (2f-11c)
+    cell_id: number | null;
     floor_room: number | null;
     position_on_pallet: number | null;
     status: ContainerStatus;
@@ -133,17 +133,21 @@ export function useUpdateContainer() {
     });
 }
 
-export async function deleteContainer(id: number): Promise<void> {
-    await apiClient.delete(`/storage/containers/${id}/`);
+export async function deleteContainer(id: number, force: boolean = false): Promise<void> {
+    const query = force ? { force: "true" } : {};
+    await apiClient.delete(`/storage/containers/${id}/`, { params: query });
 }
 
 export function useDeleteContainer() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (id: number) => deleteContainer(id),
-        onSuccess: (_void, id) => {
-            qc.removeQueries({ queryKey: ["container", id] });
+        mutationFn: ({ id, force = false }: { id: number; force?: boolean }) =>
+            deleteContainer(id, force),
+        onSuccess: (_void, variables) => {
+            qc.removeQueries({ queryKey: ["container", variables.id] });
             void qc.invalidateQueries({ queryKey: ["containers"] });
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["topology"] });
         },
     });
 }
@@ -268,4 +272,43 @@ export interface UpdateContainerPayload {
     draft_research_type?: number | null;
     draft_work_order_coded?: string;
     draft_work_order_incoming?: string;
+}
+
+export interface CreateInCellRequest {
+    cell_id: number;
+    container_type_id: number;
+    container_number?: string | null;
+    work_order_coded: string;
+    work_order_incoming?: string;
+    research_type_id: number;
+    site_id?: number | null;
+    sample_groups: FillSamplesGroup[];
+}
+
+export interface CreateInCellResponse {
+    container_id: number;
+    container_number: string;
+    total_samples: number;
+}
+
+export async function createInCell(
+    payload: CreateInCellRequest,
+): Promise<CreateInCellResponse> {
+    const { data } = await apiClient.post<CreateInCellResponse>(
+        "/storage/containers/create-in-cell/",
+        payload,
+    );
+    return data;
+}
+
+export function useCreateInCell() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: createInCell,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ["containers"] });
+            void qc.invalidateQueries({ queryKey: ["samples"] });
+            void qc.invalidateQueries({ queryKey: ["topology"] });
+        },
+    });
 }
