@@ -4,6 +4,8 @@
 Покрывают: CRUD, actions (add-containers, remove-container,
 mark-ready, cancel, pdf, mark-printed), автогенерацию номера,
 ограничения по статусам, DELETE (2f-7a).
+
+PATCH: `comment` и `name` разрешены в любом статусе (2f-7e).
 """
 
 import pytest
@@ -328,7 +330,7 @@ def test_cancel_already_cancelled_fails(auth_client, batch):
 
 
 # ============================================================
-# Update (PATCH)
+# Update (PATCH) — 2f-7e: name/comment в любом статусе
 # ============================================================
 def test_patch_comment_draft(auth_client, batch):
     response = auth_client.patch(
@@ -339,14 +341,18 @@ def test_patch_comment_draft(auth_client, batch):
     assert response.data["comment"] == "Комментарий"
 
 
-def test_patch_non_draft_fails(auth_client, batch):
+def test_patch_comment_non_draft_allowed(auth_client, batch):
+    """2f-7e: name/comment разрешены в любом статусе (в т.ч. READY)."""
     batch.status = PrintBatch.STATUS_READY
     batch.save()
     response = auth_client.patch(
         f"/api/v1/labels/print-batches/{batch.pk}/",
         {"comment": "Комментарий"}, format="json",
     )
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert response.data["comment"] == "Комментарий"
+    batch.refresh_from_db()
+    assert batch.comment == "Комментарий"
 
 
 def test_batch_number_is_read_only(auth_client, batch):

@@ -150,9 +150,10 @@ def test_work_order_str_contains_number_and_type(db, incoming):
 
 
 def test_work_order_str_coded(db, coded):
+    """TYPE_CODED label = «Текущий» (2f-8)."""
     text = str(coded)
     assert "X-456" in text
-    assert "Зашифрованный" in text
+    assert "Текущий" in text
 
 
 def test_work_order_ordering_desc_by_created(db):
