@@ -1,9 +1,5 @@
 """
 Модели приложения labels.
-
-Модели партии печати этикеток (`PrintBatch`) и её элементов
-(`PrintBatchItem`). Генерация QR и PDF выполняется на уровне
-сервисов (`services/`).
 """
 
 from django.conf import settings
@@ -14,13 +10,6 @@ class PrintBatch(models.Model):
     """
     Партия печати — «корзина» тар, подготовленная к массовой
     печати.
-
-    Жизненный цикл:
-      DRAFT → READY → PRINTED
-      (в любой момент до PRINTED можно CANCELLED)
-
-    Soft-delete: отмена через `status = CANCELLED`. Записи не
-    удаляются физически.
     """
 
     PRINT_TYPE_LABELS = "LABELS"
@@ -44,7 +33,14 @@ class PrintBatch(models.Model):
     batch_number = models.CharField(
         max_length=100,
         unique=True,
-        help_text="Номер партии печати, например ПЕЧ-2026-001.",
+        help_text="Системный номер партии печати, например ПЕЧ-2026-001.",
+    )
+    name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Название партии",
+        help_text="Произвольное название (например: «Для лаборатории А»).",
     )
     print_type = models.CharField(
         max_length=20,
@@ -96,17 +92,14 @@ class PrintBatch(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
+        if self.name:
+            return f"{self.batch_number} ({self.name})"
         return self.batch_number
 
 
 class PrintBatchItem(models.Model):
     """
     Элемент партии печати — одна тара в корзине.
-
-    Уникальность: одна тара не может дважды попасть в одну партию.
-    При удалении партии элементы удаляются каскадом.
-    Тара защищена от удаления (`PROTECT`), пока фигурирует в
-    партии печати.
     """
 
     batch = models.ForeignKey(

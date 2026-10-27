@@ -1,9 +1,5 @@
 """
 Сериализаторы приложения labels.
-
-- `PrintBatchItemSerializer` — элемент корзины (тара + позиция).
-- `PrintBatchSerializer` — партия печати с вложенными элементами.
-- `AddContainersSerializer` — входной для action `add-containers`.
 """
 
 from rest_framework import serializers
@@ -35,9 +31,6 @@ class PrintBatchItemSerializer(serializers.ModelSerializer):
 class PrintBatchSerializer(serializers.ModelSerializer):
     """
     Партия печати.
-
-    Поля `items` — read-only, наполняются через action
-    `add-containers`. Счётчики и номер партии — read-only.
     """
 
     items = PrintBatchItemSerializer(many=True, read_only=True)
@@ -60,6 +53,7 @@ class PrintBatchSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "batch_number",
+            "name",
             "print_type",
             "print_type_display",
             "status",
@@ -92,13 +86,6 @@ class PrintBatchSerializer(serializers.ModelSerializer):
 class AddContainersSerializer(serializers.Serializer):
     """
     Входной сериализатор для action `add-containers`.
-
-    Принимает список ID тар. Проверяет:
-    - нет дубликатов внутри запроса;
-    - все ID существуют в БД.
-
-    Проверка «тара ещё не в этой партии» — во ViewSet, где
-    известен объект партии.
     """
 
     container_ids = serializers.ListField(

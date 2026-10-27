@@ -150,6 +150,7 @@ export {
     downloadBatchPdf,
     fetchPrintBatch,
     fetchPrintBatches,
+    updatePrintBatch,
     useAddContainers,
     useCancelBatch,
     useCreatePrintBatch,
@@ -159,6 +160,7 @@ export {
     usePrintBatch,
     usePrintBatches,
     useRemoveContainer,
+    useUpdatePrintBatch,
 } from "./printBatches";
 export type {
     PrintBatch,
@@ -166,6 +168,7 @@ export type {
     PrintBatchStatus,
     PrintBatchesListParams,
     PrintType,
+    UpdatePrintBatchPayload,
 } from "./printBatches";
 
 // Рейсы и приёмка.
