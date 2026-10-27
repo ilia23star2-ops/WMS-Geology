@@ -27,8 +27,6 @@ class ContainerCommentSerializer(serializers.ModelSerializer):
 
 
 class ContainerTypeSerializer(serializers.ModelSerializer):
-    """Тип тары. Read-only: `laboratory_name`."""
-
     laboratory_name = serializers.CharField(
         source="laboratory.name", read_only=True, default=None,
     )
@@ -124,8 +122,6 @@ class PalletSerializer(serializers.ModelSerializer):
 
 
 class ContainerSerializer(serializers.ModelSerializer):
-    """Тара. Read-only: `comment_template_text`, `draft_*_name`, `label_printed_at`."""
-
     comment_template_text = serializers.CharField(
         source="comment_template.text", read_only=True, default=None,
     )
@@ -156,7 +152,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "draft_research_type_name",
             "draft_work_order_coded",
             "draft_work_order_incoming",
-            "label_printed_at",  # <--- Добавлено (2f-7d)
+            "label_printed_at",
             "created_at",
         ]
         read_only_fields = ["created_at", "label_printed_at"]
@@ -183,13 +179,6 @@ class ContainerSerializer(serializers.ModelSerializer):
 # Bulk create — создание тары-заготовки
 # ============================================================
 class BulkContainerSerializer(serializers.Serializer):
-    """
-    Одна тара-заготовка (для POST /bulk-create/).
-
-    `container_number` опционален: если не указан, тара создаётся
-    без номера (номер присваивается на шаге fill-samples).
-    """
-
     container_number = serializers.CharField(
         max_length=100,
         required=False,
@@ -214,13 +203,6 @@ class BulkContainerSerializer(serializers.Serializer):
 
 
 class BulkCreateSerializer(serializers.Serializer):
-    """
-    Запрос на создание N тар-заготовок.
-
-    Draft-поля общие для всей партии: сохраняются на каждой таре,
-    используются для предзаполнения формы fill-samples.
-    """
-
     containers = BulkContainerSerializer(many=True, allow_empty=False)
     draft_site_id = serializers.IntegerField(
         min_value=1, required=False, allow_null=True, default=None,
@@ -240,9 +222,7 @@ class BulkCreateSerializer(serializers.Serializer):
             return None
         from apps.samples.catalogs import Site
         if not Site.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Участок #{value} не найден."
-            )
+            raise serializers.ValidationError(f"Участок #{value} не найден.")
         return value
 
     def validate_draft_research_type_id(self, value):
@@ -250,13 +230,12 @@ class BulkCreateSerializer(serializers.Serializer):
             return None
         from apps.samples.catalogs import ResearchType
         if not ResearchType.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Тип исследования #{value} не найден."
-            )
+            raise serializers.ValidationError(f"Тип исследования #{value} не найден.")
         return value
 
     def validate_containers(self, value):
-        # Уникальность непустых номеров в запросе.
+        # 2f-9b-fix: Убрана проверка на существующие номера в БД.
+        # Номер уникален только внутри группы (Н/З × ТИ), а не глобально.
         nums = [
             c["container_number"]
             for c in value
@@ -266,17 +245,6 @@ class BulkCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Номера тары в запросе не уникальны."
             )
-        # Проверка коллизий с существующими.
-        if nums:
-            existing = sorted(
-                Container.objects.filter(
-                    container_number__in=nums,
-                ).values_list("container_number", flat=True)
-            )
-            if existing:
-                raise serializers.ValidationError(
-                    f"Тара уже существует в системе: {existing}."
-                )
         return value
 
 
@@ -284,10 +252,6 @@ class BulkCreateSerializer(serializers.Serializer):
 # Fill samples — заполнение существующей тары пробами
 # ============================================================
 class BulkSampleGroupSerializer(serializers.Serializer):
-    """
-    Диапазон проб одной скважины (или одной серии для шифрованной).
-    """
-
     prefix = serializers.CharField(max_length=50)
     middle = serializers.CharField(max_length=50)
     sequence_from = serializers.IntegerField(min_value=1)
@@ -299,6 +263,12 @@ class BulkSampleGroupSerializer(serializers.Serializer):
     well_name = serializers.CharField(
         max_length=200, required=False, allow_null=True, allow_blank=True,
         help_text="Имя скважины. NULL — не создавать Well.",
+    )
+    status = serializers.ChoiceField(
+        choices=[("NORMAL", "Обычная"), ("SELECTED", "Выбрана")],
+        default="NORMAL",
+        required=False,
+        help_text="Статус создаваемых проб."
     )
 
     def validate(self, attrs):
@@ -315,10 +285,6 @@ class BulkSampleGroupSerializer(serializers.Serializer):
 
 
 class FillSamplesSerializer(serializers.Serializer):
-    """
-    Запрос на заполнение существующей тары пробами.
-    """
-
     container_number = serializers.CharField(
         max_length=100,
         required=False,
@@ -345,17 +311,13 @@ class FillSamplesSerializer(serializers.Serializer):
     def validate_work_order_coded(self, value):
         value = value.strip()
         if not value:
-            raise serializers.ValidationError(
-                "Номер зашифрованного Н/З обязателен."
-            )
+            raise serializers.ValidationError("Номер зашифрованного Н/З обязателен.")
         return value
 
     def validate_research_type_id(self, value):
         from apps.samples.catalogs import ResearchType
         if not ResearchType.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Тип исследования #{value} не найден."
-            )
+            raise serializers.ValidationError(f"Тип исследования #{value} не найден.")
         return value
 
     def validate_site_id(self, value):
@@ -363,7 +325,5 @@ class FillSamplesSerializer(serializers.Serializer):
             return None
         from apps.samples.catalogs import Site
         if not Site.objects.filter(pk=value).exists():
-            raise serializers.ValidationError(
-                f"Участок #{value} не найден."
-            )
+            raise serializers.ValidationError(f"Участок #{value} не найден.")
         return value

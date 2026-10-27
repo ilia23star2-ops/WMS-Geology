@@ -1,28 +1,5 @@
 """
 Сервис рендера этикеток тары в PDF.
-
-Модель раскладки:
-
-- `render_container_label` — одна этикетка тары (модель 4d-1).
-- `render_batch_labels_pdf` — партия этикеток (модель 4d-1).
-- `render_batch_qr_pdf` — партия в режиме «только QR» (4d-3):
-  сетка QR 25×25 мм на A4, тот же QR, что на этикетке.
-  Общие линии реза — одна линия между соседними QR.
-
-Формат этикетки (4d-1):
-- Сетка ширин × сетка высот (A5 landscape, макс. 210×148).
-- Шапка 28 мм: QR 25×25 справа, 4 строки слева.
-- Рабочая область растягивается на всю ширину.
-- Лист A4: этикетки от левого верхнего угла (без отступов).
-- Пунктирный периметр + рамка таблицы + галочки (2f-9a).
-
-QR-сетка (4d-3):
-- QR 25×25 мм (тот же, что на этикетке).
-- Зазор между QR — 1 мм, отступ от края — 1 мм.
-- 8 × 11 = 88 QR на A4.
-- Общие пунктирные линии реза: одна между соседними QR.
-
-Шрифт: `backend/apps/labels/static/fonts/DejaVuSans.ttf`.
 """
 
 import math
@@ -64,10 +41,9 @@ SMALL_FONT_PT = 7
 # --- A4 (мм) ---
 A4_W_MM = 210
 A4_H_MM = 297
-A4_LABEL_GAP_MM = 0  # не используется, оставлено для совместимости
 
-# --- QR-сетка (режим QR_ONLY, 4d-3) ---
-QR_GRID_SIZE_MM = 25       # тот же QR, что на этикетке
+# --- QR-сетка (режим QR_ONLY) ---
+QR_GRID_SIZE_MM = 25
 QR_GRID_GAP_MM = 1
 QR_GRID_MARGIN_MM = 1
 
@@ -78,9 +54,6 @@ MAX_CONTINUATIONS = 3
 CUT_DASH_MM = 1.0
 
 
-# ============================================================
-# Шрифт
-# ============================================================
 def _check_font() -> None:
     if not FONT_PATH.exists():
         raise FileNotFoundError(
@@ -90,7 +63,6 @@ def _check_font() -> None:
 
 
 def _make_measurer() -> FPDF:
-    """Отдельный FPDF только для измерения ширины текста."""
     pdf = FPDF(unit="mm")
     pdf.add_font("main", "", str(FONT_PATH))
     pdf.set_font("main", size=FONT_SIZE_PT)
@@ -104,7 +76,6 @@ def _text_width_mm(pdf: FPDF, text: str) -> float:
 
 
 def _truncate_to_width(pdf: FPDF, text: str, max_mm: float) -> str:
-    """Обрезает текст до max_mm, добавляя «...» в конце."""
     if _text_width_mm(pdf, text) <= max_mm:
         return text
     ellipsis = "..."
@@ -121,9 +92,6 @@ def _truncate_to_width(pdf: FPDF, text: str, max_mm: float) -> str:
     return text[:lo] + ellipsis
 
 
-# ============================================================
-# Метрики раскладки этикетки
-# ============================================================
 def _working_width_mm(label_w: float) -> float:
     return label_w - 2 * LABEL_MARGIN_MM
 
@@ -133,10 +101,6 @@ def _working_height_mm(label_h: float) -> float:
 
 
 def _column_width_mm(pdf: FPDF, samples) -> float:
-    """
-    Минимальная ширина колонки: п/п + галочка + самый длинный
-    номер + padding.
-    """
     max_num_w = 0.0
     for s in samples:
         w = _text_width_mm(pdf, s.sample_number)
@@ -165,7 +129,6 @@ def _total_capacity(pdf: FPDF, samples, label_w: float, label_h: float) -> int:
 
 
 def _choose_size(pdf: FPDF, samples) -> tuple[int, int]:
-    """Минимальный размер из сетки, в который влезают пробы."""
     n = len(samples)
     if n == 0:
         return WIDTHS_MM[0], HEIGHTS_MM[0]
@@ -176,13 +139,7 @@ def _choose_size(pdf: FPDF, samples) -> tuple[int, int]:
     return WIDTHS_MM[-1], HEIGHTS_MM[-1]
 
 
-# ============================================================
-# Метрики QR-сетки (4d-3)
-# ============================================================
 def _qr_grid_dimensions() -> tuple[int, int]:
-    """
-    Сколько QR влезает на A4: (cols, rows).
-    """
     cell = QR_GRID_SIZE_MM + QR_GRID_GAP_MM
     usable_w = A4_W_MM - 2 * QR_GRID_MARGIN_MM
     usable_h = A4_H_MM - 2 * QR_GRID_MARGIN_MM
@@ -191,15 +148,6 @@ def _qr_grid_dimensions() -> tuple[int, int]:
     return cols, rows
 
 
-def _qr_grid_capacity() -> int:
-    """Сколько всего QR влезает на один A4."""
-    cols, rows = _qr_grid_dimensions()
-    return cols * rows
-
-
-# ============================================================
-# Разбиение проб и пагинация этикетки
-# ============================================================
 def _split_columns(samples: list, columns_n: int) -> list[list]:
     if columns_n <= 0:
         raise ValueError("columns_n должен быть > 0")
@@ -270,11 +218,6 @@ def _paginate(pdf: FPDF, container, samples: list) -> list[dict]:
 
 
 def _pack_on_sheets(pages: list[dict]) -> list[list[dict]]:
-    """
-    Раскладка по листам A4: от левого верхнего угла (0,0),
-    стопкой без зазоров, сортировка по убыванию высоты,
-    этикетка не разрывается.
-    """
     sorted_pages = sorted(pages, key=lambda p: -p["height"])
     sheets: list[list[dict]] = []
     current: list[dict] = []
@@ -297,9 +240,6 @@ def _pack_on_sheets(pages: list[dict]) -> list[list[dict]]:
     return sheets
 
 
-# ============================================================
-# Рендер этикетки (4d-1)
-# ============================================================
 def _load_samples(container) -> list:
     return list(
         container.samples.select_related(
@@ -340,19 +280,16 @@ def _header_lines(container, samples) -> list[tuple[str, str]]:
 
 
 def _set_cut_style(pdf: FPDF) -> None:
-    """Переводит перо в режим пунктира реза."""
     pdf.set_dash_pattern(dash=CUT_DASH_MM, gap=CUT_DASH_MM)
     pdf.set_draw_color(150, 150, 150)
 
 
 def _reset_draw_style(pdf: FPDF) -> None:
-    """Сбрасывает пунктир и цвет пера."""
     pdf.set_dash_pattern()
     pdf.set_draw_color(0, 0, 0)
 
 
 def _draw_cut_perimeter(pdf: FPDF, x: float, y: float, w: float, h: float) -> None:
-    """Пунктирный периметр этикетки."""
     _set_cut_style(pdf)
     pdf.rect(x, y, w, h)
     _reset_draw_style(pdf)
@@ -361,7 +298,6 @@ def _draw_cut_perimeter(pdf: FPDF, x: float, y: float, w: float, h: float) -> No
 def _draw_header(
     pdf: FPDF, container, samples, x: float, y: float, w: float,
 ) -> None:
-    """Шапка этикетки: QR справа, текст слева."""
     qr_x = x + w - LABEL_MARGIN_MM - QR_SIZE_MM
     qr_y = y + LABEL_MARGIN_MM
     payload = make_payload("CONTAINER", container.id)
@@ -469,19 +405,23 @@ def _draw_working_area(
             box_x = cx + PNP_W_MM + 1
             box_y = row_y + (ROW_H_MM - CHECKBOX_SIZE_MM) / 2
             
-            # 2f-9a: Рисуем зелёную галочку вместо пустого квадрата
-            pdf.set_draw_color(0, 128, 0)
-            pdf.set_line_width(0.4)
-            pdf.line(
-                box_x + 0.1, box_y + CHECKBOX_SIZE_MM / 2,
-                box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2
-            )
-            pdf.line(
-                box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2,
-                box_x + CHECKBOX_SIZE_MM - 0.1, box_y + 0.2
-            )
+            # Рисуем пустой квадратик для всех
             pdf.set_draw_color(0, 0, 0)
             pdf.set_line_width(0.2)
+            pdf.rect(box_x, box_y, CHECKBOX_SIZE_MM, CHECKBOX_SIZE_MM)
+            
+            # Если проба выбрана, рисуем черную галочку внутри
+            if s.status == "SELECTED":
+                pdf.set_line_width(0.4)
+                pdf.line(
+                    box_x + 0.1, box_y + CHECKBOX_SIZE_MM / 2,
+                    box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2
+                )
+                pdf.line(
+                    box_x + CHECKBOX_SIZE_MM / 2 - 0.1, box_y + CHECKBOX_SIZE_MM - 0.2,
+                    box_x + CHECKBOX_SIZE_MM - 0.1, box_y + 0.2
+                )
+                pdf.set_line_width(0.2)
 
             text_x = box_x + CHECKBOX_SIZE_MM + 1
             text_w = col_w - (text_x - cx) - 1
@@ -537,11 +477,7 @@ def _draw_label_on_page(pdf: FPDF, page: dict, x: float, y: float) -> None:
         )
 
 
-# ============================================================
-# Публичные функции: этикетки (4d-1)
-# ============================================================
 def render_container_label(container) -> BytesIO:
-    """PDF одной этикетки тары (или её продолжений)."""
     _check_font()
     samples = _load_samples(container)
     measurer = _make_measurer()
@@ -562,7 +498,6 @@ def render_container_label(container) -> BytesIO:
 
 
 def render_batch_labels_pdf(batch) -> BytesIO:
-    """PDF партии: листы A4, этикетки от левого верхнего угла."""
     _check_font()
 
     items = list(
@@ -592,13 +527,7 @@ def render_batch_labels_pdf(batch) -> BytesIO:
     return BytesIO(bytes(pdf.output()))
 
 
-# ============================================================
-# Публичные функции: QR-сетка (4d-3)
-# ============================================================
 def _draw_qr_grid_cut_lines(pdf: FPDF, cols: int, n_items: int) -> None:
-    """
-    Общие пунктирные линии реза для QR-сетки (4d-3).
-    """
     cell = QR_GRID_SIZE_MM + QR_GRID_GAP_MM
     half_gap = QR_GRID_GAP_MM / 2
     size = QR_GRID_SIZE_MM
@@ -635,9 +564,6 @@ def _draw_qr_grid_cut_lines(pdf: FPDF, cols: int, n_items: int) -> None:
 
 
 def render_batch_qr_pdf(batch) -> BytesIO:
-    """
-    PDF партии в режиме «только QR» (4d-3).
-    """
     items = list(
         batch.items.select_related("container").order_by("position", "id")
     )
@@ -677,6 +603,5 @@ def render_batch_qr_pdf(batch) -> BytesIO:
 
 
 def count_pdf_pages(pdf_bytes: bytes) -> int:
-    """Число страниц PDF по содержимому (для тестов)."""
     m = re.search(rb"/Count (\d+)", pdf_bytes)
     return int(m.group(1)) if m else 0
