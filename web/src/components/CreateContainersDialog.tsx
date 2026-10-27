@@ -7,6 +7,9 @@
  *
  * Draft-поля (участок, ТИ, Н/З) сохраняются на каждой таре и
  * используются для предзаполнения формы «Заполнить тару пробами».
+ *
+ * 2f-15: кнопка «Предпросмотр» — макет этикетки до создания
+ * (LocalPreviewDialog с previewData, QR — плейсхолдер).
  */
 import { useState } from "react";
 import {
@@ -32,6 +35,7 @@ import {
     useResearchTypes,
     useSites,
 } from "../api";
+import LocalPreviewDialog from "./LocalPreviewDialog";
 
 interface CreateContainersDialogProps {
     open: boolean;
@@ -56,6 +60,7 @@ export default function CreateContainersDialog({
     const [containerTypeId, setContainerTypeId] = useState<string>("");
     const [count, setCount] = useState<number>(1);
     const [error, setError] = useState<string | null>(null);
+    const [previewOpen, setPreviewOpen] = useState(false);
 
     const sites = useSites();
     const researchTypes = useResearchTypes();
@@ -122,172 +127,199 @@ export default function CreateContainersDialog({
         }
     }
 
+    // 2f-15: mock-данные для предпросмотра из полей формы.
+    const previewSiteName =
+        sites.data?.find((s) => String(s.id) === siteId)?.name ?? null;
+    const previewResearchTypeName =
+        researchTypes.data?.find((rt) => String(rt.id) === researchTypeId)?.name ?? null;
+
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Создать тару</DialogTitle>
-            <DialogContent>
-                {error && (
-                    <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
-                        {error}
-                    </Alert>
-                )}
+        <>
+            <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+                <DialogTitle>Создать тару</DialogTitle>
+                <DialogContent>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
+                            {error}
+                        </Alert>
+                    )}
 
-                <Grid container spacing={2} sx={{ mt: 0 }}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel id="create-site-label">
-                                Участок
-                            </InputLabel>
-                            <Select
-                                labelId="create-site-label"
-                                label="Участок"
-                                value={siteId}
-                                onChange={(e) =>
-                                    setSiteId(String(e.target.value))
-                                }
-                            >
-                                <MenuItem value="">— не указан —</MenuItem>
-                                {(sites.data ?? []).map((s) => (
-                                    <MenuItem key={s.id} value={String(s.id)}>
-                                        {s.name} ({s.code})
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel id="create-rt-label">
-                                Тип исследования
-                            </InputLabel>
-                            <Select
-                                labelId="create-rt-label"
-                                label="Тип исследования"
-                                value={researchTypeId}
-                                onChange={(e) =>
-                                    setResearchTypeId(String(e.target.value))
-                                }
-                            >
-                                <MenuItem value="">— не указан —</MenuItem>
-                                {(researchTypes.data ?? []).map((rt) => (
-                                    <MenuItem
-                                        key={rt.id}
-                                        value={String(rt.id)}
-                                    >
-                                        {rt.code} — {rt.name}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Grid>
-
-                    <Grid size={{ xs: 12 }}>
-                        <TextField
-                            label="Н/З (текущий)"
-                            size="small"
-                            fullWidth
-                            required
-                            value={workOrderCoded}
-                            onChange={(e) =>
-                                setWorkOrderCoded(e.target.value)
-                            }
-                            helperText="Например: TST0001"
-                        />
-                    </Grid>
-
-                    <Grid size={{ xs: 12 }}>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={hasIncoming}
+                    <Grid container spacing={2} sx={{ mt: 0 }}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="create-site-label">
+                                    Участок
+                                </InputLabel>
+                                <Select
+                                    labelId="create-site-label"
+                                    label="Участок"
+                                    value={siteId}
                                     onChange={(e) =>
-                                        setHasIncoming(e.target.checked)
+                                        setSiteId(String(e.target.value))
                                     }
-                                />
-                            }
-                            label="Есть входящий Н/З"
-                        />
-                        {hasIncoming && (
+                                >
+                                    <MenuItem value="">— не указан —</MenuItem>
+                                    {(sites.data ?? []).map((s) => (
+                                        <MenuItem key={s.id} value={String(s.id)}>
+                                            {s.name} ({s.code})
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel id="create-rt-label">
+                                    Тип исследования
+                                </InputLabel>
+                                <Select
+                                    labelId="create-rt-label"
+                                    label="Тип исследования"
+                                    value={researchTypeId}
+                                    onChange={(e) =>
+                                        setResearchTypeId(String(e.target.value))
+                                    }
+                                >
+                                    <MenuItem value="">— не указан —</MenuItem>
+                                    {(researchTypes.data ?? []).map((rt) => (
+                                        <MenuItem
+                                            key={rt.id}
+                                            value={String(rt.id)}
+                                        >
+                                            {rt.code} — {rt.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        <Grid size={{ xs: 12 }}>
                             <TextField
-                                label="Н/З (входящий)"
+                                label="Н/З (текущий)"
                                 size="small"
                                 fullWidth
-                                sx={{ mt: 1 }}
-                                value={workOrderIncoming}
+                                required
+                                value={workOrderCoded}
                                 onChange={(e) =>
-                                    setWorkOrderIncoming(e.target.value)
+                                    setWorkOrderCoded(e.target.value)
                                 }
-                                helperText="Например: 02-Тест001"
+                                helperText="Например: TST0001"
                             />
-                        )}
-                    </Grid>
+                        </Grid>
 
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                        <FormControl fullWidth size="small" required>
-                            <InputLabel id="create-ct-label">
-                                Тип тары
-                            </InputLabel>
-                            <Select
-                                labelId="create-ct-label"
-                                label="Тип тары"
-                                value={containerTypeId}
-                                onChange={(e) =>
-                                    setContainerTypeId(String(e.target.value))
+                        <Grid size={{ xs: 12 }}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={hasIncoming}
+                                        onChange={(e) =>
+                                            setHasIncoming(e.target.checked)
+                                        }
+                                    />
                                 }
-                            >
-                                <MenuItem value="">— выберите —</MenuItem>
-                                {(containerTypes.data ?? []).map((t) => (
-                                    <MenuItem
-                                        key={t.id}
-                                        value={String(t.id)}
-                                    >
-                                        {t.name}
-                                        {t.laboratory_name
-                                            ? ` (${t.laboratory_name})`
-                                            : ""}
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                                label="Есть входящий Н/З"
+                            />
+                            {hasIncoming && (
+                                <TextField
+                                    label="Н/З (входящий)"
+                                    size="small"
+                                    fullWidth
+                                    sx={{ mt: 1 }}
+                                    value={workOrderIncoming}
+                                    onChange={(e) =>
+                                        setWorkOrderIncoming(e.target.value)
+                                    }
+                                    helperText="Например: 02-Тест001"
+                                />
+                            )}
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                            <FormControl fullWidth size="small" required>
+                                <InputLabel id="create-ct-label">
+                                    Тип тары
+                                </InputLabel>
+                                <Select
+                                    labelId="create-ct-label"
+                                    label="Тип тары"
+                                    value={containerTypeId}
+                                    onChange={(e) =>
+                                        setContainerTypeId(String(e.target.value))
+                                    }
+                                >
+                                    <MenuItem value="">— выберите —</MenuItem>
+                                    {(containerTypes.data ?? []).map((t) => (
+                                        <MenuItem
+                                            key={t.id}
+                                            value={String(t.id)}
+                                        >
+                                            {t.name}
+                                            {t.laboratory_name
+                                                ? ` (${t.laboratory_name})`
+                                                : ""}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Grid>
+
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                            <TextField
+                                label="Количество тары"
+                                type="number"
+                                size="small"
+                                fullWidth
+                                required
+                                value={count}
+                                onChange={(e) =>
+                                    setCount(Number(e.target.value) || 0)
+                                }
+                                helperText={`От 1 до ${MAX_COUNT}`}
+                            />
+                        </Grid>
                     </Grid>
 
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                        <TextField
-                            label="Количество тары"
-                            type="number"
-                            size="small"
-                            fullWidth
-                            required
-                            value={count}
-                            onChange={(e) =>
-                                setCount(Number(e.target.value) || 0)
-                            }
-                            helperText={`От 1 до ${MAX_COUNT}`}
-                        />
-                    </Grid>
-                </Grid>
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                        Тара создаётся без номера. Номера присваиваются
+                        на шаге заполнения пробами.
+                    </Alert>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={handleClose}
+                        disabled={createMutation.isPending}
+                    >
+                        Отмена
+                    </Button>
+                    <Button
+                        onClick={() => setPreviewOpen(true)}
+                        disabled={createMutation.isPending}
+                    >
+                        Предпросмотр
+                    </Button>
+                    <Button
+                        onClick={() => void handleConfirm()}
+                        variant="contained"
+                        disabled={createMutation.isPending}
+                    >
+                        {createMutation.isPending ? "Создаём..." : "Создать"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
-                <Alert severity="info" sx={{ mt: 2 }}>
-                    Тара создаётся без номера. Номера присваиваются
-                    на шаге заполнения пробами.
-                </Alert>
-            </DialogContent>
-            <DialogActions>
-                <Button
-                    onClick={handleClose}
-                    disabled={createMutation.isPending}
-                >
-                    Отмена
-                </Button>
-                <Button
-                    onClick={() => void handleConfirm()}
-                    variant="contained"
-                    disabled={createMutation.isPending}
-                >
-                    {createMutation.isPending ? "Создаём..." : "Создать"}
-                </Button>
-            </DialogActions>
-        </Dialog>
+            <LocalPreviewDialog
+                open={previewOpen}
+                previewData={{
+                    site_name: previewSiteName,
+                    work_order_coded: workOrderCoded,
+                    work_order_incoming: hasIncoming ? workOrderIncoming : "",
+                    research_type_name: previewResearchTypeName,
+                    container_number: null,
+                    container_id: null,
+                }}
+                onClose={() => setPreviewOpen(false)}
+            />
+        </>
     );
 }
