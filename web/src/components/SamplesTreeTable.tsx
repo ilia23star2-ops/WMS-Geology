@@ -1,10 +1,5 @@
 /**
  * Дерево-таблица проб (пачка 2f-8).
- *
- * Иерархия:
- * - Уровень 1: Группа (Н/З + ТИ). Показывает кол-во тар и проб.
- * - Уровень 2: Тара. Показывает номер, статус, место хранения.
- * - Уровень 3: Проба. Показывает номер, статус, дату обновления.
  */
 import React, { useState } from "react";
 import {
@@ -47,11 +42,10 @@ const STATUS_COLORS: Record<
 > = {
     IN_STORAGE: "success",
     IN_TRANSIT: "info",
-    ISSUED: "default",
     CONSUMED: "warning",
     DISPOSED: "error",
-    PENDING_DECRYPTION: "warning",
     PENDING_PLACEMENT: "warning",
+    SELECTED: "default",
 };
 
 const CONTAINER_STATUS_LABELS: Record<string, string> = {
@@ -62,7 +56,6 @@ const CONTAINER_STATUS_LABELS: Record<string, string> = {
     ISSUED: "Выдана",
 };
 
-// Перевод типов Н/З (2f-8)
 const WORK_ORDER_TYPE_LABELS: Record<string, string> = {
     INCOMING: "Входящий",
     CODED: "Текущий",
@@ -150,7 +143,6 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
 
                             return (
                                 <React.Fragment key={groupKey}>
-                                    {/* УРОВЕНЬ 1: Группа */}
                                     <TableRow
                                         hover
                                         sx={{ bgcolor: "action.hover", cursor: "pointer" }}
@@ -185,7 +177,6 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                         </TableCell>
                                     </TableRow>
 
-                                    {/* УРОВЕНЬ 2: Тары */}
                                     <TableRow>
                                         <TableCell sx={{ py: 0, borderBottom: isGroupExpanded ? undefined : "none" }} colSpan={5}>
                                             <Collapse in={isGroupExpanded} timeout="auto" unmountOnExit>
@@ -234,7 +225,6 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                                                         </TableCell>
                                                                     </TableRow>
 
-                                                                    {/* УРОВЕНЬ 3: Пробы */}
                                                                     <TableRow>
                                                                         <TableCell sx={{ py: 0, borderBottom: "none" }} colSpan={5}>
                                                                             <Collapse in={isContainerExpanded} timeout="auto" unmountOnExit>
@@ -264,7 +254,6 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                                                                                     />
                                                                                                 </TableCell>
                                                                                                 <TableCell>
-                                                                                                    {/* Место хранения пробы совпадает с тарой, оставляем пустым для чистоты */}
                                                                                                 </TableCell>
                                                                                                 <TableCell>
                                                                                                     <Typography variant="caption" color="text.secondary">
