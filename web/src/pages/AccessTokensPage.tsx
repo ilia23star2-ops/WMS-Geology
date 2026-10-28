@@ -2,7 +2,7 @@
  * Страница управления токенами доступа (3.x-offline-auth-c).
  *
  * - Список токенов (свои + созданные мной).
- * - Создание `web_login` (15 мин, одноразовый) / `offline` (7 дней).
+ * - Создание `web_login` (15 мин, одноразовый) / `offline` (14 часов).
  * - После создания — модалка с QR (`qr_svg` от backend) и raw токеном
  *   (показывается один раз).
  * - Отзыв активных токенов.
@@ -152,7 +152,7 @@ export default function AccessTokensPage() {
             <Alert severity="info" sx={{ mb: 2 }}>
                 <b>Вход в web</b> — одноразовый код на 15 минут (ввести на странице входа → вкладка «По коду»).
                 <br />
-                <b>Офлайн</b> — токен на 7 дней для мобильного приложения (сканировать QR в mobile).
+                <b>Офлайн</b> — временный токен на 14 часов (одна смена) для мобильного приложения (сканировать QR в mobile).
             </Alert>
 
             {tokensQuery.isError && (
@@ -239,7 +239,7 @@ export default function AccessTokensPage() {
                                 onChange={(e) => setPurpose(e.target.value as AccessTokenPurpose)}
                             >
                                 <MenuItem value="web_login">Вход в web (15 мин, одноразовый)</MenuItem>
-                                <MenuItem value="offline">Офлайн (7 дней, mobile)</MenuItem>
+                                <MenuItem value="offline">Офлайн (14 часов, mobile)</MenuItem>
                             </Select>
                         </FormControl>
 
