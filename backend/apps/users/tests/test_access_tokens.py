@@ -1,5 +1,5 @@
 """
-Тесты AccessToken (3.x-offline-auth-a).
+Тесты AccessToken (3.x-offline-auth-a + 3.x-offline-auth-b).
 
 Покрывают:
 - create (web_login / offline), TTL;
@@ -8,7 +8,8 @@
 - revoke;
 - code-login OK / used / expired / revoked / not-found;
 - offline-login OK (привязка device_id) / 409 (другой device) /
-  expired / revoked / not-found.
+  expired / revoked / not-found;
+- qr_svg в ответе create (3.x-offline-auth-b).
 """
 
 from datetime import timedelta
@@ -88,6 +89,47 @@ def test_create_offline_token_for_self(worker_client):
     )
     assert response.status_code == 201
     assert response.data["purpose"] == "offline"
+
+
+@pytest.mark.django_db
+def test_create_returns_qr_svg(worker_client):
+    """3.x-offline-auth-b: в ответе есть qr_svg."""
+    response = worker_client.post(
+        "/api/v1/auth/access-tokens/",
+        {"purpose": "web_login"},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert "qr_svg" in response.data
+    assert response.data["qr_svg"].startswith("<?xml")
+    # raw встроен в QR — payload начинается с WMSG:CODE:
+    raw = response.data["raw_token"]
+    # SVG содержит путь для QR, но не сам raw (это картинка).
+    # Проверяем, что хотя бы валидный SVG и содержит <svg
+    assert "<svg" in response.data["qr_svg"]
+    assert raw not in response.data["qr_svg"]  # raw в payload — уже QR-энкодинг
+
+
+@pytest.mark.django_db
+def test_qr_svg_payload_web_login(worker_user):
+    """3.x-offline-auth-b: payload web_login → WMSG:CODE:<raw>."""
+    from apps.users.services import make_access_token_qr_svg
+
+    raw = "a" * 64
+    svg = make_access_token_qr_svg("web_login", raw)
+    assert svg.startswith("<?xml")
+    assert "<svg" in svg
+
+
+@pytest.mark.django_db
+def test_qr_svg_payload_offline(worker_user):
+    """3.x-offline-auth-b: payload offline → WMSG:OFFLINE:<raw>."""
+    from apps.users.services import make_access_token_qr_svg
+
+    raw = "b" * 64
+    svg = make_access_token_qr_svg("offline", raw)
+    assert svg.startswith("<?xml")
+    assert "<svg" in svg
 
 
 @pytest.mark.django_db

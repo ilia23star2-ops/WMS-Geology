@@ -41,6 +41,7 @@ export type {
     FillSamplesGroup,
     FillSamplesRequest,
     FillSamplesResponse,
+    PrintBatchStatus,
     UpdateContainerPayload,
 } from "./containers";
 
@@ -177,7 +178,7 @@ export {
 export type {
     PrintBatch,
     PrintBatchItem,
-    PrintBatchStatus,
+    PrintBatchStatus as PrintBatchStatusType,
     PrintBatchesListParams,
     PrintType,
     UpdatePrintBatchPayload,
@@ -297,6 +298,25 @@ export type {
     WorkOrderStatus,
     WorkOrderType,
 } from "./workOrders";
+
+// Токены доступа (3.x-offline-auth-b).
+export {
+    codeLogin,
+    createAccessToken,
+    fetchAccessTokens,
+    offlineLogin,
+    revokeAccessToken,
+    useAccessTokens,
+    useCreateAccessToken,
+    useRevokeAccessToken,
+} from "./accessTokens";
+export type {
+    AccessToken,
+    AccessTokenCreateResponse,
+    AccessTokenPurpose,
+    CreateAccessTokenRequest,
+    OfflineLoginRequest,
+} from "./accessTokens";
 
 export type {
     ApiError,

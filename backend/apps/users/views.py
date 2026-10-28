@@ -32,7 +32,12 @@ from .serializers import (
     OfflineLoginSerializer,
     UserInfoSerializer,
 )
-from .services import generate_access_token, hash_access_token, log_audit
+from .services import (
+    generate_access_token,
+    hash_access_token,
+    log_audit,
+    make_access_token_qr_svg,
+)
 
 # Роли, которым разрешено создавать токены для других пользователей.
 _ADMIN_LIKE_ROLES = ("admin", "manager")
@@ -131,13 +136,13 @@ class MeView(APIView):
 
 
 # ============================================================
-# AccessToken (3.x-offline-auth-a)
+# AccessToken (3.x-offline-auth-a + 3.x-offline-auth-b)
 # ============================================================
 class AccessTokenViewSet(viewsets.GenericViewSet):
     """
     Токены доступа.
 
-    - POST /auth/access-tokens/ — создать (возвращает raw один раз).
+    - POST /auth/access-tokens/ — создать (возвращает raw и qr_svg один раз).
     - GET /auth/access-tokens/ — список своих + созданных мной.
     - POST /auth/access-tokens/{id}/revoke/ — отозвать.
     """
@@ -158,7 +163,7 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
     @extend_schema(
         request=AccessTokenCreateSerializer,
         responses={201: AccessTokenSerializer},
-        description="Создать токен доступа (raw возвращается один раз).",
+        description="Создать токен доступа (raw + qr_svg возвращаются один раз).",
     )
     def create(self, request):
         ser = AccessTokenCreateSerializer(data=request.data)
@@ -196,6 +201,7 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
 
         out = AccessTokenSerializer(obj).data
         out["raw_token"] = raw  # единственный раз
+        out["qr_svg"] = make_access_token_qr_svg(obj.purpose, raw)  # 3.x-offline-auth-b
         return Response(out, status=status.HTTP_201_CREATED)
 
     def list(self, request):
