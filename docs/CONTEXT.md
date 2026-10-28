@@ -11,12 +11,14 @@
 
 **Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
 
-**Текущий заход:** серия `2f` (полный CRUD в web + полировка).
-Закрыто: `2f-1` ... `2f-6c`, `2f-7a` ... `2f-7h`, `2f-8a` (дерево-таблица
-проб), `2f-8` (Н/З — WorkOrder), `2f-9a` ... `2f-9c`, `2f-10`,
-`2f-11a` ... `2f-11c`, `2f-12a` ... `2f-12b`.
-Следующий — `2f-14` (История операций с тарой), `3.x-offline` (мобильный
-офлайн) или `2f-15` (ТД-30 предпросмотр этикетки до save).
+**Текущий заход:** серия `2f` — **закрыта полностью**.
+Закрыто: `2f-1` ... `2f-6c`, `2f-7a` ... `2f-7h`, `2f-8a`
+(дерево-таблица проб), `2f-8` (Н/З — WorkOrder), `2f-9a` ... `2f-9c`,
+`2f-10`, `2f-11a` ... `2f-11c`, `2f-12a` ... `2f-12b`,
+`2f-14a` / `2f-14b` (аудит тары), `2f-15` (предпросмотр до save),
+`2f-17a` / `2f-17b` / `2f-17c` (единое окно тары + иконки печати).
+Следующая серия — `3.x-offline` (мобильный офлайн), `2.x-lifecycle`
+(пересмотр статусов), `2.x-rbac` или `2.x-lab-portal`.
 
 **Предыдущие заходы:**
 - `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
@@ -49,6 +51,17 @@
   перемещение, переходы по геометке.
 - **2f-12a/b**: атомарное создание тары с пробами прямо в ячейке,
   предпросмотр, force-удаление.
+- **2f-14a**: audit log (`AuditLog`, `GET /containers/{id}/history/`).
+- **2f-14b**: web — вкладка «История» (`ContainerHistoryTab`).
+- **2f-15**: предпросмотр этикетки до создания тары
+  (`LocalPreviewDialog` + `previewData`).
+- **2f-17a**: `FillContainerDialog` → `FillContainerContent`.
+- **2f-17b**: backend — `print_batch_status` (последняя не-CANCELLED
+  партия) + prefetch.
+- **2f-17c**: единое окно `ContainerDetailDialog` (Пробы /
+  Редактирование / История + кнопки Предпросмотр / Разместить /
+  Местоположение) + иконки печати + выбор партии печати (новая /
+  существующая DRAFT).
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`, `?no_work_order=`).
@@ -62,32 +75,39 @@
 - **`WorkOrder`**: admin, `samples_count` / `containers` / `linked_order_number`
   в сериализаторах, `prefetch_related` в `views.py`. `TYPE_CODED` label = «Текущий».
 - **Force-удаление топологии**: Room / Rack / Section / Tier / Cell.
+- **Аудит тары**: `log_audit()` в `apps/users/services.py`, вызовы в 6 actions
+  `ContainerViewSet`. `GET /storage/containers/{id}/history/` (см. 1.70).
+- **`print_batch_status`** в `ContainerSerializer` — последняя не-CANCELLED
+  партия, prefetch через `print_batch_items` (см. 1.71).
 - Excel-импорт: `target_date`, `duplicate_action`, 409 на дубликат.
 - **Приёмка:** `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`.
 - **Печать:** `pdf`, `mark-printed`, `companion.pdf`, `label_printed_at`.
 
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники, топология, приёмка.
-- **Тара:** DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание заготовок, заполнение (с пропусками/выбранными), предпросмотр, геометка в Топологию.
+- **Тара:** DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание заготовок, заполнение (с пропусками/выбранными), предпросмотр, геометка в Топологию, иконки печати по `print_batch_status` (4 цвета).
 - **Пробы:** Дерево-таблица (Группа → Тара → Проба), `SampleEditDialog`, геометка в Топологию.
 - **Топология:** Дерево + ячейки. `CellContentsDialog` (поиск, группировка, чекбоксы, массовое перемещение), `CreateInCellDialog` (создание тары в ячейке), переход по `?cell_id=`, force-удаление иерархии в дереве.
 - **Наряд-заказы:** страница `/work-orders`, `WorkOrderDialog`, `LinkWorkOrderDialog` (фильтр + «создать новый»), `WorkOrderContainersDialog` (список тар Н/З), колонка «Проб», кнопка «Глаз», sidebar.
+- **Единое окно тары:** `ContainerDetailDialog` (шапка + 3 вкладки: Пробы / Редактирование / История + кнопки `[Предпросмотр] [Разместить / Местоположение]`) — см. 1.72.
+- **Предпросмотр:** `ContainerPreviewDialog` — 2 вкладки (Этикетка / QR). Открывается из шапки `ContainerDetailDialog`.
+- **Партия печати:** `AddToPrintBatchDialog` — выбор «Новая / Существующая (DRAFT)».
 
-**Что нужно добавить (web, серия 2f — осталось):**
-- **2f-14:** История операций с тарой (аудит).
-- **2f-15:** ТД-30 (предпросмотр этикетки до save).
+**Что нужно добавить (web, серия 2f):**
+- Серия `2f` — **закрыта**. Следующая — `3.x-offline` / `2.x-lifecycle` /
+  `2.x-rbac` / `2.x-lab-portal`.
 
 **Что готово (mobile):**
 - Логин, logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри.
 
-**Backend:** 767 тестов.
+**Backend:** 779 тестов.
 **Web:** 24 юнит-теста.
 **Mobile:** 32 юнит-теста.
 
 **Ближайшая работа:**
-- `2f-14` — История операций с тарой.
-- Дальше — `3.x-offline` (мобильный офлайн).
+- `3.x-offline` — мобильный офлайн (SQLite + SyncQueue).
+- Или `2.x-lifecycle` / `2.x-rbac` / `2.x-lab-portal` — по выбору.
 
 ---
 
@@ -111,18 +131,18 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13.
 
-### Backend (767 тестов)
+### Backend (779 тестов)
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология, Pallet, ContainerType, Container (+draft, nullable number, PENDING_FILLING), ContainerComment, QR-этикетка, QR топологии, bulk-create, fill-samples, bulk-place, create-in-cell |
+| `storage` | Топология, Pallet, ContainerType, Container (+draft, nullable number, PENDING_FILLING), ContainerComment, QR-этикетка, QR топологии, bulk-create, fill-samples, bulk-place, create-in-cell, history (audit), print_batch_status |
 | `samples` | ResearchType, Site, Laboratory, Well, Sample (+PENDING_PLACEMENT, SELECTED, dispose/restore), SampleWorkOrder, sync-сервис |
 | `work_orders` | WorkOrder (self-ref + site, admin, samples_count) |
 | `receiving` | Receipt, ReceiptItem (+container_type), ImportSession + Excel-парсер + apply_shipment_import, conflicts, resolve-conflicts, check, complete, act |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
 | `inventory` | InventorySession, InventoryScan, InventoryIssue |
-| `users` | Role, UserProfile, AuditLog + JWT auth |
-| `labels` | QR-сервис, PDF-этикетки, QR-сетка, PrintBatch (+name), act_service |
+| `users` | Role, UserProfile, AuditLog, `log_audit` (сервис), AuditLogSerializer + JWT auth |
+| `labels` | QR-сервис, PDF-этикетки, QR-сетка, PrintBatch (+name), PrintBatchItem (related_name="print_batch_items"), act_service |
 
 ### Web (React, 24 юнит-теста)
 | Раздел | Что внутри |
@@ -130,13 +150,14 @@
 | Аутентификация | Zustand-стор, login, protected routes, JWT-интерцептор. |
 | Layout | MUI sidebar + header. |
 | Главная | 4 карточки. |
-| Тара | DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание, заполнение, предпросмотр, геометка. |
+| Тара | DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание, заполнение, предпросмотр, геометка, иконки печати. |
 | Пробы | Дерево-таблица, `SampleEditDialog`, геометка. |
 | Наряд-заказы | `WorkOrdersPage`, диалоги создания / связывания / сводки по тарам. |
 | Печать | Партии, детали, PDF, переименование. |
 | Справочники | CRUD. |
 | Приёмка | Список, детали, сверка, акт. |
 | Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`, force-удаление. |
+| Карточка тары | `ContainerDetailDialog` (Пробы / Редактирование / История + Предпросмотр / Разместить / Местоположение). |
 
 ### Mobile (Flutter, 32 юнит-теста)
 | Раздел | Что внутри |
@@ -148,7 +169,7 @@
 | Карточка тары | Поля тары + список проб внутри. |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (67), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (72), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -176,12 +197,14 @@
 - **`get_object()` уважает фильтры `get_queryset`.** Для утилизированных проб — `Model.objects.filter(pk=pk).first()` (2f-2b).
 - **`Section.save()` / `Cell.save()` — двойной `super().save()`**.
 - **stale-тесты при полном прогоне** — копятся, если долго гонять только `apps/<app>/`. Перед закрытием захода — `pytest -q` целиком (2f-8-fix-2).
+- **`prefetch_related` с `Prefetch(to_attr=...)`** — при использовании `to_attr`, `get_<field>` через `getattr(obj, "<to_attr>", None)`, не через `related_manager` (2f-17b).
+- **`related_name` в `PrintBatchItem.container`** — `"print_batch_items"` (не дефолтный `printbatchitem_set`) — учитывать при prefetch.
 
 ### API
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
 - Pagination — `PageNumberPagination`, `PAGE_SIZE=50`.
 - **Ключевой фильтр** `?work_order=` — учитывает linked_order.
-- Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`, `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`, `add-containers`, `remove-container`, `mark-ready`, `pdf`, `mark-printed`, `bulk-create`, `fill-samples`, `upload`, `import-shipment`, `conflicts`, `resolve-conflicts`, `check`, `act`, `dispose`, `restore`, `qr.pdf`, `qr-batch`, `bulk-place`, `create-in-cell`, `companion.pdf`.
+- Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`, `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`, `add-containers`, `remove-container`, `mark-ready`, `pdf`, `mark-printed`, `bulk-create`, `fill-samples`, `upload`, `import-shipment`, `conflicts`, `resolve-conflicts`, `check`, `act`, `dispose`, `restore`, `qr.pdf`, `qr-batch`, `bulk-place`, `create-in-cell`, `companion.pdf`, `history` (новый, 2f-14a).
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`, остальные приложения — **без префикса**.
 
 ### Домен
@@ -201,6 +224,8 @@
 - **ID объектов (BigAutoField)** не переиспользуются после удаления — это норма (1.68).
 - **`Sample.STATUS_SELECTED`** защищен от перезаписи синхронизатором (1.66).
 - **`fill-samples` обновляет draft-поля из запроса** (2f-7f + 1.69) — не обнуляет, не замораживает.
+- **`AuditLog` для Container**: 6 действий (`CREATE`, `UPDATE`, `DELETE`, `FILL_SAMPLES`, `PLACE`, `CREATE_IN_CELL`). Snapshot — 6 полей (1.70).
+- **`Container.print_batch_status`**: последняя не-CANCELLED партия (вариант А), 4 значения (`null` / `DRAFT` / `READY` / `PRINTED`) (1.71).
 
 ### Web
 - **Vite proxy:** `/api/*` → `http://localhost:8000`.
@@ -213,7 +238,7 @@
 - **Zustand:** при F5 состояние сбрасывается — флаг `isBootstrapping`.
 - **Vite build:** warning «chunks > 500 kB» — ожидаемо (ТД-21/ТД-35).
 - **URL справочников:** `/research-types/`, `/sites/`, `/laboratories/` — **без префикса**.
-- **MUI icons:** `DeleteOutline` не существует (использовать `Delete`). Для топологии: `AccountTree`.
+- **MUI icons:** `DeleteOutline` **не существует** (использовать `Delete`). `AddCircleOutline` **не существует** (использовать `AddCircle`). Для топологии: `AccountTree`.
 - **`parseSampleInput`:** префикс ищется **точно** в `Laboratory.prefixes` + `Site.match_patterns`.
 - **Диалог заполнения:** `fillContainerWithSamples` **обнуляет draft-поля**.
 - **`FileResponse` в тестах:** читать `streaming_content`.
@@ -221,6 +246,7 @@
 - **`TopologyPage`**: `CellPalletChip` делает N+1 запрос. Для 3–5 ячеек — норм.
 - **Force-удаление тары:** при 409 ошибке `ContainersPage` предлагает удалить вместе с пробами (`?force=true`).
 - **`tsconfig.json` без `baseUrl`:** `paths` работают от самого tsconfig (TS ≥4.4). При миграции на TS 7 — обязательное требование.
+- **`AddToPrintBatchDialog` инвалидирует `["containers"]` / `["container"]` / `["container-history"]`** после add-containers — иначе иконка печати не обновится (2f-17c-fix).
 
 ### Mobile
 - **URL API:** `config.dart`, `_apiHostOverride` — в git.

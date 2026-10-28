@@ -669,6 +669,226 @@ draft-поля тары (`draft_site_id`, `draft_research_type_id`,
 Источник: 2f-7f + уточнение в 2f-8-fix-2, 2026-10-27.
 Статус: ✅ действует.
 
+1.70. 2026-10-27 — Аудит операций с тарой (2f-14a)
+Решение: журнал всех значимых действий с тарой ведётся в
+AuditLog. Запись — явным вызовом сервиса log_audit() из
+actions ViewSet (Django signals не используем, см. 1.58).
+
+Покрытие: 6 действий в ContainerViewSet:
+
+CREATE — bulk-create и perform_create (обычный POST);
+
+UPDATE — perform_update (PUT/PATCH);
+
+DELETE — destroy (с force и без);
+
+FILL_SAMPLES — fill-samples (с created_samples в new_value);
+
+PLACE — bulk-place (в ячейку или на пол);
+
+CREATE_IN_CELL — create-in-cell (создание + заполнение + размещение в одной записи).
+
+Snapshot: компактный — 6 полей:
+
+python
+{
+    "status": "ACTIVE",
+    "container_number": "T-001",
+    "container_type_id": 3,
+    "pallet_id": 7,
+    "floor_room_id": None,
+    "sample_count": 5,
+}
+Для CREATE — old_value = None, new_value = snapshot.
+
+Для UPDATE — old_value = snapshot до, new_value = snapshot после.
+
+Для DELETE — old_value = snapshot до удаления (вызывается до
+perform_destroy, пока pk не обнулился), new_value = None.
+
+Для FILL_SAMPLES — new_value = snapshot + created_samples.
+
+Для PLACE — old_value / new_value (status и место меняются).
+
+Для CREATE_IN_CELL — new_value = snapshot + created_samples + cell_id.
+
+Endpoint: GET /storage/containers/{id}/history/ (action
+history на ContainerViewSet). Возвращает AuditLog по
+entity_type="Container", entity_id=id, отсортированный по
+-created_at. Сериализатор — AuditLogSerializer (с
+username, action_display — русские метки).
+
+Сервис: apps/users/services.py::log_audit — тонкая обёртка
+над AuditLog.objects.create. Аноним → user = NULL
+(системное действие).
+
+Причина:
+
+Кладовщику нужна прозрачность «кто, когда, что делал с тарой» —
+полезно при инвентаризации и разборе ошибок.
+
+Compact snapshot (вариант А) — читаемо в UI, diff old → new
+по ключам генерируется на фронте.
+
+Явный сервис — прозрачно, без сигналов (1.58).
+
+Где: backend/apps/users/services.py (новый),
+apps/users/serializers.py (AuditLogSerializer),
+apps/storage/views.py (_container_snapshot, вызовы
+log_audit, action history),
+apps/storage/tests/test_container_history.py (8 тестов).
+UI: web/src/components/ContainerHistoryTab.tsx (2f-14b).
+
+Источник: 2f-14a (backend) + 2f-14b (web), 2026-10-27.
+Статус: ✅ действует.
+
+1.71. 2026-10-27 — print_batch_status в ContainerSerializer (2f-17b)
+Решение: в ответ GET /storage/containers/ и
+GET /storage/containers/{id}/ добавлено поле
+print_batch_status — статус последней не-CANCELLED партии
+печати, в которую входит тара.
+
+Значения:
+
+null — тары нет ни в одной активной партии (или только в
+CANCELLED).
+
+"DRAFT" — в черновике.
+
+"READY" — готова к печати.
+
+"PRINTED" — напечатана.
+
+Вариант А из трёх: берётся последняя не-CANCELLED партия
+(.exclude(batch__status="CANCELLED")). Если тара в
+DRAFT → CANCELLED → DRAFT — показывается DRAFT (в работе
+снова). Если только в CANCELLED — null.
+
+Реализация:
+
+ContainerSerializer.print_batch_status — SerializerMethodField.
+
+ContainerViewSet.get_queryset — prefetch_related(Prefetch( "print_batch_items", queryset=PrintBatchItem.objects .select_related("batch").exclude(batch__status="CANCELLED") .order_by("-batch__created_at"), to_attr="active_print_items")).
+Без N+1.
+
+get_print_batch_status — getattr(obj, "active_print_items", None): если prefetch был — items[0].batch.status, иначе —
+fallback через точечный запрос (одиночный GET).
+
+Важно: PrintBatchItem.container имеет
+related_name="print_batch_items" (не дефолтный
+printbatchitem_set). Учитывать при prefetch.
+
+Причина:
+
+Кладовщику в реестре тары нужна информация «в какой партии
+тара и на какой стадии печать» — одной иконкой (4 цвета).
+
+Раньше был только label_printed_at («напечатана / нет»).
+
+Prefetch — чтобы не было N+1 на списке (50 тар).
+
+Где: backend/apps/storage/serializers.py
+(ContainerSerializer.print_batch_status),
+backend/apps/storage/views.py (Prefetch в ContainerViewSet.get_queryset),
+backend/apps/storage/tests/test_container_print_status.py
+(4 теста), web/src/api/containers.ts (print_batch_status
+в типе Container, PrintBatchStatus).
+
+Источник: 2f-17b, 2026-10-27.
+Статус: ✅ действует.
+
+1.72. 2026-10-27 — ContainerDetailDialog: единое окно тары (2f-17c)
+Решение: клик по таре в /containers (и в CellContentsDialog
+в топологии) открывает единое окно ContainerDetailDialog
+с шапкой, кнопками и 3 вкладками. Цепочка
+Fill → Save → ContainerPreview убрана.
+
+Шапка:
+
+номер, Н/З, ТИ, участок, статус.
+
+Кнопки справа:
+
+[Предпросмотр] — всегда, открывает ContainerPreviewDialog
+(2 вкладки: Этикетка / QR);
+
+[Разместить] — только для PENDING_FILLING / PENDING_PLACEMENT,
+открывает PlaceContainerDialog;
+
+[Местоположение] — только для ACTIVE с cell_id,
+navigate('/topology?cell_id=...').
+
+Вкладки:
+
+Пробы — таблица с фильтром, edit/delete, массовая смена
+статуса (как раньше в ContainerPreviewDialog).
+
+Редактирование — FillContainerContent (из 2f-17a):
+сверху — строка добавления диапазонов + таблица добавленных;
+ниже — список существующих проб; внизу — Итого + Сохранить / Отмена.
+
+История — ContainerHistoryTab (из 2f-14b).
+
+ContainerPreviewDialog переделан: из 4 вкладок (Список /
+Этикетка / QR / История) осталось 2 вкладки: Этикетка / QR.
+Открывается только из шапки ContainerDetailDialog по
+«Предпросмотр».
+
+AddToPrintBatchDialog доработан: выбор «Новая партия /
+Существующая (DRAFT)» через usePrintBatches({status: "DRAFT"}).
+После успешного add-containers инвалидирует
+["containers"], ["container"], ["container-history"],
+["print-batches"], ["print-batch", id] — иконка печати в
+реестре обновляется автоматически (2f-17c-fix).
+
+ContainersPage:
+
+handleRowClick → ContainerDetailDialog (вместо
+FillContainerDialog).
+
+Колонка «Этикетка» → иконка по print_batch_status
+(4 цвета: серая / жёлтая / синяя / зелёная).
+
+Кнопка [Создать тару] (CreateContainersDialog) остаётся
+отдельной.
+
+CellContentsDialog:
+
+клик на тару → ContainerDetailDialog;
+
+CreateInCellDialog + FillContainerDialog (создание тары в
+ячейке) — без изменений, после заполнения →
+ContainerDetailDialog.
+
+FillContainerContent:
+
+кнопка «Предпросмотр» внизу убрана — она теперь только в
+шапке ContainerDetailDialog.
+
+Порядок блоков: добавление диапазонов вверху, существующие
+пробы — ниже.
+
+Причина:
+
+Цепочка Save → Preview избыточна: пользователь хочет видеть
+всё в одном окне, переключать вкладки.
+
+Иконка печати по print_batch_status — полезная информация в
+реестре.
+
+Выбор существующей партии печати — реальная потребность
+(сейчас можно было только создать новую).
+
+Где: web/src/components/ContainerDetailDialog.tsx (новый),
+web/src/components/ContainerPreviewDialog.tsx,
+web/src/components/AddToPrintBatchDialog.tsx,
+web/src/components/FillContainerContent.tsx,
+web/src/pages/ContainersPage.tsx,
+web/src/components/CellContentsDialog.tsx.
+
+Источник: 2f-17c (+ фиксы в процессе), 2026-10-27.
+Статус: ✅ действует.
+
 2. Что не делаем и почему
 Не используем SampleParts. Разделение — вне WMS.
 
@@ -731,6 +951,8 @@ draft-поля тары (`draft_site_id`, `draft_research_type_id`,
 
 Не используем Django signals для sync-логики (см. 1.58).
 
+Не используем Django signals для аудита (см. 1.70).
+
 Не создаём тару с обязательным container_number на шаге
 bulk-create — заготовка создаётся без номера, номер
 присваивается на шаге fill-samples (см. 1.60).
@@ -753,6 +975,12 @@ sync_sample_status_for_container (см. 1.62) — у такой тары
 Не используем baseUrl в tsconfig.json — deprecated
 в TS 6, удалён в TS 7. paths работают от самого tsconfig
 (TS ≥ 4.4), 2f-8-fix.
+
+Не пишем аудит через Django signals — только явный
+вызов log_audit() из actions (1.70).
+
+Не считаем print_batch_status = CANCELLED — только
+последняя не-CANCELLED партия, иначе null (1.71).
 
 3. Глоссарий
 Данные
@@ -777,6 +1005,8 @@ Draft-поля тары	draft_site, draft_research_type, draft_work_order_coded,
 Рейс (Shipment)	Отправка. INBOUND / OUTBOUND.
 Партия печати (PrintBatch)	Корзина тар для массовой печати этикеток.
 Группа (Н/З × ТИ)	Контекст, внутри которого номер тары уникален (см. 1.61).
+AuditLog	Журнал значимых действий (создание, изменение, удаление, заполнение, размещение). Пишется вручную через log_audit() (1.70).
+print_batch_status	Статус последней не-CANCELLED партии печати, в которую входит тара. 4 значения: null / DRAFT / READY / PRINTED (1.71).
 Процесс
 Термин	Что значит
 Шифровка	Присвоение Н/З нового названия.
@@ -796,6 +1026,7 @@ Draft-поля тары	draft_site, draft_research_type, draft_work_order_coded,
 Портал лаборатории	Веб-раздел для лабораторий.
 Продолжение этикетки	Вторая этикетка без шапки, только список проб.
 Sync-сервис	Явная функция синхронизации статусов (см. 1.58).
+Аудит	Журнал действий с объектом, доступный через GET /containers/{id}/history/ (1.70).
 Инфраструктура
 Термин	Что значит
 Docker Compose	PG в контейнере (домашний ПК).
@@ -811,6 +1042,8 @@ UI
 Виртуальный вид секции	Ярусы A–D и ячейки.
 Корзина печати	Пул тар для массовой печати.
 Рабочая область рейса	Основной экран сборки рейса.
+Единое окно тары	ContainerDetailDialog (шапка + 3 вкладки + кнопки), 1.72.
+Модалка предпросмотра	ContainerPreviewDialog (2 вкладки: Этикетка / QR), 1.72.
 4. Что НЕ значат эти термины
 «Часть пробы» — не используется. Есть навеска.
 
@@ -855,3 +1088,13 @@ UI
 «baseUrl в tsconfig.json» — не используется.
 paths резолвятся от самого tsconfig.json (TS ≥ 4.4).
 baseUrl deprecated в TS 6, удалён в TS 7. См. 2f-8-fix.
+
+«AuditLog» — не Django signals, не «автоматически на всё».
+Только явные вызовы log_audit() из actions. См. 1.70.
+
+«print_batch_status» — не «все партии, где была тара».
+Только последняя не-CANCELLED. См. 1.71.
+
+«ContainerDetailDialog» — не «редактор». Это просмотр +
+действия в одном окне (пробы / редактирование / история).
+См. 1.72.

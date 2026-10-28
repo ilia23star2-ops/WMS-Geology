@@ -131,6 +131,19 @@ Web первый, Mobile по требованию. Backend на старте с
     (2f-9c: статуса нет);
   - `test_work_order_str_coded` — «Зашифрованный» → «Текущий»
     (2f-8: `TYPE_CODED` label).
+- ✅ **`2f-14a`** — аудит операций с тарой: сервис
+  `log_audit()` в `apps/users/services.py`, вызовы в 6 actions
+  `ContainerViewSet` (`bulk_create`, `fill_samples`,
+  `bulk_place`, `create_in_cell`, `perform_create`/`update`,
+  `destroy`), action `history` → `GET /storage/containers/{id}/history/`,
+  сериализатор `AuditLogSerializer` (с `username`, `action_display`).
+  Снимок `_container_snapshot` — компактный (6 полей). См. 1.70.
+  +8 тестов (`test_container_history.py`).
+- ✅ **`2f-17b`** — `ContainerSerializer.print_batch_status`
+  (`SerializerMethodField`) — статус последней не-CANCELLED
+  партии печати. `prefetch_related("print_batch_items",
+  to_attr="active_print_items")` в `ContainerViewSet.get_queryset` —
+  без N+1. См. 1.71. +4 теста (`test_container_print_status.py`).
 
 ### Что закрыто (web)
 
@@ -239,6 +252,31 @@ Web первый, Mobile по требованию. Backend на старте с
   - `ContainersPage` — фикс `any` в force-удалении.
 - ✅ **`2f-8-fix (tsconfig)`** — `web/tsconfig.json`: убран
   deprecated `baseUrl` (TS 6 → 7 миграция). `paths` не тронуты.
+- ✅ **`2f-15`** — предпросмотр этикетки до создания тары.
+  `LocalPreviewDialog` расширен: `container` стал опционален,
+  добавлен `previewData` (mock-данные формы) + плейсхолдер
+  «QR появится после сохранения». Кнопка «Предпросмотр» в
+  `CreateContainersDialog` и `CreateInCellDialog`. В `FillContainerDialog`
+  регресс: настоящий QR (реальный `container.id`).
+- ✅ **`2f-14b`** — web: вкладка «История» в `ContainerPreviewDialog`.
+  `ContainerHistoryTab` (новый) — таблица событий (дата / кто /
+  действие / diff old → new по ключам). `useContainerHistory`
+  в `containers.ts` + `index.ts`. 4 цвета иконок действий.
+- ✅ **`2f-17a`** — рефакторинг `FillContainerDialog` →
+  `FillContainerContent` (тело без `Dialog`-обёртки). 0
+  функциональных изменений. `FillContainerDialog` — тонкая
+  обёртка `<Dialog>`.
+- ✅ **`2f-17c`** — единое окно `ContainerDetailDialog`
+  (шапка + 3 вкладки: Пробы / Редактирование / История +
+  кнопки `[Предпросмотр] [Разместить / Местоположение]`).
+  `ContainerPreviewDialog` → переделан в модалку предпросмотра
+  (2 вкладки: Этикетка / QR). `AddToPrintBatchDialog` — добавлен
+  выбор «Новая партия / Существующая (DRAFT)». `ContainersPage` —
+  клик по таре → `ContainerDetailDialog`, иконка «Этикетка»
+  по `print_batch_status` (4 цвета: серая / жёлтая / синяя /
+  зелёная) + инвалидация кэша `containers` / `container` /
+  `container-history` после add-containers. `CellContentsDialog` —
+  клик по таре → `ContainerDetailDialog`. См. 1.72.
 
 ### Что закрыто (docs)
 
@@ -262,6 +300,9 @@ Web первый, Mobile по требованию. Backend на старте с
   PROGRESS / TESTING / DECISIONS (1.69 — draft-поля после
   fill-samples; переименование `2f-8` (дерево-таблица) →
   `2f-8a`).
+- ✅ **`docs/2f-14-17-closed`** (2026-10-27) — CONTEXT / PLAN /
+  PROGRESS / TESTING / DECISIONS (1.70 аудит тары, 1.71
+  print_batch_status, 1.72 ContainerDetailDialog).
 
 ### В работе
 
@@ -271,15 +312,16 @@ Web первый, Mobile по требованию. Backend на старте с
 
 ### Что дальше
 
-Серия `2f` — полный CRUD в web (см. PLAN.md):
+Серия `2f` — закрыта. Следующие серии (см. PLAN.md):
 
-- ⬜ **`2f-14`** — история операций с тарой (создание,
-  перемещения, изменение статусов).
-- ⬜ **`2f-15`** — ТД-30 (предпросмотр этикетки до save).
+- ⬜ **`3.x-offline`** — мобильный офлайн (SQLite + SyncQueue).
+- ⬜ **`2.x-lifecycle`** — пересмотр статусов Container / Sample.
+- ⬜ **`2.x-rbac`** — роли и права.
+- ⬜ **`2.x-lab-portal`** — портал лабораторий.
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 63.
+- Заходов закрыто (с 2026-10-12): 69.
   - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
     `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
     `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
@@ -287,7 +329,7 @@ Web первый, Mobile по требованию. Backend на старте с
     `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
     `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`,
     `2f-4c-1`, `2f-5a-1`, `2f-5c-1`, `2f-10`, `2f-11c`, `2f-12a`,
-    `2f-8 (backend)`, `2f-8-fix`, `2f-8-fix-2`.
+    `2f-8 (backend)`, `2f-8-fix`, `2f-8-fix-2`, `2f-14a`, `2f-17b`.
   - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
     `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
     `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
@@ -295,8 +337,10 @@ Web первый, Mobile по требованию. Backend на старте с
     `2f-3a`, `2f-4a`, `2f-4b`, `2f-4c-2`, `2f-5a-2`,
     `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`, `2f-7h`, `2f-8a`,
     `2f-9a`, `2f-9b`, `2f-9c`, `2f-10`, `2f-11a`, `2f-11b`,
-    `2f-11c`, `2f-12b`, `2f-8`, `2f-8-fix (tsconfig)`.
-  - docs: 6 (`...-update` … `...-update-5`, `docs/2f-8-closed`).
+    `2f-11c`, `2f-12b`, `2f-8`, `2f-8-fix (tsconfig)`, `2f-15`,
+    `2f-14b`, `2f-17a`, `2f-17c`.
+  - docs: 7 (`...-update` … `...-update-5`, `docs/2f-8-closed`,
+    `docs/2f-14-17-closed`).
 - «Не норм» на первом прогоне: 4.
   - 3f-1: `FileResponse` не имеет `.content` — читать
     `streaming_content`.
@@ -307,9 +351,9 @@ Web первый, Mobile по требованию. Backend на старте с
   - 2f-4a: двойной костыль `setDialogKind` при edit комнаты —
     исправлено в финале.
 - Откатов: 0.
-- **Backend: 767 тестов** (было «762+» в доках — расхождение
-  исправлено: stale-тесты копились с 2f-7e / 2f-7f / 2f-9c / 1.61,
-  починены в `2f-8-fix-2`).
+- **Backend: 779 тестов** (было 767 в `docs/2f-8-closed`; +4
+  `test_container_history`, +4 `test_container_print_status`,
+  +4 fix `test_history_after_create`).
 - **Web: 24 юнит-теста** (без изменений).
 - **Mobile: 32 юнит-теста** (без изменений).
 

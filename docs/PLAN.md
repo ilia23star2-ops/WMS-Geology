@@ -27,9 +27,10 @@
 ## Ближайший план
 
 **Активная серия:** `feature/2.x-web-v2` (React + backend, продолжение
-web).
+web). Серия `2f` — **закрыта полностью**. Следующая — из «Следующих
+серий».
 
-**План серии 2f (текущий):**
+**План серии 2f (закрыт):**
 
 | # | Заход | Что делает | Статус |
 |---|---|---|---|
@@ -67,8 +68,12 @@ web).
 | 2f-11c | Переходы | из проб/тары в Топологию | ✅ |
 | 2f-12a | Создание в ячейке — backend | `create-in-cell` | ✅ |
 | 2f-12b | Создание в ячейке — web | `CreateInCellDialog` + preview | ✅ |
-| 2f-14 | История операций с тарой | аудит | ⬜ |
-| 2f-15 | ТД-30 | предпросмотр этикетки до save | ⬜ |
+| 2f-14a | Аудит тары — backend | `AuditLog`, `GET /containers/{id}/history/` (1.70) | ✅ |
+| 2f-14b | Аудит тары — web | вкладка «История» (`ContainerHistoryTab`) | ✅ |
+| 2f-15 | Предпросмотр этикетки до save | `LocalPreviewDialog` + `previewData` | ✅ |
+| 2f-17a | Рефакторинг FillContainerDialog | `FillContainerContent` | ✅ |
+| 2f-17b | Backend: `print_batch_status` | prefetch, 4 значения (1.71) | ✅ |
+| 2f-17c | Единое окно тары | `ContainerDetailDialog` + иконки печати + выбор партии (1.72) | ✅ |
 | 2f-16 | Batch QR секций | как для ячеек | ⬜ |
 
 Легенда: ⬜ не начат · 🟡 в работе · ✅ закрыт · ❌ отменён
@@ -198,7 +203,7 @@ React Router 7 + axios + Vitest.
 | ТД-27 | Web: фильтр `?status=PENDING_PLACEMENT` | ✅ закрыт | 7a-3 |
 | ТД-28 | Web: `parseSampleInput` — fallback | низкий | когда появится нужда |
 | ТД-29 | Web: `FillContainerDialog` — hint | низкий | при доработке UX |
-| ТД-30 | Web: предпросмотр этикетки до save | низкий | 2f-15 |
+| ТД-30 | Web: предпросмотр этикетки до save | ✅ закрыт | 2f-15 |
 | ТД-31 | Web: экран разбора `NEEDS_CONFIRMATION` | средний | — (частично закрыт) |
 | ТД-32 | Формат `Receipt.expected_samples_count` | низкий | по требованию |
 | ТД-33 | Решение 1.61 в DECISIONS | ✅ закрыт | docs |
@@ -208,6 +213,7 @@ React Router 7 + axios + Vitest.
 | ТД-38 | `2f-4a` UI-защита удаления (CASCADE vs PROTECT) | средний | до продакшена |
 | ТД-39 | ID не переиспользуются (BigAutoField) | низкий | не требует фикса |
 | ТД-40 | `test_label_service.py`: unused import `A4_H_MM` | низкий | при чистке линтером |
+| ТД-41 | 2f-16 — Batch QR секций (как для ячеек) | низкий | после 3.x-offline |
 
 ---
 
