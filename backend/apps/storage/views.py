@@ -44,7 +44,9 @@ from .serializers import (
     TierSerializer,
 )
 from .services import bulk_create_containers, fill_container_with_samples
+from .services.bulk_place import bulk_place_containers
 from .services.qr_topology import render_topology_qr_pdf
+from .services.snapshot import container_snapshot as _container_snapshot
 
 
 def _section_address(section: Section) -> str:
@@ -64,24 +66,6 @@ def _handle_protected_error(exc: ProtectedError) -> Response:
         },
         status=status.HTTP_409_CONFLICT,
     )
-
-
-def _container_snapshot(container: Container) -> dict:
-    """
-    Компактный снимок тары для AuditLog (2f-14a, вариант А).
-
-    Единый формат `old_value` / `new_value` для всех действий.
-    `sample_count` — реальный из БД; для удалённой тары вызывается
-    ДО удаления, снимок верен.
-    """
-    return {
-        "status": container.status,
-        "container_number": container.container_number,
-        "container_type_id": container.container_type_id,
-        "pallet_id": container.pallet_id,
-        "floor_room_id": container.floor_room_id,
-        "sample_count": container.samples.count() if container.pk else 0,
-    }
 
 
 class ContainerCommentViewSet(viewsets.ModelViewSet):
@@ -637,66 +621,24 @@ class ContainerViewSet(viewsets.ModelViewSet):
         )
 
     # ------------------------------------------------------------
-    # Actions: размещение (аудит → PLACE для каждой)
+    # Actions: размещение (аудит → PLACE для каждой).
+    # Тонкая обёртка над сервисом `bulk_place_containers`
+    # (3.x-offline-sync-b-4).
     # ------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="bulk-place")
     def bulk_place(self, request):
-        container_ids = request.data.get("container_ids", [])
-        cell_id = request.data.get("cell_id")
-        floor_room_id = request.data.get("floor_room_id")
-
-        if not container_ids:
-            return Response({"error": "Укажите container_ids."}, status=status.HTTP_400_BAD_REQUEST)
-        if not cell_id and not floor_room_id:
-            return Response({"error": "Укажите cell_id или floor_room_id."}, status=status.HTTP_400_BAD_REQUEST)
-
-        containers = Container.objects.filter(pk__in=container_ids)
-        if not containers.exists():
-            return Response({"error": "Тары не найдены."}, status=status.HTTP_404_NOT_FOUND)
-
-        target_pallet = None
-        target_cell = None
-        target_room = None
-        msg = ""
-
-        if cell_id:
-            target_cell = Cell.objects.filter(pk=cell_id, is_active=True).first()
-            if not target_cell:
-                return Response({"error": "Ячейка не найдена или неактивна."}, status=status.HTTP_404_NOT_FOUND)
-            target_pallet, _ = Pallet.objects.get_or_create(
-                cell=target_cell,
-                defaults={"status": Pallet.STATUS_ACTIVE},
+        result, error = bulk_place_containers(
+            container_ids=request.data.get("container_ids", []),
+            cell_id=request.data.get("cell_id"),
+            floor_room_id=request.data.get("floor_room_id"),
+            user=request.user,
+        )
+        if error:
+            return Response(
+                {"error": error["error"]},
+                status=error["status"],
             )
-            msg = f"Успешно размещено в ячейку {target_cell.full_address}: {len(containers)} тар."
-        else:
-            target_room = Room.objects.filter(pk=floor_room_id).first()
-            if not target_room:
-                return Response({"error": "Комната не найдена."}, status=status.HTTP_404_NOT_FOUND)
-            msg = f"Успешно размещено на пол в комнате {target_room.name}: {len(containers)} тар."
-
-        with transaction.atomic():
-            for c in containers:
-                old_value = _container_snapshot(c)
-                if target_cell:
-                    c.pallet = target_pallet
-                    c.floor_room = None
-                else:
-                    c.pallet = None
-                    c.floor_room = target_room
-
-                c.status = Container.STATUS_ACTIVE
-                c.save(update_fields=["pallet", "floor_room", "status"])
-                sync_sample_status_for_container(c)
-                log_audit(
-                    user=request.user,
-                    action="PLACE",
-                    entity_type="Container",
-                    entity_id=c.pk,
-                    old_value=old_value,
-                    new_value=_container_snapshot(c),
-                )
-
-        return Response({"message": msg})
+        return Response(result)
 
     # ------------------------------------------------------------
     # Actions: создать в ячейке (аудит → CREATE_IN_CELL)

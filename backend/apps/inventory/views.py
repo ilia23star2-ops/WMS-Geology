@@ -6,6 +6,7 @@ ViewSets приложения inventory.
 - InventoryIssueViewSet — расхождения + custom action `resolve`.
 - ActualizationTaskViewSet — задачи на актуализацию + custom action
   `resolve` (3.x-offline-sync-b-2).
+- OfflineImportView — приём JSON-файла от mobile (3.x-offline-sync-b-3).
 """
 
 from django.utils import timezone
@@ -13,6 +14,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .models import (
     ActualizationTask,
@@ -20,11 +22,14 @@ from .models import (
     InventoryScan,
     InventorySession,
 )
+from .offline_import import apply_offline_export
 from .serializers import (
     ActualizationTaskSerializer,
     InventoryIssueSerializer,
     InventoryScanSerializer,
     InventorySessionSerializer,
+    OfflineExportSerializer,
+    OfflineImportResponseSerializer,
     ResolveActualizationTaskSerializer,
 )
 
@@ -211,7 +216,36 @@ class ActualizationTaskViewSet(viewsets.ReadOnlyModelViewSet):
             "resolution", "resolution_note", "resolved_by", "resolved_at",
         ])
 
-        # Применение изменений (accept_mobile / keep_server) — в b-3
-        # (offline-imports). Сейчас — только фиксация решения.
+        # Применение изменений (accept_mobile / keep_server) — в b-4
+        # (когда появится UI разбора). Сейчас — только фиксация решения.
 
         return Response(ActualizationTaskSerializer(task).data)
+
+
+# ============================================================
+# Offline-import (3.x-offline-sync-b-3)
+# ============================================================
+class OfflineImportView(APIView):
+    """
+    POST /api/v1/offline-imports/
+
+    Принимает JSON-файл от mobile (формат WMSG-OFFLINE-EXCHANGE, v1),
+    применяет операции. Возвращает `{applied, conflicts, tasks_created, errors}`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ser = OfflineExportSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        try:
+            result = apply_offline_export(ser.validated_data, request.user)
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        response_ser = OfflineImportResponseSerializer(result)
+        return Response(response_ser.data, status=status.HTTP_200_OK)
