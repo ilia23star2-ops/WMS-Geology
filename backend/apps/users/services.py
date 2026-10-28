@@ -17,10 +17,12 @@ from apps.labels.services.qr_service import generate_qr_svg
 
 from .models import AccessToken, AuditLog
 
-# TTL по purpose (3.x-offline-auth-a).
+# TTL по purpose.
+# - web_login: 15 минут (одноразовый код для входа в web).
+# - offline:   14 часов (одна смена + запас, 3.x-offline-sync-b-0).
 ACCESS_TOKEN_TTL = {
     AccessToken.PURPOSE_WEB_LOGIN: timedelta(minutes=15),
-    AccessToken.PURPOSE_OFFLINE: timedelta(days=7),
+    AccessToken.PURPOSE_OFFLINE: timedelta(hours=14),
 }
 
 
@@ -85,7 +87,7 @@ def generate_access_token(
 
 def make_access_token_qr_svg(purpose: str, raw: str) -> str:
     """
-    SVG QR для AccessToken (3.x-offline-auth-b).
+    SVG QR для AccessToken.
 
     Payload:
     - `web_login`  → `WMSG:CODE:<raw>`

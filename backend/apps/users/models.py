@@ -125,11 +125,12 @@ class AuditLog(models.Model):
 
 class AccessToken(models.Model):
     """
-    Токен доступа (3.x-offline-auth-a).
+    Токен доступа.
 
     Назначение (`purpose`):
-    - `web_login` — одноразовый код для входа в web (TTL 15 мин);
-    - `offline` — многоразовый токен для офлайн-входа mobile (TTL 7 дней).
+    - `web_login` — одноразовый код для входа в web (TTL 15 минут);
+    - `offline` — многоразовый токен для офлайн-входа mobile
+      (TTL 14 часов — одна смена + запас, см. 3.x-offline-sync-b-0).
 
     Хранится только `sha256(raw_token)` — raw показывается один раз при
     создании (модалка / QR). Если потеряли — генерировать новый.

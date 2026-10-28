@@ -290,7 +290,8 @@ class OfflineLoginView(APIView):
     """
     POST /api/v1/auth/offline-login/ — обменять offline-токен на JWT.
 
-    Токен: `purpose=offline`. При первом использовании привязывается к
+    Токен: `purpose=offline`. TTL — 14 часов (одна смена + запас,
+    3.x-offline-sync-b-0). При первом использовании привязывается к
     `device_id`. Второй `device_id` → 409.
     """
 
@@ -299,7 +300,7 @@ class OfflineLoginView(APIView):
     @extend_schema(
         request=OfflineLoginSerializer,
         responses={200: OpenApiResponse(description="JWT выдан.")},
-        description="Офлайн-вход по токену (многоразовый, TTL 7 дней).",
+        description="Офлайн-вход по токену (многоразовый, TTL 14 часов).",
     )
     def post(self, request):
         ser = OfflineLoginSerializer(data=request.data)
