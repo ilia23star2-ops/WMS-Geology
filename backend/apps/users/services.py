@@ -4,6 +4,7 @@
 - `log_audit(...)` — запись в AuditLog.
 - `generate_access_token(...)` — генерация AccessToken (raw + запись).
 - `hash_access_token(raw)` — sha256 hex.
+- `make_access_token_qr_svg(...)` — SVG QR для AccessToken (3.x-offline-auth-b).
 """
 import hashlib
 import secrets
@@ -11,6 +12,8 @@ from datetime import timedelta
 from typing import Any
 
 from django.utils import timezone
+
+from apps.labels.services.qr_service import generate_qr_svg
 
 from .models import AccessToken, AuditLog
 
@@ -78,3 +81,18 @@ def generate_access_token(
         created_by=created_by,
     )
     return obj, raw
+
+
+def make_access_token_qr_svg(purpose: str, raw: str) -> str:
+    """
+    SVG QR для AccessToken (3.x-offline-auth-b).
+
+    Payload:
+    - `web_login`  → `WMSG:CODE:<raw>`
+    - `offline`    → `WMSG:OFFLINE:<raw>`
+
+    Mobile / web читает префикс и решает, что делать с raw.
+    """
+    prefix = "OFFLINE" if purpose == AccessToken.PURPOSE_OFFLINE else "CODE"
+    payload = f"WMSG:{prefix}:{raw}"
+    return generate_qr_svg(payload, box_size=8, border=2)
