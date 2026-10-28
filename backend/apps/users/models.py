@@ -4,12 +4,13 @@
 - Role — справочник ролей (admin, manager, worker).
 - UserProfile — расширение стандартной Django User (OneToOne).
 - AuditLog — журнал всех значимых действий.
+- AccessToken — токен доступа (web-вход по коду / офлайн-вход мобилки).
 
 Стандартная `django.contrib.auth.User` используется как есть —
 её поля (username, first_name, last_name, is_active и т.д.)
 достаточны для аутентификации. Роль и ФИО — в профиле.
 
-Соответствует docs/DATABASE.md v1.
+Соответствует docs/DATABASE.md v7.
 """
 
 from django.conf import settings
@@ -120,3 +121,91 @@ class AuditLog(models.Model):
     def __str__(self) -> str:
         who = self.user.username if self.user else "system"
         return f"{self.created_at:%Y-%m-%d %H:%M} {who}: {self.action} {self.entity_type}#{self.entity_id}"
+
+
+class AccessToken(models.Model):
+    """
+    Токен доступа (3.x-offline-auth-a).
+
+    Назначение (`purpose`):
+    - `web_login` — одноразовый код для входа в web (TTL 15 мин);
+    - `offline` — многоразовый токен для офлайн-входа mobile (TTL 7 дней).
+
+    Хранится только `sha256(raw_token)` — raw показывается один раз при
+    создании (модалка / QR). Если потеряли — генерировать новый.
+    """
+
+    PURPOSE_WEB_LOGIN = "web_login"
+    PURPOSE_OFFLINE = "offline"
+    PURPOSE_CHOICES = [
+        (PURPOSE_WEB_LOGIN, "Вход в web"),
+        (PURPOSE_OFFLINE, "Офлайн-вход"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="access_tokens",
+        help_text="Для кого выдан токен.",
+    )
+    purpose = models.CharField(
+        max_length=20,
+        choices=PURPOSE_CHOICES,
+        help_text="web_login / offline.",
+    )
+    token_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text="sha256(raw_token), hex.",
+    )
+    device_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="UUID устройства (для offline). Пусто = не привязан.",
+    )
+    expires_at = models.DateTimeField(
+        help_text="Когда истекает.",
+    )
+    used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Когда использован (для web_login — одноразовый).",
+    )
+    revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Когда отозван вручную.",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_access_tokens",
+        help_text="Кто создал токен (обычно админ / менеджер).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Токен доступа"
+        verbose_name_plural = "Токены доступа"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "purpose"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} · {self.purpose} · {'active' if self.is_active else 'inactive'}"
+
+    @property
+    def is_active(self) -> bool:
+        from django.utils import timezone
+        if self.revoked_at is not None:
+            return False
+        if self.expires_at <= timezone.now():
+            return False
+        if self.purpose == self.PURPOSE_WEB_LOGIN and self.used_at is not None:
+            return False
+        return True

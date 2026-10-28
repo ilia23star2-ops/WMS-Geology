@@ -6,12 +6,16 @@
 - LogoutRequestSerializer — body для logout (refresh).
 - UserInfoSerializer — информация о текущем пользователе (/me).
 - AuditLogSerializer — запись журнала аудита (2f-14a).
+- AccessTokenSerializer — запись токена доступа (3.x-offline-auth-a).
+- AccessTokenCreateSerializer — body для POST /auth/access-tokens/.
+- CodeLoginSerializer — body для POST /auth/code-login/.
+- OfflineLoginSerializer — body для POST /auth/offline-login/.
 """
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import AuditLog
+from .models import AccessToken, AuditLog
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -104,5 +108,82 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "CREATE_IN_CELL": "Создана в ячейке",
             "UPDATE": "Изменена",
             "DELETE": "Удалена",
+            "CODE_LOGIN": "Вход по коду",
+            "OFFLINE_LOGIN": "Офлайн-вход",
         }
         return labels.get(obj.action, obj.action)
+
+
+# ============================================================
+# AccessToken (3.x-offline-auth-a)
+# ============================================================
+class AccessTokenSerializer(serializers.ModelSerializer):
+    """Запись токена доступа. Без `token_hash`."""
+
+    username = serializers.SerializerMethodField()
+    purpose_display = serializers.CharField(source="get_purpose_display", read_only=True)
+    created_by_username = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = AccessToken
+        fields = [
+            "id",
+            "user",
+            "username",
+            "purpose",
+            "purpose_display",
+            "device_id",
+            "expires_at",
+            "used_at",
+            "revoked_at",
+            "is_active",
+            "created_by",
+            "created_by_username",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_username(self, obj) -> str | None:
+        return obj.user.username if obj.user else None
+
+    def get_created_by_username(self, obj) -> str | None:
+        return obj.created_by.username if obj.created_by else None
+
+
+class AccessTokenCreateSerializer(serializers.Serializer):
+    """Body для POST /auth/access-tokens/."""
+
+    purpose = serializers.ChoiceField(
+        choices=AccessToken.PURPOSE_CHOICES,
+        help_text="web_login или offline.",
+    )
+    user_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Для кого. Если не задан — для себя. Для других — нужна роль admin/manager.",
+    )
+
+
+class CodeLoginSerializer(serializers.Serializer):
+    """Body для POST /auth/code-login/."""
+
+    code = serializers.CharField(
+        help_text="Raw-токен из QR / с экрана.",
+        trim_whitespace=True,
+    )
+
+
+class OfflineLoginSerializer(serializers.Serializer):
+    """Body для POST /auth/offline-login/."""
+
+    token = serializers.CharField(
+        help_text="Raw-токен из QR (offline).",
+        trim_whitespace=True,
+    )
+    device_id = serializers.CharField(
+        max_length=100,
+        help_text="UUID устройства (генерируется mobile один раз).",
+        trim_whitespace=True,
+    )
