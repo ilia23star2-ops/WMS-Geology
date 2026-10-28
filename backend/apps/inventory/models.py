@@ -1,9 +1,14 @@
 """
-Модели приложения "Инвентаризация" (v2).
+Модели приложения "Инвентаризация" (v3).
 
 - InventorySession — сессия инвентаризации.
 - InventoryScan — отдельный скан.
 - InventoryIssue — расхождение по итогам сессии (NEW в v2).
+- ActualizationTask — задача на актуализацию данных (v3, 3.x-offline-sync-b-2).
+
+Изменения v3 (3.x-offline-sync-b-2):
+- ActualizationTask — расхождение между server и mobile при
+  offline-синхронизации. Разбирается человеком в офисе.
 
 Изменения v2 (относительно v1):
 - InventoryScan.raw_barcode — «сырой» штрих-код (см. 1.27).
@@ -167,3 +172,107 @@ class InventoryIssue(models.Model):
 
     def __str__(self) -> str:
         return f"[{self.session.session_name}] {self.get_issue_type_display()}"
+
+
+class ActualizationTask(models.Model):
+    """
+    Задача на актуализацию данных между server и mobile
+    (3.x-offline-sync-b-2).
+
+    Создаётся при offline-конфликте: mobile прислал операцию, сервер
+    нашёл расхождение (административный статус / факт / удаление).
+    Разбирается человеком в офисе: принять данные mobile, оставить
+    серверные или отклонить (закрыть без изменений).
+    """
+
+    # Типы расхождений
+    TYPE_RECEIPT_ITEM_DELETED = "RECEIPT_ITEM_DELETED"
+    TYPE_SAMPLE_STATUS_CONFLICT = "SAMPLE_STATUS_CONFLICT"
+    TYPE_CONTAINER_MISPLACED = "CONTAINER_MISPLACED"
+    TYPE_PICK_LIST_CONFLICT = "PICK_LIST_CONFLICT"
+    TYPE_OTHER = "OTHER"
+    TYPE_CHOICES = [
+        (TYPE_RECEIPT_ITEM_DELETED, "Строка приёмки удалена в офисе"),
+        (TYPE_SAMPLE_STATUS_CONFLICT, "Статус пробы расходится"),
+        (TYPE_CONTAINER_MISPLACED, "Тара не на том месте"),
+        (TYPE_PICK_LIST_CONFLICT, "Расхождение по выборке"),
+        (TYPE_OTHER, "Другое"),
+    ]
+
+    # Статусы разрешения
+    RESOLUTION_PENDING = "PENDING"
+    RESOLUTION_ACCEPT_MOBILE = "ACCEPT_MOBILE"
+    RESOLUTION_KEEP_SERVER = "KEEP_SERVER"
+    RESOLUTION_REJECTED = "REJECTED"
+    RESOLUTION_CHOICES = [
+        (RESOLUTION_PENDING, "Ожидает разбора"),
+        (RESOLUTION_ACCEPT_MOBILE, "Принять данные mobile"),
+        (RESOLUTION_KEEP_SERVER, "Оставить данные сервера"),
+        (RESOLUTION_REJECTED, "Отклонить (закрыть)"),
+    ]
+
+    task_type = models.CharField(
+        max_length=50,
+        choices=TYPE_CHOICES,
+        help_text="Тип расхождения.",
+    )
+    entity_type = models.CharField(
+        max_length=50,
+        help_text="Тип сущности: Container, Sample, ReceiptItem, PickListItem, ...",
+    )
+    entity_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="ID сущности.",
+    )
+    server_value = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Состояние на сервере (snapshot).",
+    )
+    mobile_value = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Что прислал mobile.",
+    )
+    payload = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Контекст: device_id, operation_id, что было в исходной "
+            "операции. Свободная структура."
+        ),
+    )
+    resolution = models.CharField(
+        max_length=20,
+        choices=RESOLUTION_CHOICES,
+        default=RESOLUTION_PENDING,
+    )
+    resolution_note = models.TextField(blank=True, default="")
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_actualization_tasks",
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Задача на актуализацию"
+        verbose_name_plural = "Задачи на актуализацию"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["resolution"], name="act_task_resolution_idx"),
+            models.Index(fields=["entity_type", "entity_id"], name="act_task_entity_idx"),
+            models.Index(fields=["-created_at"], name="act_task_created_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"[{self.get_task_type_display()}] "
+            f"{self.entity_type}#{self.entity_id} — "
+            f"{self.get_resolution_display()}"
+        )

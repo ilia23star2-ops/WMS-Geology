@@ -4,11 +4,18 @@
 - InventorySessionSerializer — сессия инвентаризации.
 - InventoryScanSerializer — один скан.
 - InventoryIssueSerializer — расхождение.
+- ActualizationTaskSerializer — задача на актуализацию (3.x-offline-sync-b-2).
+- ResolveActualizationTaskSerializer — body для resolve.
 """
 
 from rest_framework import serializers
 
-from .models import InventoryIssue, InventoryScan, InventorySession
+from .models import (
+    ActualizationTask,
+    InventoryIssue,
+    InventoryScan,
+    InventorySession,
+)
 
 
 class InventorySessionSerializer(serializers.ModelSerializer):
@@ -100,3 +107,67 @@ class InventoryIssueSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["created_at", "resolved_at", "resolved_by"]
+
+
+# ============================================================
+# ActualizationTask (3.x-offline-sync-b-2)
+# ============================================================
+class ActualizationTaskSerializer(serializers.ModelSerializer):
+    """Задача на актуализацию (read-only; создаётся сервером)."""
+
+    task_type_display = serializers.CharField(
+        source="get_task_type_display", read_only=True,
+    )
+    resolution_display = serializers.CharField(
+        source="get_resolution_display", read_only=True,
+    )
+    resolved_by_username = serializers.CharField(
+        source="resolved_by.username", read_only=True, default=None,
+    )
+
+    class Meta:
+        model = ActualizationTask
+        fields = [
+            "id",
+            "task_type",
+            "task_type_display",
+            "entity_type",
+            "entity_id",
+            "server_value",
+            "mobile_value",
+            "payload",
+            "resolution",
+            "resolution_display",
+            "resolution_note",
+            "resolved_by",
+            "resolved_by_username",
+            "resolved_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ResolveActualizationTaskSerializer(serializers.Serializer):
+    """Body для POST /actualization-tasks/{id}/resolve/."""
+
+    ACTION_ACCEPT_MOBILE = "accept_mobile"
+    ACTION_KEEP_SERVER = "keep_server"
+    ACTION_REJECT = "reject"
+    ACTION_CHOICES = [
+        (ACTION_ACCEPT_MOBILE, "Принять данные mobile"),
+        (ACTION_KEEP_SERVER, "Оставить данные сервера"),
+        (ACTION_REJECT, "Отклонить (закрыть без изменений)"),
+    ]
+
+    action = serializers.ChoiceField(
+        choices=ACTION_CHOICES,
+        help_text="Что сделать с задачей.",
+    )
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=2000,
+        help_text="Комментарий (опционально).",
+    )

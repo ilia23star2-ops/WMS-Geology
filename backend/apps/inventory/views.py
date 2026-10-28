@@ -4,6 +4,8 @@ ViewSets приложения inventory.
 - InventorySessionViewSet — сессии + custom action `complete`.
 - InventoryScanViewSet — сканы.
 - InventoryIssueViewSet — расхождения + custom action `resolve`.
+- ActualizationTaskViewSet — задачи на актуализацию + custom action
+  `resolve` (3.x-offline-sync-b-2).
 """
 
 from django.utils import timezone
@@ -12,11 +14,18 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import InventoryIssue, InventoryScan, InventorySession
+from .models import (
+    ActualizationTask,
+    InventoryIssue,
+    InventoryScan,
+    InventorySession,
+)
 from .serializers import (
+    ActualizationTaskSerializer,
     InventoryIssueSerializer,
     InventoryScanSerializer,
     InventorySessionSerializer,
+    ResolveActualizationTaskSerializer,
 )
 
 
@@ -134,3 +143,75 @@ class InventoryIssueViewSet(viewsets.ModelViewSet):
         issue.resolved_by = request.user
         issue.save(update_fields=["resolution", "resolved_at", "resolved_by"])
         return Response(InventoryIssueSerializer(issue).data)
+
+
+# ============================================================
+# ActualizationTask (3.x-offline-sync-b-2)
+# ============================================================
+class ActualizationTaskViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Задачи на актуализацию данных (mobile ↔ server).
+
+    Read-only + custom action `resolve` — создать задачу может только
+    сервер (из offline-импорта), пользователь только разбирает.
+
+    Фильтры: ?resolution=, ?task_type=, ?entity_type=, ?entity_id=
+    Custom: POST /actualization-tasks/{id}/resolve/ — разобрать.
+    """
+
+    serializer_class = ActualizationTaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = ActualizationTask.objects.select_related("resolved_by").all()
+
+        resolution = self.request.query_params.get("resolution")
+        if resolution:
+            qs = qs.filter(resolution=resolution)
+
+        task_type = self.request.query_params.get("task_type")
+        if task_type:
+            qs = qs.filter(task_type=task_type)
+
+        entity_type = self.request.query_params.get("entity_type")
+        if entity_type:
+            qs = qs.filter(entity_type=entity_type)
+
+        entity_id = self.request.query_params.get("entity_id")
+        if entity_id:
+            qs = qs.filter(entity_id=entity_id)
+
+        return qs
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        """Разобрать задачу: принять mobile / оставить сервер / отклонить."""
+        task = self.get_object()
+        if task.resolution != ActualizationTask.RESOLUTION_PENDING:
+            return Response(
+                {"error": "Задача уже разобрана."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ser = ResolveActualizationTaskSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        action_value = ser.validated_data["action"]
+        note = ser.validated_data.get("note", "")
+
+        mapping = {
+            "accept_mobile": ActualizationTask.RESOLUTION_ACCEPT_MOBILE,
+            "keep_server": ActualizationTask.RESOLUTION_KEEP_SERVER,
+            "reject": ActualizationTask.RESOLUTION_REJECTED,
+        }
+        task.resolution = mapping[action_value]
+        task.resolution_note = note
+        task.resolved_by = request.user
+        task.resolved_at = timezone.now()
+        task.save(update_fields=[
+            "resolution", "resolution_note", "resolved_by", "resolved_at",
+        ])
+
+        # Применение изменений (accept_mobile / keep_server) — в b-3
+        # (offline-imports). Сейчас — только фиксация решения.
+
+        return Response(ActualizationTaskSerializer(task).data)
