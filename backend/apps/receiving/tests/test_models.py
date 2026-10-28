@@ -2,11 +2,14 @@
 Тесты моделей приложения receiving.
 
 Покрывают:
-- Receipt: уникальность номера, статусы, FK на Laboratory/Site/Shipment.
+- Receipt: уникальность номера, статусы, FK на Laboratory/Site/Shipment,
+  updated_at (3.x-offline-sync-b-1d).
 - ReceiptItem: FK на Receipt (CASCADE), FK на Container (SET_NULL),
-  JSONB scanned_barcodes, статусы.
+  JSONB scanned_barcodes, статусы, updated_at.
 - ImportSession: FK на Receipt (SET_NULL), JSONB parse_errors, статусы.
 """
+
+import time
 
 import pytest
 from django.contrib.auth.models import User
@@ -241,3 +244,27 @@ def test_import_session_str(db):
     text = str(s)
     assert "example.xlsx" in text
     assert "Парсинг" in text
+
+
+# ============================================================
+# updated_at (3.x-offline-sync-b-1d)
+# ============================================================
+def test_receipt_updated_at_changes_on_save(db, receipt):
+    """`Receipt.updated_at` обновляется при каждом `.save()`."""
+    before = receipt.updated_at
+    time.sleep(0.01)
+    receipt.status = Receipt.STATUS_IN_PROGRESS
+    receipt.save()
+    receipt.refresh_from_db()
+    assert receipt.updated_at > before
+
+
+def test_receipt_item_updated_at_changes_on_save(db, receipt):
+    """`ReceiptItem.updated_at` обновляется при каждом `.save()`."""
+    item = ReceiptItem.objects.create(receipt=receipt)
+    before = item.updated_at
+    time.sleep(0.01)
+    item.status = ReceiptItem.STATUS_MATCHED
+    item.save()
+    item.refresh_from_db()
+    assert item.updated_at > before
