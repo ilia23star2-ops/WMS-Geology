@@ -1,5 +1,6 @@
 """Маршрутизация API приложения inventory."""
 
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -7,6 +8,7 @@ from .views import (
     InventoryIssueViewSet,
     InventoryScanViewSet,
     InventorySessionViewSet,
+    OfflineImportView,
 )
 
 router = DefaultRouter()
@@ -26,4 +28,11 @@ router.register(
     basename="actualization-task",
 )
 
-urlpatterns = router.urls
+urlpatterns = router.urls + [
+    # 3.x-offline-sync-b-3
+    path(
+        "offline-imports/",
+        OfflineImportView.as_view(),
+        name="offline-import",
+    ),
+]
