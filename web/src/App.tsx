@@ -13,6 +13,7 @@ import CatalogsPage from "./pages/CatalogsPage";
 import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
+import OfflineImportPage from "./pages/OfflineImportPage";
 import PrintBatchDetailPage from "./pages/PrintBatchDetailPage";
 import PrintBatchesPage from "./pages/PrintBatchesPage";
 import ReceiptCheckPage from "./pages/ReceiptCheckPage";
@@ -79,6 +80,7 @@ function AppRoutes() {
                     <Route path="/catalogs" element={<CatalogsPage />} />
                     <Route path="/work-orders" element={<WorkOrdersPage />} />
                     <Route path="/settings/access-tokens" element={<AccessTokensPage />} />
+                    <Route path="/offline-import" element={<OfflineImportPage />} />
                 </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

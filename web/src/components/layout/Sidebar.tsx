@@ -23,6 +23,7 @@ import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -44,6 +45,7 @@ const MENU: MenuItem[] = [
     { label: "Топология", path: "/topology", icon: <AccountTreeIcon /> },
     { label: "Справочники", path: "/catalogs", icon: <MenuBookIcon /> },
     { label: "Коды доступа", path: "/settings/access-tokens", icon: <VpnKeyIcon /> },
+    { label: "Офлайн-импорт", path: "/offline-import", icon: <CloudUploadIcon /> },
 ];
 
 interface DrawerContentProps {
