@@ -287,3 +287,19 @@ def test_work_order_delete_cascades_to_links(
     incoming_wo.delete()
     assert SampleWorkOrder.objects.filter(sample=sample).count() == 0
     assert Sample.objects.filter(pk=sample.pk).exists()
+
+# ============================================================
+# updated_at (3.x-offline-sync-b-1b)
+# ============================================================
+def test_sample_updated_at_changes_on_save(db, container, research_type):
+    """`Sample.updated_at` обновляется при каждом `.save()`."""
+    import time
+    s = Sample.objects.create(
+        sample_number="77777", research_type=research_type, container=container,
+    )
+    before = s.updated_at
+    time.sleep(0.01)
+    s.status = Sample.STATUS_SELECTED
+    s.save()
+    s.refresh_from_db()
+    assert s.updated_at > before
