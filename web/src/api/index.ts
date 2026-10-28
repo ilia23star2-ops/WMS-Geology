@@ -331,6 +331,24 @@ export type {
     OfflineOperationType,
 } from "./offlineImports";
 
+// Задачи на актуализацию (3.x-offline-sync-d-2).
+export {
+    ACTUALIZATION_RESOLUTION_LABELS,
+    ACTUALIZATION_TASK_TYPE_LABELS,
+    fetchActualizationTasks,
+    resolveActualizationTask,
+    useActualizationTasks,
+    useResolveActualizationTask,
+} from "./actualization";
+export type {
+    ActualizationResolution,
+    ActualizationTask,
+    ActualizationTasksListParams,
+    ActualizationTaskType,
+    ResolveAction,
+    ResolveActualizationTaskPayload,
+} from "./actualization";
+
 export type {
     ApiError,
     LoginPayload,
