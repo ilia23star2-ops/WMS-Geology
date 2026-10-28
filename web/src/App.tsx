@@ -9,6 +9,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AccessTokensPage from "./pages/AccessTokensPage";
+import ActualizationPage from "./pages/ActualizationPage";
 import CatalogsPage from "./pages/CatalogsPage";
 import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
@@ -81,6 +82,7 @@ function AppRoutes() {
                     <Route path="/work-orders" element={<WorkOrdersPage />} />
                     <Route path="/settings/access-tokens" element={<AccessTokensPage />} />
                     <Route path="/offline-import" element={<OfflineImportPage />} />
+                    <Route path="/actualization" element={<ActualizationPage />} />
                 </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
