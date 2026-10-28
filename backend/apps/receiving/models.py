@@ -1,13 +1,17 @@
 """
-Модели приложения "Приёмка".
+Модели приложения "Приёмка" (v5).
 
 - Receipt — партия (одна машина / один день).
 - ReceiptItem — строка партии (одна тара).
 - ImportSession — загрузка Excel-файла.
 
-Соответствует docs/DATABASE.md v4.
+Соответствует docs/DATABASE.md v7.
 
-Изменения (receiving-3b-1-2a):
+Изменения v5 (серия 3.x-offline-sync, пачка 3.x-offline-sync-b-1d):
+- `Receipt.updated_at`, `ReceiptItem.updated_at` — для optimistic
+  locking и синхронизации mobile ↔ server.
+
+Изменения v4 (receiving-3b-1-2a):
 - `ReceiptItem.container_type` — FK на `storage.ContainerType`,
   nullable. Заполняется при создании из однозначной ячейки
   (`apply_shipment_import`) и при разборе конфликта
@@ -82,6 +86,8 @@ class Receipt(models.Model):
     )
     comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+    # 3.x-offline-sync-b-1d: для optimistic locking.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Партия приёмки"
@@ -193,6 +199,8 @@ class ReceiptItem(models.Model):
         related_name="receipt_items",
     )
     note = models.TextField(blank=True, default="")
+    # 3.x-offline-sync-b-1d: для optimistic locking.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Строка приёмки"

@@ -1,8 +1,9 @@
 """
 Сериализаторы приложения receiving.
 
-- ReceiptSerializer — партия приёмки.
-- ReceiptItemSerializer — строка партии (включая `container_type_name`).
+- ReceiptSerializer — партия приёмки (+ updated_at).
+- ReceiptItemSerializer — строка партии (включая `container_type_name`,
+  updated_at).
 - ImportSessionSerializer — сессия импорта.
 - ImportUploadResponseSerializer — ответ на загрузку Excel.
 - ShipmentImportResponseSerializer — ответ на импорт рейса.
@@ -55,9 +56,10 @@ class ReceiptSerializer(serializers.ModelSerializer):
             "items_count",
             "comment",
             "created_at",
+            "updated_at",
         ]
         read_only_fields = [
-            "created_at", "imported_at", "received_at",
+            "created_at", "imported_at", "received_at", "updated_at",
         ]
 
 
@@ -80,7 +82,7 @@ class ReceiptBriefSerializer(serializers.ModelSerializer):
 # ReceiptItem
 # ============================================================
 class ReceiptItemSerializer(serializers.ModelSerializer):
-    """Строка партии (одна тара)."""
+    """Строка партии (одна тара). + updated_at (3.x-offline-sync-b-1d)."""
 
     container_number = serializers.CharField(
         source="container.container_number", read_only=True, default=None,
@@ -123,6 +125,7 @@ class ReceiptItemSerializer(serializers.ModelSerializer):
             "site",
             "site_code",
             "note",
+            "updated_at",
         ]
 
 
@@ -324,4 +327,3 @@ class CompleteReceiptResponseSerializer(serializers.Serializer):
     other_count = serializers.IntegerField()
     shipment_id = serializers.IntegerField(allow_null=True)
     shipment_status = serializers.CharField(allow_null=True)
-    errors = serializers.ListField()
