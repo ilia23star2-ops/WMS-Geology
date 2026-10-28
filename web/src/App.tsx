@@ -8,6 +8,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AccessTokensPage from "./pages/AccessTokensPage";
 import CatalogsPage from "./pages/CatalogsPage";
 import ContainersPage from "./pages/ContainersPage";
 import HomePage from "./pages/HomePage";
@@ -19,7 +20,7 @@ import ReceivingPage from "./pages/ReceivingPage";
 import SamplesPage from "./pages/SamplesPage";
 import ShipmentDetailPage from "./pages/ShipmentDetailPage";
 import TopologyPage from "./pages/TopologyPage";
-import WorkOrdersPage from "./pages/WorkOrdersPage"; // <--- Добавлено
+import WorkOrdersPage from "./pages/WorkOrdersPage";
 import { useAuthStore } from "./stores/authStore";
 
 const queryClient = new QueryClient({
@@ -76,7 +77,8 @@ function AppRoutes() {
                     <Route path="/print/:id" element={<PrintBatchDetailPage />} />
                     <Route path="/topology" element={<TopologyPage />} />
                     <Route path="/catalogs" element={<CatalogsPage />} />
-                    <Route path="/work-orders" element={<WorkOrdersPage />} /> {/* <--- Новый роут */}
+                    <Route path="/work-orders" element={<WorkOrdersPage />} />
+                    <Route path="/settings/access-tokens" element={<AccessTokensPage />} />
                 </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
