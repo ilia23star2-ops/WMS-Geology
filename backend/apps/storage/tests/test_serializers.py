@@ -4,10 +4,11 @@
 Покрывают:
 - сериализацию/десериализацию каждой модели;
 - валидацию XOR (pallet/floor_room, cell/floor_room);
-- read-only поля (created_at);
+- read-only поля (created_at, updated_at);
 - валидацию уникальности (qr_code);
 - JSONB (capacity_override);
-- автогенерацию qr_code у Section / Cell (2f-4c-1).
+- автогенерацию qr_code у Section / Cell (2f-4c-1);
+- updated_at в сериализаторах (3.x-offline-sync-b-1a).
 
 `container_number` в `ContainerSerializer` **не валидируется на
 уникальность** (DECISIONS 1.61). Уникальность в группе
@@ -15,7 +16,6 @@
 """
 
 import pytest
-from rest_framework.exceptions import ValidationError
 
 from apps.storage.models import (
     Cell,
@@ -272,3 +272,36 @@ def test_container_created_at_readonly(db, container_type):
     assert ser.is_valid()
     obj = ser.save()
     assert obj.created_at.year == 2026  # текущий год, не 2020
+
+
+# ============================================================
+# updated_at в сериализаторах (3.x-offline-sync-b-1a)
+# ============================================================
+def test_container_serializer_includes_updated_at(db, container_type):
+    c = Container.objects.create(
+        container_number="T-SER-1", container_type=container_type,
+    )
+    data = ContainerSerializer(c).data
+    assert "updated_at" in data
+    assert data["updated_at"] is not None
+
+
+def test_container_serializer_updated_at_readonly(db, container_type):
+    """updated_at — read-only, игнорируется на входе."""
+    ser = ContainerSerializer(
+        data={
+            "container_number": "T-SER-2",
+            "container_type": container_type.pk,
+            "updated_at": "2020-01-01T00:00:00Z",
+        }
+    )
+    assert ser.is_valid()
+    obj = ser.save()
+    assert obj.updated_at.year == 2026
+
+
+def test_pallet_serializer_includes_updated_at(db):
+    p = Pallet.objects.create()
+    data = PalletSerializer(p).data
+    assert "updated_at" in data
+    assert data["updated_at"] is not None

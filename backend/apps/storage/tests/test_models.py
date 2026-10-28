@@ -5,7 +5,8 @@
 - топологию;
 - Pallet (OneToOne, XOR);
 - ContainerType (laboratory, unique (name, laboratory));
-- Container (comment, PENDING_PLACEMENT).
+- Container (comment, PENDING_PLACEMENT);
+- updated_at на Pallet и Container (3.x-offline-sync-b-1a).
 
 `Container.container_number` — **не уникален глобально**
 (см. DECISIONS 1.61, пачка 3d-3-fix-2). Семантика: номер — метка
@@ -14,6 +15,8 @@
 `Section.qr_code` и `Cell.qr_code` — **автогенерируются при
 создании** (пачка 2f-4c-1), если не заданы явно.
 """
+
+import time
 
 import pytest
 from django.db import IntegrityError
@@ -367,3 +370,30 @@ def test_container_comment_template_set_null(
     container_comment.delete()
     c.refresh_from_db()
     assert c.comment_template is None
+
+
+# ============================================================
+# updated_at (3.x-offline-sync-b-1a)
+# ============================================================
+def test_container_updated_at_changes_on_save(db, container_type):
+    """`Container.updated_at` обновляется при каждом `.save()`."""
+    c = Container.objects.create(
+        container_number="T-UPD-1", container_type=container_type,
+    )
+    before = c.updated_at
+    time.sleep(0.01)
+    c.comment = "изменено"
+    c.save()
+    c.refresh_from_db()
+    assert c.updated_at > before
+
+
+def test_pallet_updated_at_changes_on_save(db):
+    """`Pallet.updated_at` обновляется при каждом `.save()`."""
+    p = Pallet.objects.create()
+    before = p.updated_at
+    time.sleep(0.01)
+    p.capacity_override = {"1": 20}
+    p.save()
+    p.refresh_from_db()
+    assert p.updated_at > before

@@ -102,8 +102,9 @@ class PalletSerializer(serializers.ModelSerializer):
             "capacity_override",
             "status",
             "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["created_at", "updated_at"]
 
     def validate(self, attrs):
         cell = (
@@ -164,12 +165,14 @@ class ContainerSerializer(serializers.ModelSerializer):
             "label_printed_at",
             "print_batch_status",
             "created_at",
+            "updated_at",
         ]
         read_only_fields = [
             "created_at",
             "label_printed_at",
             "cell_id",
             "print_batch_status",
+            "updated_at",
         ]
 
     def get_print_batch_status(self, obj) -> str | None:
