@@ -3,6 +3,7 @@
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ActualizationTaskViewSet,
     InventoryIssueViewSet,
     InventoryScanViewSet,
     InventorySessionViewSet,
@@ -17,6 +18,12 @@ router.register(
 )
 router.register(
     "inventory-issues", InventoryIssueViewSet, basename="inventory-issue"
+)
+# 3.x-offline-sync-b-2
+router.register(
+    "actualization-tasks",
+    ActualizationTaskViewSet,
+    basename="actualization-task",
 )
 
 urlpatterns = router.urls
