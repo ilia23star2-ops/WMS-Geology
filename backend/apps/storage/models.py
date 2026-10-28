@@ -1,9 +1,13 @@
 """
-Модели приложения "Склад" (v8).
+Модели приложения "Склад" (v9).
 
 Топология: Комната → Стеллаж → Секция → Ярус (A–D) → Ячейка (1–3).
 В ячейке ровно 1 поддон. На поддоне — N тар, в каждой таре — M проб.
-...
+
+Изменения v9 (серия 3.x-offline-sync, пачка 3.x-offline-sync-b-1a):
+- `Pallet.updated_at`, `Container.updated_at` — для optimistic locking
+  и синхронизации mobile ↔ server.
+
 Изменения v8 (серия 2.x-web-v2, пачка 2f-7d):
 - `Container.label_printed_at` — время последней печати этикетки.
 """
@@ -235,6 +239,8 @@ class Pallet(models.Model):
         max_length=50, choices=STATUS_CHOICES, default=STATUS_ACTIVE,
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # 3.x-offline-sync-b-1a: для optimistic locking при синхронизации.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Поддон"
@@ -305,7 +311,6 @@ class ContainerType(models.Model):
 class Container(models.Model):
     """
     Тара — физический контейнер с пробами одного типа исследования.
-    ...
     """
 
     STATUS_PENDING_FILLING = "PENDING_FILLING"
@@ -416,6 +421,8 @@ class Container(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
+    # 3.x-offline-sync-b-1a: для optimistic locking при синхронизации.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Тара"
