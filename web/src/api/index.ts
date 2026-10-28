@@ -318,6 +318,19 @@ export type {
     OfflineLoginRequest,
 } from "./accessTokens";
 
+// Офлайн-импорт (3.x-offline-sync-d-1).
+export {
+    offlineImport,
+    useOfflineImport,
+} from "./offlineImports";
+export type {
+    OfflineExport,
+    OfflineImportError,
+    OfflineImportResponse,
+    OfflineOperation,
+    OfflineOperationType,
+} from "./offlineImports";
+
 export type {
     ApiError,
     LoginPayload,
