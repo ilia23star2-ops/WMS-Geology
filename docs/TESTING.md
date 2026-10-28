@@ -64,7 +64,7 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 
 ## Текущее состояние
 
-**Backend: 767 тестов.**
+**Backend: 779 тестов.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
 **Mobile: 32 юнит-теста.**
 
@@ -72,12 +72,12 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 
 | Приложение | Ключевые тесты |
 |---|---|
-| `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**, `PENDING_FILLING`), bulk-create, fill-samples, `bulk-place`, `create-in-cell`, фильтры `?draft_*`, `DELETE` + 409 + `?force=true`, QR топологии (авто-`qr_code`, PDF, batch) |
+| `storage` | Модели топологии, `Pallet` (OneToOne, XOR), `Container` (+draft, nullable number, **без unique**, `PENDING_FILLING`), bulk-create, fill-samples, `bulk-place`, `create-in-cell`, фильтры `?draft_*`, `DELETE` + 409 + `?force=true`, QR топологии (авто-`qr_code`, PDF, batch), аудит (`AuditLog` в 6 actions + `GET history`), `print_batch_status` (+prefetch, 4 значения) |
 | `samples` | Модели, `Sample` (+`dispose`/`restore`, `SELECTED`, 409 при delete), `grouped` action, фильтры, поиск, seeds, `sync_sample_status_for_container` |
 | `receiving` | Парсер Excel (группы, тип тары, `1+1`), `apply_shipment_import`, `receipts/{id}/conflicts/`, `resolve-conflicts`, `check`, `complete`, `act` (PDF), `import-shipment`, каскадное удаление `ReceiptItem` |
 | `picking` | Модели + API, фильтр `?work_order=` (с `linked_order`) |
 | `labels` | QR-сервис, PDF-этикетки, раскладка, QR-сетка, партии печати, `act_service` |
-| `users` | JWT, `UserProfile`, `Role`, `AuditLog`, seeds |
+| `users` | JWT, `UserProfile`, `Role`, `AuditLog`, `log_audit` (сервис), `AuditLogSerializer`, seeds |
 | `movements`, `inventory`, `work_orders` | Модели + API, `WorkOrder` `__str__` (TYPE_CODED = «Текущий»), admin |
 | `tests/test_openapi.py` | Contract-тесты: схема OpenAPI соответствует контрактам |
 
@@ -142,6 +142,31 @@ UI (экраны, сканер) — device-check на планшете.
   маппинга нет, sync не обновляет (2f-9c, `2f-8-fix-2`).
 - `test_work_order_str_coded` — `TYPE_CODED` label = «Текущий»
   (2f-8, `2f-8-fix-2`).
+
+### Аудит тары (2f-14a)
+
+- `test_history_empty_for_new_container` — свежая тара → `[]`.
+- `test_history_after_create` — `POST /containers/` → запись
+  `CREATE` с `new_value` (6 полей snapshot), `old_value = null`.
+- `test_history_after_update` — `PATCH` → `UPDATE` с `old_value` /
+  `new_value` (diff).
+- `test_history_after_delete` — `DELETE` → `DELETE` с `old_value`
+  (снимок до удаления), `new_value = null`.
+- `test_history_after_fill_samples` — `fill-samples` →
+  `FILL_SAMPLES` с `created_samples` в `new_value`.
+- `test_history_after_bulk_place` — `bulk-place` → `PLACE` с
+  `status: ACTIVE` + `floor_room_id` / `pallet_id`.
+- `test_history_order_desc` — записи возвращаются от новых к старым,
+  `action_display` — русская метка.
+- `test_history_404_unknown_container` — 404 для несуществующей тары.
+
+### `print_batch_status` (2f-17b)
+
+- `test_print_batch_status_null_without_batch` — нет партий → `null`.
+- `test_print_batch_status_draft` — DRAFT → `"DRAFT"`.
+- `test_print_batch_status_printed` — PRINTED → `"PRINTED"`.
+- `test_print_batch_status_cancelled_shown_as_null` — только
+  CANCELLED → `null` (вариант А из 1.71).
 
 ### Поиск и фильтры
 
@@ -273,6 +298,10 @@ UI (экраны, сканер) — device-check на планшете.
   1.61, `TYPE_CODED`). Перед закрытием захода — `pytest -q` целиком.
 - **`tail` буферизует** — для прогресса `pytest -q` без пайпа
   или `| tee`.
+- **Prefetch с `to_attr`:** при `prefetch_related(Prefetch(
+  "related_manager", ..., to_attr="active_items"))` доступ к
+  результату — `getattr(obj, "active_items", None)`, не через
+  `related_manager` (2f-17b).
 
 ---
 
@@ -290,16 +319,19 @@ UI (экраны, сканер) — device-check на планшете.
 
 **Сделано:**
 - Три уровня тестов (unit / integration / contract) — действуют.
-- **767 backend** + 24 web + 32 mobile = **823 теста**.
+- **779 backend** + 24 web + 32 mobile = **835 тестов**.
 - Contract-тесты OpenAPI.
 - Все stale-тесты после серии 2f починены (`2f-8-fix-2`).
+- Аудит тары — 8 тестов (`test_container_history.py`, 2f-14a).
+- `print_batch_status` — 4 теста (`test_container_print_status.py`, 2f-17b).
 
 **Осталось:**
 - **ТД-34.** `console.error` в catch-блоках web-компонентов — низкий.
 - **ТД-28.** Fallback `parseSampleInput` — низкий.
 - **ТД-40.** `A4_H_MM` — unused import в `test_label_service.py` — низкий.
-- Покрытие новых заходов серии 2f — по мере реализации.
+- Покрытие новых заходов следующих серий — по мере реализации.
 - Покрытие custom actions приёмки (`check`/`complete`) — точечное.
 - Покрытие `qr-batch` при отказе одного item — есть.
 - Покрытие `Section`/`Cell` QR в новых эндпоинтах — есть
   (`test_qr_topology.py`).
+- Покрытие серии `3.x-offline` — при старте.
