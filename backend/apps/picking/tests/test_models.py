@@ -2,6 +2,8 @@
 Тесты моделей приложения picking.
 """
 
+import time
+
 import pytest
 from django.contrib.auth.models import User
 from django.db import IntegrityError
@@ -321,3 +323,38 @@ def test_shipment_delete_cascades_to_items(db, sample):
     pk = sh.pk
     sh.delete()
     assert ShipmentItem.objects.filter(shipment_id=pk).count() == 0
+
+
+# ============================================================
+# updated_at (3.x-offline-sync-b-1c)
+# ============================================================
+def test_pick_list_updated_at_changes_on_save(db, pick_list):
+    """`PickList.updated_at` обновляется при каждом `.save()`."""
+    before = pick_list.updated_at
+    time.sleep(0.01)
+    pick_list.status = PickList.STATUS_ACTIVE
+    pick_list.save()
+    pick_list.refresh_from_db()
+    assert pick_list.updated_at > before
+
+
+def test_pick_list_item_updated_at_changes_on_save(db, pick_list, sample):
+    """`PickListItem.updated_at` обновляется при каждом `.save()`."""
+    item = PickListItem.objects.create(pick_list=pick_list, sample=sample)
+    before = item.updated_at
+    time.sleep(0.01)
+    item.status = PickListItem.STATUS_PICKED
+    item.save()
+    item.refresh_from_db()
+    assert item.updated_at > before
+
+
+def test_shipment_updated_at_changes_on_save(db):
+    """`Shipment.updated_at` обновляется при каждом `.save()`."""
+    s = Shipment.objects.create(shipment_number="ОТ-UPD-1")
+    before = s.updated_at
+    time.sleep(0.01)
+    s.destination = "Новый адрес"
+    s.save()
+    s.refresh_from_db()
+    assert s.updated_at > before

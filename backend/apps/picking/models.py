@@ -1,10 +1,14 @@
 """
-Модели приложения "Выборка" (picking).
+Модели приложения "Выборка" (picking) (v3).
 
 - PickList — список выборки.
 - PickListItem — строка списка.
 - Shipment — отправка (INBOUND или OUTBOUND).
 - ShipmentItem — строка отправки.
+
+Изменения v3 (серия 3.x-offline-sync, пачка 3.x-offline-sync-b-1c):
+- `PickList.updated_at`, `PickListItem.updated_at`, `Shipment.updated_at`
+  — для optimistic locking и синхронизации mobile ↔ server.
 
 Изменения v2 (этап 1.3):
 - `Shipment.direction` (INBOUND / OUTBOUND).
@@ -48,6 +52,8 @@ class PickList(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # 3.x-offline-sync-b-1c: для optimistic locking.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Список выборки"
@@ -94,6 +100,8 @@ class PickListItem(models.Model):
         related_name="picked_items",
     )
     note = models.TextField(blank=True, default="")
+    # 3.x-offline-sync-b-1c: для optimistic locking.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Строка выборки"
@@ -202,6 +210,8 @@ class Shipment(models.Model):
     )
     cancel_reason = models.TextField(blank=True, default="")
     note = models.TextField(blank=True, default="")
+    # 3.x-offline-sync-b-1c: для optimistic locking.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Отправка"

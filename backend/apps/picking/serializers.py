@@ -1,9 +1,9 @@
 """
 Сериализаторы приложения picking.
 
-PickList, PickListItem — без изменений.
+PickList, PickListItem — + updated_at (3.x-offline-sync-b-1c).
 Shipment — расширен: direction, laboratory, site, shipment_date,
-  driver_name, vehicle_number, status, cancel_reason.
+  driver_name, vehicle_number, status, cancel_reason + updated_at.
 ShipmentItem — без изменений.
 """
 
@@ -34,8 +34,9 @@ class PickListSerializer(serializers.ModelSerializer):
             "items_count",
             "created_at",
             "completed_at",
+            "updated_at",
         ]
-        read_only_fields = ["created_at", "completed_at"]
+        read_only_fields = ["created_at", "completed_at", "updated_at"]
 
 
 class PickListItemSerializer(serializers.ModelSerializer):
@@ -62,8 +63,9 @@ class PickListItemSerializer(serializers.ModelSerializer):
             "picked_by",
             "picked_by_username",
             "note",
+            "updated_at",
         ]
-        read_only_fields = ["picked_at", "picked_by"]
+        read_only_fields = ["picked_at", "picked_by", "updated_at"]
 
 
 # ============================================================
@@ -89,6 +91,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
         source="items.count", read_only=True,
     )
     containers_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Shipment
         fields = [
@@ -116,10 +119,11 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "items_count",
             "containers_count",
             "note",
+            "updated_at",
         ]
         read_only_fields = [
             "sent_at", "assembled_at", "received_at",
-            "cancelled_at", "cancelled_by",
+            "cancelled_at", "cancelled_by", "updated_at",
         ]
 
 
