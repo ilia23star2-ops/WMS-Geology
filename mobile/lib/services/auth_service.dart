@@ -2,21 +2,21 @@
 ///
 /// Фасад над `ApiClient` + `TokenStorage`:
 /// - `login` — POST /auth/login/, сохраняет токены, сразу тянет `me`.
+/// - `offlineLogin` — POST /auth/offline-login/, обмен offline-токена на JWT.
 /// - `logout` — POST /auth/logout/ (blacklist refresh), чистит локально.
 /// - `fetchMe` — GET /auth/me/.
+/// - `savePendingOfflineToken` / `getPendingOfflineToken` /
+///   `clearPendingOfflineToken` — для Deferred Offline Login.
 /// - `refreshAccess` — внутренний метод для 401-перехватчика.
-///
-/// `ApiClient` получает `tokenProvider` (читает access из хранилища)
-/// и `tokenRefresher` (наш refreshAccess), поэтому 401 автоматом
-/// обновляет токен и повторяет запрос.
-///
-/// `apiClient` — публичный геттер: другие сервисы (ContainerService
-/// и пр.) используют тот же клиент с JWT и авто-refresh.
 library;
 
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config.dart';
+import '../models/offline_token_payload.dart';
 import '../models/user.dart';
 import 'api_client.dart';
 import 'token_storage.dart';
@@ -35,13 +35,15 @@ class AuthService {
   final TokenStorage _storage;
   final Dio _plainDio;
   late final ApiClient _client;
+  final _secureStorage = const FlutterSecureStorage();
 
-  /// Публичный доступ к `ApiClient` — используется другими
-  /// сервисами (ContainerService и пр.), чтобы использовать тот же
-  /// клиент с JWT и авто-refresh.
+  static const _pendingTokenKey = 'pending_offline_token';
+  static const _pendingExpiryKey = 'pending_offline_expiry';
+  static const _pendingUserKey = 'pending_offline_user_json';
+
   ApiClient get apiClient => _client;
 
-  /// Логин. При успехе сохраняет токены и возвращает пользователя.
+  /// Логин по паролю. При успехе сохраняет токены и возвращает пользователя.
   Future<User> login(String username, String password) async {
     final response = await _client.post<Map<String, dynamic>>(
       '/auth/login/',
@@ -62,6 +64,83 @@ class AuthService {
     return fetchMe();
   }
 
+  /// Офлайн-логин: обмен offline-токена на JWT.
+  Future<User> offlineLogin(String rawToken, String deviceId) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/auth/offline-login/',
+      data: {'token': rawToken, 'device_id': deviceId},
+    );
+
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ сервера при офлайн-входе.',
+      );
+    }
+    final access = data['access'] as String?;
+    final refresh = data['refresh'] as String?;
+    if (access == null || refresh == null) {
+      throw ApiException(message: 'Сервер не вернул токены.');
+    }
+
+    await _storage.set(access, refresh);
+    return fetchMe();
+  }
+
+  /// Сохранить offline-token для отложенного офлайн-входа.
+  Future<void> savePendingOfflineToken(OfflineTokenPayload payload) async {
+    await _secureStorage.write(
+      key: _pendingTokenKey,
+      value: payload.token,
+    );
+    await _secureStorage.write(
+      key: _pendingExpiryKey,
+      value: payload.expiresAt.toIso8601String(),
+    );
+    if (payload.user != null) {
+      await _secureStorage.write(
+        key: _pendingUserKey,
+        value: jsonEncode(payload.user!.toJson()),
+      );
+    } else {
+      await _secureStorage.delete(key: _pendingUserKey);
+    }
+  }
+
+  /// Прочитать сохранённый offline-token (для восстановления при старте).
+  Future<OfflineTokenPayload?> getPendingOfflineToken() async {
+    final token = await _secureStorage.read(key: _pendingTokenKey);
+    final expiryStr = await _secureStorage.read(key: _pendingExpiryKey);
+    if (token == null || expiryStr == null) return null;
+    final expiresAt = DateTime.tryParse(expiryStr);
+    if (expiresAt == null) return null;
+
+    OfflineUserInfo? userInfo;
+    final userRaw = await _secureStorage.read(key: _pendingUserKey);
+    if (userRaw != null) {
+      try {
+        userInfo = OfflineUserInfo.fromJson(
+          jsonDecode(userRaw) as Map<String, dynamic>,
+        );
+      } catch (_) {
+        userInfo = null;
+      }
+    }
+
+    return OfflineTokenPayload(
+      token: token,
+      purpose: 'offline',
+      expiresAt: expiresAt,
+      user: userInfo,
+    );
+  }
+
+  Future<void> clearPendingOfflineToken() async {
+    await _secureStorage.delete(key: _pendingTokenKey);
+    await _secureStorage.delete(key: _pendingExpiryKey);
+    await _secureStorage.delete(key: _pendingUserKey);
+  }
+
   /// Логаут: пытается blacklist-refresh на backend, чистит локально.
   Future<void> logout() async {
     final refresh = await _storage.getRefresh();
@@ -73,6 +152,7 @@ class AuthService {
       }
     }
     await _storage.clear();
+    await clearPendingOfflineToken();
   }
 
   /// Текущий пользователь: GET /auth/me/.
@@ -92,9 +172,6 @@ class AuthService {
   }
 
   /// Обновление access-токена. Вызывается 401-перехватчиком.
-  ///
-  /// Использует отдельный Dio **без** интерцепторов — чтобы не
-  /// зациклиться, если refresh сам вернёт 401.
   Future<String?> refreshAccess() async {
     final refresh = await _storage.getRefresh();
     if (refresh == null || refresh.isEmpty) return null;

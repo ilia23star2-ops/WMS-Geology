@@ -1,25 +1,11 @@
 /// Базовый HTTP-клиент для API WMS Geology.
-///
-/// Оборачивает `Dio`:
-/// - устанавливает базовый URL и таймауты;
-/// - добавляет JWT access-токен в заголовок `Authorization`;
-/// - трансформирует ошибки сервера в `ApiException`.
-///
-/// Хранение токена — через `TokenStorage` (см. `auth_service.dart`).
-///
-/// ВАЖНО: `post` и `patch` явно ставят `Content-Type: application/json`.
-/// Без этого Dio отправляет `Map` как `form-urlencoded`, и DRF
-/// отвечает HTML (Browsable API), а не JSON.
 library;
 
 import 'package:dio/dio.dart';
 
 import '../config.dart';
 
-/// Провайдер access-токена. Возвращает текущий токен или null.
 typedef TokenProvider = Future<String?> Function();
-
-/// Провайдер refresh-токена. Возвращает новый access-токен или null.
 typedef TokenRefresher = Future<String?> Function();
 
 /// Исключение API с типизированной информацией об ошибке.
@@ -28,6 +14,7 @@ class ApiException implements Exception {
     required this.message,
     this.statusCode,
     this.details,
+    this.isNetworkError = false,
   });
 
   /// Человекочитаемое сообщение.
@@ -38,6 +25,9 @@ class ApiException implements Exception {
 
   /// Дополнительные данные (например, ошибки валидации DRF).
   final Map<String, dynamic>? details;
+
+  /// Является ли ошибка сетевой (Dio: connectionError / timeout).
+  final bool isNetworkError;
 
   @override
   String toString() => 'ApiException($statusCode): $message';
@@ -69,7 +59,6 @@ class ApiClient {
   final TokenProvider? tokenProvider;
   final TokenRefresher? tokenRefresher;
 
-  /// Общие опции запроса — гарантируют JSON и на вход, и на выход.
   static final Options _jsonOptions = Options(
     contentType: Headers.jsonContentType,
     responseType: ResponseType.json,
@@ -92,7 +81,6 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
-          // Попытка refresh при 401.
           final refresher = tokenRefresher;
           if (error.response?.statusCode == 401 && refresher != null) {
             final newToken = await refresher();
@@ -102,7 +90,7 @@ class ApiClient {
               try {
                 final response = await dio.fetch(opts);
                 return handler.resolve(response);
-              } catch (e) {
+              } catch (_) {
                 return handler.next(error);
               }
             }
@@ -112,8 +100,6 @@ class ApiClient {
       ),
     );
   }
-
-  // --- Обёртки над Dio с приведением ошибок ---
 
   Future<Response<T>> get<T>(
     String path, {
@@ -130,31 +116,17 @@ class ApiClient {
     }
   }
 
-  Future<Response<T>> post<T>(
-    String path, {
-    Object? data,
-  }) async {
+  Future<Response<T>> post<T>(String path, {Object? data}) async {
     try {
-      return await dio.post<T>(
-        path,
-        data: data,
-        options: _jsonOptions,
-      );
+      return await dio.post<T>(path, data: data, options: _jsonOptions);
     } on DioException catch (e) {
       throw _toApiException(e);
     }
   }
 
-  Future<Response<T>> patch<T>(
-    String path, {
-    Object? data,
-  }) async {
+  Future<Response<T>> patch<T>(String path, {Object? data}) async {
     try {
-      return await dio.patch<T>(
-        path,
-        data: data,
-        options: _jsonOptions,
-      );
+      return await dio.patch<T>(path, data: data, options: _jsonOptions);
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -175,6 +147,7 @@ class ApiClient {
 
     String message = 'Ошибка сети';
     Map<String, dynamic>? details;
+    bool isNetwork = false;
 
     if (response?.data is Map<String, dynamic>) {
       final data = response!.data as Map<String, dynamic>;
@@ -197,17 +170,52 @@ class ApiClient {
     } else if (response?.data is String &&
         (response!.data as String).isNotEmpty) {
       message = response.data as String;
-    } else if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout) {
-      message = 'Превышено время ожидания ответа сервера';
-    } else if (e.type == DioExceptionType.connectionError) {
-      message = 'Не удалось подключиться к серверу';
+    }
+
+    // Классифицируем по DioExceptionType. Dio добавляет новые типы
+    // (например, transformTimeout), поэтому default обязателен.
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        message = 'Превышено время ожидания ответа сервера';
+        isNetwork = true;
+        break;
+      case DioExceptionType.connectionError:
+        message = 'Не удалось подключиться к серверу';
+        isNetwork = true;
+        break;
+      case DioExceptionType.badCertificate:
+        message = 'Ошибка сертификата сервера';
+        isNetwork = true;
+        break;
+      case DioExceptionType.cancel:
+        message = 'Запрос отменён';
+        break;
+      case DioExceptionType.badResponse:
+        // Сервер ответил — это не сетевая ошибка.
+        break;
+      case DioExceptionType.unknown:
+        // В Dio 5.x 'unknown' обычно = SocketException (нет сети) или DNS-ошибка.
+        if (statusCode == null) {
+          message = 'Не удалось подключиться к серверу';
+          isNetwork = true;
+        }
+        break;
+      default:
+        // Будущие типы Dio (transformTimeout и т.п.): считаем сетевыми,
+        // если сервер не ответил.
+        if (statusCode == null) {
+          isNetwork = true;
+        }
+        break;
     }
 
     return ApiException(
       message: message,
       statusCode: statusCode,
       details: details,
+      isNetworkError: isNetwork,
     );
   }
 }

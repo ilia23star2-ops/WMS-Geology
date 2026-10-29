@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import 'qr_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +30,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
     await auth.login(_usernameCtrl.text.trim(), _passwordCtrl.text);
+  }
+
+  Future<void> _loginWithQr() async {
+    final payload = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(builder: (_) => const QrLoginScreen()),
+    );
+
+    if (payload == null || !mounted) return;
+
+    final auth = context.read<AuthProvider>();
+    await auth.loginWithQr(payload);
+
+    if (auth.error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(auth.error!)),
+      );
+    }
   }
 
   @override
@@ -122,6 +140,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               )
                             : const Text('Войти'),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: auth.isLoading ? null : _loginWithQr,
+                        icon: const Icon(Icons.qr_code_scanner),
+                        label: const Text('Войти по QR (Офлайн)'),
                       ),
                     ],
                   ),

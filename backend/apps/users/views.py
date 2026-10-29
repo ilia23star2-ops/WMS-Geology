@@ -7,8 +7,6 @@ Views приложения users.
 - AccessTokenViewSet — CRUD токенов доступа (create / list / revoke)
 - CodeLoginView — POST /api/v1/auth/code-login/ (web_login → JWT)
 - OfflineLoginView — POST /api/v1/auth/offline-login/ (offline → JWT)
-
-Refresh — стандартный из simplejwt (подключается в urls).
 """
 
 from django.utils import timezone
@@ -39,7 +37,6 @@ from .services import (
     make_access_token_qr_svg,
 )
 
-# Роли, которым разрешено создавать токены для других пользователей.
 _ADMIN_LIKE_ROLES = ("admin", "manager")
 
 
@@ -50,7 +47,6 @@ def _user_role_name(user) -> str | None:
 
 
 def _build_login_response(user) -> dict:
-    """Единый ответ для code-login / offline-login (как LoginView)."""
     refresh = RefreshToken.for_user(user)
     role = _user_role_name(user)
     full_name = ""
@@ -136,7 +132,7 @@ class MeView(APIView):
 
 
 # ============================================================
-# AccessToken (3.x-offline-auth-a + 3.x-offline-auth-b)
+# AccessToken
 # ============================================================
 class AccessTokenViewSet(viewsets.GenericViewSet):
     """
@@ -152,10 +148,10 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         from django.db.models import Q
+
         user = self.request.user
         return (
-            AccessToken.objects
-            .select_related("user", "created_by")
+            AccessToken.objects.select_related("user", "created_by")
             .filter(Q(user=user) | Q(created_by=user))
             .order_by("-created_at")
         )
@@ -173,6 +169,7 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
         # Кому выдаём
         if data.get("user_id") is not None:
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
             target = User.objects.filter(pk=data["user_id"]).first()
             if target is None:
@@ -185,7 +182,8 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
                 role = _user_role_name(request.user)
                 if role not in _ADMIN_LIKE_ROLES:
                     raise PermissionDenied(
-                        "Создавать токены для других пользователей могут только admin или manager."
+                        "Создавать токены для других пользователей "
+                        "могут только admin или manager."
                     )
         else:
             target = request.user
@@ -197,11 +195,20 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
                 created_by=request.user,
             )
         except ValueError as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Генерируем QR и сохраняем в объект (чтобы можно было
+        # показать повторно, пока токен активен).
+        qr_svg = make_access_token_qr_svg(
+            obj.purpose, raw, obj.expires_at, obj.user
+        )
+        obj.qr_svg = qr_svg
+        obj.save(update_fields=["qr_svg"])
 
         out = AccessTokenSerializer(obj).data
         out["raw_token"] = raw  # единственный раз
-        out["qr_svg"] = make_access_token_qr_svg(obj.purpose, raw)  # 3.x-offline-auth-b
         return Response(out, status=status.HTTP_201_CREATED)
 
     def list(self, request):
@@ -212,7 +219,10 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
     def revoke(self, request, pk=None):
         obj = self.get_object()
         # Отзывать может владелец или создатель
-        if obj.user_id != request.user.pk and obj.created_by_id != request.user.pk:
+        if (
+            obj.user_id != request.user.pk
+            and obj.created_by_id != request.user.pk
+        ):
             raise PermissionDenied("Нет прав на отзыв этого токена.")
         if obj.revoked_at is None:
             obj.revoked_at = timezone.now()
@@ -221,7 +231,7 @@ class AccessTokenViewSet(viewsets.GenericViewSet):
 
 
 # ============================================================
-# Code-login / Offline-login (3.x-offline-auth-a)
+# Code-login / Offline-login
 # ============================================================
 class CodeLoginView(APIView):
     """
@@ -244,9 +254,11 @@ class CodeLoginView(APIView):
 
         token_hash = hash_access_token(code)
         obj = (
-            AccessToken.objects
-            .select_related("user")
-            .filter(token_hash=token_hash, purpose=AccessToken.PURPOSE_WEB_LOGIN)
+            AccessToken.objects.select_related("user")
+            .filter(
+                token_hash=token_hash,
+                purpose=AccessToken.PURPOSE_WEB_LOGIN,
+            )
             .first()
         )
         if obj is None:
@@ -271,7 +283,6 @@ class CodeLoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Гасим код
         obj.used_at = now
         obj.save(update_fields=["used_at"])
 
@@ -283,16 +294,17 @@ class CodeLoginView(APIView):
             new_value={"purpose": obj.purpose, "device_id": None},
         )
 
-        return Response(_build_login_response(obj.user), status=status.HTTP_200_OK)
+        return Response(
+            _build_login_response(obj.user), status=status.HTTP_200_OK
+        )
 
 
 class OfflineLoginView(APIView):
     """
     POST /api/v1/auth/offline-login/ — обменять offline-токен на JWT.
 
-    Токен: `purpose=offline`. TTL — 14 часов (одна смена + запас,
-    3.x-offline-sync-b-0). При первом использовании привязывается к
-    `device_id`. Второй `device_id` → 409.
+    Токен: `purpose=offline`. TTL — 14 часов. При первом использовании
+    привязывается к `device_id`. Второй `device_id` → 409.
     """
 
     permission_classes = [AllowAny]
@@ -310,9 +322,11 @@ class OfflineLoginView(APIView):
 
         token_hash = hash_access_token(raw)
         obj = (
-            AccessToken.objects
-            .select_related("user")
-            .filter(token_hash=token_hash, purpose=AccessToken.PURPOSE_OFFLINE)
+            AccessToken.objects.select_related("user")
+            .filter(
+                token_hash=token_hash,
+                purpose=AccessToken.PURPOSE_OFFLINE,
+            )
             .first()
         )
         if obj is None:
@@ -355,4 +369,6 @@ class OfflineLoginView(APIView):
             new_value={"purpose": obj.purpose, "device_id": device_id},
         )
 
-        return Response(_build_login_response(obj.user), status=status.HTTP_200_OK)
+        return Response(
+            _build_login_response(obj.user), status=status.HTTP_200_OK
+        )

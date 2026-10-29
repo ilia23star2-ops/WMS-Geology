@@ -1,79 +1,28 @@
-"""
-Сервисы приложения users.
-
-- `log_audit(...)` — запись в AuditLog.
-- `generate_access_token(...)` — генерация AccessToken (raw + запись).
-- `hash_access_token(raw)` — sha256 hex.
-- `make_access_token_qr_svg(...)` — SVG QR для AccessToken (3.x-offline-auth-b).
-"""
+import base64
 import hashlib
+import io
+import json
 import secrets
 from datetime import timedelta
-from typing import Any
 
+import qrcode
+import qrcode.image.svg
 from django.utils import timezone
-
-from apps.labels.services.qr_service import generate_qr_svg
 
 from .models import AccessToken, AuditLog
 
-# TTL по purpose.
-# - web_login: 15 минут (одноразовый код для входа в web).
-# - offline:   14 часов (одна смена + запас, 3.x-offline-sync-b-0).
-ACCESS_TOKEN_TTL = {
-    AccessToken.PURPOSE_WEB_LOGIN: timedelta(minutes=15),
-    AccessToken.PURPOSE_OFFLINE: timedelta(hours=14),
-}
 
+def generate_access_token(user, purpose: str, created_by=None):
+    """Генерирует сырой токен, сохраняет его хэш в БД и возвращает (obj, raw)."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_access_token(raw_token)
 
-def log_audit(
-    *,
-    user,
-    action: str,
-    entity_type: str,
-    entity_id: int | None = None,
-    old_value: dict[str, Any] | None = None,
-    new_value: dict[str, Any] | None = None,
-) -> AuditLog:
-    """
-    Записать событие в журнал аудита.
-
-    Анонимный пользователь (или None) → `user = NULL`
-    (системное действие). Возвращает созданную запись.
-    """
-    return AuditLog.objects.create(
-        user=user if (user and user.is_authenticated) else None,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        old_value=old_value,
-        new_value=new_value,
+    ttl = (
+        timedelta(hours=14)
+        if purpose == AccessToken.PURPOSE_OFFLINE
+        else timedelta(minutes=15)
     )
-
-
-def hash_access_token(raw: str) -> str:
-    """sha256(raw_token), hex."""
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def generate_access_token(
-    *,
-    user,
-    purpose: str,
-    created_by=None,
-) -> tuple[AccessToken, str]:
-    """
-    Сгенерировать AccessToken.
-
-    Возвращает `(obj, raw_token)`. `raw_token` — единственный раз,
-    когда его можно увидеть. В БД — только `hash`.
-    """
-    if purpose not in ACCESS_TOKEN_TTL:
-        raise ValueError(f"Неизвестный purpose: {purpose!r}")
-
-    raw = secrets.token_hex(32)  # 64 hex chars
-    token_hash = hash_access_token(raw)
-    expires_at = timezone.now() + ACCESS_TOKEN_TTL[purpose]
+    expires_at = timezone.now() + ttl
 
     obj = AccessToken.objects.create(
         user=user,
@@ -82,19 +31,74 @@ def generate_access_token(
         expires_at=expires_at,
         created_by=created_by,
     )
-    return obj, raw
+    return obj, raw_token
 
 
-def make_access_token_qr_svg(purpose: str, raw: str) -> str:
+def hash_access_token(raw_token: str) -> str:
+    """Хэширует сырой токен для хранения в БД."""
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def log_audit(
+    user, action: str, entity_type: str, entity_id: int, new_value: dict = None
+):
+    """Пишет запись в журнал аудита."""
+    AuditLog.objects.create(
+        user=user,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        new_value=new_value,
+    )
+
+
+def _user_payload(user) -> dict:
+    """Данные пользователя для встраивания в QR.
+
+    Нужны, чтобы мобилка показывала корректное имя и роль
+    даже без сети (в pending offline режиме).
     """
-    SVG QR для AccessToken.
+    role = None
+    full_name = ""
+    if hasattr(user, "profile"):
+        if user.profile.role:
+            role = user.profile.role.name
+        full_name = user.profile.full_name
+    return {
+        "id": user.pk,
+        "username": user.username,
+        "full_name": full_name,
+        "role": role,
+    }
 
-    Payload:
-    - `web_login`  → `WMSG:CODE:<raw>`
-    - `offline`    → `WMSG:OFFLINE:<raw>`
 
-    Mobile / web читает префикс и решает, что делать с raw.
+def make_access_token_qr_svg(purpose: str, raw_token: str, expires_at, user) -> str:
     """
-    prefix = "OFFLINE" if purpose == AccessToken.PURPOSE_OFFLINE else "CODE"
-    payload = f"WMSG:{prefix}:{raw}"
-    return generate_qr_svg(payload, box_size=8, border=2)
+    Генерирует SVG QR-код.
+
+    Внутри — base64(JSON) с токеном, назначением, датой истечения
+    и данными пользователя. Мобилка использует эти данные, чтобы
+    показывать корректное имя и роль ещё до обмена токена на JWT.
+    """
+    payload = {
+        "token": raw_token,
+        "purpose": purpose,
+        "expires_at": expires_at.isoformat(),
+        "user": _user_payload(user),
+    }
+    json_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    b64_string = base64.b64encode(json_bytes).decode("utf-8")
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+        image_factory=qrcode.image.svg.SvgPathImage,
+    )
+    qr.add_data(b64_string)
+    qr.make(fit=True)
+    img = qr.make_image()
+    buf = io.BytesIO()
+    img.save(buf)
+    return buf.getvalue().decode("utf-8")

@@ -1,15 +1,5 @@
 """
 Сериализаторы приложения users.
-
-- LoginSerializer — обёртка над TokenObtainPairSerializer,
-  добавляет username и role в ответ.
-- LogoutRequestSerializer — body для logout (refresh).
-- UserInfoSerializer — информация о текущем пользователе (/me).
-- AuditLogSerializer — запись журнала аудита (2f-14a).
-- AccessTokenSerializer — запись токена доступа (3.x-offline-auth-a).
-- AccessTokenCreateSerializer — body для POST /auth/access-tokens/.
-- CodeLoginSerializer — body для POST /auth/code-login/.
-- OfflineLoginSerializer — body для POST /auth/offline-login/.
 """
 
 from rest_framework import serializers
@@ -19,25 +9,14 @@ from .models import AccessToken, AuditLog
 
 
 class LoginSerializer(TokenObtainPairSerializer):
-    """
-    Расширение стандартного TokenObtainPairSerializer.
-
-    Добавляет в ответ:
-    - username;
-    - role (из UserProfile, если есть);
-    - full_name.
-    """
-
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
         token["username"] = user.username
-
         role = None
         if hasattr(user, "profile") and user.profile.role:
             role = user.profile.role.name
         token["role"] = role
-
         return token
 
     def validate(self, attrs):
@@ -55,16 +34,10 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 
 class LogoutRequestSerializer(serializers.Serializer):
-    """Body для POST /auth/logout/."""
-
-    refresh = serializers.CharField(
-        help_text="Refresh-токен для отзыва (blacklist).",
-    )
+    refresh = serializers.CharField()
 
 
 class UserInfoSerializer(serializers.Serializer):
-    """Ответ GET /auth/me/."""
-
     id = serializers.IntegerField()
     username = serializers.CharField()
     email = serializers.EmailField(allow_blank=True)
@@ -72,28 +45,15 @@ class UserInfoSerializer(serializers.Serializer):
     role = serializers.CharField(allow_null=True, allow_blank=True)
 
 
-# ============================================================
-# AuditLog (2f-14a)
-# ============================================================
 class AuditLogSerializer(serializers.ModelSerializer):
-    """Запись журнала аудита."""
-
     username = serializers.SerializerMethodField()
     action_display = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = [
-            "id",
-            "user",
-            "username",
-            "action",
-            "action_display",
-            "entity_type",
-            "entity_id",
-            "old_value",
-            "new_value",
-            "created_at",
+            "id", "user", "username", "action", "action_display",
+            "entity_type", "entity_id", "old_value", "new_value", "created_at",
         ]
         read_only_fields = fields
 
@@ -114,12 +74,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
         return labels.get(obj.action, obj.action)
 
 
-# ============================================================
-# AccessToken (3.x-offline-auth-a)
-# ============================================================
 class AccessTokenSerializer(serializers.ModelSerializer):
-    """Запись токена доступа. Без `token_hash`."""
-
     username = serializers.SerializerMethodField()
     purpose_display = serializers.CharField(source="get_purpose_display", read_only=True)
     created_by_username = serializers.SerializerMethodField()
@@ -128,19 +83,10 @@ class AccessTokenSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessToken
         fields = [
-            "id",
-            "user",
-            "username",
-            "purpose",
-            "purpose_display",
-            "device_id",
-            "expires_at",
-            "used_at",
-            "revoked_at",
-            "is_active",
-            "created_by",
-            "created_by_username",
-            "created_at",
+            "id", "user", "username", "purpose", "purpose_display",
+            "device_id", "expires_at", "used_at", "revoked_at",
+            "is_active", "created_by", "created_by_username", "created_at",
+            "qr_svg",
         ]
         read_only_fields = fields
 
@@ -152,38 +98,14 @@ class AccessTokenSerializer(serializers.ModelSerializer):
 
 
 class AccessTokenCreateSerializer(serializers.Serializer):
-    """Body для POST /auth/access-tokens/."""
-
-    purpose = serializers.ChoiceField(
-        choices=AccessToken.PURPOSE_CHOICES,
-        help_text="web_login или offline.",
-    )
-    user_id = serializers.IntegerField(
-        required=False,
-        allow_null=True,
-        default=None,
-        help_text="Для кого. Если не задан — для себя. Для других — нужна роль admin/manager.",
-    )
+    purpose = serializers.ChoiceField(choices=AccessToken.PURPOSE_CHOICES)
+    user_id = serializers.IntegerField(required=False, allow_null=True, default=None)
 
 
 class CodeLoginSerializer(serializers.Serializer):
-    """Body для POST /auth/code-login/."""
-
-    code = serializers.CharField(
-        help_text="Raw-токен из QR / с экрана.",
-        trim_whitespace=True,
-    )
+    code = serializers.CharField(trim_whitespace=True)
 
 
 class OfflineLoginSerializer(serializers.Serializer):
-    """Body для POST /auth/offline-login/."""
-
-    token = serializers.CharField(
-        help_text="Raw-токен из QR (offline).",
-        trim_whitespace=True,
-    )
-    device_id = serializers.CharField(
-        max_length=100,
-        help_text="UUID устройства (генерируется mobile один раз).",
-        trim_whitespace=True,
-    )
+    token = serializers.CharField(trim_whitespace=True)
+    device_id = serializers.CharField(max_length=100, trim_whitespace=True)

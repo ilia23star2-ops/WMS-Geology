@@ -7,6 +7,7 @@ class AppDatabase {
 
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -20,53 +21,48 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: _dbVersion,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE containers (
-            id INTEGER PRIMARY KEY,
-            container_number TEXT,
-            status TEXT,
-            updated_at TEXT
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE samples (
-            id INTEGER PRIMARY KEY,
-            sample_number TEXT,
-            container_id INTEGER,
-            status TEXT,
-            updated_at TEXT
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE sync_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            action TEXT NOT NULL,
-            endpoint TEXT NOT NULL,
-            payload TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'PENDING',
-            error_message TEXT,
-            created_at TEXT NOT NULL
-          )
-        ''');
+        await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('''
-            CREATE TABLE sync_queue (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              action TEXT NOT NULL,
-              endpoint TEXT NOT NULL,
-              payload TEXT NOT NULL,
-              status TEXT NOT NULL DEFAULT 'PENDING',
-              error_message TEXT,
-              created_at TEXT NOT NULL
-            )
-          ''');
-        }
+        // Миграция: в старых версиях (1 и 2) таблицы кэша
+        // создавались с неправильными колонками, и Pull молча падал.
+        // Проще всего пересоздать таблицы кэша. Данные восстановятся
+        // при следующем Pull (когда появится сеть).
+        await db.execute('DROP TABLE IF EXISTS containers');
+        await db.execute('DROP TABLE IF EXISTS samples');
+        await _createTables(db);
       },
     );
+  }
+
+  static Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS containers (
+        id INTEGER PRIMARY KEY,
+        updated_at TEXT,
+        data TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS samples (
+        id INTEGER PRIMARY KEY,
+        updated_at TEXT,
+        data TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        error_message TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> close() async {

@@ -1,15 +1,9 @@
-/// Экран сканирования QR.
-///
-/// Использует `mobile_scanner`. После первого удачного скана
-/// переходит на карточку тары (или показывает ошибку — в зависимости
-/// от того, что нашлось по payload'у).
-library;
-
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/container_provider.dart';
+import '../services/scan_history_service.dart';
 import 'container_detail_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -20,8 +14,6 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
-  // Отдельный контроллер — чтобы можно было остановить сканирование
-  // после первого срабатывания (иначе поток даёт сотни повторов).
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     facing: CameraFacing.back,
@@ -57,17 +49,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final error = provider.error;
 
     if (container != null) {
+      // Сохраняем в историю!
+      await ScanHistoryService.addToHistory(container.id);
+
+      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ContainerDetailScreen(container: container),
         ),
       );
       if (!mounted) return;
-      // При возврате — продолжаем сканирование.
       _handled = false;
       await _controller.start();
     } else {
-      // Ошибка или неизвестный тип — показать snackbar, продолжить.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error ?? 'Не удалось обработать QR.'),
@@ -82,7 +76,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
   @override
   Widget build(BuildContext context) {
     final isLoading = context.watch<ContainerProvider>().isLoading;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Сканирование'),
@@ -91,11 +84,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       body: Stack(
         alignment: Alignment.center,
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-          ),
-          // Прицел по центру.
+          MobileScanner(controller: _controller, onDetect: _onDetect),
           Container(
             width: 220,
             height: 220,

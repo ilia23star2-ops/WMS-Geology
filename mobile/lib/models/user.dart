@@ -30,6 +30,17 @@ class User {
     );
   }
 
+  /// Сериализация в JSON (для кэширования в офлайн-режиме).
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'username': username,
+      'email': email,
+      'full_name': fullName,
+      'role': role,
+    };
+  }
+
   /// Отображаемое имя: `full_name`, если не пусто, иначе `username`.
   String get displayName {
     if (fullName.trim().isNotEmpty) return fullName;
