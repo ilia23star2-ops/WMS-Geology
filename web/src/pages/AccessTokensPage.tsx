@@ -3,8 +3,8 @@
  *
  * - Список токенов (свои + созданные мной).
  * - Создание `web_login` (15 мин, одноразовый) / `offline` (14 часов).
- * - После создания — модалка с QR (`qr_svg` от backend) и raw токеном
- *   (показывается один раз).
+ * - После создания — модалка с QR (`qr_svg` от backend) и raw токеном.
+ * - Просмотр QR для активных токенов.
  * - Отзыв активных токенов.
  */
 import { useMemo, useState } from "react";
@@ -41,6 +41,7 @@ import AddIcon from "@mui/icons-material/Add";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import KeyIcon from "@mui/icons-material/VpnKey";
 import BlockIcon from "@mui/icons-material/Block";
+import QrCodeIcon from "@mui/icons-material/QrCode";
 
 import {
     useAccessTokens,
@@ -85,6 +86,7 @@ export default function AccessTokensPage() {
     const [createError, setCreateError] = useState<string | null>(null);
 
     const [result, setResult] = useState<AccessTokenCreateResponse | null>(null);
+    const [qrToken, setQrToken] = useState<AccessToken | null>(null);
     const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
     const tokens = useMemo(() => tokensQuery.data ?? [], [tokensQuery.data]);
@@ -197,6 +199,17 @@ export default function AccessTokensPage() {
                                                 {t.device_id || <Typography variant="caption" color="text.disabled">—</Typography>}
                                             </TableCell>
                                             <TableCell align="right">
+                                                {t.is_active && t.qr_svg && (
+                                                    <Tooltip title="Показать QR">
+                                                        <IconButton
+                                                            size="small"
+                                                            color="primary"
+                                                            onClick={() => setQrToken(t)}
+                                                        >
+                                                            <QrCodeIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
                                                 {t.is_active && (
                                                     <Tooltip title="Отозвать">
                                                         <IconButton
@@ -277,8 +290,8 @@ export default function AccessTokensPage() {
                     {result && (
                         <Stack spacing={2}>
                             <Alert severity="warning">
-                                <b>Это единственный раз, когда показывается токен.</b>{" "}
-                                Скопируйте или отсканируйте QR сейчас. Если потеряете — генерируйте новый.
+                                <b>Это единственный раз, когда показывается raw-токен.</b>{" "}
+                                Скопируйте или отсканируйте QR сейчас. QR можно будет посмотреть позже, пока токен активен.
                             </Alert>
 
                             <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
@@ -322,6 +335,29 @@ export default function AccessTokensPage() {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleCloseResult} variant="contained">Готово</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Модалка просмотра QR существующего токена */}
+            <Dialog open={qrToken !== null} onClose={() => setQrToken(null)} maxWidth="sm" fullWidth>
+                <DialogTitle>QR-код токена</DialogTitle>
+                <DialogContent>
+                    {qrToken && (
+                        <Stack spacing={2}>
+                            <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                                <Box
+                                    sx={{ width: 260, height: 260, "& svg": { width: "100%", height: "100%" } }}
+                                    dangerouslySetInnerHTML={{ __html: qrToken.qr_svg }}
+                                />
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">
+                                Пользователь: <b>{qrToken.username}</b>. Назначение: {purposeLabel(qrToken.purpose)}.
+                            </Typography>
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setQrToken(null)} variant="contained">Закрыть</Button>
                 </DialogActions>
             </Dialog>
 

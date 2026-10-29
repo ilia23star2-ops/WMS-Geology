@@ -32,13 +32,13 @@ export interface AccessToken {
     created_by: number | null;
     created_by_username: string | null;
     created_at: string;
+    /** SVG QR (сохраняется на бэкенде, отдается всегда). */
+    qr_svg: string;
 }
 
 export interface AccessTokenCreateResponse extends AccessToken {
     /** Raw показывается один раз. */
     raw_token: string;
-    /** SVG QR (готовый к рендеру). */
-    qr_svg: string;
 }
 
 // ------------------------------------------------------------
