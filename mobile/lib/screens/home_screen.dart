@@ -2,6 +2,7 @@
 ///
 /// - Приветствие пользователя.
 /// - Кнопка «Сканировать QR».
+/// - Кнопка «Синхронизация» (с бейджем количества ожидающих отправки).
 /// - Заглушки будущих разделов.
 library;
 
@@ -10,11 +11,28 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/container_provider.dart';
+import '../providers/sync_provider.dart';
 import '../services/container_service.dart';
 import 'scanner_screen.dart';
+import 'sync_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<SyncProvider>().refresh();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +91,34 @@ class HomeScreen extends StatelessWidget {
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('Сканировать QR'),
               ),
+            ),
+            const SizedBox(height: 12),
+            Consumer<SyncProvider>(
+              builder: (context, sync, _) {
+                final total = sync.pendingCount + sync.errorCount;
+                return OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SyncScreen(),
+                      ),
+                    );
+                  },
+                  icon: Badge(
+                    isLabelVisible: total > 0,
+                    label: Text('$total'),
+                    child: const Icon(Icons.sync),
+                  ),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      total > 0
+                          ? 'Синхронизация ($total)'
+                          : 'Синхронизация',
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 24),
             Text(
