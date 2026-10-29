@@ -3,65 +3,44 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-27
+**Дата обновления:** 2026-10-29
 
 ---
 
 ## Где мы
 
-**Активная серия:** `feature/2.x-web-v2` — расширение web-клиента.
+**Активная серия:** `feature/3.x-offline` — офлайн-режим мобильного приложения.
 
-**Текущий заход:** серия `2f` — **закрыта полностью**.
-Закрыто: `2f-1` ... `2f-6c`, `2f-7a` ... `2f-7h`, `2f-8a`
-(дерево-таблица проб), `2f-8` (Н/З — WorkOrder), `2f-9a` ... `2f-9c`,
-`2f-10`, `2f-11a` ... `2f-11c`, `2f-12a` ... `2f-12b`,
-`2f-14a` / `2f-14b` (аудит тары), `2f-15` (предпросмотр до save),
-`2f-17a` / `2f-17b` / `2f-17c` (единое окно тары + иконки печати).
-Следующая серия — `3.x-offline` (мобильный офлайн), `2.x-lifecycle`
-(пересмотр статусов), `2.x-rbac` или `2.x-lab-portal`.
+**Текущий заход:** серия `c` (мобильный офлайн).
+- **`c-1`** — SQLite (таблицы `containers`, `samples`, DAO, инициализация). ✅
+- **`c-2`** — `SyncService` (Pull-синхронизация с сервера). ✅ **Закрыт 2026-10-29**.
+- **`c-3`** — Push-синхронизация (`SyncQueue` для отправки изменений). ⬜
+- **`c-4`** — UI для офлайн-режима (кнопка «Обновить», статус синхронизации). ⬜
+
+**Предыдущая серия:** `2f` — закрыта полностью (см. `PROGRESS.md`).
+
+**Что готово (mobile):**
+- Логин, logout, refresh токенов.
+- Сканер QR, карточка тары, список проб внутри.
+- **SQLite (`c-1`)**: локальная БД (`ContainerDao`, `SampleDao`).
+- **SyncService (`c-2`)**: постраничная Pull-синхронизация (по 50 записей), DI для тестов.
+
+**Что нужно добавить (mobile):**
+- Push-синхронизация (`SyncQueue`).
+- UI для офлайн-режима (индикатор, кнопка синхронизации).
+
+**Сборка на рабочем ПК (прокси):**
+- Используется `work-pc-setup/setup.ps1` (сертификаты, `maven-local`, правка `flutter_tools`).
+- Флаг `--android-skip-build-dependency-validation`.
+- JDK 17 (`D:\Dev\jdk-17`), Gradle 9.3.1.
+- **После успешной сборки — вернуть Flutter SDK в заводское состояние** (`git checkout`).
 
 **Предыдущие заходы:**
 - `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
   `conflicts` / `check` / `complete`, PDF «Акт приёмки».
 - `3f-1` / `3f-1b` / `3f-2`: PDF акта, stale tests, кнопка в web.
-- **2f-1**: колонки «Н/З», «ТИ», фильтры, edit/delete тары.
-- **2f-2a**: группированный список проб (Н/З × ТИ).
-- **2f-2b**: CRUD + dispose/restore/delete проб.
-- **2f-2c**: dev-логирование API-запросов.
-- **2f-3a**: CRUD справочников (ТИ, участки, лаборатории).
-- **2f-4a**: топология (Room → Rack → Section → Tier → Cell).
-- **2f-4b**: поддоны в ячейках (`PalletDialog`).
-- **2f-4c-1**: автогенерация QR Section/Cell + PDF-рендер.
-- **2f-4c-2**: QR-кнопки в UI топологии.
-- **2f-5a-1**: backend — каскадное удаление `ReceiptItem`.
-- **2f-5a-2**: web — edit/delete строк приёмки, отмена партии.
-- **2f-5b-fix**: после импорта с вопросами → сразу на экран сверки.
-- **2f-5c-1**: backend — статус `PENDING_FILLING` + data-migration.
-- **2f-5c-2**: web — статус «Ожидает заполнения» в UI.
-- **2f-5c-3**: web — draft-поля в `ContainerEditDialog`.
-- **2f-7e**: название партии печати (поле `name`).
-- **2f-8a** (историч., ранее `2f-8`): дерево-таблица проб
-  (Группа → Тара → Проба).
-- **2f-8**: Наряд-заказы (WorkOrder) — новая вкладка, связывание,
-  сводка по тарам, «Глаз»; Топология: force-удаление иерархии.
-- **2f-9a/9b/9c**: пропуски, выбранные пробы (`SELECTED`),
-  карандашик, редактирование существующих.
-- **2f-10**: размещение тары в ячейку (через поддон) и на пол.
-- **2f-11a/b/c**: просмотр содержимого ячейки, фильтры, массовое
-  перемещение, переходы по геометке.
-- **2f-12a/b**: атомарное создание тары с пробами прямо в ячейке,
-  предпросмотр, force-удаление.
-- **2f-14a**: audit log (`AuditLog`, `GET /containers/{id}/history/`).
-- **2f-14b**: web — вкладка «История» (`ContainerHistoryTab`).
-- **2f-15**: предпросмотр этикетки до создания тары
-  (`LocalPreviewDialog` + `previewData`).
-- **2f-17a**: `FillContainerDialog` → `FillContainerContent`.
-- **2f-17b**: backend — `print_batch_status` (последняя не-CANCELLED
-  партия) + prefetch.
-- **2f-17c**: единое окно `ContainerDetailDialog` (Пробы /
-  Редактирование / История + кнопки Предпросмотр / Разместить /
-  Местоположение) + иконки печати + выбор партии печати (новая /
-  существующая DRAFT).
+- Серия `2f` (закрыта полностью): полный CRUD, Топология, Печать, Н/З, аудит,
+  единое окно тары, `print_batch_status`.
 
 **Что готово (backend, серия 2.x-web-v2):**
 - `current_location` в `SampleSerializer` + фильтры (`?q=`, `?no_work_order=`).
@@ -93,21 +72,13 @@
 - **Предпросмотр:** `ContainerPreviewDialog` — 2 вкладки (Этикетка / QR). Открывается из шапки `ContainerDetailDialog`.
 - **Партия печати:** `AddToPrintBatchDialog` — выбор «Новая / Существующая (DRAFT)».
 
-**Что нужно добавить (web, серия 2f):**
-- Серия `2f` — **закрыта**. Следующая — `3.x-offline` / `2.x-lifecycle` /
-  `2.x-rbac` / `2.x-lab-portal`.
-
-**Что готово (mobile):**
-- Логин, logout, refresh токенов.
-- Сканер QR, карточка тары, список проб внутри.
-
 **Backend:** 779 тестов.
 **Web:** 24 юнит-теста.
-**Mobile:** 32 юнит-теста.
+**Mobile:** 36 юнит-тестов.
 
 **Ближайшая работа:**
-- `3.x-offline` — мобильный офлайн (SQLite + SyncQueue).
-- Или `2.x-lifecycle` / `2.x-rbac` / `2.x-lab-portal` — по выбору.
+- `c-3` — Push-синхронизация (`SyncQueue`).
+- `c-4` — UI для офлайн-режима.
 
 ---
 
@@ -140,7 +111,7 @@
 | `receiving` | Receipt, ReceiptItem (+container_type), ImportSession + Excel-парсер + apply_shipment_import, conflicts, resolve-conflicts, check, complete, act |
 | `picking` | PickList, PickListItem, Shipment (+ direction, статусы), ShipmentItem |
 | `movements` | MoveOperation, MoveOperationItem |
-| `inventory` | InventorySession, InventoryScan, InventoryIssue |
+| `inventory` | InventorySession, InventoryScan, InventoryIssue, ActualizationTask, offline_import |
 | `users` | Role, UserProfile, AuditLog, `log_audit` (сервис), AuditLogSerializer + JWT auth |
 | `labels` | QR-сервис, PDF-этикетки, QR-сетка, PrintBatch (+name), PrintBatchItem (related_name="print_batch_items"), act_service |
 
@@ -159,7 +130,7 @@
 | Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`, force-удаление. |
 | Карточка тары | `ContainerDetailDialog` (Пробы / Редактирование / История + Предпросмотр / Разместить / Местоположение). |
 
-### Mobile (Flutter, 32 юнит-теста)
+### Mobile (Flutter, 36 юнит-тестов)
 | Раздел | Что внутри |
 |---|---|
 | Аутентификация | `AuthProvider`, login, `TokenStorage` на `flutter_secure_storage`. |
@@ -167,9 +138,11 @@
 | Главная | Приветствие + кнопка «Сканировать». |
 | Сканер | `mobile_scanner`, payload `WMSG:<TYPE>:<ID>`. |
 | Карточка тары | Поля тары + список проб внутри. |
+| Офлайн (SQLite) | `Database`, `ContainerDao`, `SampleDao`. |
+| Офлайн (Sync) | `SyncService.pullAll()` (постранично, 50/стр). |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (72), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (73), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -259,6 +232,14 @@
 - **NDK 28.2.13676358**, **Android SDK Platform 36**.
 - **Кириллица в пути** ломает Dart-анализатор.
 - **`flutter pub get`** после каждого `pubspec.yaml`.
+- **`sqflite`:** при миграциях БД использовать `onUpgrade`.
+
+### Рабочий ПК (прокси)
+- **Прокси `Polymetal.ru`** блокирует `dl.google.com` и `plugins.gradle.org`.
+- **Решение:** `work-pc-setup/setup.ps1` (сертификаты в `cacerts`, `maven-local`, правка `flutter_tools`).
+- **Флаг:** `--android-skip-build-dependency-validation` (обходит проверку версий).
+- **Java:** строго JDK 17 (`D:\Dev\jdk-17`), иначе падает `jvmTarget`.
+- **После сборки — вернуть Flutter SDK** (`git checkout -- packages/flutter_tools/gradle/`).
 
 ### Инструменты
 - Git — только терминал.

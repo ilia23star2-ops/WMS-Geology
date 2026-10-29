@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-10-27
+**Дата обновления:** 2026-10-29
 
 ---
 
@@ -26,60 +26,21 @@
 
 ## Ближайший план
 
-**Активная серия:** `feature/2.x-web-v2` (React + backend, продолжение
-web). Серия `2f` — **закрыта полностью**. Следующая — из «Следующих
-серий».
+**Активная серия:** `feature/3.x-offline` (мобильный офлайн).
+Серия `2f` — **закрыта полностью** (история в `PROGRESS.md`).
 
-**План серии 2f (закрыт):**
+**План серии 3.x-offline:**
 
 | # | Заход | Что делает | Статус |
 |---|---|---|---|
-| 2f-1 | Тара | колонки «Н/З», «ТИ», фильтры, edit/delete | ✅ |
-| 2f-2a | Пробы | `SamplesGroupedList` (Н/З × ТИ) | ✅ |
-| 2f-2b | Пробы | edit / dispose / restore / delete | ✅ |
-| 2f-2c | Dev-инфра | логирование API | ✅ |
-| 2f-3a | Справочники | CRUD (ТИ, участки, лаборатории) | ✅ |
-| 2f-4a | Топология | страница `/topology`, CRUD 5 уровней | ✅ |
-| 2f-4b | Поддоны | `PalletDialog` | ✅ |
-| 2f-4c-1 | QR топологии — backend | авто-`qr_code`, `qr.pdf`, `qr-batch` | ✅ |
-| 2f-4c-2 | QR топологии — web | иконки и batch-печать | ✅ |
-| 2f-5a-1 | Backend: каскад ReceiptItem | `DELETE /receipt-items/{id}/` | ✅ |
-| 2f-5a-2 | Web: edit/delete строк приёмки | `ReceiptItemEditDialog` | ✅ |
-| 2f-5b-fix | После импорта с вопросами | сразу на `/receiving/:id/check` | ✅ |
-| 2f-5c-1 | Backend: `PENDING_FILLING` | новый статус тары | ✅ |
-| 2f-5c-2 | Web: `PENDING_FILLING` в UI | метка, фильтр, клик | ✅ |
-| 2f-5c-3 | Web: draft-поля в ContainerEditDialog | участок, ТИ, Н/З | ✅ |
-| 2f-6 | Рейсы | edit/delete/cancel | ✅ |
-| 2f-7a | Партии печати | hard-delete DRAFT/CANCELLED | ✅ |
-| 2f-7b | Сопроводительный PDF | `companion.pdf` | ✅ (откат) |
-| 2f-7c | Web: удаление партий | кнопка «Удалить» | ✅ |
-| 2f-7d | Защита от повторной печати | `label_printed_at`, `force=true` | ✅ |
-| 2f-7e | Название партии печати | `PrintBatch.name` | ✅ |
-| 2f-7f | Фикс: сохранение draft-полей | после fill-samples (см. 1.69) | ✅ |
-| 2f-7h | Компактный реестр тары | иконки статусов, тултипы | ✅ |
-| 2f-8 | Н/З — новая вкладка | создание/правка WorkOrder, связывание, сводка по тарам; force-удаление топологии | ✅ |
-| 2f-8a | Пробы — дерево-таблица | `SamplesTreeTable` (ранее фигурировал как `2f-8`) | ✅ |
-| 2f-9a | Диапазоны: пропуски | `RangeEditDialog`, карандаш | ✅ |
-| 2f-9b | Выбранные пробы | `SELECTED`, черная галочка | ✅ |
-| 2f-9c | Редактирование существующих | управление пробами в таре | ✅ |
-| 2f-10 | Размещение | в ячейку и на пол | ✅ |
-| 2f-11a | Просмотр ячейки | `CellContentsDialog` | ✅ |
-| 2f-11b | Просмотр тары | фильтр, массовый статус | ✅ |
-| 2f-11c | Переходы | из проб/тары в Топологию | ✅ |
-| 2f-12a | Создание в ячейке — backend | `create-in-cell` | ✅ |
-| 2f-12b | Создание в ячейке — web | `CreateInCellDialog` + preview | ✅ |
-| 2f-14a | Аудит тары — backend | `AuditLog`, `GET /containers/{id}/history/` (1.70) | ✅ |
-| 2f-14b | Аудит тары — web | вкладка «История» (`ContainerHistoryTab`) | ✅ |
-| 2f-15 | Предпросмотр этикетки до save | `LocalPreviewDialog` + `previewData` | ✅ |
-| 2f-17a | Рефакторинг FillContainerDialog | `FillContainerContent` | ✅ |
-| 2f-17b | Backend: `print_batch_status` | prefetch, 4 значения (1.71) | ✅ |
-| 2f-17c | Единое окно тары | `ContainerDetailDialog` + иконки печати + выбор партии (1.72) | ✅ |
-| 2f-16 | Batch QR секций | как для ячеек | ⬜ |
+| c-1 | SQLite | Таблицы `containers`, `samples`, DAO, инициализация | ✅ |
+| c-2 | SyncService (Pull) | Постраничная синхронизация с сервера (50/стр) | ✅ |
+| c-3 | SyncQueue (Push) | Очередь изменений, отправка на сервер | ⬜ |
+| c-4 | UI офлайн-режима | Индикатор, кнопка «Обновить», статус | ⬜ |
 
-Легенда: ⬜ не начат · 🟡 в работе · ✅ закрыт · ❌ отменён
+**Сборка на рабочем ПК:** `work-pc-setup/setup.ps1` (см. DECISIONS 1.73).
 
-**Стек web:** Vite 8 + React 19 + TS + MUI 9 + Zustand + TanStack Query +
-React Router 7 + axios + Vitest.
+**Стек mobile:** Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 + sqflite.
 
 ---
 
@@ -92,9 +53,8 @@ React Router 7 + axios + Vitest.
 | 3 | `feature/2.x-sorting` | Помощник сортировки | 3–4 |
 | 4 | `feature/3.x-migration` | Миграция старых этикеток (OCR) | 4–5 |
 | 5 | `feature/3.x-lims` | Прямая интеграция с ЛИМС (Уровень 3) | 5–7 |
-| 6 | `feature/3.x-offline` | Офлайн-режим для мобильного приложения (SQLite + SyncQueue) | 5–7 |
-| 7 | `feature/3.x-deploy` | Сборка web + backend в единый installer | 3–5 |
-| 8 | `feature/2.x-rbac` | Роли и права (детализация по эндпоинтам) | 5–7 |
+| 6 | `feature/3.x-deploy` | Сборка web + backend в единый installer | 3–5 |
+| 7 | `feature/2.x-rbac` | Роли и права (детализация по эндпоинтам) | 5–7 |
 
 ---
 
@@ -241,4 +201,5 @@ React Router 7 + axios + Vitest.
 | `feature/2.1-label-generator` | 2026-10-10 | влита в `main`, архив |
 | `feature/2.x-web` | 2026-10-10 | влита в `main`, архив |
 | `feature/2.x-mobile` | 2026-10-12 | влита в `main`, архив |
-| **`feature/2.x-web-v2`** | — | **активная** |
+| `feature/2.x-web-v2` | 2026-10-27 | влита в `main`, архив |
+| **`feature/3.x-offline`** | — | **активная** (ветка `fix/2.x-mobile-bundle-c-2`) |

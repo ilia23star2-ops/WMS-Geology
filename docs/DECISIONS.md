@@ -771,8 +771,7 @@ ContainerSerializer.print_batch_status — SerializerMethodField.
 ContainerViewSet.get_queryset — prefetch_related(Prefetch( "print_batch_items", queryset=PrintBatchItem.objects .select_related("batch").exclude(batch__status="CANCELLED") .order_by("-batch__created_at"), to_attr="active_print_items")).
 Без N+1.
 
-get_print_batch_status — getattr(obj, "active_print_items", None): если prefetch был — items[0].batch.status, иначе —
-fallback через точечный запрос (одиночный GET).
+get_print_batch_status — getattr(obj, "active_print_items", None): если prefetch был — items[0].batch.status, иначе — fallback через точечный запрос (одиночный GET).
 
 Важно: PrintBatchItem.container имеет
 related_name="print_batch_items" (не дефолтный
@@ -889,6 +888,40 @@ web/src/components/CellContentsDialog.tsx.
 Источник: 2f-17c (+ фиксы в процессе), 2026-10-27.
 Статус: ✅ действует.
 
+1.73. 2026-10-29 — Изоляция настроек сборки для рабочего ПК (Proxy Bypass)
+Решение: для сборки мобильного приложения на рабочем ПК (за
+корпоративным прокси) используется изолированный набор настроек,
+который не коммитится в Git.
+
+Компоненты:
+
+work-pc-setup/ — папка с сертификатами прокси (cert*.pem),
+локальным maven-local (POM + aapt2) и скриптом setup.ps1.
+
+local.properties (в mobile/android/) — машинно-зависимые пути
+к SDK и JDK. В Git не попадает (в .gitignore).
+
+~/.gradle/gradle.properties — глобальная настройка
+org.gradle.java.home для JDK 17. В Git не попадает.
+
+Флаг --android-skip-build-dependency-validation — обходит
+строгую проверку версий AGP/Kotlin/NDK.
+
+Причина:
+
+Прокси Polymetal.ru блокирует dl.google.com и
+plugins.gradle.org.
+
+Прямое редактирование flutter_tools в Flutter SDK ломает
+глобальную установку для всех проектов.
+
+Изоляция позволяет вернуть Flutter SDK в заводское состояние
+одной командой (git checkout).
+
+Где: work-pc-setup/, mobile/android/local.properties,
+~/.gradle/gradle.properties.
+Статус: ✅ действует (только для рабочего ПК).
+
 2. Что не делаем и почему
 Не используем SampleParts. Разделение — вне WMS.
 
@@ -982,6 +1015,9 @@ sync_sample_status_for_container (см. 1.62) — у такой тары
 Не считаем print_batch_status = CANCELLED — только
 последняя не-CANCELLED партия, иначе null (1.71).
 
+Не коммитим сертификаты прокси и локальные Maven-пути
+(см. 1.73). Они живут только в work-pc-setup.
+
 3. Глоссарий
 Данные
 Термин	Что значит
@@ -1035,6 +1071,7 @@ poetry run	Запуск в venv.
 JWT	JSON Web Token.
 drf-spectacular	Генератор OpenAPI 3.
 fpdf2	Библиотека для генерации PDF (чистый Python).
+Proxy Bypass	Набор настроек (work-pc-setup) для сборки за корпоративным прокси. См. 1.73.
 UI
 Термин	Что значит
 Дашборд	Главный экран.
@@ -1098,3 +1135,7 @@ baseUrl deprecated в TS 6, удалён в TS 7. См. 2f-8-fix.
 «ContainerDetailDialog» — не «редактор». Это просмотр +
 действия в одном окне (пробы / редактирование / история).
 См. 1.72.
+
+«Proxy Bypass» — не «взлом прокси». Это легальная настройка
+локального JDK и Maven для работы за корпоративным шлюзом.
+См. 1.73.

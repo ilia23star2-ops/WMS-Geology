@@ -132,3 +132,5 @@ mobile/devtools_options.yaml
 mobile/android/gradle-dist/
 mobile/.gradlewrapperdists
 mobile/build_log.txt
+# Настройки для сборки за корпоративным прокси (не коммитим)
+work-pc-setup/
