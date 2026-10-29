@@ -2,10 +2,13 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class AppDatabase {
+  static final AppDatabase instance = AppDatabase._();
+  AppDatabase._();
+
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  static Future<Database> get database async {
+  Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;

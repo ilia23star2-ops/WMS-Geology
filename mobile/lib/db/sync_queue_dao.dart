@@ -1,7 +1,6 @@
 import 'dart:convert';
 import '../db/database.dart';
 
-/// Модель элемента очереди.
 class SyncQueueItem {
   final int? id;
   final String action; // 'POST', 'PATCH', 'DELETE'
@@ -46,15 +45,13 @@ class SyncQueueItem {
   }
 }
 
-/// DAO для работы с очередью синхронизации.
 class SyncQueueDao {
-  /// Добавить действие в очередь.
   static Future<void> enqueue({
     required String action,
     required String endpoint,
     required Map<String, dynamic> payload,
   }) async {
-    final db = await AppDatabase.database;
+    final db = await AppDatabase.instance.database;
     final item = SyncQueueItem(
       action: action,
       endpoint: endpoint,
@@ -64,9 +61,8 @@ class SyncQueueDao {
     await db.insert('sync_queue', item.toMap());
   }
 
-  /// Получить все ожидающие элементы (PENDING).
   static Future<List<SyncQueueItem>> getPending() async {
-    final db = await AppDatabase.database;
+    final db = await AppDatabase.instance.database;
     final maps = await db.query(
       'sync_queue',
       where: 'status = ?',
@@ -76,15 +72,13 @@ class SyncQueueDao {
     return maps.map((map) => SyncQueueItem.fromMap(map)).toList();
   }
 
-  /// Пометить элемент как успешно синхронизированный (удалить из очереди).
   static Future<void> markAsSynced(int id) async {
-    final db = await AppDatabase.database;
+    final db = await AppDatabase.instance.database;
     await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Пометить элемент как ошибочный.
   static Future<void> markAsError(int id, String error) async {
-    final db = await AppDatabase.database;
+    final db = await AppDatabase.instance.database;
     await db.update(
       'sync_queue',
       {'status': 'ERROR', 'error_message': error},
@@ -93,9 +87,8 @@ class SyncQueueDao {
     );
   }
 
-  /// Сбросить ошибки обратно в PENDING (для повторной попытки).
   static Future<void> resetErrors() async {
-    final db = await AppDatabase.database;
+    final db = await AppDatabase.instance.database;
     await db.update(
       'sync_queue',
       {'status': 'PENDING', 'error_message': null},

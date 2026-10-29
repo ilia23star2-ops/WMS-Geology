@@ -1,31 +1,32 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mobile/db/sync_queue_dao.dart';
-import 'package:mobile/services/api_client.dart';
-import 'package:mobile/services/sync_pusher.dart';
+import 'package:dio/dio.dart';
+import 'package:wms_geology_mobile/db/sync_queue_dao.dart';
+import 'package:wms_geology_mobile/services/api_client.dart';
+import 'package:wms_geology_mobile/services/sync_pusher.dart';
 
 class MockApiClient extends Fake implements ApiClient {
   final List<String> requests = [];
   bool shouldThrow = false;
 
   @override
-  Future<dynamic> post(String path, {dynamic data}) async {
+  Future<Response<T>> post<T>(String path, {Object? data}) async {
     requests.add('POST $path');
     if (shouldThrow) throw Exception('Network error');
-    return null;
+    return Response<T>(requestOptions: RequestOptions(path: path));
   }
 
   @override
-  Future<dynamic> patch(String path, {dynamic data}) async {
+  Future<Response<T>> patch<T>(String path, {Object? data}) async {
     requests.add('PATCH $path');
     if (shouldThrow) throw Exception('Network error');
-    return null;
+    return Response<T>(requestOptions: RequestOptions(path: path));
   }
 
   @override
-  Future<dynamic> delete(String path) async {
+  Future<Response<T>> delete<T>(String path) async {
     requests.add('DELETE $path');
     if (shouldThrow) throw Exception('Network error');
-    return null;
+    return Response<T>(requestOptions: RequestOptions(path: path));
   }
 }
 
