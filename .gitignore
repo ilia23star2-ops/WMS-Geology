@@ -127,3 +127,8 @@ backend/apps/labels/static/fonts/
 
 # Flutter DevTools
 mobile/devtools_options.yaml
+
+# Gradle distributions и артефакты сборки — локальный кэш, не коммитим
+mobile/android/gradle-dist/
+mobile/.gradlewrapperdists
+mobile/build_log.txt
