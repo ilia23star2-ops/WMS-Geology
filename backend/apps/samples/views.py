@@ -11,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.storage.filters import apply_updated_since
 from apps.work_orders.models import WorkOrder
 
 from .catalogs import Laboratory, ResearchType, Site
@@ -167,6 +168,9 @@ class SampleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(
                 work_order_links__work_order_id__in=all_ids,
             ).distinct()
+
+        # c-6b: инкрементальный Pull (Mobile).
+        qs = apply_updated_since(qs, p.get("updated_since"))
 
         return qs
 

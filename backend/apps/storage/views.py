@@ -19,6 +19,7 @@ from apps.users.serializers import AuditLogSerializer
 from apps.users.services import log_audit
 
 from .catalogs import ContainerComment
+from .filters import apply_updated_since
 from .models import (
     Cell,
     Container,
@@ -428,6 +429,9 @@ class ContainerViewSet(viewsets.ModelViewSet):
         draft_rt = p.get("draft_research_type_id")
         if draft_rt:
             qs = qs.filter(draft_research_type_id=draft_rt)
+
+        # c-6b: инкрементальный Pull (Mobile).
+        qs = apply_updated_since(qs, p.get("updated_since"))
 
         return qs
 
