@@ -7,8 +7,14 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from wms_geology.health import health_view
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+
+    # Healthcheck (c-6a) — без авторизации, вне /api/v1/,
+    # чтобы Mobile мог пинговать без JWT.
+    path("health/", health_view, name="health"),
 
     # OpenAPI
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

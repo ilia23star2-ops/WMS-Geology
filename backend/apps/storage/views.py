@@ -393,7 +393,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Container.objects.select_related(
-            "pallet", "floor_room", "container_type", "comment_template",
+            "pallet__cell", "floor_room", "container_type", "comment_template",
             "draft_site", "draft_research_type",
         ).prefetch_related(
             # 2f-17b: статус последней не-CANCELLED партии — без N+1.

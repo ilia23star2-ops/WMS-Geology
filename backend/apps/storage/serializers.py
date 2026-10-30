@@ -134,8 +134,18 @@ class ContainerSerializer(serializers.ModelSerializer):
     draft_research_type_name = serializers.CharField(
         source="draft_research_type.name", read_only=True, default=None,
     )
+    # c-6a: денормализация для Mobile — без отдельных Pull справочников.
+    container_type_name = serializers.CharField(
+        source="container_type.name", read_only=True,
+    )
+    floor_room_name = serializers.CharField(
+        source="floor_room.name", read_only=True, default=None,
+    )
     cell_id = serializers.IntegerField(
         source="pallet.cell_id", read_only=True, default=None,
+    )
+    cell_full_address = serializers.CharField(
+        source="pallet.cell.full_address", read_only=True, default=None,
     )
     # 2f-17b: статус последней не-CANCELLED партии печати.
     # None — тара не в активной партии.
@@ -147,10 +157,13 @@ class ContainerSerializer(serializers.ModelSerializer):
             "id",
             "container_number",
             "container_type",
+            "container_type_name",
             "qr_code",
             "pallet",
             "cell_id",
+            "cell_full_address",
             "floor_room",
+            "floor_room_name",
             "position_on_pallet",
             "status",
             "comment",
@@ -170,7 +183,10 @@ class ContainerSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "created_at",
             "label_printed_at",
+            "container_type_name",
+            "floor_room_name",
             "cell_id",
+            "cell_full_address",
             "print_batch_status",
             "updated_at",
         ]
