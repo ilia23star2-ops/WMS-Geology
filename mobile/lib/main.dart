@@ -1,5 +1,6 @@
 /// Точка входа мобильного приложения.
 ///
+/// - `AppConfig.resolve()` — auto-detect сети (c-6c) до `runApp`.
 /// - `MultiProvider` — регистрирует `AuthProvider`, `ContainerService`,
 ///   `SampleService`, `SyncService`, `SyncPusher`, `SyncProvider`.
 /// - `AuthGate` — переключает экраны: спиннер (при инициализации),
@@ -9,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/sync_provider.dart';
 import 'screens/home_screen.dart';
@@ -18,7 +20,11 @@ import 'services/sample_service.dart';
 import 'services/sync_pusher.dart';
 import 'services/sync_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // c-6c: автоопределение хоста бэкенда до создания ApiClient.
+  // Если --dart-define=API_HOST задан — probe пропускается.
+  await AppConfig.resolve();
   runApp(const WmsGeologyApp());
 }
 
