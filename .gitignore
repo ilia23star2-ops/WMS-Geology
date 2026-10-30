@@ -134,3 +134,6 @@ mobile/.gradlewrapperdists
 mobile/build_log.txt
 # Настройки для сборки за корпоративным прокси (не коммитим)
 work-pc-setup/
+
+# Gradle daemon JVM — машинно-зависимое, настраивается через ~/.gradle/gradle.properties
+mobile/android/gradle/gradle-daemon-jvm.properties
