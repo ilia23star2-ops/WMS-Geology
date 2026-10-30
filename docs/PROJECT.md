@@ -5,7 +5,7 @@
 
 **Шаблон:** ai-development-template v1.0
 **Дата заполнения:** 2026-10-07
-**Дата обновления:** 2026-10-29
+**Дата обновления:** 2026-10-30
 
 ---
 
@@ -46,6 +46,7 @@ Android-приложение для планшетов. QR-коды как ос�
 - `feature/2.1-label-generator` (2026-10-10)
 - `feature/2.x-web` (2026-10-10)
 - `feature/2.x-mobile` (2026-10-12)
+- `feature/2.x-web-v2` (2026-10-27)
 
 **Активные имена веток:**
 - `feature/X.Y-<имя>` — долгоживущая серия
@@ -106,6 +107,7 @@ Android-приложение для планшетов. QR-коды как ос�
 - `provider` — управление состоянием.
 - `flutter_secure_storage` — хранение JWT.
 - `sqflite` — локальная БД (офлайн).
+- `shared_preferences` — история сканов, device_id.
 
 ### Окружение
 
@@ -138,6 +140,8 @@ Android-приложение для планшетов. QR-коды как ос�
     git push
     git branch -d fix/X.Y-bundle
     git push origin --delete fix/X.Y-bundle
+
+**На рабочем ПК — НЕ `git add .`** (см. §Проектные правила, п.15).
 
 ### Backend
 
@@ -194,8 +198,16 @@ Android-приложение для планшетов. QR-коды как ос�
 
     cd mobile
     flutter pub get
-    flutter run            # на подключённом устройстве / эмуляторе
+    flutter run            # дома (дефолт API_HOST=192.168.0.77)
     flutter devices        # список устройств
+
+**На рабочем ПК (USB):**
+
+    # 1. Проброс порта через USB
+    adb reverse tcp:8000 tcp:8000
+
+    # 2. Запуск с API_HOST=127.0.0.1
+    flutter run --dart-define=API_HOST=127.0.0.1 --android-skip-build-dependency-validation
 
 **Проверки:**
 
@@ -203,8 +215,8 @@ Android-приложение для планшетов. QR-коды как ос�
     flutter test
     flutter clean          # очистка сборки
 
-**Backend для mobile** должен слушать `0.0.0.0:8000`, а `config.dart`
-(`_apiHostOverride`) — содержать IP домашнего ПК.
+**Backend для mobile** должен слушать `0.0.0.0:8000` (WiFi) или
+`127.0.0.1:8000` + `adb reverse` (USB).
 
 ### База данных
 
@@ -272,6 +284,7 @@ Android-приложение для планшетов. QR-коды как ос�
 | **PostgreSQL** | **Портативный** (`D:\Dev\pgsql\`) | **Docker Compose** |
 | SSH к GitHub | `ssh.github.com:443` | `github.com:22` |
 | Права админа | ❌ нет | ✅ есть |
+| Интернет | Прокси `Polymetal.ru` | Прямой |
 
 **Параметры БД одинаковые на обеих машинах:**
 - БД: `wms_geology`
@@ -320,7 +333,7 @@ Android-приложение для планшетов. QR-коды как ос�
 | 2.x-web | ✅ | React: логин, реестры, печать, справочники |
 | 2.x-mobile | ✅ | Flutter: auth, сканер QR, карточка тары, 32 теста |
 | 2.x-web-v2 | ✅ | Приёмка, топология, полный CRUD, QR топологии, 779 тестов |
-| **3.x-offline** | 🟡 **текущая** | Мобильный офлайн: SQLite, SyncService, SyncQueue |
+| **3.x-offline** | 🟡 **текущая** | Мобильный офлайн: SQLite, SyncService, SyncQueue, Deferred Login, USB |
 | 2.x-lab-portal | ⬜ | Портал лабораторий |
 | 2.x-lifecycle | ⬜ | Пересмотр статусов Container / Sample |
 | 2.x-sorting | ⬜ | Помощник сортировки |
@@ -346,6 +359,7 @@ Android-приложение для планшетов. QR-коды как ос�
 - Существующие этикетки не переклеиваются.
 - Старый ID → `Sample.legacy_data` (JSONB).
 - Payload: `WMSG:<TYPE>:<id>` (внутренний ID, не номер).
+- **QR offline-токена** — base64-JSON `{token, purpose, expires_at, user}`.
 
 ### Домен (ключевое)
 
@@ -418,7 +432,7 @@ Android-приложение для планшетов. QR-коды как ос�
 | Файл | Версия / дата | Примечание |
 |---|---|---|
 | `DATABASE.md` | v7 (2026-10-16) | + PENDING_FILLING, QR topology, unique снят, каскад |
-| `API.md` | 2026-10-16 | + qr.pdf, qr-batch, delete receipt-items, PENDING_FILLING |
+| `API.md` | 2026-10-16 | + qr.pdf, qr-batch, delete receipt-items, PENDING_FILLING, offline-login |
 | `SCENARIOS.md` | v4 | Сценарии приёмки, выборки, портала |
 | `UI.md` | v2 (2026-10-10) | Дизайн-система, MUI |
 | `TEMPLATES-PROJECT.md` | 2026-10-07 | Дополнения к шаблонам |
@@ -445,7 +459,7 @@ Android-приложение для планшетов. QR-коды как ос�
 12. **Web: файлы** — компоненты, страницы, хуки. Не копировать логику
     из backend, использовать API.
 13. **Mobile-команды** — `cd mobile && flutter ...`. Backend для mobile
-    должен слушать `0.0.0.0:8000`.
+    должен слушать `0.0.0.0:8000` (WiFi) или `127.0.0.1:8000` + `adb reverse` (USB).
 14. **Долгие загрузки — только с видимым прогрессом.** Если заход
     включает скачивание объёмного файла (SDK, дистрибутив Gradle,
     Maven-артефакт > 50 МБ) через прокси или медленный канал,
@@ -453,3 +467,18 @@ Android-приложение для планшетов. QR-коды как ос�
     (Python/`while`-цикл) в том же заходе, до старта загрузки.
     Минимум: текущий размер, скорость роста, признак «застряло»
     (нет роста 2–3 мин). Без монитора долгие загрузки не запускаются.
+15. **На рабочем ПК — не делать `git add .`.** Явные имена файлов.
+    Иначе попадут машинные `mobile/android/*` (maven-local, `file:///`,
+    `checkRevocation`) и сломают сборку дома.
+16. **`adb reverse` сбрасывается** при переподключении USB, после
+    `adb kill-server`/`start-server`, после перезагрузки планшета/ПК.
+    Повторять `adb reverse tcp:8000 tcp:8000` каждый раз.
+17. **`--dart-define=API_HOST`** — на работе `127.0.0.1` (USB), дома
+    дефолт `192.168.0.77` (WiFi). Не хардкодить IP в `config.dart`.
+18. **Не использовать `hide Container`** в файлах без модели `Container`
+    (например, в `home_screen.dart` нужен Flutter-виджет `Container`).
+19. **NDK r28c**, **Platform 36**, **Build-tools 36.0.0** — лежат в
+    `D:\Dev\android-sdk`. Не перекачивать на рабочем ПК (медленно).
+    Источник: `wms-bundle/install_bundle.ps1` (распаковка с флешки).
+20. **`D:\Dev\maven-local`** и **`work-pc-setup/`** — нужны для каждой
+    сборки на рабочем ПК. Не удалять.

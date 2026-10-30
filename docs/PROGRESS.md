@@ -9,7 +9,7 @@
 
 **Дата:** 2026-10-28 — активна.
 **Ветка:** `fix/2.x-mobile-bundle-c-2`.
-**Контекст:** Офлайн-режим для мобильного приложения. SQLite + SyncQueue.
+**Контекст:** Офлайн-режим для мобильного приложения. SQLite + SyncQueue + Deferred Offline Login + USB-режим. Backend на старте серии — 779 тестов.
 
 ### Что закрыто (mobile)
 
@@ -19,17 +19,76 @@
   - `mobile/test/services/sync_service_test.dart` — 4 теста (пустой ответ, одна страница, несколько страниц, ошибка).
   - **Сборка:** успешно собрано на домашнем ПК (Flutter 3.47.6, JDK 17, Gradle 9.3.1).
   - **Рабочий ПК:** подготовлена папка `work-pc-setup` для обхода прокси (сертификаты, `maven-local`, скрипт `setup.ps1`).
+- ✅ **`c-3`** (2026-10-29) — `SyncQueue` (таблица в SQLite) + `SyncQueueDao` + `SyncPusher` (POST/PATCH/DELETE).
+  - `mobile/lib/db/sync_queue_dao.dart` — написан.
+  - `mobile/lib/services/sync_pusher.dart` — написан.
+  - `mobile/test/services/sync_pusher_test.dart` — 3 теста.
+- ✅ **`c-4`** (2026-10-29) — `SyncProvider` (`ChangeNotifier`), `SyncScreen` (Pull/Push/Sync All + статистика), кнопка «Синхронизация» на `HomeScreen` с бейджем.
+  - `mobile/lib/providers/sync_provider.dart` — написан.
+  - `mobile/lib/screens/sync_screen.dart` — написан.
+  - `mobile/test/providers/sync_provider_test.dart` — 7 тестов.
+- ✅ **`c-4.5`** (2026-10-30) — `Deferred Offline Login`:
+  - QR содержит **base64-JSON** `{token, purpose, expires_at, user}` (роль из QR — не `guest`).
+  - `AuthService` — `savePendingOfflineToken` / `getPendingOfflineToken` / `clearPendingOfflineToken`.
+  - `AuthProvider.loginWithQr` (попытка online → fallback на pending), `_tryExchangePendingToken` (обмен при `initialize`).
+  - `QrLoginScreen` — парсинг base64-JSON с fallback на raw-строку.
+  - Плашки на `HomeScreen`: «Офлайн-режим» (красная, `isOffline`) / «Временный доступ» (оранжевая, `isPendingOffline`).
+  - `DeviceIdService` — UUID v4 на `shared_preferences` (без пакета `uuid`).
+  - `ScanHistoryService` — история 10 последних тар.
+  - `ContainerService.fetchById` — fallback на `ContainerDao.getById` при сетевой ошибке.
+  - `SampleService.fetchByContainerId` — fallback на `SampleDao.getByContainerId`.
+  - `ApiException.isNetworkError` + `AuthProvider._isNetworkError` (правильная классификация).
+  - Миграция `users/0003_*` (поле `qr_svg` в `AccessToken`).
+- ✅ **`c-4.6`** (2026-10-30) — USB-режим:
+  - `adb reverse tcp:8000 tcp:8000` → планшет видит `127.0.0.1:8000` ПК через USB.
+  - `flutter run --dart-define=API_HOST=127.0.0.1` — на работе (USB), дома дефолт `192.168.0.77`.
+  - `config.dart`: `String.fromEnvironment('API_HOST', defaultValue: '192.168.0.77')`.
+  - SQLite `version = 4` (миграция `onUpgrade` = `DROP TABLE` + `createTables`).
+  - Fix `home_screen.dart`: без `hide Container`, `_openScanner` с локальным `ChangeNotifierProvider`, `_openContainerById` через `ContainerService`.
+  - **Успешная сборка на рабочем ПК** (прокси): NDK r28c, Platform 36, Build-tools 36.0.0, `maven-local` (aapt2, aapt2-proto, kotlin-dsl, kotlin.jvm), сертификаты `Polymetal.ru` + `storage.flutter-io.cn`, `FLUTTER_STORAGE_BASE_URL=storage.flutter-io.cn`.
+
+### Что закрыто (web)
+
+- ✅ **`3.x-offline-auth`** — «Коды доступа»: создание токенов, просмотр QR для активных, отзыв. `AccessTokensPage`.
+  - Иконка QR скрыта для неактивных (`is_active && qr_svg`).
+  - `qr_svg` хранится в БД и доступен для повторного показа.
+
+### Что закрыто (backend)
+
+- ✅ **`3.x-offline-auth`** — `AccessToken` (`web_login` / `offline`, TTL 14 ч, привязка к `device_id`).
+- ✅ `POST /auth/code-login/` — одноразовый код → JWT.
+- ✅ `POST /auth/offline-login/` — offline-токен → JWT, привязка к `device_id` (второе устройство → 409).
+- ✅ `AccessToken.qr_svg` — TextField, заполняется при `create`, отдаётся в `list`.
+- ✅ `make_access_token_qr_svg(purpose, raw, expires_at, user)` — base64-JSON.
 
 ### В работе
 
-- 🟡 **`c-3`** — Push-синхронизация (`SyncQueue`).
-- 🟡 **`c-4`** — UI для офлайн-режима.
+- 🟡 **`c-6a`** — backend: health + денормализация сериализаторов (следующая сессия).
+- 🟡 **`c-6b`** — backend: инкрементальный Pull (`Container.updated_at` + `?updated_since=`).
+- 🟡 **`c-6c`** — mobile: auto-detect сети.
+- 🟡 **`c-6d`** — mobile: scanWindow (мёртвая зона).
+- 🟡 **`c-6e`** — mobile: баннер pending + бейдж сети.
+
+### Что дальше
+
+Следующие фазы (см. `PLAN.md`):
+- `c-7a`..`c-7g` — экраны «как в вебе» (карточка тары 3 вкладки, списки тар/проб, ячейка, WorkOrders полный CRUD, offline-печать).
+- `c-8a`..`c-8e` — изменения в офлайне (PATCH статусов, размещение, auto-sync USB).
+- `c-5` — файловая синхронизация (sneakernet через флешку) — отложено.
 
 ### Метрики
 
-- **Mobile: 36 юнит-тестов** (было 32, +4 `sync_service_test.dart`).
-- Backend: 779 тестов.
-- Web: 24 юнит-теста.
+- **Mobile: 43 юнит-теста** (было 32 в серии `2.x-mobile`; +11 за серию `3.x-offline`: 4 `sync_service`, 3 `sync_pusher`, 7 `sync_provider` — с учётом переделок).
+- Backend: 779 тестов (без изменений).
+- Web: 24 юнит-теста (без изменений).
+
+### Инфраструктура
+
+- **Рабочий ПК:** NDK r28c, Platform 36, Build-tools 36.0.0, JDK 17, Gradle 9.3.1.
+- **`maven-local`:** aapt2, aapt2-proto, kotlin-dsl 6.5.2, kotlin.jvm 2.2.20.
+- **Сертификаты:** Polymetal.ru + storage.flutter-io.cn в `D:\Dev\jdk-17\lib\security\cacerts`.
+- **`work-pc-setup/`:** сертификаты, maven-local, `setup.ps1`, `flutter_tools_*.gradle.kts`.
+- **`D:\Dev\wms-bundle\`:** `install_bundle.ps1` + NDK + platform + build-tools + aapt2-proto.
 
 ---
 
@@ -305,6 +364,8 @@ Web первый, Mobile по требованию. Backend на старте с
   зелёная) + инвалидация кэша `containers` / `container` /
   `container-history` после add-containers. `CellContentsDialog` —
   клик по таре → `ContainerDetailDialog`. См. 1.72.
+- ✅ **`3.x-offline-auth`** — web: `AccessTokensPage` (создание,
+  просмотр QR, отзыв).
 
 ### Что закрыто (docs)
 
@@ -331,6 +392,10 @@ Web первый, Mobile по требованию. Backend на старте с
 - ✅ **`docs/2f-14-17-closed`** (2026-10-27) — CONTEXT / PLAN /
   PROGRESS / TESTING / DECISIONS (1.70 аудит тары, 1.71
   print_batch_status, 1.72 ContainerDetailDialog).
+- ✅ **`docs/3.x-offline-c-2-closed`** (2026-10-29) — CONTEXT / PLAN /
+  PROGRESS / DECISIONS (1.73 Proxy Bypass) / PROJECT (правило 14).
+- ✅ **`docs/3.x-offline-c-4.6-closed`** (2026-10-30) — CONTEXT / PLAN /
+  PROGRESS / DECISIONS / PROJECT.
 
 ### В работе
 
@@ -342,48 +407,22 @@ Web первый, Mobile по требованию. Backend на старте с
 
 Серия `2f` — закрыта. Следующие серии (см. PLAN.md):
 
-- ⬜ **`3.x-offline`** — мобильный офлайн (SQLite + SyncQueue).
+- ⬜ **`3.x-offline`** (продолжение: `c-6` / `c-7` / `c-8`).
 - ⬜ **`2.x-lifecycle`** — пересмотр статусов Container / Sample.
 - ⬜ **`2.x-rbac`** — роли и права.
 - ⬜ **`2.x-lab-portal`** — портал лабораторий.
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 69.
-  - backend: `bundle-1`, `bundle-2`, `bundle-5`, `bundle-6a`,
-    `bundle-6b`, `bundle-7a-1`, `bundle-7a-2`, `bundle-7a-2b`,
-    `receiving-1a`, `receiving-1a-2`, `receiving-1b`,
-    `receiving-1c`, `receiving-3a`, `receiving-3b-1`,
-    `receiving-3b-1-2a`, `receiving-3b-2`, `receiving-3c`,
-    `receiving-3d-3-fix-2`, `3f-1`, `3f-1b`, `2f-1`, `2f-2b`,
-    `2f-4c-1`, `2f-5a-1`, `2f-5c-1`, `2f-10`, `2f-11c`, `2f-12a`,
-    `2f-8 (backend)`, `2f-8-fix`, `2f-8-fix-2`, `2f-14a`, `2f-17b`.
-  - web: `bundle-7a-3`, `bundle-7a-4ab`, `bundle-7a-4c-1`,
-    `bundle-7a-4c-2a`, `bundle-7a-4c-2b`, `bundle-7a-4c-2c`,
-    `receiving-3d-1`, `receiving-3d-2`, `receiving-3d-3`,
-    `3f-2`, `2f-1`, `2f-2a`, `2f-2b`, `2f-2c`,
-    `2f-3a`, `2f-4a`, `2f-4b`, `2f-4c-2`, `2f-5a-2`,
-    `2f-5b-fix`, `2f-5c-2`, `2f-5c-3`, `2f-7h`, `2f-8a`,
-    `2f-9a`, `2f-9b`, `2f-9c`, `2f-10`, `2f-11a`, `2f-11b`,
-    `2f-11c`, `2f-12b`, `2f-8`, `2f-8-fix (tsconfig)`, `2f-15`,
-    `2f-14b`, `2f-17a`, `2f-17c`.
-  - docs: 7 (`...-update` … `...-update-5`, `docs/2f-8-closed`,
-    `docs/2f-14-17-closed`).
-- «Не норм» на первом прогоне: 4.
-  - 3f-1: `FileResponse` не имеет `.content` — читать
-    `streaming_content`.
-  - 2f-2b: `get_object()` учитывает фильтры `get_queryset`
-    (утилизированные пробы → 404). Решено `_get_sample_any`.
-  - 2f-3a / 2f-4b / 2f-4c-2 / 2f-5c-3: `Object.keys(...) as Type[]`
-    в JSX ломает TS-парсер; вынесено в константы модуля.
-  - 2f-4a: двойной костыль `setDialogKind` при edit комнаты —
-    исправлено в финале.
+- Заходов закрыто (с 2026-10-12): 75.
+  - backend: 34 (список — в `docs/2f-14-17-closed` и `docs/3.x-offline-c-2-closed`).
+  - web: 37 (список — там же + `3.x-offline-auth`).
+  - docs: 9.
+- «Не норм» на первом прогоне: 5 (см. `docs/2f-14-17-closed`).
 - Откатов: 0.
-- **Backend: 779 тестов** (было 767 в `docs/2f-8-closed`; +4
-  `test_container_history`, +4 `test_container_print_status`,
-  +4 fix `test_history_after_create`).
+- **Backend: 779 тестов** (без изменений).
 - **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 32 юнит-теста** (без изменений).
+- **Mobile: 43 юнит-теста** (было 32, +11 за серию `3.x-offline`).
 
 ---
 

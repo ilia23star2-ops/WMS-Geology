@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-10-29
+**Дата обновления:** 2026-10-30
 
 ---
 
@@ -14,26 +14,40 @@
 **Текущий заход:** серия `c` (мобильный офлайн).
 - **`c-1`** — SQLite (таблицы `containers`, `samples`, DAO, инициализация). ✅
 - **`c-2`** — `SyncService` (Pull-синхронизация с сервера). ✅ **Закрыт 2026-10-29**.
-- **`c-3`** — Push-синхронизация (`SyncQueue` для отправки изменений). ⬜
-- **`c-4`** — UI для офлайн-режима (кнопка «Обновить», статус синхронизации). ⬜
+- **`c-3`** — `SyncQueue` + `SyncPusher` (Push-синхронизация). ✅ **Закрыт 2026-10-29**.
+- **`c-4`** — `SyncProvider` + `SyncScreen` + кнопка на главном. ✅ **Закрыт 2026-10-29**.
+- **`c-4.5`** — Deferred Offline Login (QR с base64-JSON, pending-токены, роли из QR). ✅ **Закрыт 2026-10-30**.
+- **`c-4.6`** — USB-режим (`adb reverse`, `--dart-define=API_HOST`, SQLite v4, fallback `SampleService`). ✅ **Закрыт 2026-10-30**.
+- **`c-6a`..`c-6e`** — фундамент (health, денормализация, инкр. Pull, auto-detect, scanWindow, баннер pending). ⬜
+- **`c-7a`..`c-7g`** — экраны «как в вебе» (карточка тары, списки, ячейка, WorkOrders, offline-печать). ⬜
+- **`c-8a`..`c-8e`** — изменения в офлайне (`sync_queue`, автотриггер). ⬜
+
+**Отложено:** `c-5` — файловая синхронизация (sneakernet через флешку).
 
 **Предыдущая серия:** `2f` — закрыта полностью (см. `PROGRESS.md`).
 
 **Что готово (mobile):**
-- Логин, logout, refresh токенов.
+- Логин (пароль + QR), logout, refresh токенов.
 - Сканер QR, карточка тары, список проб внутри.
 - **SQLite (`c-1`)**: локальная БД (`ContainerDao`, `SampleDao`).
 - **SyncService (`c-2`)**: постраничная Pull-синхронизация (по 50 записей), DI для тестов.
+- **SyncQueue (`c-3`)**: очередь POST/PATCH/DELETE + `SyncPusher`.
+- **SyncScreen (`c-4`)**: экран синхронизации с индикатором и статистикой.
+- **Deferred Offline Login (`c-4.5`)**: QR = base64-JSON `{token, purpose, expires_at, user}`. Без сети — «Временный доступ» (оранжевая плашка), роль из QR.
+- **История сканов**: последние 10 отсканированных тар (`shared_preferences`).
+- **Офлайн-карточка (`c-4.6`)**: `ContainerService` / `SampleService` fallback на DAO при ошибке сети.
 
 **Что нужно добавить (mobile):**
-- Push-синхронизация (`SyncQueue`).
-- UI для офлайн-режима (индикатор, кнопка синхронизации).
+- `c-6a`..`c-6e` — фундамент.
+- `c-7a`..`c-7g` — экраны «как в вебе».
+- `c-8a`..`c-8e` — изменения в офлайне.
 
 **Сборка на рабочем ПК (прокси):**
-- Используется `work-pc-setup/setup.ps1` (сертификаты, `maven-local`, правка `flutter_tools`).
+- Используется `work-pc-setup/setup.ps1` + `wms-bundle/install_bundle.ps1` (сертификаты, `maven-local`, NDK, platform, build-tools).
 - Флаг `--android-skip-build-dependency-validation`.
 - JDK 17 (`D:\Dev\jdk-17`), Gradle 9.3.1.
-- **После успешной сборки — вернуть Flutter SDK в заводское состояние** (`git checkout`).
+- `FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`.
+- **После успешной сборки — очистка** `wms-bundle/` (NDK и т.д. уже распакованы).
 
 **Предыдущие заходы:**
 - `receiving-3` (3a → 3d-3): экран сверки, `/questions` удалён,
@@ -62,6 +76,13 @@
 - **Приёмка:** `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`.
 - **Печать:** `pdf`, `mark-printed`, `companion.pdf`, `label_printed_at`.
 
+**Что готово (backend, серия 3.x-offline):**
+- `POST /auth/offline-login/` — обмен offline-токена на JWT, привязка к `device_id`.
+- `POST /auth/code-login/` — одноразовый код → JWT.
+- `AccessToken.qr_svg` — TextField, заполняется при `create`, отдаётся в списке.
+- `make_access_token_qr_svg(purpose, raw, expires_at, user)` — base64-JSON.
+- Миграция `users/0003_*` (поле `qr_svg`).
+
 **Что готово (web):**
 - Логин, layout, главная, тара, пробы, печать, справочники, топология, приёмка.
 - **Тара:** DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание заготовок, заполнение (с пропусками/выбранными), предпросмотр, геометка в Топологию, иконки печати по `print_batch_status` (4 цвета).
@@ -71,14 +92,14 @@
 - **Единое окно тары:** `ContainerDetailDialog` (шапка + 3 вкладки: Пробы / Редактирование / История + кнопки `[Предпросмотр] [Разместить / Местоположение]`) — см. 1.72.
 - **Предпросмотр:** `ContainerPreviewDialog` — 2 вкладки (Этикетка / QR). Открывается из шапки `ContainerDetailDialog`.
 - **Партия печати:** `AddToPrintBatchDialog` — выбор «Новая / Существующая (DRAFT)».
+- **Коды доступа (`3.x-offline-auth`):** `AccessTokensPage` — создание токенов, просмотр QR активных (иконка), отзыв.
 
 **Backend:** 779 тестов.
 **Web:** 24 юнит-теста.
-**Mobile:** 36 юнит-тестов.
+**Mobile:** 43 юнит-теста.
 
 **Ближайшая работа:**
-- `c-3` — Push-синхронизация (`SyncQueue`).
-- `c-4` — UI для офлайн-режима.
+- `c-6a` — backend health + денормализация сериализаторов.
 
 ---
 
@@ -129,17 +150,19 @@
 | Приёмка | Список, детали, сверка, акт. |
 | Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`, force-удаление. |
 | Карточка тары | `ContainerDetailDialog` (Пробы / Редактирование / История + Предпросмотр / Разместить / Местоположение). |
+| Коды доступа | `AccessTokensPage` — создание, просмотр QR, отзыв. |
 
-### Mobile (Flutter, 36 юнит-тестов)
+### Mobile (Flutter, 43 юнит-теста)
 | Раздел | Что внутри |
 |---|---|
-| Аутентификация | `AuthProvider`, login, `TokenStorage` на `flutter_secure_storage`. |
+| Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage` на `flutter_secure_storage`. |
 | API | `ApiClient` (Dio), JWT-интерцептор. |
-| Главная | Приветствие + кнопка «Сканировать». |
+| Главная | Приветствие + кнопки «Сканировать», «Синхронизация», история тар, плашки «Офлайн-режим» / «Временный доступ». |
 | Сканер | `mobile_scanner`, payload `WMSG:<TYPE>:<ID>`. |
 | Карточка тары | Поля тары + список проб внутри. |
-| Офлайн (SQLite) | `Database`, `ContainerDao`, `SampleDao`. |
-| Офлайн (Sync) | `SyncService.pullAll()` (постранично, 50/стр). |
+| Офлайн (SQLite) | `Database` v4, `ContainerDao`, `SampleDao`, `SyncQueueDao`. |
+| Офлайн (Sync) | `SyncService.pullAll()` (Pull, 50/стр), `SyncPusher.pushAll()` (Push). |
+| Офлайн (UI) | `SyncProvider`, `SyncScreen`, `Deferred Offline Login`, `ScanHistoryService`, `DeviceIdService`. |
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS` (73), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
@@ -177,7 +200,7 @@
 - Аутентификация — JWT (`Authorization: Bearer <access>`).
 - Pagination — `PageNumberPagination`, `PAGE_SIZE=50`.
 - **Ключевой фильтр** `?work_order=` — учитывает linked_order.
-- Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`, `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`, `add-containers`, `remove-container`, `mark-ready`, `pdf`, `mark-printed`, `bulk-create`, `fill-samples`, `upload`, `import-shipment`, `conflicts`, `resolve-conflicts`, `check`, `act`, `dispose`, `restore`, `qr.pdf`, `qr-batch`, `bulk-place`, `create-in-cell`, `companion.pdf`, `history` (новый, 2f-14a).
+- Custom actions: `link`, `complete`, `resolve`, `activate`, `pick`, `add-from-pick-list`, `execute`, `confirm`, `cancel`, `assemble`, `add-containers`, `remove-container`, `mark-ready`, `pdf`, `mark-printed`, `bulk-create`, `fill-samples`, `upload`, `import-shipment`, `conflicts`, `resolve-conflicts`, `check`, `act`, `dispose`, `restore`, `qr.pdf`, `qr-batch`, `bulk-place`, `create-in-cell`, `companion.pdf`, `history` (2f-14a), `revoke`, `export` (планируется).
 - **URL-схема:** `/api/v1/storage/...`, `/api/v1/labels/...`, остальные приложения — **без префикса**.
 
 ### Домен
@@ -220,26 +243,36 @@
 - **Force-удаление тары:** при 409 ошибке `ContainersPage` предлагает удалить вместе с пробами (`?force=true`).
 - **`tsconfig.json` без `baseUrl`:** `paths` работают от самого tsconfig (TS ≥4.4). При миграции на TS 7 — обязательное требование.
 - **`AddToPrintBatchDialog` инвалидирует `["containers"]` / `["container"]` / `["container-history"]`** после add-containers — иначе иконка печати не обновится (2f-17c-fix).
+- **`AccessTokensPage`:** `qr_svg` показывать только для `is_active && qr_svg`.
 
 ### Mobile
-- **URL API:** `config.dart`, `_apiHostOverride` — в git.
-- **Backend должен слушать `0.0.0.0:8000`**.
+- **URL API:** `config.dart` — `String.fromEnvironment('API_HOST', defaultValue: '192.168.0.77')`. Дома дефолт, на работе `--dart-define=API_HOST=127.0.0.1`.
+- **Backend должен слушать `0.0.0.0:8000`** (WiFi) или `127.0.0.1:8000` + `adb reverse` (USB).
 - **`DJANGO_ALLOWED_HOSTS`** должен включать IP.
 - **Dio + `post`/`patch`:** обязательно `Content-Type: application/json`.
-- **`flutter_secure_storage`** для JWT.
+- **`flutter_secure_storage`** для JWT + `cached_user_json` + `pending_offline_token` + `pending_offline_expiry` + `pending_offline_user_json`.
+- **`shared_preferences`** — `scan_history_ids`, `device_id`.
 - **`mobile_scanner`:** `DetectionSpeed.noDuplicates`.
-- **Конфликт имён `Container`:** `import 'package:flutter/material.dart' hide Container;`.
+- **Конфликт имён `Container`:** `import 'package:flutter/material.dart' hide Container;` — **только в файлах с моделью `Container`** (например, `container_detail_screen.dart`). В `home_screen.dart` — **без `hide`** (нужен Flutter-виджет `Container` для плашек).
+- **`ContainerProvider`:** только локально в `ScannerScreen` через `ChangeNotifierProvider` (не в `MultiProvider`).
+- **`_openContainerById`:** через `ContainerService.fetchById`, не через `ContainerProvider`.
+- **Dio 5.x:** `DioExceptionType` расширяется, в `switch` — `default`.
+- **`ApiException.isNetworkError`** — выставляется в `_toApiException` по `DioExceptionType`, используется в `AuthProvider._isNetworkError`.
+- **SQLite `version = 4`** в `AppDatabase`, `onUpgrade` = `DROP TABLE` + пересоздание.
+- **`samples` схема:** `id, container_id, updated_at, data`. Без `container_id` — `no column named container_id`.
 - **NDK 28.2.13676358**, **Android SDK Platform 36**.
 - **Кириллица в пути** ломает Dart-анализатор.
 - **`flutter pub get`** после каждого `pubspec.yaml`.
-- **`sqflite`:** при миграциях БД использовать `onUpgrade`.
+- **Kotlin daemon warnings** (`Could not close incremental caches`, `different roots`) — не fatal, build succeeds.
 
 ### Рабочий ПК (прокси)
 - **Прокси `Polymetal.ru`** блокирует `dl.google.com` и `plugins.gradle.org`.
-- **Решение:** `work-pc-setup/setup.ps1` (сертификаты в `cacerts`, `maven-local`, правка `flutter_tools`).
-- **Флаг:** `--android-skip-build-dependency-validation` (обходит проверку версий).
-- **Java:** строго JDK 17 (`D:\Dev\jdk-17`), иначе падает `jvmTarget`.
-- **После сборки — вернуть Flutter SDK** (`git checkout -- packages/flutter_tools/gradle/`).
+- **Решение:** `work-pc-setup/setup.ps1` + `wms-bundle/install_bundle.ps1` + `--android-skip-build-dependency-validation` + JDK 17 + Gradle 9.3.1.
+- **`FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — для engine-артефактов Flutter.
+- **Сертификаты** `storage.flutter-io.cn` + `Polymetal.ru` (включая корневой) в `D:\Dev\jdk-17\lib\security\cacerts`.
+- **Не делать `git add .`** — попадут машинные `mobile/android/*` (maven-local, `file:///`, `checkRevocation`).
+- **`adb reverse` сбрасывается** при переподключении USB, после `adb kill-server`/`start-server`, после перезагрузки планшета/ПК. Повторять `adb reverse tcp:8000 tcp:8000`.
+- **После успешной сборки — вернуть Flutter SDK** (`git checkout -- packages/flutter_tools/gradle/`) и удалить `wms-bundle/`.
 
 ### Инструменты
 - Git — только терминал.
@@ -251,6 +284,7 @@
 - **`ipconfig`** в MSYS2 ломается на кодировке.
 - **`git checkout -b` может упасть** на «already exists».
 - **`tail` буферизует вывод** — для прогресса `pytest` без пайпа или `| tee`.
+- **`pkill`** — нет в Git Bash, только `taskkill //F //IM <name>`.
 
 ---
 
@@ -261,6 +295,7 @@
 - Утверждённые решения в `DECISIONS.md`.
 - Файл `.env` (только `.env.example`).
 - Ветка `fix/2.x-web-v2-bundle-7` (WIP) — не мержить, не удалять.
+- `work-pc-setup/`, `wms-bundle/`, `D:\Dev\maven-local`, `D:\Dev\android-sdk\ndk\28.2.13676358` — машинные настройки, не удалять.
 
 ---
 
@@ -273,6 +308,7 @@
 - Все web-команды — `cd web && npm ...`.
 - Все mobile-команды — `cd mobile && flutter ...`.
 - Docs — отдельной пачкой.
+- **Рабочий ПК:** не делать `git add .`. Явные имена файлов.
 
 ---
 
