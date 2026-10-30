@@ -33,7 +33,8 @@ class UserProfile(models.Model):
         db_table = "user_profiles"
 
     def __str__(self):
-        return f"{self.user.username} ({self.role})"
+        role_name = self.role.name if self.role else "без роли"
+        return f"{self.user.username} ({role_name})"
 
 
 class AuditLog(models.Model):

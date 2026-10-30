@@ -40,14 +40,24 @@ def hash_access_token(raw_token: str) -> str:
 
 
 def log_audit(
-    user, action: str, entity_type: str, entity_id: int, new_value: dict = None
+    user,
+    action: str,
+    entity_type: str,
+    entity_id: int,
+    old_value: dict | None = None,
+    new_value: dict | None = None,
 ):
-    """Пишет запись в журнал аудита."""
+    """Пишет запись в журнал аудита.
+
+    `old_value` восстанавливается в сигнатуре (регресс): DECISIONS 1.70
+    фиксирует `old_value` + `new_value` (diff при UPDATE/DELETE).
+    """
     AuditLog.objects.create(
         user=user,
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,
+        old_value=old_value,
         new_value=new_value,
     )
 

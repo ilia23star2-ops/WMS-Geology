@@ -75,7 +75,8 @@ def test_create_web_login_token_for_self(worker_client, worker_user):
     assert data["purpose"] == "web_login"
     assert data["user"] == worker_user.pk
     assert "raw_token" in data
-    assert len(data["raw_token"]) == 64  # 32 байта hex
+    # c-4.5: secrets.token_urlsafe(32) → 43 символа (base64url без padding).
+    assert len(data["raw_token"]) == 43
     # TTL ~ 15 мин
     assert data["is_active"] is True
 
@@ -102,7 +103,7 @@ def test_create_returns_qr_svg(worker_client):
     assert response.status_code == 201
     assert "qr_svg" in response.data
     assert response.data["qr_svg"].startswith("<?xml")
-    # raw встроен в QR — payload начинается с WMSG:CODE:
+    # raw встроен в QR — payload base64(JSON).
     raw = response.data["raw_token"]
     # SVG содержит путь для QR, но не сам raw (это картинка).
     # Проверяем, что хотя бы валидный SVG и содержит <svg
@@ -112,22 +113,32 @@ def test_create_returns_qr_svg(worker_client):
 
 @pytest.mark.django_db
 def test_qr_svg_payload_web_login(worker_user):
-    """3.x-offline-auth-b: payload web_login → WMSG:CODE:<raw>."""
+    """c-4.5: payload web_login → base64-JSON {token, purpose, expires_at, user}."""
     from apps.users.services import make_access_token_qr_svg
 
     raw = "a" * 64
-    svg = make_access_token_qr_svg("web_login", raw)
+    svg = make_access_token_qr_svg(
+        "web_login",
+        raw,
+        expires_at=timezone.now() + timedelta(minutes=15),
+        user=worker_user,
+    )
     assert svg.startswith("<?xml")
     assert "<svg" in svg
 
 
 @pytest.mark.django_db
 def test_qr_svg_payload_offline(worker_user):
-    """3.x-offline-auth-b: payload offline → WMSG:OFFLINE:<raw>."""
+    """c-4.5: payload offline → base64-JSON {token, purpose, expires_at, user}."""
     from apps.users.services import make_access_token_qr_svg
 
     raw = "b" * 64
-    svg = make_access_token_qr_svg("offline", raw)
+    svg = make_access_token_qr_svg(
+        "offline",
+        raw,
+        expires_at=timezone.now() + timedelta(hours=14),
+        user=worker_user,
+    )
     assert svg.startswith("<?xml")
     assert "<svg" in svg
 
