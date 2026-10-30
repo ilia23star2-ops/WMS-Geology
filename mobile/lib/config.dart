@@ -2,30 +2,30 @@
 ///
 /// URL API зависит от того, где запускается приложение:
 /// - Android-эмулятор: localhost хост-машины доступен как `10.0.2.2`.
-/// - Реальное устройство (USB-отладка): нужно указать IP хост-машины
-///   в локальной сети (например, `192.168.0.77`).
-/// - Windows/Chrome (для быстрого теста): `localhost`.
+/// - Реальное устройство (USB): через `adb reverse` → `127.0.0.1`.
+/// - Реальное устройство (Wi-Fi): IP хост-машины (например, `192.168.0.77`).
 ///
-/// Для реального устройства обязательно поменяй `_apiHostOverride`
-/// на IP твоей машины в локальной сети.
+/// Значение задаётся через `--dart-define=API_HOST=...` при запуске.
+/// Дефолт — домашний IP (`192.168.0.77`), чтобы дома работало «из коробки».
+/// На работе `start_dev.bat` передаёт `--dart-define=API_HOST=127.0.0.1`.
+///
+/// Пример:
+///   flutter run --dart-define=API_HOST=127.0.0.1
+///   flutter run --dart-define=API_HOST=192.168.0.77
 class AppConfig {
   AppConfig._();
 
   // --- URL API ---
-  // Если поле НЕ пустое — используется вместо автоматического
-  // определения. Установи сюда IP хост-машины при работе на реальном
-  // устройстве. Пример: '192.168.1.100'.
-  //
-  // Тип `String?` оставлен намеренно: на эмуляторе значение может
-  // быть null (тогда берётся 10.0.2.2).
-  // ignore: unnecessary_nullable_for_final_variable_declarations
-  static const String? _apiHostOverride = '192.168.0.77';
+  // Значение по умолчанию — домашний IP. Переопределяется через --dart-define.
+  static const String _apiHostOverride = String.fromEnvironment(
+    'API_HOST',
+    defaultValue: '192.168.0.77',
+  );
 
   /// Базовый URL API v1.
   static String get apiBaseUrl {
-    final override = _apiHostOverride;
-    if (override != null && override.isNotEmpty) {
-      return 'http://$override:8000/api/v1';
+    if (_apiHostOverride.isNotEmpty) {
+      return 'http://$_apiHostOverride:8000/api/v1';
     }
     return 'http://10.0.2.2:8000/api/v1';
   }

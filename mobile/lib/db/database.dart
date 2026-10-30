@@ -7,7 +7,11 @@ class AppDatabase {
 
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
-  static const int _dbVersion = 3;
+
+  // Версия 4: в таблицу `samples` добавлена колонка `container_id`
+  // (её пишет `SampleDao.saveAll`, без неё Pull падал с "no column named
+  // container_id").
+  static const int _dbVersion = 4;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -26,10 +30,8 @@ class AppDatabase {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Миграция: в старых версиях (1 и 2) таблицы кэша
-        // создавались с неправильными колонками, и Pull молча падал.
-        // Проще всего пересоздать таблицы кэша. Данные восстановятся
-        // при следующем Pull (когда появится сеть).
+        // Пересоздаём таблицы кэша. Данные восстановятся при следующем
+        // Pull (когда есть сеть).
         await db.execute('DROP TABLE IF EXISTS containers');
         await db.execute('DROP TABLE IF EXISTS samples');
         await _createTables(db);
@@ -48,6 +50,7 @@ class AppDatabase {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS samples (
         id INTEGER PRIMARY KEY,
+        container_id INTEGER,
         updated_at TEXT,
         data TEXT NOT NULL
       )

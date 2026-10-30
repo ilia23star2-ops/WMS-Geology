@@ -3,12 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/container_provider.dart';
+import '../providers/sync_provider.dart';
 import '../services/container_service.dart';
 import '../services/scan_history_service.dart';
-import 'scanner_screen.dart';
 import 'container_detail_screen.dart';
+import 'scanner_screen.dart';
 import 'sync_screen.dart';
-import '../providers/sync_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -34,24 +34,41 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _historyIds = ids);
   }
 
+  /// Открыть карточку тары по ID (из истории сканов).
+  ///
+  /// Идём напрямую через `ContainerService.fetchById`:
+  /// - online  → API;
+  /// - offline → fallback на `ContainerDao.getById` (SQLite).
   Future<void> _openContainerById(int id) async {
-    final provider = context.read<ContainerProvider>();
-    provider.reset();
-    await provider.handleScan('WMSG:CONTAINER:$id');
-    
-    if (!mounted) return;
-    if (provider.container != null) {
+    final service = context.read<ContainerService>();
+    try {
+      final container = await service.fetchById(id);
+      if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ContainerDetailScreen(container: provider.container!),
+          builder: (_) => ContainerDetailScreen(container: container),
         ),
       );
-      _loadHistory();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.error ?? 'Тара не найдена')),
-      );
+      await _loadHistory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Тара #$id не найдена: $e')));
     }
+  }
+
+  /// Открыть сканер. `ContainerProvider` создаётся локально
+  /// (внутри маршрута), т.к. используется только в `ScannerScreen`.
+  Future<void> _openScanner() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangeNotifierProvider(
+          create: (ctx) => ContainerProvider(ctx.read<ContainerService>()),
+          child: const ScannerScreen(),
+        ),
+      ),
+    );
+    await _loadHistory();
   }
 
   @override
@@ -68,7 +85,9 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: 'Выйти',
             icon: const Icon(Icons.logout),
-            onPressed: auth.isLoading ? null : () => context.read<AuthProvider>().logout(),
+            onPressed: auth.isLoading
+                ? null
+                : () => context.read<AuthProvider>().logout(),
           ),
         ],
       ),
@@ -82,17 +101,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.all(8),
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.tertiaryContainer, // Другой цвет для "временного"
+                  color: theme.colorScheme.tertiaryContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.vpn_key, color: theme.colorScheme.onTertiaryContainer),
+                    Icon(
+                      Icons.vpn_key,
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Временный доступ (нет сети). Синхронизация станет доступна после подключения.',
-                        style: TextStyle(color: theme.colorScheme.onTertiaryContainer),
+                        'Временный доступ (нет сети). Синхронизация станет '
+                        'доступна после подключения.',
+                        style: TextStyle(
+                          color: theme.colorScheme.onTertiaryContainer,
+                        ),
                       ),
                     ),
                   ],
@@ -108,12 +133,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.wifi_off, color: theme.colorScheme.onErrorContainer),
+                    Icon(
+                      Icons.wifi_off,
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Офлайн-режим. Данные могут быть неактуальны.',
-                        style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
                       ),
                     ),
                   ],
@@ -126,21 +156,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 4),
             Text(
               user?.role != null ? 'Роль: ${user!.role}' : 'Роль не назначена',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ChangeNotifierProvider(
-                      create: (ctx) => ContainerProvider(ctx.read<ContainerService>()),
-                      child: const ScannerScreen(),
-                    ),
-                  ),
-                );
-                _loadHistory();
-              },
+              onPressed: _openScanner,
               icon: const Icon(Icons.qr_code_scanner),
               label: const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -152,9 +174,11 @@ class _HomeScreenState extends State<HomeScreen> {
               builder: (context, sync, _) {
                 final total = sync.pendingCount + sync.errorCount;
                 return OutlinedButton.icon(
-                  onPressed: (auth.isPendingOffline) 
-                    ? null // Блокируем, пока нет сети
-                    : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SyncScreen())),
+                  onPressed: auth.isPendingOffline
+                      ? null
+                      : () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const SyncScreen()),
+                        ),
                   icon: Badge(
                     isLabelVisible: total > 0,
                     label: Text('$total'),
@@ -162,7 +186,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(total > 0 ? 'Синхронизация ($total)' : 'Синхронизация'),
+                    child: Text(
+                      total > 0 ? 'Синхронизация ($total)' : 'Синхронизация',
+                    ),
                   ),
                 );
               },
