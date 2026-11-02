@@ -1,10 +1,10 @@
 /// Точка входа мобильного приложения.
 ///
-/// - `AppConfig.resolve()` — auto-detect сети (c-6c) до `runApp`.
-/// - `NetworkStatusProvider` (c-6g) — фоновый heartbeat `/health/` 10 с.
-/// - `MultiProvider` — `AuthProvider`, `NetworkStatusProvider`,
-///   `ContainerService`, `SampleService`, `SyncService`, `SyncPusher`,
-///   `SyncProvider`.
+/// - `AppConfig.resolve()` — auto-detect сети (c-6c).
+/// - `NetworkStatusProvider` (c-6g) — heartbeat `/health/` 10 с.
+/// - `CatalogService` (c-7b-full) — справочники для формы редактирования.
+/// - `MultiProvider` — AuthProvider, NetworkStatusProvider, ContainerService,
+///   SampleService, CatalogService, SyncService, SyncPusher, SyncProvider.
 /// - `AuthGate` — спиннер / login / home.
 library;
 
@@ -17,6 +17,7 @@ import 'providers/network_status_provider.dart';
 import 'providers/sync_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'services/catalog_service.dart';
 import 'services/container_service.dart';
 import 'services/sample_service.dart';
 import 'services/sync_pusher.dart';
@@ -44,6 +45,10 @@ class WmsGeologyApp extends StatelessWidget {
         Provider<SampleService>(
           create: (ctx) =>
               SampleService(ctx.read<AuthProvider>().service.apiClient),
+        ),
+        Provider<CatalogService>(
+          create: (ctx) =>
+              CatalogService(ctx.read<AuthProvider>().service.apiClient),
         ),
         Provider<SyncService>(
           create: (ctx) =>
@@ -95,7 +100,6 @@ class _AuthGateState extends State<AuthGate> {
       _wired = true;
       final auth = context.read<AuthProvider>();
       final net = context.read<NetworkStatusProvider>();
-      // Монитор обновляет ApiClient.dio.options.baseUrl при смене хоста.
       net.onBaseUrlChanged = (url) {
         auth.service.apiClient.dio.options.baseUrl = url;
       };

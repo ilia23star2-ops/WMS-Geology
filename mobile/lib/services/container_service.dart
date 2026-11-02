@@ -2,6 +2,7 @@
 ///
 /// - `fetchById` — карточка тары после сканирования QR (с офлайн-кэшем).
 /// - `fetchHistory` — история изменений (`GET /storage/containers/{id}/history/`).
+/// - `update` — редактирование (PATCH), только онлайн.
 library;
 
 import '../db/container_dao.dart';
@@ -52,6 +53,7 @@ class ContainerService {
   ///
   /// Возвращает записи аудита (от новых к старым).
   /// Без кэша: если сети нет — `ApiException.isNetworkError` пробросится.
+  /// Кэш истории — отдельный заход `c-7e`.
   Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {
     final response = await _client.get<List<dynamic>>(
       '/storage/containers/$id/history/',
@@ -62,5 +64,34 @@ class ContainerService {
         .whereType<Map<String, dynamic>>()
         .map(ContainerHistoryEntry.fromJson)
         .toList(growable: false);
+  }
+
+  /// PATCH /storage/containers/{id}/
+  ///
+  /// Обновление полей тары. Только онлайн — офлайн-изменения
+  /// через `sync_queue` появятся в `c-8`.
+  ///
+  /// Кэширует ответ в SQLite (`ContainerDao.saveAll`), чтобы при
+  /// следующем офлайн-открытии карточка показывала актуальные данные.
+  Future<Container> update(int id, Map<String, dynamic> payload) async {
+    final response = await _client.patch<Map<String, dynamic>>(
+      '/storage/containers/$id/',
+      data: payload,
+    );
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ от сервера при обновлении тары #$id.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    try {
+      await ContainerDao.saveAll([data]);
+    } catch (_) {
+      // Кэш не критичен.
+    }
+
+    return Container.fromJson(data);
   }
 }
