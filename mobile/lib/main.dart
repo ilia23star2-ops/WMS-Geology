@@ -1,10 +1,11 @@
 /// Точка входа мобильного приложения.
 ///
 /// - `AppConfig.resolve()` — auto-detect сети (c-6c) до `runApp`.
-/// - `MultiProvider` — регистрирует `AuthProvider`, `ContainerService`,
-///   `SampleService`, `SyncService`, `SyncPusher`, `SyncProvider`.
-/// - `AuthGate` — переключает экраны: спиннер (при инициализации),
-///   login или home.
+/// - `NetworkStatusProvider` (c-6g) — фоновый heartbeat `/health/` 10 с.
+/// - `MultiProvider` — `AuthProvider`, `NetworkStatusProvider`,
+///   `ContainerService`, `SampleService`, `SyncService`, `SyncPusher`,
+///   `SyncProvider`.
+/// - `AuthGate` — спиннер / login / home.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import 'config.dart';
 import 'providers/auth_provider.dart';
+import 'providers/network_status_provider.dart';
 import 'providers/sync_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -22,8 +24,6 @@ import 'services/sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // c-6c: автоопределение хоста бэкенда до создания ApiClient.
-  // Если --dart-define=API_HOST задан — probe пропускается.
   await AppConfig.resolve();
   runApp(const WmsGeologyApp());
 }
@@ -36,6 +36,7 @@ class WmsGeologyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
+        ChangeNotifierProvider(create: (_) => NetworkStatusProvider()),
         Provider<ContainerService>(
           create: (ctx) =>
               ContainerService(ctx.read<AuthProvider>().service.apiClient),
@@ -76,8 +77,31 @@ class WmsGeologyApp extends StatelessWidget {
 }
 
 /// Переключатель экранов по состоянию аутентификации.
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _wired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _wired) return;
+      _wired = true;
+      final auth = context.read<AuthProvider>();
+      final net = context.read<NetworkStatusProvider>();
+      // Монитор обновляет ApiClient.dio.options.baseUrl при смене хоста.
+      net.onBaseUrlChanged = (url) {
+        auth.service.apiClient.dio.options.baseUrl = url;
+      };
+      net.start();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

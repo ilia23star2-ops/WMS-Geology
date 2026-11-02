@@ -6,6 +6,7 @@ import '../providers/container_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/container_service.dart';
 import '../services/scan_history_service.dart';
+import '../widgets/network_badge.dart';
 import 'container_detail_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
@@ -34,11 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _historyIds = ids);
   }
 
-  /// Открыть карточку тары по ID (из истории сканов).
-  ///
-  /// Идём напрямую через `ContainerService.fetchById`:
-  /// - online  → API;
-  /// - offline → fallback на `ContainerDao.getById` (SQLite).
   Future<void> _openContainerById(int id) async {
     final service = context.read<ContainerService>();
     try {
@@ -57,8 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Открыть сканер. `ContainerProvider` создаётся локально
-  /// (внутри маршрута), т.к. используется только в `ScannerScreen`.
   Future<void> _openScanner() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -82,6 +76,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('WMS Geology'),
         backgroundColor: theme.colorScheme.inversePrimary,
         actions: [
+          // c-6g: иконка сети (online / offline / pendingOffline).
+          const NetworkBadge(),
           IconButton(
             tooltip: 'Выйти',
             icon: const Icon(Icons.logout),
@@ -117,32 +113,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         'доступна после подключения.',
                         style: TextStyle(
                           color: theme.colorScheme.onTertiaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (auth.isOffline)
-              Container(
-                padding: const EdgeInsets.all(8),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.wifi_off,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Офлайн-режим. Данные могут быть неактуальны.',
-                        style: TextStyle(
-                          color: theme.colorScheme.onErrorContainer,
                         ),
                       ),
                     ),
