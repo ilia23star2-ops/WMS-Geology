@@ -1,12 +1,4 @@
-/// Тесты `ContainerService.bulkPlace` (c-7c, офлайн-размещение).
-///
-/// Проверяем три сценария:
-/// - онлайн — POST уходит, `PlaceOutcome.online`, очередь пуста;
-/// - офлайн (`isNetworkError`) — `PlaceOutcome.queued`, POST в очередь;
-/// - валидация (не network) — исключение пробрасывается, очередь пуста.
-///
-/// И `ArgumentError`, если нарушен контракт «ровно один из cellId /
-/// floorRoomId».
+/// Тесты `ContainerService` (c-7c offline-place, c-7e-2 history cache).
 library;
 
 import 'package:dio/dio.dart';
@@ -14,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wms_geology_mobile/services/api_client.dart';
 import 'package:wms_geology_mobile/services/container_service.dart';
 
-class _MockApiClient extends Fake implements ApiClient {
+class _MockApi extends Fake implements ApiClient {
   final List<MapEntry<String, Object?>> postCalls = [];
-
-  /// Если задано — `post` бросает это значение.
   Object? throwOnPost;
+
+  final List<String> getCalls = [];
+  Object? throwOnGet;
+  Object? getData;
 
   @override
   Future<Response<T>> post<T>(String path, {Object? data}) async {
@@ -26,6 +20,20 @@ class _MockApiClient extends Fake implements ApiClient {
     final e = throwOnPost;
     if (e != null) throw e;
     return Response<T>(requestOptions: RequestOptions(path: path));
+  }
+
+  @override
+  Future<Response<T>> get<T>(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    getCalls.add(path);
+    final e = throwOnGet;
+    if (e != null) throw e;
+    return Response<T>(
+      requestOptions: RequestOptions(path: path),
+      data: getData as T,
+    );
   }
 }
 
@@ -38,11 +46,11 @@ class _EnqueueCall {
 
 void main() {
   group('ContainerService.bulkPlace (c-7c offline)', () {
-    late _MockApiClient client;
+    late _MockApi client;
     late List<_EnqueueCall> enqueued;
 
     setUp(() {
-      client = _MockApiClient();
+      client = _MockApi();
       enqueued = [];
     });
 
@@ -151,6 +159,93 @@ void main() {
       );
       expect(client.postCalls, isEmpty);
       expect(enqueued, isEmpty);
+    });
+  });
+
+  group('ContainerService.fetchHistory (c-7e-2)', () {
+    late _MockApi client;
+    late List<Map<String, dynamic>> cached;
+    late List<Map<String, dynamic>> savedToCache;
+
+    setUp(() {
+      client = _MockApi();
+      cached = [];
+      savedToCache = [];
+    });
+
+    ContainerService createService() {
+      return ContainerService(
+        client,
+        saveHistory: (containerId, items) async {
+          savedToCache.addAll(items);
+        },
+        getCachedHistory: (_) async => cached,
+      );
+    }
+
+    test('онлайн: возвращает с сервера, пишет в кэш', () async {
+      client.getData = [
+        {
+          'id': 1,
+          'action': 'CREATE',
+          'action_display': 'Создана',
+          'created_at': '2026-11-02T10:00:00Z',
+        },
+        {
+          'id': 2,
+          'action': 'PLACE',
+          'action_display': 'Размещена',
+          'created_at': '2026-11-02T11:00:00Z',
+        },
+      ];
+      final service = createService();
+      final list = await service.fetchHistory(10);
+
+      expect(list.length, 2);
+      expect(list[0].action, 'CREATE');
+      expect(savedToCache.length, 2);
+      expect(client.getCalls, contains('/storage/containers/10/history/'));
+    });
+
+    test('офлайн с кэшем: возвращает кэш', () async {
+      cached = [
+        {
+          'id': 3,
+          'action': 'UPDATE',
+          'action_display': 'Изменена',
+          'created_at': '2026-11-02T09:00:00Z',
+        },
+      ];
+      client.throwOnGet = ApiException(
+        message: 'нет сети',
+        isNetworkError: true,
+      );
+      final service = createService();
+      final list = await service.fetchHistory(10);
+
+      expect(list.length, 1);
+      expect(list.first.action, 'UPDATE');
+    });
+
+    test('офлайн с пустым кэшем: [] без ошибки', () async {
+      cached = [];
+      client.throwOnGet = ApiException(
+        message: 'нет сети',
+        isNetworkError: true,
+      );
+      final service = createService();
+      final list = await service.fetchHistory(999);
+      expect(list, isEmpty);
+    });
+
+    test('валидация (не network): пробрасывается', () async {
+      client.throwOnGet = ApiException(
+        message: 'forbidden',
+        statusCode: 403,
+        isNetworkError: false,
+      );
+      final service = createService();
+      await expectLater(service.fetchHistory(10), throwsA(isA<ApiException>()));
     });
   });
 }
