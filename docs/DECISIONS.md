@@ -11,862 +11,348 @@
 
 Полные формулировки — в истории git. Кратко:
 
-- **1.1–1.13** — базовые: название, стек, WorkOrders self-ref,
-  Sample как единица, M:N проба↔Н/З, QR, Уровень 1 интеграции,
-  фазы проекта, система разработки, SSH.
-- **1.14–1.19** — инфраструктура: портативный PostgreSQL,
-  `poetry run`, стандартный User, seeds ролей, Pallet «в пути»,
-  PROTECT для Container.
-- **1.20–1.30** — топология v2: 4 яруса A–D, «тихий» Pallet,
-  QR на секции/ячейке/таре, PickList, soft-delete утилизации,
-  MoveOperation, вместимость, штрих-код ЛИМС, InventoryIssue,
-  керн, помощник сортировки.
-- **1.31–1.34** — PostgreSQL: пересоздание миграций,
-  CHECK `move_item`, Docker Compose, JWT + OpenAPI.
+- **1.1–1.13** — базовые: название, стек, WorkOrders self-ref, Sample как единица, M:N проба↔Н/З, QR, Уровень 1, фазы, система разработки, SSH.
+- **1.14–1.19** — инфраструктура: портативный PG, `poetry run`, стандартный User, seeds ролей, Pallet «в пути», PROTECT для Container.
+- **1.20–1.30** — топология v2: 4 яруса A–D, «тихий» Pallet, QR на секции/ячейке/таре, PickList, soft-delete утилизации, MoveOperation, вместимость, штрих-код ЛИМС, InventoryIssue, керн, помощник сортировки.
+- **1.31–1.34** — PostgreSQL: пересоздание миграций, CHECK `move_item`, Docker Compose, JWT + OpenAPI.
 
 **Статус:** ✅ действуют.
 
----
-
 ### 1.35–1.50 (сводка)
-
-Полные формулировки — в истории git. Кратко:
 
 - **1.35–1.39** — справочники, паттерны, автоопределение участков и лабораторий.
 - **1.40** — формат номера пробы (prefix/middle/sequence).
 - **1.41** — оба Н/З на этикетке.
 - **1.42** — отказ от `SampleDecryption`.
-- **1.43** — UX ручного ввода (партия → группа тары → скважины).
-- **1.44** — статусы проб на приёмке (`PRESENT`, `SELECTED`, `MISSING`).
-- **1.45–1.46** — формат этикетки (устарело, заменено 1.55).
-- **1.47** — статус `PENDING_PLACEMENT` (уточнено 1.62).
+- **1.43** — UX ручного ввода.
+- **1.44** — статусы проб на приёмке.
+- **1.45–1.46** — формат этикетки (устарело, 1.55).
+- **1.47** — статус `PENDING_PLACEMENT` (1.62).
 - **1.48** — массовая печать (корзина → PDF).
-- **1.49** — Excel: формат их (не наш).
+- **1.49** — Excel: формат их.
 - **1.50** — Акт приёмки (PDF).
 
 **Статус:** ✅ действуют.
 
----
-
 ### 1.51. 2026-10-08 — Ручной ввод доступен всегда
 
-**Решение:** ручной ввод работает **независимо** от источника
-данных (QR, Excel, OCR, ЛИМС API). Даже если данные пришли
-автоматически, пользователь может поправить.
+**Решение:** ручной ввод работает **независимо** от источника данных (QR, Excel, OCR, ЛИМС API).
 
-**Причина:**
-- Реальность отличается от идеала.
-- Ручной ввод — fallback и контроль качества.
-- Работает с уже хранящимися тарами при оцифровке.
+**Причина:** реальность отличается от идеала; fallback и контроль качества; работает с уже хранящимися тарами.
 
 **Где:** UI — серия 2.x.
 **Статус:** ✅ действует.
 
----
+### 1.52. 2026-10-08 — Портал для лабораторий (Уровень 2)
 
-### 1.52. 2026-10-08 — Портал для лабораторий (Уровень 2 интеграции)
-
-**Решение:** отдельный раздел веб-приложения для
-лабораторий-отправителей.
-
-**Возможности:**
-- Логин по аккаунту лаборатории (создаёт наш админ).
-- Создание рейса: название (автогенерируется, редактируется),
-  дата, откуда, куда.
-- Сборка рейса:
-  - **Импорт из ЛИМС** — копипаст текстовой выгрузки, парсинг
-    блоков.
-  - **Ручной ввод** — форма с общим списком проб на один или
-    несколько типов.
-- Авторазбивка по тарам (одинаковая для каждого выбранного ТИ).
-- Просмотр и редактирование тары.
-- Печать этикеток (одна / массово).
-- Сопроводительный документ + чек-лист для машины.
-- Смена статусов (только вперёд, с защитой).
-
-**Статусы рейса (в UI на русском):**
-
-| Технический | Русский | Кто меняет |
-|---|---|---|
-| `DRAFT` | Черновик | Лаборатория |
-| `ASSEMBLED` | Собран | Лаборатория |
-| `SENT` | Отправлен | Лаборатория |
-| `RECEIVED` | Принят | Наш кладовщик |
-| `PARTIALLY_RECEIVED` | Принят с расхождениями | Наш кладовщик |
-| `RETURNED` | Возвращён | Наш кладовщик |
-| `CANCELLED` | Отменён | Лаборатория / админ |
-| `LOST` | Утерян | Только админ |
-
-**Обратный поток:** `Shipment.direction`:
-- `OUTBOUND` — мы → лаборатория.
-- `INBOUND` — лаборатория → мы.
-
-**Справочник тары лаборатории:** `ContainerType.laboratory_id`
-(FK, nullable):
-- `NULL` — общий тип, доступен всем.
-- Иначе — только этой лаборатории.
-
-**Импорт из ЛИМС — формат:**
-- Копипаст текста в поле.
-- Разбиение на блоки: **пустая строка + Н/З** — новый блок.
-- Внутри блока: Н/З (одно или два), тара (тип + номер),
-  тип исследования, участок (опц.), список проб.
-- Список проб: строка = `п/п + пробел + номер пробы`, например
-  `2 TST1234001`.
-
-**Уточнение терминологии (навески):**
-- Проба в системе = навеска физически.
-- Один номер может повторяться для разных типов исследования.
-- `Sample.sample_number` **не уникален**.
-- «Логическая проба» как сущность в системе **отсутствует**.
-
-**Границы MVP (серия 2.0):**
-- ✅ Логин, создание рейса, сборка, разбивка, печать, отправка.
-- ✅ Обратный поток (OUTBOUND) + подтверждение получения.
-- ❌ Email-уведомления.
-- ❌ Интеграция с ЛИМС API (только копипаст).
-- ❌ Мобильное приложение для лабораторий.
-
-**Причина:** Уровень 2 интеграции (1.9) — даём лабораториям
-наш инструмент. Данные в нашем формате → приёмка =
-сканирование → замкнутый цикл.
+**Решение:** отдельный раздел веб-приложения для лабораторий-отправителей (создание рейса, сборка, печать, отправка).
 
 **Статус:** ✅ действует (серия 2.0).
 
----
-
 ### 1.53. 2026-10-09 — Циклические импорты через строковые ссылки
 
-**Решение:** при необходимости FK между приложениями, где один
-импортирует другого, использовать строковые ссылки
-(`models.ForeignKey("samples.Site", ...)`).
+**Решение:** при FK между приложениями, где один импортирует другого — строковые ссылки (`models.ForeignKey("samples.Site", ...)`).
 
-**Где применено:**
-- `WorkOrder.site` → `"samples.Site"`.
-- `Shipment.laboratory`, `Shipment.site` → `"samples.Laboratory"`,
-  `"samples.Site"`.
-- `ContainerType.laboratory` → `"samples.Laboratory"`.
-- `Receipt.laboratory`, `Receipt.site` → `"samples.Laboratory"`,
-  `"samples.Site"`.
-- `Receipt.shipment` → `"picking.Shipment"`.
-- `ReceiptItem.research_type` → `"samples.ResearchType"`.
-- `ReceiptItem.container_type` → `"storage.ContainerType"`.
-- `PrintBatchItem.container` → `"storage.Container"`.
-- `Container.draft_site`, `Container.draft_research_type` →
-  `"samples.Site"`, `"samples.ResearchType"`.
-
-**Причина:**
-- `samples` импортирует `work_orders` (Sample → WorkOrder).
-- `work_orders` не может импортировать `samples.Site` напрямую.
-- Строковые ссылки разрешают Django построить граф без циклов.
+**Причина:** `samples` импортирует `work_orders`, обратная ссылка невозможна без цикла.
 
 **Где:** `backend/apps/*/models.py`.
 **Статус:** ✅ действует.
 
----
-
 ### 1.54. 2026-10-09 — UniqueConstraint с NULL: `(name, laboratory)`
 
 **Решение:** `ContainerType.UniqueConstraint(fields=["name", "laboratory"])`.
-`laboratory = NULL` разрешает дубликаты имён в разных записях.
 
-**Причина:**
-- В Postgres `NULL <> NULL`, поэтому unique не блокирует
-  дубликаты с `laboratory=NULL`.
-- Практика: общий тип «Коробка» может встречаться один раз;
-  типы «Коробка» у разных лабораторий — разные.
-- При `laboratory=NULL` мы фактически разрешаем несколько
-  «общих Коробок» — но на уровне UI это контролируется.
-
-**Альтернатива (не принято):** `UniqueConstraint` с
-`nulls_distinct=False` (Postgres 15+) или частичные индексы.
+**Причина:** в Postgres `NULL <> NULL`, unique не блокирует дубликаты с `laboratory=NULL`.
 
 **Где:** `backend/apps/storage/models.py`.
 **Статус:** ✅ действует.
 
----
-
 ### 1.55. 2026-10-10 — Спецификация этикетки (модель 4d)
 
-**Решение:** формат этикетки — **сетка размеров**, авто-выбор
-под содержимое.
+**Решение:** формат этикетки — сетка размеров (ширины `[110,130,150,180,210]`, высоты `[37,49,74,99,148]`), авто-выбор под содержимое. Шапка 28 мм с QR 25×25. Шрифт 10 pt.
 
-**Размеры (мм):**
-- Ширина: `[110, 130, 150, 180, 210]`.
-- Высота: `[37, 49, 74, 99, 148]` (все делят A4 без остатка).
-
-**Структура:**
-- Шапка фиксирована (28 мм): QR 25×25 в правом верхнем углу,
-  4 строки слева (`Уч:` / `Н/З (вх.):` / `Исл:` / `№:`).
-- Рабочая область — таблица `п/п | Образец`, растянутая на
-  ширину, колонки поровну.
-- Чекбокс в каждой строке (для физической отметки отбора).
-- Пунктирный периметр этикетки — отступ 1 мм от содержимого.
-- Разделитель между шапкой и таблицей.
-
-**Шрифт — 10 pt везде**, единый.
-
-**Продолжения:** если не влезает, вторая этикетка **без шапки**,
-только список, до 3 штук. QR — только на первой.
-
-**Раскладка на A4:** 1 в ряд, от левого верхнего угла, стопкой,
-этикетка не разрывается между листами.
-
-**Причины:**
-- Один формат, но адаптивен по содержимому.
-- Экономия бумаги: S-этикетка для 5 проб, XXL — для 100.
-- Человекочитаемый шрифт без масштабирования вниз.
-- А4 как единственный лист (A5 — отложено).
+**Причины:** один формат адаптивен; экономия бумаги; читаемый шрифт.
 
 **Где:** `backend/apps/labels/services/label_service.py`.
 **Статус:** ✅ действует.
 
----
-
 ### 1.56. 2026-10-10 — `PrintBatch`: soft-delete через `CANCELLED`
 
-**Решение:** партия печати не удаляется физически.
-Отмена — `status = CANCELLED`. Напечатанную партию
-(`PRINTED`) отменить нельзя.
+**Решение:** партия не удаляется физически, отмена — `status = CANCELLED`. `PRINTED` отменить нельзя.
 
-**Статусы:** `DRAFT / READY / PRINTED / CANCELLED`.
-Русские названия (UI): Черновик / Готов к печати / Напечатан /
-Отменён.
-
-**Причина:**
-- История печати сохраняется (кто, когда, что).
-- Единообразно с `Shipment` (`CANCELLED`) и `Sample` (`DISPOSED`).
-- Hard-delete теряет аудит.
+**Причина:** история печати; единообразно с `Shipment` и `Sample`.
 
 **Где:** `backend/apps/labels/models.py`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.57. 2026-10-10 — `PrintBatchItem.container` — PROTECT
 
-**Решение:** при удалении тары, которая фигурирует в партии
-печати, Django выбрасывает `ProtectedError`.
+**Решение:** при удалении тары из партии — `ProtectedError`. При удалении партии items каскадом, тара остаётся.
 
-**Причина:**
-- Тару, по которой печатали документы, не удаляем молча.
-- Единообразно с `Sample → Container`, `ContainerType → Container`.
-
-**При удалении партии** (`PrintBatch.delete()`): items уходят
-каскадом, тара остаётся.
+**Причина:** тару, по которой печатали, молча не удаляем.
 
 **Где:** `backend/apps/labels/models.py`.
 **Статус:** ✅ действует.
 
----
-
 ### 1.58. 2026-10-13 — Синхронизация статусов Sample ↔ Container — явный сервис
 
-**Решение:** синхронизация статуса `Sample` со статусом
-`Container` выполняется **явным вызовом** функции
-`sync_sample_status_for_container(container)` из сервисного слоя.
-Django signals **не используются**.
+**Решение:** `sync_sample_status_for_container(container)` из сервисного слоя. Django signals не используем.
 
-**Правила:**
-- Маппинг: `Container.STATUS_ACTIVE → Sample.STATUS_IN_STORAGE`,
-  `PENDING_PLACEMENT → PENDING_PLACEMENT`,
-  `IN_TRANSIT → IN_TRANSIT`.
-- «Защищённые» статусы проб — `DISPOSED`, `CONSUMED`,
-  `SELECTED` — не перезаписываются.
-- Неизвестный статус тары → 0 обновлений, без исключений.
-- Возвращает количество обновлённых проб.
+**Правила:** `ACTIVE → IN_STORAGE`, `PENDING_PLACEMENT → PENDING_PLACEMENT`, `IN_TRANSIT → IN_TRANSIT`. `DISPOSED`, `CONSUMED`, `SELECTED` не перезаписываются. Неизвестный → 0 без исключений.
 
-**Причина:**
-- Signals невидимы, ломают читаемость, тяжело отлаживаются.
-- Явный вызов из view / сервиса — прозрачно.
-- Возврат количества — удобно для тестов и логирования.
+**Уточнение (1.62):** для `PENDING_FILLING` маппинга нет.
 
-**Уточнение (1.62):** для `PENDING_FILLING` маппинг **не задан** —
-у такой тары проб быть не должно, sync их не трогает.
-
-**Уточнение (2f-9c):** `ISSUED` и `PENDING_DECRYPTION` удалены из
-`Sample.STATUS_CHOICES`, маппинга для них нет.
+**Уточнение (2f-9c):** `ISSUED` и `PENDING_DECRYPTION` удалены из `Sample.STATUS_CHOICES`.
 
 **Где:** `backend/apps/samples/services.py`.
 **Статус:** ✅ действует.
 
----
-
 ### 1.59. 2026-10-13 — Разделение bulk-create на два эндпоинта
 
-**Решение:** вместо одного `POST /storage/containers/bulk-create/`
-(тара + пробы) — **два эндпоинта**:
-- `POST /storage/containers/bulk-create/` — только тары
-  (статус `PENDING_FILLING`, см. 1.62).
-- `POST /storage/containers/{id}/fill-samples/` — пробы для
-  существующей тары.
+**Решение:** `POST /storage/containers/bulk-create/` — только тары. `POST /storage/containers/{id}/fill-samples/` — пробы.
 
-**Правила:**
-- Одна тара = один тип исследования. При попытке добавить пробы
-  другого ТИ в тару, где уже есть пробы — 400.
-- Повторное заполнение тем же ТИ — разрешено.
-- Статус проб синхронизируется со статусом тары (см. 1.58).
+**Правила:** одна тара = один ТИ; повторное заполнение тем же ТИ разрешено; статус проб синхронизируется (1.58).
 
-**Причина:**
-- Web-форма создания тары идёт в два шага (сначала тары, потом
-  пробы из реестра). Единый эндпоинт этого не давал.
-- Явное разделение = проще UX и валидация.
-- Меньше параметров в одном запросе.
-
-**Где:** `backend/apps/storage/bulk_create.py`, `views.py`,
-`serializers.py`.
+**Где:** `backend/apps/storage/`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.60. 2026-10-13 — Container: draft-поля + nullable `container_number`
 
-**Решение:**
-- `Container.container_number` → **nullable** + `UNIQUE`
-  (много NULL разрешено).
-- +4 draft-поля: `draft_site` (FK → Site, SET_NULL),
-  `draft_research_type` (FK → ResearchType, SET_NULL),
-  `draft_work_order_coded` (CharField(100), default ""),
-  `draft_work_order_incoming` (CharField(100), default "").
+**Решение:** `container_number` → nullable. +4 draft-поля: `draft_site`, `draft_research_type`, `draft_work_order_coded`, `draft_work_order_incoming`.
 
-**Жизненный цикл тары:**
-1. **Заготовка.** Создаётся через `bulk-create`.
-   `container_number = NULL`. Draft-поля заполнены.
-   Статус — `PENDING_FILLING` (1.62).
-2. **Заполнение.** Через `fill-samples`. `container_number`
-   присваивается (опционально). Draft-поля обновляются
-   значениями из запроса (1.69). Создаются `Sample`,
-   `WorkOrder`, `Well`. Статус → `PENDING_PLACEMENT`.
+**Жизненный цикл:** заготовка (`bulk-create`) → заполнение (`fill-samples`) → размещение.
 
-**Причина:**
-- Кладовщик вводит данные шапки (участок, Н/З, ТИ, тип тары)
-  на шаге создания — это «заказ на тару».
-- Номер тары известен позже — когда тара физически маркируется.
-- Единый эндпоинт не позволял этого — потребовалось разделение.
-
-**Где:** `backend/apps/storage/models.py`,
-`migrations/0005_*`, `bulk_create.py`, `serializers.py`, `views.py`.
-**Статус:** ✅ действует. **Уточнение:** пункт про `UNIQUE`
-пересмотрен в 1.61 — unique снят. **Уточнение 1.69:** draft-поля
-не обнуляются, а обновляются из запроса.
-
----
+**Где:** `backend/apps/storage/models.py`, миграция `0005_*`.
+**Статус:** ✅ действует. **Уточнение 1.61:** `unique` снят. **Уточнение 1.69:** draft-поля обновляются из запроса.
 
 ### 1.61. 2026-10-15 — `Container.container_number` без глобальной уникальности
 
-**Решение:** снять `unique=True` с `Container.container_number`
-(миграция `storage/0006_alter_container_container_number`).
+**Решение:** снять `unique=True` (миграция `storage/0006_*`).
 
-**Семантика:**
-- Номер тары — **метка внутри группы (Н/З × ТИ)**, не глобальный
-  идентификатор.
-- У `TST00469/ГД` тары `1, 2, 3, 4`; у `TST00470/ГД` тоже
-  `1, 2, 3, 4` — корректно.
-- Идентификатор тары — `id`. В QR: `WMSG:CONTAINER:<id>`.
-- Уникальность внутри группы — **не проверяем**: два `1` в одной
-  группе = ошибка кладовщика, но не критична. Модель это не
-  блокирует. Контроль — на уровне процесса/пользователя.
+**Семантика:** номер тары — метка внутри группы (Н/З × ТИ). Идентификатор — `id`. В QR `WMSG:CONTAINER:<id>`.
 
-**Причины:**
-- Глобальная `unique=True` давала ложные срабатывания:
-  «Номер `10` уже занят тарой #10» при корректных данных.
-- В реестре `/containers` добавлены колонки «Н/З», «ТИ» — чтобы
-  различать одинаковые номера из разных групп.
-- Снятие — семантически верное; `BulkCreateSerializer` сохраняет
-  проверку уникальности номеров **в одном запросе** и коллизий
-  с уже существующими — этого достаточно для UX.
+**Что не сделали:** составной `UniqueConstraint((Н/З, ТИ, номер))` отвергнут — draft-поля обнуляются/обновляются, привязка через `ReceiptItem` не всегда возможна.
 
-**Что не сделали:** составной `UniqueConstraint((Н/З, ТИ, номер))`
-отвергнут — модель не хранит группу на уровне `Container` (draft-
-поля обнуляются после fill-samples), а привязка через `ReceiptItem`
-не всегда возможна. Отложено до серии `2.x-lifecycle`.
-
-**Где:** `backend/apps/storage/models.py`, миграция
-`storage/0006_*`, тесты `test_container_filters.py` (2f-1),
-`test_models.py`, `test_serializers.py` (stale fix в 3f-1b),
-`test_bulk_create.py::test_bulk_create_duplicate_number_allowed`,
-`test_fill_samples.py::test_fill_samples_duplicate_number_allowed`
-(`2f-8-fix-2`).
-
-**Источник:** пачка `receiving-3d-3-fix-2`, 2026-10-15.
+**Где:** `backend/apps/storage/models.py`, миграция `storage/0006_*`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.62. 2026-10-16 — Новый статус `Container.STATUS_PENDING_FILLING`
 
-**Решение:** ввести статус **`PENDING_FILLING`** («Ожидает
-заполнения») — тара создана (импортом или вручную), но пробы
-в неё ещё не положены.
+**Решение:** статус «Ожидает заполнения» — тара создана (bulk-create или check_receipt), но пробы не положены.
 
-**Семантика жизненного цикла:**
-1. **`PENDING_FILLING`** — тара создана, проб нет.
-   Пользователь кликает по таре → открывается форма
-   заполнения. Присваивается номер (если был пуст).
-2. **`PENDING_PLACEMENT`** — пробы добавлены через
-   `fill-samples`. Место хранения ещё не назначено.
-3. **`ACTIVE`** — тара размещена в ячейке (отдельный шаг).
+**Семантика:** `PENDING_FILLING → PENDING_PLACEMENT → ACTIVE`.
 
-**Где создаются `PENDING_FILLING`:**
-- `bulk-create` (заготовка через UI).
-- `check_receipt` при приёмке (`matched=true`).
+**Что не делаем:** маппинг `PENDING_FILLING → Sample.status` не задаём (проб нет).
 
-**Где переходит в `PENDING_PLACEMENT`:**
-- `fill_container_with_samples`: если `status == PENDING_FILLING`
-  → после создания проб ставит `PENDING_PLACEMENT`.
+**Миграция:** `storage/0008_*` + data-migration (старые `PENDING_PLACEMENT` без проб → `PENDING_FILLING`).
 
-**Где переходит в `ACTIVE`:**
-- Отдельным действием «Разместить» (`bulk-place` или отдельный
-  заход).
-
-**Что не делаем:**
-- Не задаём маппинг `PENDING_FILLING → Sample.status` в
-  `sync_sample_status_for_container`. У такой тары проб нет,
-  sync ничего не обновит. Если по какой-то причине пробы
-  появятся — они останутся в своём статусе.
-
-**Миграция:** `storage/0008_alter_container_status` +
-data-migration `RunPython`:
-- старые тары `PENDING_PLACEMENT` **без проб** →
-  `PENDING_FILLING`;
-- тары `PENDING_PLACEMENT` **с пробами** — не трогаем
-  (они уже заполнены, ждут размещения).
-
-**Причины:**
-- Была проблема: тара после импорта имела номер, но не имела
-  проб — клик по ней в реестре ничего не открывал (условие
-  было `container_number == null`). Заполнить её было нельзя.
-- Разделение «создана, но пустая» (PENDING_FILLING) и «заполнена,
-  ждёт места» (PENDING_PLACEMENT) — семантически корректно.
-
-**Где:** `backend/apps/storage/models.py` (статус),
-`apps/storage/services/bulk_create.py`,
-`apps/receiving/services/import_service.py` (`check_receipt`),
-`apps/storage/migrations/0008_*`.
-UI: `web/src/api/containers.ts` (метки + типы),
-`web/src/pages/ContainersPage.tsx` (клик → `FillContainerDialog`).
-
-**Источник:** пачка `2f-5c-1` (backend) + `2f-5c-2` (web),
-2026-10-16.
+**Где:** `backend/apps/storage/models.py`, `apps/storage/services/bulk_create.py`, `apps/receiving/services/import_service.py`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.63. 2026-10-16 — PDF QR топологии (Section, Cell)
 
-**Решение:** автогенерация `qr_code` для `Section` и `Cell`
-при создании + отдельный PDF-рендер для печати наклеек.
+**Решение:** автогенерация `qr_code` для `Section`/`Cell` в `save()`. Отдельный PDF-рендер (A4, сетка 2×3, QR 65×65, адрес под QR).
 
-**Автогенерация:**
-- `Section.save()` и `Cell.save()` — двойной `super().save()`.
-  Первый создаёт запись, второй пишет `qr_code`.
-- Payload: `WMSG:SECTION:<id>` / `WMSG:CELL:<id>`.
-- Если `qr_code` задан явно — не перезаписывается.
-- Миграция `storage/0007_alter_cell_qr_code_alter_section_qr_code`
-  (только `AlterField` по `help_text`).
+**Эндпоинты:** `GET /storage/sections/{id}/qr.pdf/`, `GET /storage/cells/{id}/qr.pdf/`, `POST /storage/sections/qr-batch/`.
 
-**PDF-рендер** (`apps/storage/services/qr_topology.py`):
-- A4 portrait.
-- Сетка **2 × 3** = 6 QR на лист.
-- QR **65 × 65 мм** (компромисс: клеится на стеллаж/ячейку,
-  крупный, но помещается на лист).
-- Под QR — адрес (10 мм, шрифт 10 pt, обрезка «…»).
-- Для Section адрес = `Room / Rack / Section`.
-- Для Cell адрес = `full_address`.
-- Если элементов не влезает на лист — новый лист.
-
-**Эндпоинты:**
-- `GET /storage/sections/{id}/qr.pdf/` — одиночный PDF.
-- `GET /storage/cells/{id}/qr.pdf/` — одиночный PDF.
-- `POST /storage/sections/qr-batch/` — партия, тело
-  `{"items": [{"type": "SECTION"|"CELL", "id": int}, ...]}`.
-  Адреса собираются на сервере.
-
-**Не используем** полные этикетки (`label_service`) — только
-QR + адрес снизу. Формат этикеток тары не подходит для
-наклеек на секции/ячейки.
-
-**Задел на будущее:** сканирование Section QR должно
-открывать обзор секции (какие ячейки заняты, что внутри) —
-отдельная серия сканирования.
-
-**Где:** `backend/apps/storage/models.py`,
-`apps/storage/services/qr_topology.py`,
-`apps/storage/views.py` (actions `qr_pdf`, `qr_batch`).
-UI: `web/src/pages/TopologyPage.tsx`, `web/src/api/topology.ts`.
-
-**Источник:** пачки `2f-4c-1` (backend) + `2f-4c-2` (web),
-2026-10-16.
+**Где:** `backend/apps/storage/models.py`, `apps/storage/services/qr_topology.py`, `apps/storage/views.py`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.64. 2026-10-16 — Каскадное удаление `ReceiptItem`
 
-**Решение:** `DELETE /receipt-items/{id}/` удаляет строку приёмки
-**вместе с тарой и её пробами** — одной транзакцией.
+**Решение:** `DELETE /receipt-items/{id}/` удаляет строку с тарой и пробами, одной транзакцией. `ProtectedError` → 409.
 
-**Алгоритм:**
-1. Если у строки есть `Container`:
-   - удалить все `Sample` этой тары (по одной, чтобы поймать
-     `ProtectedError` на конкретной пробе);
-   - удалить `Container`.
-2. Удалить саму `ReceiptItem`.
+**Причина:** атомарность; защита для «настоящих» связей.
 
-**Ошибки:**
-- 404 — строки нет.
-- 409 — если какая-то проба защищена (в `PickListItem` /
-  `ShipmentItem`), или если тара защищена
-  (`PrintBatchItem`). Текст ошибки называет конкретную пробу.
-
-**Причины:**
-- Кладовщик часто хочет удалить ошибочно загруженную строку
-  целиком — с тарой и пробами.
-- Каскад в одной транзакции = атомарно: либо всё уходит,
-  либо ничего.
-- `ProtectedError` → 409 сохраняет защиту для «настоящих»
-  связей (проба уже в отгрузке).
-
-**Где:** `backend/apps/receiving/views.py`
-(`ReceiptItemViewSet.destroy`), +5 тестов
-(`test_receipt_item_delete.py`).
-
-**Источник:** пачка `2f-5a-1`, 2026-10-16.
+**Где:** `backend/apps/receiving/views.py`.
 **Статус:** ✅ действует.
 
----
+### 1.65. 2026-10-27 — Force-удаление тары
 
-### 1.65. 2026-10-27 — Force-удаление тары (2f-12b)
+**Решение:** `DELETE /storage/containers/{id}/?force=true` — принудительно, с пробами. 409 если `PrintBatchItem`.
 
-**Решение:** `DELETE /storage/containers/{id}/?force=true` принудительно
-удаляет тару, даже если в ней есть пробы. Сначала удаляются все
-пробы тары, затем сама тара, в одной транзакции.
-
-**Ошибки:**
-- 404 — тары нет.
-- 409 — если тара защищена `PrintBatchItem` (её нельзя удалить,
-  пока она фигурирует в партии печати), или если проба защищена
-  `PickListItem` / `ShipmentItem`.
-
-**Причины:**
-- Облегчение тестирования и очистки ошибочных данных без похода
-  в БД / админку.
-- Позволяет кладовщику удалить тару, созданную по ошибке, вместе
-  с пробами.
-
-**Где:** `backend/apps/storage/views.py` (`ContainerViewSet.destroy`),
-`web/src/api/containers.ts` (`useDeleteContainer`),
-`web/src/pages/ContainersPage.tsx` (обработка 409 + force).
+**Где:** `backend/apps/storage/views.py`, `web/src/api/containers.ts`.
 **Статус:** ✅ действует.
 
----
+### 1.66. 2026-10-27 — Статус `Sample.STATUS_SELECTED`
 
-### 1.66. 2026-10-27 — Статус `Sample.STATUS_SELECTED` (2f-9b)
+**Решение:** пробы «Выбранные» → `SELECTED`. Защищён от перезаписи (1.58). На этикетке — чёрная галочка.
 
-**Решение:** пробы, отмеченные пользователем как «Выбранные»
-(на доп. исследование), получают статус `SELECTED`.
-
-**Свойства:**
-- На этикетке такие пробы помечаются черной галочкой (в отличие
-  от обычных проб, у которых пустой квадратик).
-- Статус `SELECTED` является «защищенным» — он не перезаписывается
-  на `IN_STORAGE` при синхронизации со статусом тары
-  (`sync_sample_status_for_container`).
-- В `SampleSerializer` отдается как `"SELECTED"`.
-
-**Причины:**
-- Отражение бизнес-процесса: проба есть физически, но она отобрана
-  для доп. исследований (может быть вывезена или помечена).
-- Защита от затирания: если тару размещают на полку, статус
-  «Выбрана» не должен теряться.
-
-**Где:** `backend/apps/samples/models.py`,
-`apps/samples/services.py` (защита), `apps/labels/services/label_service.py`
-(черная галочка). UI: `web/src/api/samples.ts`,
-`FillContainerDialog.tsx` (пропуски/выбранные).
+**Где:** `backend/apps/samples/models.py`, `apps/samples/services.py`, `apps/labels/services/label_service.py`.
 **Статус:** ✅ действует.
 
----
+### 1.67. 2026-10-27 — Создание тары прямо в ячейке
 
-### 1.67. 2026-10-27 — Создание тары прямо в ячейке (2f-12a)
+**Решение:** `POST /storage/containers/create-in-cell/` — три операции в одной транзакции.
 
-**Решение:** реализован эндпоинт `POST /storage/containers/create-in-cell/`,
-который выполняет три операции в одной транзакции:
-1. Создает тару (заготовку).
-2. Заполняет её пробами.
-3. Привязывает тару к поддону в указанной ячейке (создавая поддон,
-   если его нет).
-
-**Причины:**
-- Ускорение работы кладовщика: не нужно создавать тару, потом
-  заполнять, потом размещать. Всё делается в один шаг из окна ячейки.
-- Гарантия консистентности: если что-то упадет, тара не останется
-  «висеть» без пробы или без привязки к ячейке.
-
-**Где:** `backend/apps/storage/views.py` (`ContainerViewSet.create_in_cell`),
-`backend/apps/storage/serializers.py` (`CreateInCellSerializer`).
-UI: `web/src/components/CellContentsDialog.tsx`,
-`web/src/components/CreateInCellDialog.tsx`.
+**Где:** `backend/apps/storage/views.py`, `serializers.py::CreateInCellSerializer`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.68. 2026-10-27 — Переиспользование ID (BigAutoField)
 
-**Решение:** ID объектов (например, тары) **не переиспользуются**
-после удаления. При использовании стандартного `BigAutoField` в
-Django/PostgreSQL ID всегда инкрементируется.
+**Решение:** ID не переиспользуются (стандартный `BigAutoField`).
 
-**Причины:**
-- Защита от путаницы: если ID `150` был напечатан на QR-коде и
-  тару удалили, новый объект с ID `150` может случайно
-  отсканироваться по старой наклейке.
-- 64-битного лимита хватит на миллионы лет работы (даже при
-  создании 1000 объектов в секунду).
+**Причина:** защита от путаницы (старый QR с ID 150 может случайно отсканироваться после переиспользования).
 
-**Где:** стандартное поведение Django.
-**Статус:** ✅ норма (не требует изменений).
-
----
+**Статус:** ✅ норма.
 
 ### 1.69. 2026-10-27 — `fill-samples` обновляет draft-поля из запроса
 
-**Решение:** после успешного `POST /storage/containers/{id}/fill-samples/`
-draft-поля тары (`draft_site_id`, `draft_research_type_id`,
-`draft_work_order_coded`, `draft_work_order_incoming`)
-**обновляются значениями из запроса**, а не обнуляются и не
-сохраняются «как были».
+**Решение:** draft-поля обновляются значениями из запроса (не обнуляются, не «как были»).
 
-**Логика:**
-- `views.py`, `ContainerViewSet.fill_samples` — после вызова
-  сервиса:
-  ```python
-  container.draft_site_id = data.get("site_id")
-  container.draft_research_type_id = data["research_type_id"]
-  container.draft_work_order_coded = data["work_order_coded"]
-  container.draft_work_order_incoming = data.get("work_order_incoming", "")
-  container.save(update_fields=[...draft-поля...])
-  ```
+**Причина:** повторное заполнение тары (тот же ТИ, другой диапазон) — draft-поля должны быть актуальны.
 
-**Семантика:** draft-поля не обнуляются, чтобы они оставались
-в интерфейсе. Значения — актуальные (из запроса), а не исходные
-(до заполнения).
-
-**Причина:** Пользователь может повторно заполнить тару (тот же ТИ,
-другой диапазон) — draft-поля должны отражать последние введённые
-значения.
-
-**Где:** `backend/apps/storage/views.py`, `bulk_create.py`
-(комментарий «draft-поля НЕ обнуляем, чтобы они оставались
-в интерфейсе (фикс 2f-7f)»), `test_fill_samples.py`
-(`test_fill_samples_updates_draft_fields`).
+**Где:** `backend/apps/storage/views.py`.
 **Статус:** ✅ действует.
 
----
+### 1.70. 2026-10-27 — Аудит операций с тарой
 
-### 1.70. 2026-10-27 — Аудит операций с тарой (2f-14a)
+**Решение:** `AuditLog` через явный `log_audit()` (не signals). 6 действий в `ContainerViewSet` (`CREATE`, `UPDATE`, `DELETE`, `FILL_SAMPLES`, `PLACE`, `CREATE_IN_CELL`). Snapshot — 6 полей. `GET /storage/containers/{id}/history/`.
 
-**Решение:** журнал всех значимых действий с тарой ведётся в
-`AuditLog`. Запись — явным вызовом сервиса `log_audit()` из
-actions ViewSet (Django signals не используем, см. 1.58).
+**Причина:** прозрачность «кто, когда, что».
 
-**Покрытие:** 6 действий в `ContainerViewSet`:
-- `CREATE` — `bulk-create` и `perform_create` (обычный POST).
-- `UPDATE` — `perform_update` (PUT/PATCH).
-- `DELETE` — `destroy` (с force и без).
-- `FILL_SAMPLES` — `fill-samples` (с `created_samples` в `new_value`).
-- `PLACE` — `bulk-place` (в ячейку или на пол).
-- `CREATE_IN_CELL` — `create-in-cell`.
+**Где:** `backend/apps/users/services.py`, `apps/users/serializers.py`, `apps/storage/views.py`.
 
-**Snapshot:** компактный — 6 полей:
-```python
-{
-    "status": "ACTIVE",
-    "container_number": "T-001",
-    "container_type_id": 3,
-    "pallet_id": 7,
-    "floor_room_id": None,
-    "sample_count": 5,
-}
-```
+**Регресс и фикс:** в `c-6a-pre` параметр `old_value` был случайно удалён из `log_audit`. Восстановлен, `AuditLog.old_value` снова заполняется (diff UPDATE/DELETE).
 
-- Для `CREATE` — `old_value = None`, `new_value = snapshot`.
-- Для `UPDATE` — `old_value` и `new_value` (diff).
-- Для `DELETE` — `old_value` (снимок до удаления), `new_value = None`.
-- Для `FILL_SAMPLES` — `new_value = snapshot + created_samples`.
-- Для `PLACE` — `old_value` / `new_value` (status и место меняются).
-- Для `CREATE_IN_CELL` — `new_value = snapshot + created_samples + cell_id`.
-
-**Endpoint:** `GET /storage/containers/{id}/history/` (action
-`history` на `ContainerViewSet`). Возвращает `AuditLog` по
-`entity_type="Container"`, `entity_id=id`, отсортированный по
-`-created_at`. Сериализатор — `AuditLogSerializer`.
-
-**Причины:**
-- Прозрачность «кто, когда, что делал с тарой».
-- Compact snapshot — читаемо в UI.
-- Явный сервис — прозрачно, без сигналов.
-
-**Где:** `backend/apps/users/services.py` (`log_audit`),
-`apps/users/serializers.py` (`AuditLogSerializer`),
-`apps/storage/views.py` (`_container_snapshot`, вызовы
-`log_audit`, action `history`). UI: `ContainerHistoryTab.tsx`.
 **Статус:** ✅ действует.
 
----
+### 1.71. 2026-10-27 — `print_batch_status` в `ContainerSerializer`
 
-### 1.71. 2026-10-27 — `print_batch_status` в `ContainerSerializer` (2f-17b)
+**Решение:** `print_batch_status` — статус последней не-`CANCELLED` партии печати. 4 значения: `null` / `DRAFT` / `READY` / `PRINTED`. `prefetch_related(Prefetch(...))` для N+1.
 
-**Решение:** в ответ `GET /storage/containers/` и
-`GET /storage/containers/{id}/` добавлено поле
-`print_batch_status` — статус последней не-`CANCELLED` партии
-печати, в которую входит тара.
-
-**Значения:**
-- `null` — тары нет ни в одной активной партии (или только в `CANCELLED`).
-- `"DRAFT"` — в черновике.
-- `"READY"` — готова к печати.
-- `"PRINTED"` — напечатана.
-
-**Реализация:**
-- `ContainerSerializer.print_batch_status` — `SerializerMethodField`.
-- `ContainerViewSet.get_queryset` — `prefetch_related(Prefetch(...))`.
-- `get_print_batch_status` — `getattr(obj, "active_print_items", None)`.
-
-**Причины:**
-- Кладовщику нужна информация «в какой партии тара».
-- Prefetch — чтобы не было N+1.
-- `PrintBatchItem.container` имеет `related_name="print_batch_items"`.
-
-**Где:** `backend/apps/storage/serializers.py`,
-`backend/apps/storage/views.py`, тесты
-(`test_container_print_status.py`). UI: `containers.ts`.
+**Где:** `backend/apps/storage/serializers.py`, `apps/storage/views.py`.
 **Статус:** ✅ действует.
 
----
+### 1.72. 2026-10-27 — `ContainerDetailDialog`: единое окно тары
 
-### 1.72. 2026-10-27 — `ContainerDetailDialog`: единое окно тары (2f-17c)
+**Решение:** клик по таре открывает диалог с шапкой, кнопками `[Предпросмотр] [Разместить / Местоположение]` и 3 вкладками (Пробы / Редактирование / История).
 
-**Решение:** клик по таре открывает `ContainerDetailDialog`
-с шапкой, кнопками и 3 вкладками.
-
-**Шапка:** номер, Н/З, ТИ, участок, статус.
-**Кнопки:** `[Предпросмотр]` (всегда), `[Разместить]`
-(`PENDING_*`), `[Местоположение]` (`ACTIVE` с `cell_id`).
-**Вкладки:** Пробы / Редактирование / История.
-
-**Причины:**
-- Цепочка Save → Preview избыточна.
-- Иконка печати по `print_batch_status` полезна.
-- Выбор существующей партии печати — реальная потребность.
-
-**Где:** `ContainerDetailDialog.tsx` (новый),
-`ContainerPreviewDialog.tsx`, `AddToPrintBatchDialog.tsx`,
-`FillContainerContent.tsx`, `ContainersPage.tsx`,
-`CellContentsDialog.tsx`.
+**Где:** `web/src/components/ContainerDetailDialog.tsx`, `ContainerPreviewDialog.tsx`, `AddToPrintBatchDialog.tsx`, `ContainersPage.tsx`, `CellContentsDialog.tsx`.
 **Статус:** ✅ действует.
-
----
 
 ### 1.73. 2026-10-29 — Изоляция настроек сборки для рабочего ПК (Proxy Bypass)
 
-**Решение:** для сборки мобильного приложения на рабочем ПК (за
-корпоративным прокси) используется изолированный набор настроек,
-который **не коммитится в Git**.
-
-**Компоненты:**
-1. `work-pc-setup/` — папка с сертификатами прокси, локальным
-   `maven-local` и скриптом `setup.ps1`.
-2. `local.properties` (в `mobile/android/`) — машинно-зависимые
-   пути к SDK и JDK.
-3. `~/.gradle/gradle.properties` — глобальная настройка
-   `org.gradle.java.home` для JDK 17.
+**Решение:** изолированный набор настроек, **не коммитится**. Компоненты:
+1. `work-pc-setup/` — сертификаты, `maven-local`, `setup.ps1`.
+2. `local.properties` в `mobile/android/`.
+3. `~/.gradle/gradle.properties` — `org.gradle.java.home`.
 4. Флаг `--android-skip-build-dependency-validation`.
 5. `FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`.
-6. `wms-bundle/install_bundle.ps1` — распаковка NDK, platform,
-   build-tools, aapt2-proto с флешки.
+6. `wms-bundle/install_bundle.ps1`.
 
-**Причина:**
-- Прокси `Polymetal.ru` блокирует `dl.google.com` и `plugins.gradle.org`.
-- Прямое редактирование `flutter_tools` ломает глобальную установку.
-- Изоляция позволяет вернуть Flutter SDK в заводское состояние
-  одной командой (`git checkout`).
+**Причина:** прокси `Polymetal.ru` блокирует `dl.google.com` и `plugins.gradle.org`; изоляция позволяет вернуть Flutter SDK одной командой.
 
-**Где:** `work-pc-setup/`, `mobile/android/local.properties`,
-`~/.gradle/gradle.properties`.
-**Статус:** ✅ действует (только для рабочего ПК).
+**Уточнение 2026-11-02 (после `c-6c`):** после `git reset --hard` на рабочем ПК `setup.ps1` **обязателен** — теряются сертификаты, `maven-local`, `aapt2FromMavenOverride`, NDK source.properties, Kotlin heap. В `mobile/android/gradle.properties` дополнительно нужны `aapt2FromMavenOverride`, `kotlin.incremental=false`, `kotlin.compiler.execution.strategy=in-process`, `org.gradle.parallel=false`, `org.gradle.workers.max=2`.
 
----
+**Где:** `work-pc-setup/`, `mobile/android/local.properties`, `~/.gradle/gradle.properties`.
+**Статус:** ✅ действует (только рабочий ПК).
 
-### 1.74. 2026-10-30 — JSON + gzip для файловой синхронизации (sneakernet)
+### 1.74. 2026-10-30 — JSON + gzip для файловой синхронизации
 
-**Решение:** для sneakernet-синхронизации (`c-5`, отложено)
-использовать `.json.gz` (gzip-сжатый JSON), а не копию SQLite.
+**Решение:** для sneakernet (`c-5`, отложено) — `.json.gz`, структура `{version, kind, token_hash, user, expires_at, data}`.
 
-**Структура файла:** `{version, kind, token_hash, user, expires_at, data}`.
-
-**Причина:**
-- JSON не зависит от схемы БД (старые файлы не ломаются при ALTER TABLE).
-- gzip уменьшает размер (5 МБ → 500 КБ).
-- Легко проверить `token_hash` и `user.id` в корне файла.
-- Парсинг быстрый (< 1 сек для 10k записей).
+**Причина:** не зависит от схемы БД; gzip; проверка `token_hash`.
 
 **Статус:** ✅ действует (спецификация для `c-5`).
 
----
-
 ### 1.75. 2026-10-30 — Денормализация сериализаторов для Mobile
 
-**Решение:** добавить в сериализаторы «денормализованные» поля-имена
-(`container_type_name`, `floor_room_name`, `site_name`, `research_type_name`
-и т.д.), чтобы Mobile не тянул справочники отдельно.
+**Решение:** добавить «денормализованные» поля-имена в сериализаторы (`container_type_name`, `floor_room_name`, `cell_full_address` и т.д.).
 
-**Причина:**
-- Mobile UI должен показывать «Коробка», а не «ID 3».
-- Не нужно отдельное Pull-ить и JOIN-ить 10 справочников.
-- Web и Mobile используют одинаковые сериализаторы.
+**Причина:** Mobile не тянет справочники отдельно; Web и Mobile используют одинаковые сериализаторы.
 
-**Цена:** JSON-пейлоад больше на ~20-30%. Приемлемо.
+**Цена:** JSON больше на ~20–30%.
 
 **Где:** `backend/apps/*/serializers.py`.
-**Статус:** ✅ действует (заход `c-6a`).
-
----
+**Статус:** ✅ действует (реализовано в `c-6a`).
 
 ### 1.76. 2026-10-30 — Инкрементальный Pull (`?updated_since=`)
 
-**Решение:** Mobile Pull должен поддерживать фильтр `?updated_since=`,
-чтобы тянуть только изменённые записи.
+**Решение:** Mobile Pull поддерживает `?updated_since=`, отдаём только изменённые записи.
 
-**Требует:** добавить `Container.updated_at` на бэкенде.
-**Причина:**
-- Полный Pull 10k проб — это долго и много трафика.
-- Инкрементальный Pull решает проблему.
+**Требует:** `Container.updated_at` (уже был в v9 моделей, пачка `3.x-offline-sync-b-1a`).
 
-**Где:** `backend/apps/storage/models.py`, `views.py`.
-**Статус:** ✅ действует (заход `c-6b`).
+**Причина:** полный Pull 10k проб долго и много трафика.
 
----
+**Где:** `backend/apps/storage/filters.py::apply_updated_since`, `views.py::ContainerViewSet` и `SampleViewSet`.
+**Статус:** ✅ действует (реализовано в `c-6b`).
 
 ### 1.77. 2026-10-30 — Offline-печать этикеток на Mobile
 
-**Решение:** генерация PDF этикеток на клиенте (Dart-библиотека `pdf`)
-при отсутствии сети.
+**Решение:** генерация PDF на клиенте (Dart `pdf`) без сервера.
+
+**Причина:** мобилка должна работать без сервера; печать после оцифровки.
+
+**Где:** `mobile/lib/services/label_service.dart` (план `c-7f`).
+**Статус:** ✅ действует (спецификация для `c-7f`).
+
+### 1.78. 2026-11-02 — `GET /health/` вне `/api/v1/`, без авторизации
+
+**Решение:** healthcheck на `/health/`, вне `/api/v1/`, без JWT. Отдаёт `{status, service, time}` (200).
 
 **Причина:**
-- Мобилка должна работать без сервера.
-- Печать нужна после оцифровки.
-- Дублирование логики — цена за офлайн.
+- Mobile (c-6c) пингует перед выбором `apiBaseUrl` — JWT ещё нет, нельзя требовать авторизацию.
+- Не обращается к БД — отвечает, пока процесс Django жив.
+- Простая проверка связи, не бизнес-эндпоинт.
 
-**Где:** `mobile/lib/services/label_service.dart`.
-**Статус:** ✅ действует (заход `c-7f`).
+**Где:** `backend/wms_geology/health.py`, `backend/wms_geology/urls.py`.
+**Статус:** ✅ действует (реализовано в `c-6a`).
+
+### 1.79. 2026-11-02 — `?updated_since=` только с таймзоной, naive → 400
+
+**Решение:** `?updated_since=<ISO 8601>` на `/storage/containers/` и `/samples/`. С таймзоной (UTC, суффикс Z или +00:00). Naive datetime → 400. Невалидный ISO → 400. Пусто → без фильтра (полный Pull).
+
+**Причина:**
+- Mobile всегда шлёт UTC; naive-время даст неоднозначность.
+- Явная ошибка лучше молчаливого сдвига.
+
+**Где:** `backend/apps/storage/filters.py`, `views.py` (`ContainerViewSet`, `SampleViewSet`).
+**Статус:** ✅ действует (реализовано в `c-6b`).
+
+### 1.80. 2026-11-02 — Auto-detect сети: probe /health/ → первый живой
+
+**Решение:** при старте приложение параллельно пингует `GET /health/` (2 с таймаут) на трёх адресах:
+1. `127.0.0.1` (USB, `adb reverse`).
+2. `192.168.0.77` (WiFi, домашний ПК).
+3. `10.0.2.2` (Android-эмулятор).
+
+Первый живой — в `apiBaseUrl`. Если `--dart-define=API_HOST=...` задан — probe не запускается. Все мертвы → fallback `192.168.0.77`.
+
+**Причина:**
+- Не надо пересобирать APK при смене сети.
+- `--dart-define` сохраняет детерминизм на рабочем ПК.
+- Fallback сохраняет старое поведение.
+
+**Цена:** 2 с задержки на старте, если сеть есть (параллельно, приемлемо). Если сети нет — 2 с таймаут.
+
+**Где:** `mobile/lib/services/network_probe.dart`, `mobile/lib/config.dart::AppConfig.resolve`, `mobile/lib/main.dart`.
+**Статус:** ✅ действует (реализовано в `c-6c`).
+
+### 1.81. 2026-11-02 — ScanWindow: `_pickBarcodeInScanWindow` + landscape swap
+
+**Решение:** два механизма фильтрации области сканирования:
+1. `scanWindow` в `MobileScanner` — native-ограничение (если работает).
+2. `_pickBarcodeInScanWindow` в `_onDetect` — ручной фильтр по центру `corners` → `BoxFit.cover`.
+
+**Проблема:**
+- Native `scanWindow` в `mobile_scanner 7.4.2` на Android не ограничивает область (issue #633).
+- `BarcodeCapture.rotation` в 7.4.2 не существует (попытка `c-6d-fix-2` откачена).
+- `Barcode.scaleCorners` не учитывает landscape (тоже откатано).
+
+**Landscape-фикс (`c-6d-fix-3`):** в ландшафте `capture.size` остаётся портретным (1440×1920), а `corners` приходят в rotated системе (1920×1440). `mapImageToWidgetFrame` делает swap effectiveSize, если `widget landscape + image portrait`.
+
+**DetectionSpeed:** `normal` (не `noDuplicates`) — иначе после reject тот же QR не сработает, даже если его занести в рамку. Дублирующую обработку блокирует флаг `_handled`.
+
+**Где:** `mobile/lib/utils/scan_window.dart`, `mobile/lib/screens/scanner_screen.dart`.
+**Статус:** ✅ действует (реализовано в `c-6d-fix` + `c-6d-fix-3`).
 
 ---
 
 ## 2. Что не делаем и почему
 
-- Не используем `SampleParts`. Разделение — вне WMS.
-- Не храним две колонки для Н/З. Не масштабируется.
+- Не используем `SampleParts` — разделение вне WMS.
+- Не храним две колонки для Н/З — не масштабируется.
 - Не заставляем лаборатории использовать наш формат.
 - Не переклеиваем старые этикетки.
 - Не используем закрытые лицензии в ядре.
@@ -874,43 +360,40 @@ actions ViewSet (Django signals не используем, см. 1.58).
 - Не используем Django fixtures для seeds.
 - Не запускаем Django-команды через кнопку «Run» в VS Code.
 - Не клеим QR на поддоны и пробы в MVP.
-- Не удаляем пробы физически (soft — DISPOSED; hard — только через
-  явный DELETE с обработкой ProtectedError, в составе ReceiptItem —
-  каскадом, в составе Container — через `?force=true`).
+- Не удаляем пробы физически без явного DELETE с обработкой `ProtectedError`.
 - Не блокируем размещение при превышении вместимости.
 - Не реализуем bin packing и учёт веса в MVP.
 - Не реализуем логику керна в MVP.
 - Не патчим миграции v1 через 0002.
-- Не требуем не-NULL для pallet/container в move item.
 - Не используем session-based auth для API.
 - Не пишем OpenAPI вручную.
 - Не создаём SampleDecryption на MVP.
 - Не парсим номер пробы позиционно.
 - Не навязываем свой формат Excel.
-- Не используем pillow 10.4. Версия 11.3.
-- Не храним email-уведомления в MVP Портала.
+- Не используем pillow 10.4 (11.3).
 - Не полагаемся на сортировку кириллицы в БД.
 - Не импортируем модели напрямую при циклах.
 - Не печатаем ID под QR (внутри payload).
 - Не масштабируем шрифт этикетки вниз — 10 pt всегда.
 - Не разрываем этикетку между листами A4.
-- Не используем A5 как лист печати — отложено.
-- Не используем Django signals для sync-логики (см. 1.58).
-- Не используем Django signals для аудита (см. 1.70).
-- Не создаём тару с обязательным container_number на шаге
-  bulk-create (см. 1.60).
-- Не считаем Container.container_number глобально уникальным (1.61).
-- Не задаём маппинг PENDING_FILLING → Sample.status (1.62).
+- Не используем A5 как лист печати.
+- Не используем Django signals для sync-логики (1.58).
+- Не используем Django signals для аудита (1.70).
+- Не создаём тару с обязательным `container_number` в bulk-create (1.60).
+- Не считаем `container_number` глобально уникальным (1.61).
+- Не задаём маппинг `PENDING_FILLING → Sample.status` (1.62).
 - Не используем полные этикетки тары для QR секций/ячеек (1.63).
 - Не обнуляем draft-поля после fill-samples (1.69).
-- Не используем baseUrl в tsconfig.json (TS ≥ 4.4).
-- Не пишем аудит через Django signals — только явный log_audit() (1.70).
-- Не считаем print_batch_status = CANCELLED (1.71).
+- Не используем baseUrl в tsconfig.json (TS ≥4.4).
+- Не пишем аудит через Django signals (1.70).
+- Не считаем `print_batch_status = CANCELLED` (1.71).
 - Не коммитим сертификаты прокси и локальные Maven-пути (1.73).
-- **Не делаем автоматическое слияние конфликтов синхронизации** —
-  используем last write wins (для текущих данных приемлемо).
-- **Не хардкодим IP в `config.dart`** — только `String.fromEnvironment`
-  (1.73 + правило `c-4.6`).
+- **Не делаем автоматическое слияние конфликтов синхронизации** — last write wins.
+- **Не хардкодим IP в `config.dart`** — только `String.fromEnvironment` или probe (1.80).
+- **Не пишем healthcheck в `/api/v1/`** — вне, без авторизации (1.78).
+- **Не принимаем `?updated_since=` без таймзоны** — naive → 400 (1.79).
+- **Не используем `Barcode.scaleCorners`** — не учитывает landscape (1.81).
+- **Не полагаемся на native `scanWindow`** — фильтруем вручную (1.81).
 
 ---
 
@@ -923,14 +406,12 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **Проба (Sample)** | Физическая единица хранения = навеска. |
 | **Навеска** | То же, что Проба. |
 | **Наряд-заказ (Н/З)** | Группа проб. INCOMING / CODED. |
-| **Входящий Н/З** | Название до шифровки. |
-| **Зашифрованный Н/З** | Название после шифровки. |
 | **Тип исследования (ТИ)** | ResearchType. ШЛ, ХА, ИЗ. |
 | **Участок (Site)** | Место отбора проб. |
 | **Лаборатория (Laboratory)** | Откуда пришла проба. |
 | **Тара (Container)** | Физический контейнер. |
-| **Тара-заготовка** | Container без container_number, с draft-полями. Создана через bulk-create в статусе PENDING_FILLING. |
-| **Draft-поля тары** | draft_site, draft_research_type, draft_work_order_coded, draft_work_order_incoming — «черновые» атрибуты. |
+| **Тара-заготовка** | Container без `container_number`, с draft-полями, `PENDING_FILLING`. |
+| **Draft-поля тары** | `draft_site`, `draft_research_type`, `draft_work_order_coded`, `draft_work_order_incoming`. |
 | **Тип тары (ContainerType)** | Общий или для конкретной лаборатории. |
 | **Поддон (Pallet)** | «Тихий» объект. OneToOne с ячейкой. |
 | **Ячейка (Cell)** | Место на ярусе. 1 поддон. |
@@ -938,11 +419,11 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **Скважина (Well)** | Источник пробы. |
 | **Партия (Receipt)** | Группа тары, приехавшая одной машиной. |
 | **Рейс (Shipment)** | Отправка. INBOUND / OUTBOUND. |
-| **Партия печати (PrintBatch)** | Корзина тар для массовой печати этикеток. |
-| **Группа (Н/З × ТИ)** | Контекст, внутри которого номер тары уникален (см. 1.61). |
-| **AuditLog** | Журнал значимых действий. Пишется вручную через log_audit() (1.70). |
-| **print_batch_status** | Статус последней не-CANCELLED партии печати. 4 значения: null / DRAFT / READY / PRINTED (1.71). |
-| **Health-эндпоинт** | `GET /api/v1/health/` — проверка связи без авторизации. |
+| **Партия печати (PrintBatch)** | Корзина тар для массовой печати. |
+| **Группа (Н/З × ТИ)** | Контекст, внутри которого номер тары уникален. |
+| **AuditLog** | Журнал значимых действий. `log_audit()` (1.70). |
+| **print_batch_status** | Статус последней не-CANCELLED партии печати (1.71). |
+| **Health-эндпоинт** | `GET /health/` — 200 без авторизации (1.78). |
 
 ### Процесс
 
@@ -951,7 +432,7 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **Шифровка** | Присвоение Н/З нового названия. |
 | **Приёмка** | Поступление тары. |
 | **Двухфазная приёмка** | Excel → предзаполнение → подтверждение. |
-| **Акт приёмки** | PDF с расхождениями (см. 1.50). |
+| **Акт приёмки** | PDF с расхождениями (1.50). |
 | **Формирование поддона** | Сбор тар на поддон. |
 | **Выборка (picking)** | Извлечение проб по списку. |
 | **Отправка (shipment)** | Группа проб. |
@@ -967,7 +448,10 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **Sync-сервис** | Явная функция синхронизации статусов (1.58). |
 | **Аудит** | Журнал действий с объектом (1.70). |
 | **Deferred Offline Login** | Вход по QR без сети (1.75). |
-| **Offline-печать** | Генерация PDF этикетки на мобилке без сервера (1.77). |
+| **Offline-печать** | PDF на мобилке без сервера (1.77). |
+| **Auto-detect сети** | Probe `/health/` → выбор `apiBaseUrl` (1.80). |
+| **ScanWindow** | Мёртвая зона 220×220 (1.81). |
+| **Incremental Pull** | `?updated_since=` (1.79). |
 
 ### Инфраструктура
 
@@ -978,10 +462,10 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **poetry run** | Запуск в venv. |
 | **JWT** | JSON Web Token. |
 | **drf-spectacular** | Генератор OpenAPI 3. |
-| **fpdf2** | Библиотека для генерации PDF (Python). |
-| **Proxy Bypass** | Набор настроек (`work-pc-setup`) для сборки за прокси. См. 1.73. |
+| **fpdf2** | Генерация PDF (Python). |
+| **Proxy Bypass** | Набор настроек рабочего ПК (1.73). |
 | **`adb reverse`** | Проброс порта ПК на планшет через USB. |
-| **`FLUTTER_STORAGE_BASE_URL`** | Зеркало для скачивания engine-артефактов Flutter. |
+| **`FLUTTER_STORAGE_BASE_URL`** | Зеркало engine-артефактов Flutter. |
 
 ### UI
 
@@ -991,7 +475,6 @@ actions ViewSet (Django signals не используем, см. 1.58).
 | **Сканер** | Экран сканирования. |
 | **Виртуальный вид секции** | Ярусы A–D и ячейки. |
 | **Корзина печати** | Пул тар для массовой печати. |
-| **Рабочая область рейса** | Основной экран сборки рейса. |
 | **Единое окно тары** | ContainerDetailDialog (1.72). |
 | **Модалка предпросмотра** | ContainerPreviewDialog (1.72). |
 | **SyncScreen** | Экран ручной синхронизации. |
@@ -1003,7 +486,7 @@ actions ViewSet (Django signals не используем, см. 1.58).
 - «**Часть пробы**» — не используется. Есть навеска.
 - «**Логическая проба**» — не сущность в системе.
 - «**Ячейка**» — не слот на 3 поддона. 1 поддон.
-- «**Поддон**» — «тихий» объект, без QR и pallet_code.
+- «**Поддон**» — «тихий» объект, без QR.
 - «**Наряд-заказ**» — входящий и зашифрованный — разные строки.
 - «**Проба**» — не уникальна по номеру.
 - «**User**» — Django-овский.
@@ -1012,13 +495,17 @@ actions ViewSet (Django signals не используем, см. 1.58).
 - «**Партия в номере**» — не Receipt.
 - «**Рейс**» — не одна тара.
 - «**ContainerType.laboratory = NULL**» — не «без лаборатории», а «общий тип».
-- «**Тара-заготовка**» — не «пустая тара физически». Это Container без container_number.
+- «**Тара-заготовка**» — не «пустая тара физически». Это Container без `container_number`.
 - «**Container.container_number**» — не уникален глобально (1.61).
-- «**PENDING_FILLING**» — не «просто пустая тара физически», а состояние в системе (1.62).
-- «**Draft-поля тары**» — не «черновик, который надо удалить». Обновляются актуальными значениями (1.69).
-- «**baseUrl в tsconfig.json**» — не используется (TS ≥ 4.4).
+- «**PENDING_FILLING**» — состояние в системе (1.62).
+- «**Draft-поля тары**» — обновляются актуальными значениями (1.69).
+- «**baseUrl в tsconfig.json**» — не используется.
 - «**AuditLog**» — не Django signals, только явные вызовы (1.70).
 - «**print_batch_status**» — не «все партии», только последняя не-CANCELLED (1.71).
 - «**ContainerDetailDialog**» — не «редактор», а просмотр + действия (1.72).
 - «**Proxy Bypass**» — не «взлом прокси». Легальная настройка (1.73).
 - «**Deferred Offline Login**» — не «вход без пароля», а отложенная синхронизация токена.
+- «**Health-эндпоинт**» — не «API v1». Вне `/api/v1/`, без авторизации (1.78).
+- «**`?updated_since=`**» — не «фильтр для Web». Только для Mobile Pull (1.79).
+- «**Auto-detect**» — не «выбор по IP-адресу в коде», а probe `/health/` (1.80).
+- «**ScanWindow**» — не «native-ограничение», а `_pickBarcodeInScanWindow` (1.81).
