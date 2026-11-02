@@ -1,11 +1,16 @@
-/// Карточка тары после сканирования QR (c-7a + landscape fix).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + landscape fix).
 ///
-/// Разный layout под ориентацию:
-/// - **Портрет** — `AppBar` с `TabBar.bottom` + `NestedScrollView`:
-///   шапка (`SliverToBoxAdapter`) растягивается на натуральную высоту,
-///   при скролле уезжает вверх. `TabBar` всегда прилипает.
-/// - **Ландшафт** — `Row`: слева панель с метаданными (скроллится
-///   отдельно), справа `TabBar` + `TabBarView`. Вкладки на всю высоту.
+/// Вкладки (как в вебе):
+/// - **Пробы** — список проб внутри.
+/// - **Редактирование** — `FillContainerContent` (диапазоны + существующие).
+/// - **История** — аудит.
+///
+/// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`) в bottom sheet.
+///
+/// c-7b-fix: кнопки `[Предпросмотр] [Разместить]` в `bottomNavigationBar`
+/// + `SafeArea` — не уходят под системный бар.
+///
+/// c-7f-fix: в `_sampleTile` убраны надписи «ТИ · Н/З» — они уже в шапке.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
 /// `Container` (flutter/src/widgets/container.dart).
@@ -19,6 +24,8 @@ import '../models/container_history_entry.dart';
 import '../models/sample.dart';
 import '../services/container_service.dart';
 import '../services/sample_service.dart';
+import '../widgets/container_edit_form.dart';
+import '../widgets/fill_container_content.dart';
 
 class ContainerDetailScreen extends StatefulWidget {
   const ContainerDetailScreen({super.key, required this.container});
@@ -30,12 +37,12 @@ class ContainerDetailScreen extends StatefulWidget {
 }
 
 class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
-  // Пробы
+  late Container _container;
+
   List<Sample>? _samples;
   String? _samplesError;
   bool _samplesLoading = true;
 
-  // История
   List<ContainerHistoryEntry>? _history;
   String? _historyError;
   bool _historyLoading = true;
@@ -43,6 +50,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _container = widget.container;
     _loadSamples();
     _loadHistory();
   }
@@ -53,8 +61,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       _samplesError = null;
     });
     try {
-      final service = context.read<SampleService>();
-      final samples = await service.fetchByContainerId(widget.container.id);
+      final samples = await context.read<SampleService>().fetchByContainerId(
+        _container.id,
+      );
       if (!mounted) return;
       setState(() {
         _samples = samples;
@@ -75,8 +84,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       _historyError = null;
     });
     try {
-      final service = context.read<ContainerService>();
-      final entries = await service.fetchHistory(widget.container.id);
+      final entries = await context.read<ContainerService>().fetchHistory(
+        _container.id,
+      );
       if (!mounted) return;
       setState(() {
         _history = entries;
@@ -95,36 +105,98 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     await Future.wait([_loadSamples(), _loadHistory()]);
   }
 
+  Future<void> _onSaveEdit(Map<String, dynamic> payload) async {
+    try {
+      final updated = await context.read<ContainerService>().update(
+        _container.id,
+        payload,
+      );
+      if (!mounted) return;
+      setState(() => _container = updated);
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Тара сохранена')));
+      _loadHistory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Не удалось сохранить: $e')));
+    }
+  }
+
+  void _openEditSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.85,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Редактировать шапку тары',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ContainerEditForm(
+                  key: ValueKey(_container.updatedAt),
+                  initial: _container,
+                  onSubmit: _onSaveEdit,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final container = widget.container;
     return DefaultTabController(
       length: 3,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isLandscape = constraints.maxWidth > constraints.maxHeight;
           return isLandscape
-              ? _buildLandscape(context, theme, container, constraints)
-              : _buildPortrait(context, theme, container);
+              ? _buildLandscape(context, theme, constraints)
+              : _buildPortrait(context, theme);
         },
       ),
     );
   }
 
-  // ----------------------------------------------------------
-  // Портрет: AppBar + TabBar.bottom, шапка отдельным sliver'ом
-  // ----------------------------------------------------------
-  Widget _buildPortrait(
-    BuildContext context,
-    ThemeData theme,
-    Container container,
-  ) {
+  Widget _buildPortrait(BuildContext context, ThemeData theme) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(container.displayName),
+        title: Text(_container.displayName),
         backgroundColor: theme.colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            tooltip: 'Редактировать шапку',
+            icon: const Icon(Icons.edit),
+            onPressed: _openEditSheet,
+          ),
           IconButton(
             tooltip: 'Обновить',
             icon: const Icon(Icons.refresh),
@@ -139,21 +211,14 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomBar(context),
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
-            // Шапка — обычный sliver, растягивается на свою высоту.
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(context, container),
-                    const SizedBox(height: 8),
-                    _buildActionButtons(context, container),
-                  ],
-                ),
+                child: _buildHeader(context),
               ),
             ),
           ];
@@ -169,21 +234,22 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
-  // ----------------------------------------------------------
-  // Ландшафт: слева панель с метаданными, справа вкладки
-  // ----------------------------------------------------------
   Widget _buildLandscape(
     BuildContext context,
     ThemeData theme,
-    Container container,
     BoxConstraints constraints,
   ) {
     final panelWidth = (constraints.maxWidth * 0.4).clamp(320.0, 460.0);
     return Scaffold(
       appBar: AppBar(
-        title: Text(container.displayName),
+        title: Text(_container.displayName),
         backgroundColor: theme.colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            tooltip: 'Редактировать шапку',
+            icon: const Icon(Icons.edit),
+            onPressed: _openEditSheet,
+          ),
           IconButton(
             tooltip: 'Обновить',
             icon: const Icon(Icons.refresh),
@@ -191,6 +257,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: _buildBottomBar(context),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -198,11 +265,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             width: panelWidth,
             child: ListView(
               padding: const EdgeInsets.all(16),
-              children: [
-                _buildHeader(context, container),
-                const SizedBox(height: 8),
-                _buildActionButtons(context, container),
-              ],
+              children: [_buildHeader(context)],
             ),
           ),
           const VerticalDivider(width: 1, thickness: 1),
@@ -236,7 +299,30 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, Container container) {
+  Widget _buildBottomBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: 0,
+      child: SafeArea(
+        top: false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(color: theme.dividerColor, width: 1),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: _buildActionButtons(context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final container = _container;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -325,8 +411,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
-  Widget _buildActionButtons(BuildContext context, Container container) {
-    final canPlace = container.status != ContainerStatus.active;
+  Widget _buildActionButtons(BuildContext context) {
+    final canPlace = _container.status != ContainerStatus.active;
     return Row(
       children: [
         Expanded(
@@ -405,12 +491,14 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
+  /// c-7f-fix: только номер пробы + статус. ТИ и Н/З — в шапке тары,
+  /// не дублируем под каждой пробой.
   Widget _sampleTile(BuildContext context, Sample sample, int num) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 32,
@@ -422,25 +510,12 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             ),
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  sample.sampleNumber,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${sample.researchTypeName}'
-                  '${sample.currentWorkOrderNumber != null ? " · Н/З ${sample.currentWorkOrderNumber}" : ""}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+            child: Text(
+              sample.sampleNumber,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -451,39 +526,17 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   }
 
   Widget _buildEditTab(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.construction,
-                  size: 48,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Редактирование тары',
-                  style: theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Форма редактирования появится в следующем заходе.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
+    return FillContainerContent(
+      key: ValueKey('fill-${_container.updatedAt}'),
+      container: _container,
+      onClose: () {},
+      onSuccess: (containerId, totalSamples) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Проб в таре: $totalSamples')));
+        _loadSamples();
+        _loadHistory();
+      },
     );
   }
 
