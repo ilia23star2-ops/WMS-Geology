@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../widgets/network_badge.dart';
 import 'qr_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -33,9 +34,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginWithQr() async {
-    final payload = await Navigator.of(context).push<dynamic>(
-      MaterialPageRoute(builder: (_) => const QrLoginScreen()),
-    );
+    final payload = await Navigator.of(
+      context,
+    ).push<dynamic>(MaterialPageRoute(builder: (_) => const QrLoginScreen()));
 
     if (payload == null || !mounted) return;
 
@@ -43,9 +44,8 @@ class _LoginScreenState extends State<LoginScreen> {
     await auth.loginWithQr(payload);
 
     if (auth.error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error!)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(auth.error!)));
     }
   }
 
@@ -55,6 +55,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      // c-6g-login: иконка сети в AppBar — до входа видно, есть ли связь.
+      // NetworkStatusProvider уже стартовал в AuthGate.initState.
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: const [NetworkBadge(), SizedBox(width: 8)],
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -107,9 +114,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         obscureText: true,
                         enabled: !auth.isLoading,
-                        validator: (v) => (v == null || v.isEmpty)
-                            ? 'Введите пароль'
-                            : null,
+                        validator: (v) =>
+                            (v == null || v.isEmpty) ? 'Введите пароль' : null,
                         onFieldSubmitted: (_) => _submit(),
                       ),
                       if (auth.error != null) ...[
