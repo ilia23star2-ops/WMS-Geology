@@ -27,7 +27,7 @@
   - ISO с таймзоной; naive / невалидный → 400 (`ValidationError`).
   - Тесты: `test_updated_since.py` × 2 (4 storage + 3 samples).
 
-### Что закрыто (mobile)
+### Что закрыто (mobile, сеть и сканер)
 
 - ✅ **`c-1`** — SQLite: `containers`, `samples`, DAO, инициализация.
 - ✅ **`c-2`** (2026-10-29) — `SyncService` (Pull), 50/стр, DI для тестов. 4 теста.
@@ -67,6 +67,59 @@
   - **Фикс:** `mapImageToWidgetFrame` swap effectiveSize при `widget landscape + image portrait`.
   - `test/utils/scan_window_test.dart` — +4 теста (landscape-кейсы из реального лога).
   - **Device-check:** портрет + ландшафт, QR внутри/вне — ok.
+- ✅ **`c-6g`** (2026-11-02) — `NetworkStatusProvider`:
+  - `lib/providers/network_status_provider.dart` — `ChangeNotifier` + `Timer.periodic(10s)` → `GET /health/` текущего `AppConfig.apiHost` (2 с таймаут). При неудаче — `NetworkProbe.resolve()` (auto-detect заново), при смене хоста — `onBaseUrlChanged(url)` → `ApiClient.dio.options.baseUrl = url`. При `--dart-define=API_HOST` — только статус, без swap.
+  - `lib/widgets/network_badge.dart` — `cloud_done` / `cloud_off` / `vpn_key`.
+  - `lib/main.dart` — `NetworkStatusProvider` в `MultiProvider`, `start()` в `AuthGate.initState`, `onBaseUrlChanged` регистрируется.
+  - `test/providers/network_status_provider_test.dart` — 3 теста.
+  - **Device-check:** портрет/ландшафт, USB вкл/выкл — ok.
+- ✅ **`c-6h`** (2026-11-02) — синхронизация запрещена при `!isOnline` / `isPendingOffline`:
+  - `HomeScreen`: `Consumer2<SyncProvider, NetworkStatusProvider>`, `blocked = !net.isOnline || auth.isPendingOffline`, иконка `cloud_off`, текст «Синхронизация (нет связи)», tooltip.
+  - `SyncScreen`: `_OfflineBanner` (красный Card), все кнопки `disabled = sync.isSyncing || !online`.
+- ✅ **`c-6g-login`** (2026-11-02) — иконка `NetworkBadge` в `AppBar.actions` `LoginScreen` (прозрачный `AppBar`, карточка логина не сдвигается).
+  - `widget_test.dart` — обёрнут в `MultiProvider` с `NetworkStatusProvider` (иначе `ProviderNotFoundException`).
+- ⚠️ **`c-6f`** — откачен. `NetworkMonitor` с `WidgetsBindingObserver` конфликтовал с lifecycle, заменён на `c-6g`.
+
+### Что закрыто (mobile, карточка тары)
+
+- ✅ **`c-7a`** (2026-11-02) — карточка тары: шапка + 3 вкладки (Пробы / Редактирование / История) + адаптив:
+  - **Портрет** — `NestedScrollView` + `SliverToBoxAdapter` (шапка растягивается на натуральную высоту, уезжает при скролле, `TabBar` прилипает).
+  - **Ландшафт** — `Row`: слева панель `~40% ширины` (`clamp 320..460`) со шапкой (скроллится независимо), справа `TabBar` + `TabBarView`.
+  - Денормализация `Container` (`containerTypeName`, `floorRoomName`, `cellFullAddress`, `draftSiteName`, `draftResearchTypeName`), `Sample.PENDING_PLACEMENT` / `SELECTED`.
+  - Кнопки `[Предпросмотр] [Разместить]` — в `bottomNavigationBar` + `SafeArea`.
+  - `ContainerHistoryEntry` — модель аудита, `ContainerService.fetchHistory`.
+  - `test/models/container_test.dart` — 5 тестов, `test/models/container_history_entry_test.dart` — 2 теста, `test/sample_test.dart` — обновлён.
+- ✅ **`c-7b`** + **`c-7b-fix`** (2026-11-02) — форма шапки тары:
+  - `ContainerEditForm` в `showModalBottomSheet` (карандаш ✏ в `AppBar.actions`).
+  - Поля: `container_number`, `container_type` (dropdown), `comment`, `position_on_pallet`, `draft_site` (dropdown), `draft_research_type` (dropdown), `draft_work_order_coded`, `draft_work_order_incoming`.
+  - `CatalogService` (`fetchSites`, `fetchResearchTypes`, `fetchContainerTypes`, `fetchLaboratories`).
+  - `Container.draftSiteId` / `draftResearchTypeId` — добавлены для предзаполнения dropdown'ов.
+  - `test/catalog_test.dart` — 6 тестов.
+  - `c-7b-fix` — дозакоммит недостающих файлов (`container_edit_form.dart`, `CatalogService` в `main`, `draft-поля` в `Container`).
+- ✅ **`c-7f`** + **`c-7f-fix`** (2026-11-02) — `FillContainerContent` (Dart-порт `FillContainerContent.tsx`):
+  - `sample_range_parser.dart` — `parseSampleInput` (Dart-порт парсера диапазонов, `TAA-A34076001-031` / `TST124001-005` / `TAA-A34076001`) + `buildSampleNumbers`.
+  - `int_ranges.dart` — `parseIntRanges` / `formatIntRanges` (`"2, 4-7"` ↔ `[2,4,5,6,7]`).
+  - `range_edit_dialog.dart` — skip / selected.
+  - `fill_container_content.dart` — блоки «Добавить новые пробы» / «Пробы в таре» / «Итого».
+  - `SampleService.fillSamples` / `deleteSample`.
+  - `CatalogService.fetchLaboratories` (плюс `Laboratory` в `catalog.dart`).
+  - `test/utils/sample_range_parser_test.dart` — 13 тестов.
+  - `c-7f-fix` — `_sampleTile` без дублей ТИ/Н/З (есть в шапке).
+- ✅ **`c-7g`** (2026-11-02) — вкладка «Пробы» как в вебе:
+  - поиск (номер / скважина), чекбоксы (индивидуальные + «все»), bulk-статус dropdown + [Применить] (последовательные `PATCH`, ошибки — SnackBar).
+  - `SampleStatusChip` — цветной чип (`IN_STORAGE` green, `IN_TRANSIT` blue, `CONSUMED`/`PENDING_PLACEMENT` orange, `DISPOSED` red, `SELECTED`/`unknown` surface).
+  - `SampleEditDialog` (edit / dispose / restore / delete) — открывается по ✏ на каждой пробе и по тапу на строку.
+  - `Sample.researchTypeId`, `siteId`, `wellName`, `disposedAt`, `disposalReason`, `containerNumber`, `sampleStatusToApi`.
+  - `SampleService.fetchById`, `update`, `dispose`, `restore`.
+  - В `FillContainerContent` — ✏ у каждой существующей пробы → тот же `SampleEditDialog`.
+- ✅ **`c-7h`** + **`c-7h-fix`** + **`c-7h-fix-2`** (2026-11-02) — история сканов `Н/З · ТИ · номер`:
+  - `ScanHistoryEntry` — модель с `id`, `containerNumber`, `workOrderCoded`, `researchTypeName`, `label`, `toJson` / `fromJson`.
+  - `ScanHistoryService` — ключ `scan_history_entries` (JSON-строки), миграция со старого `scan_history_ids` (`List<int>`).
+  - `HomeScreen`: чипы показывают `entry.label` (`Н/З · ТИ · номер`), тап → `ContainerDetailScreen`.
+  - `ScannerScreen`: `addToHistory(ScanHistoryEntry.fromContainer(container))`.
+  - `test/services/scan_history_entry_test.dart` — 5 тестов.
+  - `c-7h-fix` — порядок `Н/З · ТИ · номер` (было `номер · Н/З · ТИ`).
+  - `c-7h-fix-2` — дозакоммит недостающих файлов (`home_screen.dart`, `scanner_screen.dart`, `scan_history_service.dart`).
 
 ### Инфраструктура (рабочий ПК, прокси)
 
@@ -78,11 +131,13 @@
 - **`flutter run --android-skip-build-dependency-validation`** — флаг обязателен на рабочем ПК.
 - **`export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — в каждом новом окне Git Bash.
 - **`git push --force-with-lease`** использован один раз (`c-6c`, исправление прямого коммита в долгоживущий).
+- **`c-7b-fix` и `c-7h-fix-2`** — дозакоммит недостающих файлов (правило `DECISIONS 1.90`: перед `git add` — `git status --short | grep "mobile/lib"`).
 
 ### Что осталось
 
-- ⬜ **`c-6e`** — Mobile баннер pending + бейдж сети. Следующий.
-- ⬜ **`c-7a`..`c-7g`** — экраны «как в вебе» (карточка тары, списки, ячейка, WorkOrders, offline-печать).
+- ⬜ **`c-7d`** — PDF предпросмотр (`label.pdf` через `url_launcher`). Следующий.
+- ⬜ **`c-7c`** — кнопка «Разместить» (`PlaceContainerDialog` каскад `Room → Rack → Section → Tier → Cell` + `bulk-place`).
+- ⬜ **`c-7e`** — кэш истории офлайн (SQLite `container_history`, v5, fallback в `fetchHistory`).
 - ⬜ **`c-8a`..`c-8e`** — изменения в офлайне (PATCH статусов, размещение, auto-sync USB).
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
 
@@ -90,7 +145,7 @@
 
 - **Backend: 842 теста** (было 779 в начале серии, +35 pre-existing фиксов + 14 новых).
 - **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 63 юнит-теста** (было 32 в серии `2.x-mobile`, +31 за `3.x-offline`: sync_service 4, sync_pusher 3, sync_provider 7, network_probe 6, scan_window 10+4, app_config_fallback 2, + прочие).
+- **Mobile: 104 юнит-теста** (было 32 в серии `2.x-mobile`; +72 за `3.x-offline`: sync_service 4, sync_pusher 3, sync_provider 7, network_probe 6, network_status_provider 3, scan_window 10+4, sample_range_parser 13, int_ranges 4, catalog 6, container 5, container_history_entry 2, sample 7, scan_history_entry 5, user 4, widget_test 1, api_client, token_storage, parse_qr — исторически).
 
 ---
 
