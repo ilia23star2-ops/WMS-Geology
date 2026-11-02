@@ -31,6 +31,9 @@
 - `c-7f` — `FillContainerContent` (диапазоны проб, skip/selected, удаление) + `c-7f-fix` (`_sampleTile` без дублей ТИ/Н/З) — ✅ **закрыт 2026-11-02**.
 - `c-7g` — вкладка «Пробы» как в вебе (поиск, чекбоксы, bulk-статус, цветные чипы, `SampleEditDialog`) — ✅ **закрыт 2026-11-02**.
 - `c-7h` — история сканов `Н/З · ТИ · номер` (`ScanHistoryEntry`, миграция старого формата) + `c-7h-fix` (порядок) + `c-7h-fix-2` (дозакоммит) — ✅ **закрыт 2026-11-02**.
+- `c-7d` — PDF предпросмотр (`ApiClient.download` + `open_filex`). ✅ **закрыт 2026-11-02**.
+- `c-7f-1` — подготовка offline-рендера PDF (ассеты, `LabelData`). ✅ **закрыт 2026-11-02**.
+- `c-7f-2` — offline-рендер PDF на Dart (`pw.Text`, `pw.BarcodeWidget`, галочка `CustomPaint`). ✅ **закрыт 2026-11-02**.
 
 **Mobile (сеть, иконка):**
 - `c-6g` — `NetworkStatusProvider` (heartbeat `/health/` 10 с, auto-switch host) + иконка сети на `HomeScreen` — ✅ **закрыт 2026-11-02**.
@@ -38,8 +41,7 @@
 - `c-6g-login` — иконка сети на `LoginScreen` — ✅ **закрыт 2026-11-02**.
 
 **Следующие заходы:**
-- `c-7d` — PDF предпросмотр (`label.pdf` через `url_launcher`). ⬜
-- `c-7c` — кнопка «Разместить» (`PlaceContainerDialog` каскад). ⬜
+- `c-7c` — кнопка «Разместить» (`PlaceContainerDialog` каскад). ⬜ **следующий**
 - `c-7e` — кэш истории офлайн (SQLite `container_history`). ⬜
 - `c-8a`..`c-8e` — изменения в офлайне (`sync_queue`, автотриггер). ⬜
 
@@ -55,6 +57,7 @@
 - Auto-detect сети (`c-6c`), `NetworkStatusProvider` (`c-6g`).
 - ScanWindow 220×220 + landscape-фикс (`c-6d-fix-3`).
 - Карточка тары: 3 вкладки, адаптив, форма шапки, FillContainerContent, вкладка «Пробы» как в вебе, история сканов с `Н/З · ТИ · номер` (`c-7a`..`c-7h-fix-2`).
+- PDF предпросмотр: online (`c-7d`) + offline-рендер на Dart (`c-7f-1`, `c-7f-2`).
 
 **Сборка на рабочем ПК (прокси):**
 - `work-pc-setup/setup.ps1` — **обязателен после `git reset --hard`**.
@@ -64,10 +67,10 @@
 
 **Backend:** 842 теста.
 **Web:** 24 юнит-теста.
-**Mobile:** 104 юнит-теста.
+**Mobile:** 111 юнит-тестов.
 
 **Ближайшая работа:**
-- Docs закрыты. Дальше — `c-7d` (PDF) → `c-7c` (Разместить) → `c-7e` (кэш истории).
+- Docs закрыты. Дальше — `c-7c` (Разместить) → `c-7e` (кэш истории) → `c-8a..c-8e` (офлайн-запись).
 
 ---
 
@@ -120,7 +123,7 @@
 | Карточка тары | `ContainerDetailDialog` (Пробы / Редактирование / История + Предпросмотр / Разместить / Местоположение). |
 | Коды доступа | `AccessTokensPage` — создание, просмотр QR, отзыв. |
 
-### Mobile (Flutter, 104 юнит-теста)
+### Mobile (Flutter, 111 юнит-тестов)
 | Раздел | Что внутри |
 |---|---|
 | Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage` на `flutter_secure_storage`. |
@@ -132,11 +135,12 @@
 | Пробы | Вкладка: поиск, чекбоксы, bulk-статус, `SampleEditDialog` (edit/dispose/restore/delete), цветные чипы. |
 | Редактирование | `FillContainerContent` — диапазоны (`parseSampleInput`), skip/selected (`RangeEditDialog`), добавление, удаление. |
 | История | Аудит тары (`AuditLog`). |
+| PDF | Online предпросмотр (`ApiClient.download` + `open_filex`) + offline-рендер на Dart (`label_pdf_generator.dart`, `LabelData`). |
 | Офлайн (SQLite) | `Database` v4, `ContainerDao`, `SampleDao`, `SyncQueueDao`. |
 | Офлайн (Sync) | `SyncService.pullAll()`, `SyncPusher.pushAll()`. Блокировка синхронизации при `!isOnline`. |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (90), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (91), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -197,6 +201,7 @@
 - **`context.read<...>` после `await`** → `use_build_context_synchronously`. Сервис брать **до** первого `await`.
 - **`context.read<...>`** — нужен `import 'package:provider/provider.dart';`.
 - **Перед `git add` — `git status --short | grep "mobile/lib"`** и включить все `M` + `??` из `mobile/lib/*` (правило из 1.90, после `c-7b-fix` и `c-7h-fix-2`).
+- **Перед выдачей кода нового захода — `git status --short | grep "mobile/lib"` должно быть пусто** (правило 1.91).
 - **`mobile/android/*`** (gradle.properties, wrapper, settings) — машинные, **не коммитить** (правило 15).
 - **`tools/`** — машинное, не коммитить.
 - **`flutter pub get`** после `pubspec.yaml`.
@@ -238,6 +243,7 @@
 - Все mobile-команды — `cd mobile && flutter ...`.
 - Docs — отдельной пачкой.
 - **Перед `git add` — `git status --short | grep "mobile/lib"`** (правило 1.90).
+- **Перед выдачей кода нового захода — `git status --short | grep "mobile/lib"` должно быть пусто** (правило 1.91).
 
 ---
 

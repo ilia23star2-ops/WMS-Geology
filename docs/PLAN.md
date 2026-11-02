@@ -48,8 +48,10 @@
 | c-7f | FillContainerContent | диапазоны, skip/selected, удаление | ✅ |
 | c-7g | Вкладка «Пробы» | поиск, чекбоксы, bulk, чипы, `SampleEditDialog` | ✅ |
 | c-7h | История сканов | `Н/З · ТИ · номер` (`ScanHistoryEntry`) | ✅ |
-| c-7d | PDF предпросмотр | `label.pdf` через `url_launcher` | ⬜ **следующий** |
-| c-7c | Разместить | `PlaceContainerDialog` (каскад), `bulk-place` | ⬜ |
+| c-7d | PDF предпросмотр (online) | `ApiClient.download` + `open_filex` | ✅ |
+| c-7f-1 | Offline-PDF: подготовка | ассеты `pdf`, `qr`, `DejaVuSans.ttf`, `LabelData` | ✅ |
+| c-7f-2 | Offline-PDF: рендер на Dart | `pw.Text`, `pw.BarcodeWidget`, галочка `CustomPaint` | ✅ |
+| c-7c | Разместить | `PlaceContainerDialog` (каскад), `bulk-place` | ⬜ **следующий** |
 | c-7e | Кэш истории | SQLite `container_history` (v5), fallback в `fetchHistory` | ⬜ |
 | c-8a | Backend: PATCH статусов | Эндпоинты для `sync_queue` | ⬜ |
 | c-8b | Mobile: Смена статуса тары | `PENDING_FILLING` → `PENDING_PLACEMENT` → `ACTIVE` | ⬜ |
@@ -106,7 +108,7 @@
 - [ ] **Карта склада** в mobile.
 - [ ] **Экспорт отчётов** в Excel/CSV/PDF.
 - [x] **Офлайн-режим mobile** — `c-1`..`c-4.6`, `c-6a`..`c-6h`, `c-7a`..`c-7h`.
-- [ ] **PDF предпросмотр mobile** — `c-7d`.
+- [x] **PDF предпросмотр mobile** — `c-7d` (online), `c-7f-1` + `c-7f-2` (offline).
 - [ ] **Разместить в mobile** — `c-7c`.
 - [ ] **Кэш истории** — `c-7e`.
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
@@ -146,13 +148,14 @@
 | ТД-46 | Денормализация сериализаторов | высокий | ✅ `c-6a` |
 | ТД-47 | Инкрементальный Pull (`updated_since`) | высокий | ✅ `c-6b` |
 | ТД-48 | Auto-detect сети (health-пинг) | высокий | ✅ `c-6c` |
-| ТД-49 | Offline-печать этикеток (Dart PDF) | высокий | `c-7f` (отложено) |
+| ТД-49 | Offline-печать этикеток (Dart PDF) | высокий | ✅ `c-7f-1` + `c-7f-2` |
 | ТД-50 | `setup.ps1` — не пишет `\n` в конец файлов и BOM в `source.properties` | средний | при следующей правке `setup.ps1` |
 | ТД-51 | `c-6f` (`NetworkMonitor` lifecycle) откачен, `c-6g` — упрощённый | низкий | при первом баг-репорте |
 | ТД-52 | `Barcode.scaleCorners` — не учитывает rotation, не используем | низкий | если плагин исправит |
 | ТД-53 | Mobile: `SampleEditDialog` — нет права выбора `well`, `depth` | низкий | при необходимости |
 | ТД-54 | Mobile: `c-7e` — кэш истории (SQLite `container_history`) | высокий | следующий после `c-7c` |
 | ТД-55 | В `c-7b-fix` и `c-7h-fix-2` — дозакоммит недостающих файлов. В `CONTEXT` §«Mobile» — правило: перед `git add` — `git status --short \| grep "mobile/lib"` | ✅ | 1.90 |
+| ТД-56 | Синхронизация констант `label_service.py` ↔ `label_pdf_generator.dart` (порт 1:1). При изменении серверного рендера — править оба | средний | при первом изменении серверного рендера |
 
 ---
 

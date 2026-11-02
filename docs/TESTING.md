@@ -64,9 +64,9 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 
 ## Текущее состояние
 
-**Backend: 779 тестов.**
+**Backend: 842 теста.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
-**Mobile: 32 юнит-теста.**
+**Mobile: 111 юнит-тестов.**
 
 ### Backend — покрытие по приложениям
 
@@ -96,7 +96,14 @@ unit + integration. На merge в `main` — все три уровня. Кон�
 - Парсер QR (`parseQrPayload`).
 - `TokenStorage` на `flutter_secure_storage`.
 - `ApiClient` (Dio, JWT-интерцептор).
-- Модели `Container`, `Sample`.
+- Модели `Container`, `Sample`, `ScanHistoryEntry`.
+- `SyncService`, `SyncPusher`, `SyncProvider`.
+- `NetworkProbe`, `NetworkStatusProvider`.
+- `scan_window` (портрет + ландшафт).
+- `sample_range_parser`, `int_ranges`.
+- `catalog`, `container`, `container_history_entry`.
+- `label_pdf_generator` (offline-рендер PDF на Dart, `c-7f-2`).
+- `user`, `widget_test`.
 
 UI (экраны, сканер) — device-check на планшете.
 
@@ -319,16 +326,18 @@ UI (экраны, сканер) — device-check на планшете.
 
 **Сделано:**
 - Три уровня тестов (unit / integration / contract) — действуют.
-- **779 backend** + 24 web + 32 mobile = **835 тестов**.
+- **842 backend** + 24 web + 111 mobile = **977 тестов**.
 - Contract-тесты OpenAPI.
 - Все stale-тесты после серии 2f починены (`2f-8-fix-2`).
 - Аудит тары — 8 тестов (`test_container_history.py`, 2f-14a).
 - `print_batch_status` — 4 теста (`test_container_print_status.py`, 2f-17b).
+- Offline-рендер PDF — 7 тестов (`label_pdf_generator_test.dart`, `c-7f-2`).
 
 **Осталось:**
 - **ТД-34.** `console.error` в catch-блоках web-компонентов — низкий.
 - **ТД-28.** Fallback `parseSampleInput` — низкий.
 - **ТД-40.** `A4_H_MM` — unused import в `test_label_service.py` — низкий.
+- **ТД-56.** Синхронизация констант `label_service.py` ↔ `label_pdf_generator.dart` (порт 1:1). При изменении серверного рендера — править оба.
 - Покрытие новых заходов следующих серий — по мере реализации.
 - Покрытие custom actions приёмки (`check`/`complete`) — точечное.
 - Покрытие `qr-batch` при отказе одного item — есть.
