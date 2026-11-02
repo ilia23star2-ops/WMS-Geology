@@ -40,18 +40,19 @@ class ApiClient {
     this.tokenProvider,
     this.tokenRefresher,
     Dio? dioOverride,
-  }) : dio = dioOverride ??
-            Dio(
-              BaseOptions(
-                baseUrl: baseUrl ?? AppConfig.apiBaseUrl,
-                connectTimeout: AppConfig.connectTimeout,
-                receiveTimeout: AppConfig.receiveTimeout,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                },
-              ),
-            ) {
+  }) : dio =
+           dioOverride ??
+           Dio(
+             BaseOptions(
+               baseUrl: baseUrl ?? AppConfig.apiBaseUrl,
+               connectTimeout: AppConfig.connectTimeout,
+               receiveTimeout: AppConfig.receiveTimeout,
+               headers: {
+                 'Content-Type': 'application/json',
+                 'Accept': 'application/json',
+               },
+             ),
+           ) {
     _setupInterceptors();
   }
 
@@ -62,9 +63,7 @@ class ApiClient {
   static final Options _jsonOptions = Options(
     contentType: Headers.jsonContentType,
     responseType: ResponseType.json,
-    headers: {
-      'Accept': 'application/json',
-    },
+    headers: {'Accept': 'application/json'},
   );
 
   void _setupInterceptors() {
@@ -135,6 +134,28 @@ class ApiClient {
   Future<Response<T>> delete<T>(String path) async {
     try {
       return await dio.delete<T>(path, options: _jsonOptions);
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
+  /// c-7d: скачать бинарный файл (PDF, картинку). JWT-интерцептор
+  /// уже добавит `Authorization` в `dio`. Ошибка конвертируется
+  /// в `ApiException` — как `get`/`post`.
+  Future<List<int>> download(String path) async {
+    try {
+      final response = await dio.get<List<int>>(
+        path,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = response.data;
+      if (data == null) {
+        throw ApiException(
+          message: 'Пустой ответ от сервера.',
+          statusCode: response.statusCode,
+        );
+      }
+      return data;
     } on DioException catch (e) {
       throw _toApiException(e);
     }
