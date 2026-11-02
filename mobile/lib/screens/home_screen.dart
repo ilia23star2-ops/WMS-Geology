@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/scan_history_entry.dart';
 import '../providers/auth_provider.dart';
 import '../providers/container_provider.dart';
 import '../providers/network_status_provider.dart';
@@ -20,7 +21,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<int> _historyIds = [];
+  List<ScanHistoryEntry> _historyEntries = const [];
 
   @override
   void initState() {
@@ -32,8 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadHistory() async {
-    final ids = await ScanHistoryService.getHistory();
-    if (mounted) setState(() => _historyIds = ids);
+    final entries = await ScanHistoryService.getHistory();
+    if (mounted) setState(() => _historyEntries = entries);
   }
 
   Future<void> _openContainerById(int id) async {
@@ -140,7 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            // c-6h: синхронизация запрещена при offline / pendingOffline.
             Consumer2<SyncProvider, NetworkStatusProvider>(
               builder: (context, sync, net, _) {
                 final total = sync.pendingCount + sync.errorCount;
@@ -182,18 +182,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-            if (_historyIds.isNotEmpty) ...[
+            if (_historyEntries.isNotEmpty) ...[
               const SizedBox(height: 24),
               Text('Недавно отсканировано', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _historyIds.map((id) {
+                children: _historyEntries.map((e) {
                   return ActionChip(
                     avatar: const Icon(Icons.inventory_2, size: 18),
-                    label: Text('Тара #$id'),
-                    onPressed: () => _openContainerById(id),
+                    label: Text(e.label),
+                    tooltip: 'Открыть тару #${e.id}',
+                    onPressed: () => _openContainerById(e.id),
                   );
                 }).toList(),
               ),

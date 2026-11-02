@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/container_provider.dart';
 import '../services/scan_history_service.dart';
+import '../models/scan_history_entry.dart';
 import '../utils/scan_window.dart';
 import 'container_detail_screen.dart';
 
@@ -56,7 +57,10 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final error = provider.error;
 
     if (container != null) {
-      await ScanHistoryService.addToHistory(container.id);
+      // Сохраняем в историю! (c-7h: с Н/З + ТИ + номером)
+      await ScanHistoryService.addToHistory(
+        ScanHistoryEntry.fromContainer(container),
+      );
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
