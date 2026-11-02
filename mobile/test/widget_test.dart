@@ -8,18 +8,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:wms_geology_mobile/providers/auth_provider.dart';
+import 'package:wms_geology_mobile/providers/network_status_provider.dart';
 import 'package:wms_geology_mobile/screens/login_screen.dart';
 
 void main() {
   testWidgets('LoginScreen отображает заголовок, поля и кнопку', (
     tester,
   ) async {
+    // c-6g-login: LoginScreen использует NetworkBadge, которому нужен
+    // NetworkStatusProvider. Оборачиваем в MultiProvider.
+    // AuthProvider без `..initialize()` — не делает сетевых запросов.
+    // NetworkStatusProvider без `start()` — не пингует, isOnline = true.
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => AuthProvider(),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) => NetworkStatusProvider()),
+        ],
         child: const MaterialApp(home: LoginScreen()),
       ),
     );
+    await tester.pump();
 
     expect(find.text('WMS Geology'), findsOneWidget);
     expect(find.text('Вход в систему'), findsOneWidget);
