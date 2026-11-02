@@ -1,15 +1,12 @@
-/// Главный экран (c-6g + c-7h + c-9-drawer).
+/// Главный экран (c-6g + c-7h + c-9-drawer + c-9-container-list).
 ///
 /// Drawer (гамбургер) — разделы как в вебе:
-/// - рабочие: Главная;
-/// - заглушки: Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология,
-///   Справочники — по клику SnackBar «Раздел в разработке»;
+/// - рабочие: Главная, Тара;
+/// - заглушки: Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники;
 /// - Выход.
 ///
-/// Сканер и Синхронизация — кнопками на Главной (не в Drawer).
-///
-/// Импорт Excel в мобилке не планируется (синхронизация заменяет).
-/// Актуализация (инвентаризация) — отдельным разделом позже.
+/// Сканер и Синхронизация — кнопками на Главной.
+/// Импорт Excel не планируется. Актуализация — позже.
 library;
 
 import 'package:flutter/material.dart';
@@ -24,6 +21,7 @@ import '../services/container_service.dart';
 import '../services/scan_history_service.dart';
 import '../widgets/network_badge.dart';
 import 'container_detail_screen.dart';
+import 'containers_list_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
 
@@ -84,6 +82,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openSync() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
+  }
+
+  Future<void> _openContainers() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ContainersListScreen()));
   }
 
   void _showComingSoon(String section) {
@@ -262,7 +265,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // ----- Рабочий раздел -----
           ListTile(
             leading: const Icon(Icons.home_outlined),
             title: const Text('Главная'),
@@ -272,8 +274,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Divider(),
 
-          // ----- Заглушки (как в вебе, раздел в разработке) -----
-          _drawerStub(context, Icons.inventory_2_outlined, 'Тара'),
+          // ----- Рабочие разделы -----
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Тара'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openContainers();
+            },
+          ),
+
+          // ----- Заглушки (как в вебе) -----
           _drawerStub(context, Icons.science_outlined, 'Пробы'),
           _drawerStub(context, Icons.assignment_outlined, 'Наряд-заказы'),
           _drawerStub(context, Icons.move_to_inbox_outlined, 'Приёмка'),
@@ -283,7 +294,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Divider(),
 
-          // ----- Выход -----
           ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('Выйти'),

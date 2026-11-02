@@ -1,8 +1,10 @@
-/// Тесты `ContainerService` (c-7c offline-place, c-7e-2 history cache).
+/// Тесты `ContainerService` (c-7c offline-place, c-7e-2 history cache,
+/// c-9-container-list fetchList).
 library;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wms_geology_mobile/models/container.dart';
 import 'package:wms_geology_mobile/services/api_client.dart';
 import 'package:wms_geology_mobile/services/container_service.dart';
 
@@ -11,6 +13,7 @@ class _MockApi extends Fake implements ApiClient {
   Object? throwOnPost;
 
   final List<String> getCalls = [];
+  final List<Map<String, dynamic>?> getQueryParams = [];
   Object? throwOnGet;
   Object? getData;
 
@@ -28,6 +31,7 @@ class _MockApi extends Fake implements ApiClient {
     Map<String, dynamic>? queryParameters,
   }) async {
     getCalls.add(path);
+    getQueryParams.add(queryParameters);
     final e = throwOnGet;
     if (e != null) throw e;
     return Response<T>(
@@ -246,6 +250,82 @@ void main() {
       );
       final service = createService();
       await expectLater(service.fetchHistory(10), throwsA(isA<ApiException>()));
+    });
+  });
+
+  group('ContainerService.fetchList (c-9-container-list)', () {
+    late _MockApi client;
+    late List<Map<String, dynamic>> cached;
+
+    setUp(() {
+      client = _MockApi();
+      cached = [];
+    });
+
+    ContainerService createService() {
+      return ContainerService(client, getAllCached: () async => cached);
+    }
+
+    test('онлайн: count + items', () async {
+      client.getData = {
+        'count': 2,
+        'next': null,
+        'previous': null,
+        'results': [
+          {
+            'id': 1,
+            'container_number': 'T-1',
+            'container_type': 1,
+            'status': 'ACTIVE',
+          },
+          {
+            'id': 2,
+            'container_number': 'T-2',
+            'container_type': 1,
+            'status': 'PENDING_PLACEMENT',
+          },
+        ],
+      };
+      final page = await createService().fetchList(page: 1);
+
+      expect(page.count, 2);
+      expect(page.items.length, 2);
+      expect(page.items[0].id, 1);
+      expect(page.items[0].status, ContainerStatus.active);
+      expect(client.getCalls, contains('/storage/containers/'));
+    });
+
+    test('онлайн: фильтры уходят в query', () async {
+      client.getData = {
+        'count': 0,
+        'next': null,
+        'previous': null,
+        'results': <dynamic>[],
+      };
+      await createService().fetchList(
+        page: 2,
+        status: ContainerStatus.pendingPlacement,
+        containerTypeId: 3,
+        draftWorkOrderCoded: 'TST0001',
+        draftResearchTypeId: 5,
+      );
+
+      final q = client.getQueryParams.last!;
+      expect(q['page'], 2);
+      expect(q['status'], 'PENDING_PLACEMENT');
+      expect(q['container_type_id'], 3);
+      expect(q['draft_work_order_coded'], 'TST0001');
+      expect(q['draft_research_type_id'], 5);
+    });
+
+    test('офлайн: пустой кэш → пустая страница', () async {
+      client.throwOnGet = ApiException(
+        message: 'нет сети',
+        isNetworkError: true,
+      );
+      final page = await createService().fetchList(page: 1);
+      expect(page.count, 0);
+      expect(page.items, isEmpty);
     });
   });
 }
