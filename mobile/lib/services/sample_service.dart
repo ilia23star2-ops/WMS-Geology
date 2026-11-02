@@ -1,8 +1,9 @@
-/// Сервис проб (c-1, c-7f).
+/// Сервис проб (c-1, c-7f, c-7g).
 ///
 /// - `fetchByContainerId` — список проб в таре (с офлайн-кэшем).
 /// - `fillSamples` — заполнить тару пробами (`POST .../fill-samples/`).
 /// - `deleteSample` — удалить пробу (`DELETE /samples/{id}/`).
+/// - `fetchById` / `update` / `dispose` / `restore` — одна проба.
 library;
 
 import '../db/sample_dao.dart';
@@ -14,11 +15,6 @@ class SampleService {
 
   final ApiClient _client;
 
-  /// GET /samples/?container_id={id}
-  ///
-  /// 1. Пытается загрузить с сервера.
-  /// 2. При успехе кэширует ответ в SQLite.
-  /// 3. При ошибке сети — отдаёт данные из SQLite.
   Future<List<Sample>> fetchByContainerId(int containerId) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
@@ -52,10 +48,20 @@ class SampleService {
     }
   }
 
+  /// GET /samples/{id}/
+  Future<Sample> fetchById(int id) async {
+    final response = await _client.get<Map<String, dynamic>>('/samples/$id/');
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ /samples/$id/.',
+        statusCode: response.statusCode,
+      );
+    }
+    return Sample.fromJson(data);
+  }
+
   /// POST /storage/containers/{id}/fill-samples/
-  ///
-  /// Создать пробы по диапазонам. Возвращает количество созданных.
-  /// Только онлайн.
   Future<int> fillSamples(
     int containerId, {
     String? containerNumber,
@@ -89,10 +95,57 @@ class SampleService {
   }
 
   /// DELETE /samples/{id}/
-  ///
-  /// Hard-delete пробы. `ProtectedError` (проба в отгрузке) → 409.
-  /// Только онлайн.
   Future<void> deleteSample(int sampleId) async {
     await _client.delete<dynamic>('/samples/$sampleId/');
+  }
+
+  /// PATCH /samples/{id}/
+  ///
+  /// payload — `{sample_number, research_type, site, status}`.
+  Future<Sample> update(int id, Map<String, dynamic> payload) async {
+    final response = await _client.patch<Map<String, dynamic>>(
+      '/samples/$id/',
+      data: payload,
+    );
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ при обновлении пробы #$id.',
+        statusCode: response.statusCode,
+      );
+    }
+    return Sample.fromJson(data);
+  }
+
+  /// POST /samples/{id}/dispose/
+  Future<Sample> dispose(int id, {String reason = ''}) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/samples/$id/dispose/',
+      data: {'disposal_reason': reason},
+    );
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ при утилизации пробы #$id.',
+        statusCode: response.statusCode,
+      );
+    }
+    return Sample.fromJson(data);
+  }
+
+  /// POST /samples/{id}/restore/
+  Future<Sample> restore(int id) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/samples/$id/restore/',
+      data: const {},
+    );
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ при возврате пробы #$id.',
+        statusCode: response.statusCode,
+      );
+    }
+    return Sample.fromJson(data);
   }
 }

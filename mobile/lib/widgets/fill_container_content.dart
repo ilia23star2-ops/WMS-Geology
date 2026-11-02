@@ -1,13 +1,12 @@
-/// Управление пробами в таре — как `FillContainerContent.tsx` (c-7f).
+/// Управление пробами в таре — как `FillContainerContent.tsx` (c-7f + c-7g).
 ///
 /// Блоки:
 /// 1. **Добавить новые пробы** — поле диапазона + таблица добавленных.
-/// 2. **Пробы в таре** — существующие, с удалением.
+/// 2. **Пробы в таре** — существующие, с ✏ (SampleEditDialog) и удалением.
 /// 3. **Итого + [Отмена] [Сохранить]**.
 ///
-/// Диапазоны парсятся `parseSampleInput`, проверка дубликатов.
-/// Skip/selected — `RangeEditDialog`.
-/// Submit — `SampleService.fillSamples` + `deleteSample` для удалённых.
+/// c-7g: у каждой существующей пробы — цветной чип статуса
+/// (`SampleStatusChip`) и кнопка ✏ (открывает `SampleEditDialog`).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
 /// `Container` (flutter/src/widgets/container.dart). В этом файле
@@ -25,6 +24,8 @@ import '../services/sample_service.dart';
 import '../utils/int_ranges.dart';
 import '../utils/sample_range_parser.dart';
 import 'range_edit_dialog.dart';
+import 'sample_edit_dialog.dart';
+import 'sample_status_chip.dart';
 
 class FillContainerContent extends StatefulWidget {
   const FillContainerContent({
@@ -118,6 +119,8 @@ class _FillContainerContentState extends State<FillContainerContent> {
       setState(() {
         _existingSamples = samples;
         _samplesLoading = false;
+        // Убрать из _deletedIds те, что уже не в списке (удалены ранее).
+        _deletedIds.removeWhere((id) => !samples.any((s) => s.id == id));
       });
     } catch (e) {
       if (!mounted) return;
@@ -294,6 +297,20 @@ class _FillContainerContentState extends State<FillContainerContent> {
     }
   }
 
+  /// c-7g: открыть `SampleEditDialog` на существующей пробе.
+  ///
+  /// Если что-то изменено (edit / dispose / restore / delete) — перезагрузить
+  /// список (проба могла быть удалена, статус мог смениться).
+  Future<void> _openEditSample(Sample s) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => SampleEditDialog(initial: s),
+    );
+    if (changed == true && mounted) {
+      await _loadSamples();
+    }
+  }
+
   List<Map<String, dynamic>> _groupSeqs(
     _AddedRange range,
     List<int> seqs,
@@ -352,8 +369,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
 
   Future<void> _handleSubmit() async {
     setState(() => _submitError = null);
-    // c-7f-fix: `SampleService` берём до первого `await` — иначе
-    // `context` используется «через async gap» (use_build_context_synchronously).
     final sampleService = context.read<SampleService>();
     final trimmedNumber = _numberCtrl.text.trim();
 
@@ -452,8 +467,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
       padding: const EdgeInsets.all(16),
       children: [
         if (_submitError != null) ...[
-          // `Container` скрыт в этом файле — используем `Material` +
-          // `DecoratedBox` + `Padding` вместо Flutter-виджета `Container`.
           Material(
             color: theme.colorScheme.errorContainer,
             borderRadius: BorderRadius.circular(8),
@@ -630,12 +643,12 @@ class _FillContainerContentState extends State<FillContainerContent> {
             ),
           ),
           IconButton(
-            tooltip: 'Редактировать',
+            tooltip: 'Редактировать диапазон',
             icon: const Icon(Icons.edit),
             onPressed: () => setState(() => _editingRange = r),
           ),
           IconButton(
-            tooltip: 'Удалить',
+            tooltip: 'Убрать из списка',
             icon: Icon(Icons.delete, color: theme.colorScheme.error),
             onPressed: () => _handleRemoveRange(r.id),
           ),
@@ -661,15 +674,15 @@ class _FillContainerContentState extends State<FillContainerContent> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  s.statusLabel,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                const SizedBox(height: 4),
+                SampleStatusChip(status: s.status),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Редактировать',
+            icon: const Icon(Icons.edit),
+            onPressed: () => _openEditSample(s),
           ),
           IconButton(
             tooltip: 'Удалить',
