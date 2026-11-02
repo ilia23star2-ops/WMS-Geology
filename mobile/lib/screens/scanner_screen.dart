@@ -15,22 +15,14 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
-  /// Размер окна сканирования (c-6d). Совпадает с визуальной рамкой.
   static const double _scanWindowSize = 220;
 
   final MobileScannerController _controller = MobileScannerController(
-    // c-6d-fix: `normal` вместо `noDuplicates`. Иначе после reject
-    // (QR вне рамки) плагин не даст повторно сработать тому же
-    // штрихкоду, даже если его занести в рамку. Дублирующую
-    // обработку блокирует флаг `_handled`.
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
   );
 
   bool _handled = false;
-
-  /// Размер виджета и scanWindow сохраняются из LayoutBuilder и
-  /// используются в `_onDetect` для фильтрации штрихкодов.
   Size? _widgetSize;
   Rect? _scanWindow;
 
@@ -45,9 +37,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final barcodes = capture.barcodes;
     if (barcodes.isEmpty) return;
 
-    // c-6d-fix: native `scanWindow` на Android ненадёжен — фильтруем
-    // вручную по положению центра штрихкода. Если все снаружи рамки —
-    // молча игнорируем кадр (камера продолжает работать).
     final barcode = _pickBarcodeInScanWindow(barcodes, capture.size);
     if (barcode == null) return;
 
@@ -56,13 +45,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
     _handled = true;
     await _controller.stop();
-
     if (!mounted) return;
 
     final provider = context.read<ContainerProvider>();
     provider.reset();
     await provider.handleScan(raw);
-
     if (!mounted) return;
 
     final container = provider.container;
@@ -70,7 +57,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
     if (container != null) {
       await ScanHistoryService.addToHistory(container.id);
-
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -92,13 +78,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
-  /// Возвращает первый штрихкод, чей центр (в системе изображения,
-  /// пересчитанный в систему виджета) попадает в scanWindow.
-  /// `null` — все снаружи.
+  /// Возвращает первый штрихкод, чей центр после конвертации в систему
+  /// виджета попадает в scanWindow. `null` — все снаружи.
   Barcode? _pickBarcodeInScanWindow(List<Barcode> barcodes, Size imageSize) {
     final scanWindow = _scanWindow;
     final widgetSize = _widgetSize;
-    // Первый кадр до LayoutBuilder (крайне редко) — не блокируем.
     if (scanWindow == null || widgetSize == null || imageSize.isEmpty) {
       return barcodes.first;
     }
@@ -128,12 +112,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final size = constraints.biggest;
-          // c-6d: мёртвая зона — сканируется только область внутри рамки.
-          // `scanWindow` — в координатах виджета `MobileScanner`.
-          // На устройствах, где native-`scanWindow` работает, — экономит CPU.
-          // На Android 7.4.2 он ненадёжен — фильтр в `_onDetect` дублирует.
           final scanWindow = calculateScanWindow(size, _scanWindowSize);
-          // Сохраняем для фильтра в `_onDetect`.
           _widgetSize = size;
           _scanWindow = scanWindow;
           return Stack(
