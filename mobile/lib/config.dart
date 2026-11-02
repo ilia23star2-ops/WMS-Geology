@@ -21,30 +21,26 @@ class AppConfig {
   AppConfig._();
 
   // --- URL API ---
-  // Если задан через --dart-define — используется без probe.
   static const String _apiHostOverride = String.fromEnvironment(
     'API_HOST',
     defaultValue: '',
   );
 
-  /// Кандидаты для auto-detect (порядок = приоритет).
+  /// `true`, если хост задан через `--dart-define=API_HOST`.
+  /// В этом случае `NetworkStatusProvider` не свапает хост (только статус).
+  static bool get isHostOverridden => _apiHostOverride.isNotEmpty;
+
   static const List<String> _autoDetectCandidates = [
     '127.0.0.1', // USB adb reverse
     '192.168.0.77', // WiFi дома
     '10.0.2.2', // Android-эмулятор
   ];
 
-  /// Fallback, если ни один кандидат не ответил.
   static const String _fallbackHost = '192.168.0.77';
 
   static String? _resolvedHost;
 
   /// Определить и закэшировать хост.
-  ///
-  /// Вызывается из `main()` до `runApp()`. Если `--dart-define=API_HOST`
-  /// задан — probe не запускается, override имеет приоритет.
-  ///
-  /// [dio] — для тестов (подмена HttpClientAdapter).
   static Future<void> resolve({Dio? dio}) async {
     if (_apiHostOverride.isNotEmpty) {
       _resolvedHost = _apiHostOverride;
@@ -74,8 +70,14 @@ class AppConfig {
     return 'http://$host:8000/api/v1';
   }
 
-  /// Для тестов: сбросить закэшированный хост.
-  @visibleForTesting
+  /// Хост без `/api/v1` — для пинга `/health/`.
+  static String get apiHost => _resolvedHost ?? _fallbackHost;
+
+  /// Установить хост вручную.
+  ///
+  /// Используется:
+  /// - `NetworkStatusProvider._ping` при auto-switch (production);
+  /// - тестами для сброса состояния (`setResolvedHost(null)`).
   static void setResolvedHost(String? host) {
     _resolvedHost = host;
   }
