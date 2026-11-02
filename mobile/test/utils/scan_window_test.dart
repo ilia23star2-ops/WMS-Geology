@@ -1,10 +1,4 @@
-/// Тесты `scan_window` (c-6d, c-6d-fix).
-///
-/// `calculateScanWindow` — центрирование окна.
-/// `barcodeCenterFromCorners` — центр штрихкода по углам.
-/// `isPointInsideScanWindow` — проверка попадания точки
-/// (в системе изображения) в scanWindow (система виджета)
-/// с учётом `BoxFit.cover`.
+/// Тесты `scan_window` (c-6d, c-6d-fix, c-6d-fix-3).
 library;
 
 import 'dart:ui';
@@ -67,43 +61,90 @@ void main() {
     });
   });
 
-  group('isPointInsideScanWindow', () {
-    const widget = Size(400, 400);
-    final scanWindow = calculateScanWindow(widget, 220);
+  group('mapImageToWidgetFrame', () {
+    test('portrait: image и widget portrait — без swap', () {
+      // Портрет из лога: center (647.3, 896.5) → mapped ≈ (302.6, 496.3).
+      final mapped = mapImageToWidgetFrame(
+        pointInImage: const Offset(647.3, 896.5),
+        imageSize: const Size(1440, 1920),
+        widgetSize: const Size(685.7, 1062.9),
+      );
+      expect(mapped.dx, closeTo(302.6, 1.0));
+      expect(mapped.dy, closeTo(496.3, 1.0));
+    });
 
-    test('центр изображения → центр виджета → inside', () {
-      // Изображение 1000×800 → после BoxFit.cover центр совпадает
-      // с центром виджета.
+    test('landscape: image portrait, widget landscape — swap', () {
+      // Ландшафт из лога: center (938.5, 681.0) → mapped ≈ (558.7, 279.8).
+      final mapped = mapImageToWidgetFrame(
+        pointInImage: const Offset(938.5, 681.0),
+        imageSize: const Size(1440, 1920),
+        widgetSize: const Size(1142.9, 605.7),
+      );
+      expect(mapped.dx, closeTo(558.7, 1.0));
+      expect(mapped.dy, closeTo(279.8, 1.0));
+    });
+
+    test('landscape: image landscape, widget landscape — без swap', () {
+      final mapped = mapImageToWidgetFrame(
+        pointInImage: const Offset(960, 720),
+        imageSize: const Size(1920, 1440),
+        widgetSize: const Size(1142.9, 605.7),
+      );
+      // 960 × (1142.9/1920) = 571.5, 720 × (605.7/1440) = 302.9 — по центру
+      expect(mapped.dx, closeTo(571.5, 1.0));
+      expect(mapped.dy, closeTo(302.9, 1.0));
+    });
+  });
+
+  group('isPointInsideScanWindow', () {
+    test('portrait: центр → inside', () {
+      final scanWindow = calculateScanWindow(const Size(685.7, 1062.9), 220);
       expect(
         isPointInsideScanWindow(
-          pointInImage: const Offset(500, 400),
-          imageSize: const Size(1000, 800),
-          widgetSize: widget,
+          pointInImage: const Offset(647.3, 896.5),
+          imageSize: const Size(1440, 1920),
+          widgetSize: const Size(685.7, 1062.9),
           scanWindow: scanWindow,
         ),
         isTrue,
       );
     });
 
-    test('угол изображения → снаружи виджета → outside', () {
+    test('landscape: центр QR в рамке → inside (главный фикс)', () {
+      // Реальные координаты из лога landscape.
+      final scanWindow = calculateScanWindow(const Size(1142.9, 605.7), 220);
       expect(
         isPointInsideScanWindow(
-          pointInImage: const Offset(0, 0),
-          imageSize: const Size(1000, 800),
-          widgetSize: widget,
+          pointInImage: const Offset(938.5, 681.0),
+          imageSize: const Size(1440, 1920),
+          widgetSize: const Size(1142.9, 605.7),
+          scanWindow: scanWindow,
+        ),
+        isTrue,
+      );
+    });
+
+    test('landscape: QR вне рамки → outside', () {
+      final scanWindow = calculateScanWindow(const Size(1142.9, 605.7), 220);
+      // Точка в верхнем-левом углу изображения → в ландшафте mapped далеко от центра.
+      expect(
+        isPointInsideScanWindow(
+          pointInImage: const Offset(100, 100),
+          imageSize: const Size(1440, 1920),
+          widgetSize: const Size(1142.9, 605.7),
           scanWindow: scanWindow,
         ),
         isFalse,
       );
     });
 
-    test('пустое изображение → safety → true', () {
+    test('пустые размеры → safety → true', () {
       expect(
         isPointInsideScanWindow(
           pointInImage: Offset.zero,
           imageSize: Size.zero,
-          widgetSize: widget,
-          scanWindow: scanWindow,
+          widgetSize: const Size(400, 400),
+          scanWindow: calculateScanWindow(const Size(400, 400), 220),
         ),
         isTrue,
       );
