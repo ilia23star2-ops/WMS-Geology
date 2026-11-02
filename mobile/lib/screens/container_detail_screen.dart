@@ -23,9 +23,11 @@ import 'package:provider/provider.dart';
 
 import '../models/container.dart';
 import '../models/container_history_entry.dart';
+import '../models/label_data.dart';
 import '../models/sample.dart';
 import '../services/api_client.dart';
 import '../services/container_service.dart';
+import '../services/label_service.dart';
 import '../services/sample_service.dart';
 import '../widgets/container_edit_form.dart';
 import '../widgets/fill_container_content.dart';
@@ -238,7 +240,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     if (_previewLoading) return;
     setState(() => _previewLoading = true);
     final service = context.read<ContainerService>();
+    final samplesForOffline = _samples ?? const <Sample>[];
     try {
+      // 1. Пытаемся получить PDF с сервера.
       final bytes = await service.fetchLabelPdf(_container.id);
       if (!mounted) return;
 
@@ -255,14 +259,37 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      final msg = e.isNetworkError ? 'Нет связи с сервером' : e.message;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      // c-7f-2: офлайн — генерируем PDF локально.
+      if (e.isNetworkError) {
+        await _renderOfflinePreview(samplesForOffline);
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Не удалось открыть PDF: $e')));
     } finally {
       if (mounted) setState(() => _previewLoading = false);
+    }
+  }
+
+  /// c-7f-2: офлайн-fallback — генерация PDF на устройстве.
+  Future<void> _renderOfflinePreview(List<Sample> samples) async {
+    try {
+      final data = LabelData.fromContainer(_container, samples);
+      final ok = await LabelService.openInViewer(data);
+      if (!mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть PDF офлайн')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка офлайн-рендера: $e')));
     }
   }
 
