@@ -4,6 +4,9 @@
 /// С `c-6a` бэкенд отдаёт денормализованные поля (`container_type_name`,
 /// `floor_room_name`, `cell_full_address`, `draft_*_name`) — UI показывает
 /// строки, а не ID.
+///
+/// c-7b-full: добавлены `draftSiteId` и `draftResearchTypeId` (FK id) —
+/// для предзаполнения dropdown'ов в форме редактирования.
 library;
 
 enum ContainerStatus {
@@ -57,7 +60,9 @@ class Container {
     required this.status,
     required this.comment,
     required this.commentTemplateText,
+    required this.draftSiteId,
     required this.draftSiteName,
+    required this.draftResearchTypeId,
     required this.draftResearchTypeName,
     required this.draftWorkOrderCoded,
     required this.draftWorkOrderIncoming,
@@ -81,7 +86,9 @@ class Container {
   final ContainerStatus status;
   final String comment;
   final String? commentTemplateText;
+  final int? draftSiteId;
   final String? draftSiteName;
+  final int? draftResearchTypeId;
   final String? draftResearchTypeName;
   final String draftWorkOrderCoded;
   final String draftWorkOrderIncoming;
@@ -112,7 +119,6 @@ class Container {
     return 'Место не указано';
   }
 
-  /// Строка «ожидает печати» для иконки печати в web — здесь просто флаг.
   bool get isInPrintBatch => printBatchStatus != null;
 
   factory Container.fromJson(Map<String, dynamic> json) {
@@ -131,7 +137,9 @@ class Container {
       status: _parseStatus(json['status'] as String?),
       comment: json['comment'] as String? ?? '',
       commentTemplateText: json['comment_template_text'] as String?,
+      draftSiteId: json['draft_site'] as int?,
       draftSiteName: json['draft_site_name'] as String?,
+      draftResearchTypeId: json['draft_research_type'] as int?,
       draftResearchTypeName: json['draft_research_type_name'] as String?,
       draftWorkOrderCoded: json['draft_work_order_coded'] as String? ?? '',
       draftWorkOrderIncoming:
