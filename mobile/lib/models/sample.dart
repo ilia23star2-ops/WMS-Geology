@@ -1,7 +1,9 @@
-/// Модель пробы.
+/// Модель пробы (c-1, c-7a, c-7g).
 ///
-/// Ответ backend `GET /samples/` — SampleSerializer.
-/// Проба в системе = навеска. Номер не уникален.
+/// Проба = навеска. Номер не уникален.
+/// c-7g: расширено — ID FK для справочников (`researchTypeId`, `siteId`),
+/// `wellName`, `disposedAt`, `disposalReason`, `containerNumber`.
+/// Плюс `sampleStatusToApi` — reverse mapping для PATCH.
 library;
 
 enum SampleStatus {
@@ -43,6 +45,26 @@ SampleStatus _parseStatus(String? raw) {
   }
 }
 
+/// Обратное преобразование: enum → строка API. Для PATCH /samples/{id}/.
+String sampleStatusToApi(SampleStatus status) {
+  switch (status) {
+    case SampleStatus.inStorage:
+      return 'IN_STORAGE';
+    case SampleStatus.inTransit:
+      return 'IN_TRANSIT';
+    case SampleStatus.consumed:
+      return 'CONSUMED';
+    case SampleStatus.disposed:
+      return 'DISPOSED';
+    case SampleStatus.pendingPlacement:
+      return 'PENDING_PLACEMENT';
+    case SampleStatus.selected:
+      return 'SELECTED';
+    case SampleStatus.unknown:
+      return 'IN_STORAGE';
+  }
+}
+
 class Sample {
   const Sample({
     required this.id,
@@ -50,6 +72,12 @@ class Sample {
     required this.researchTypeName,
     required this.currentWorkOrderNumber,
     required this.status,
+    this.researchTypeId,
+    this.siteId,
+    this.wellName,
+    this.containerNumber,
+    this.disposedAt,
+    this.disposalReason,
   });
 
   final int id;
@@ -58,16 +86,31 @@ class Sample {
   final String? currentWorkOrderNumber;
   final SampleStatus status;
 
+  final int? researchTypeId;
+  final int? siteId;
+  final String? wellName;
+  final String? containerNumber;
+  final DateTime? disposedAt;
+  final String? disposalReason;
+
   String get statusLabel =>
       sampleStatusLabels[status] ?? sampleStatusLabels[SampleStatus.unknown]!;
 
   factory Sample.fromJson(Map<String, dynamic> json) {
     return Sample(
       id: json['id'] as int,
-      sampleNumber: json['sample_number'] as String,
+      sampleNumber: json['sample_number'] as String? ?? '',
       researchTypeName: json['research_type_name'] as String? ?? '',
       currentWorkOrderNumber: json['current_work_order_number'] as String?,
       status: _parseStatus(json['status'] as String?),
+      researchTypeId: json['research_type'] as int?,
+      siteId: json['site'] as int?,
+      wellName: json['well_name'] as String?,
+      containerNumber: json['container_number'] as String?,
+      disposedAt: json['disposed_at'] != null
+          ? DateTime.tryParse(json['disposed_at'] as String)
+          : null,
+      disposalReason: json['disposal_reason'] as String?,
     );
   }
 

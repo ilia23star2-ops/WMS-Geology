@@ -1,16 +1,11 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + landscape fix).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g).
 ///
 /// Вкладки (как в вебе):
-/// - **Пробы** — список проб внутри.
-/// - **Редактирование** — `FillContainerContent` (диапазоны + существующие).
+/// - **Пробы** — список + поиск + чекбоксы + bulk-статус + ✏.
+/// - **Редактирование** — `FillContainerContent`.
 /// - **История** — аудит.
 ///
-/// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`) в bottom sheet.
-///
-/// c-7b-fix: кнопки `[Предпросмотр] [Разместить]` в `bottomNavigationBar`
-/// + `SafeArea` — не уходят под системный бар.
-///
-/// c-7f-fix: в `_sampleTile` убраны надписи «ТИ · Н/З» — они уже в шапке.
+/// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
 /// `Container` (flutter/src/widgets/container.dart).
@@ -26,6 +21,8 @@ import '../services/container_service.dart';
 import '../services/sample_service.dart';
 import '../widgets/container_edit_form.dart';
 import '../widgets/fill_container_content.dart';
+import '../widgets/sample_edit_dialog.dart';
+import '../widgets/sample_status_chip.dart';
 
 class ContainerDetailScreen extends StatefulWidget {
   const ContainerDetailScreen({super.key, required this.container});
@@ -47,12 +44,24 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   String? _historyError;
   bool _historyLoading = true;
 
+  // c-7g: поиск + bulk
+  final _searchCtrl = TextEditingController();
+  final Set<int> _selectedIds = {};
+  SampleStatus? _bulkStatus;
+  bool _bulkLoading = false;
+
   @override
   void initState() {
     super.initState();
     _container = widget.container;
     _loadSamples();
     _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSamples() async {
@@ -68,6 +77,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       setState(() {
         _samples = samples;
         _samplesLoading = false;
+        // Очистить выделение от исчезнувших проб.
+        _selectedIds.removeWhere((id) => !samples.any((s) => s.id == id));
       });
     } catch (e) {
       if (!mounted) return;
@@ -168,6 +179,78 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openEditSample(Sample s) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => SampleEditDialog(initial: s),
+    );
+    if (changed == true && mounted) {
+      _loadSamples();
+      _loadHistory();
+    }
+  }
+
+  Future<void> _applyBulkStatus() async {
+    if (_bulkStatus == null || _selectedIds.isEmpty) return;
+    setState(() => _bulkLoading = true);
+    final service = context.read<SampleService>();
+    final failed = <int>[];
+    for (final id in _selectedIds) {
+      try {
+        await service.update(id, {'status': sampleStatusToApi(_bulkStatus!)});
+      } catch (_) {
+        failed.add(id);
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _bulkLoading = false;
+      _selectedIds.clear();
+      _bulkStatus = null;
+    });
+    if (failed.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось обновить ${failed.length} проб')),
+      );
+    }
+    await _loadSamples();
+    await _loadHistory();
+  }
+
+  List<Sample> get _filteredSamples {
+    final all = _samples ?? const <Sample>[];
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return all;
+    return all
+        .where(
+          (s) =>
+              s.sampleNumber.toLowerCase().contains(q) ||
+              (s.wellName ?? '').toLowerCase().contains(q),
+        )
+        .toList();
+  }
+
+  void _toggleSelect(int id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _toggleSelectAll() {
+    final filtered = _filteredSamples;
+    setState(() {
+      if (_selectedIds.length == filtered.length && filtered.isNotEmpty) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds.addAll(filtered.map((s) => s.id));
+      }
+    });
   }
 
   @override
@@ -434,6 +517,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
+  // ----------------------------------------------------------
+  // c-7g: вкладка «Пробы» — поиск, чекбоксы, bulk-статус, ✏.
+  // ----------------------------------------------------------
   Widget _buildSamplesTab(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -468,8 +554,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       );
     }
 
-    final samples = _samples ?? const <Sample>[];
-    if (samples.isEmpty) {
+    final filtered = _filteredSamples;
+    final all = _samples ?? const <Sample>[];
+    if (all.isEmpty) {
       return ListView(
         padding: const EdgeInsets.all(16),
         children: const [
@@ -483,44 +570,141 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: samples.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) => _sampleTile(context, samples[i], i + 1),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Поиск по номеру или скважине',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        if (_selectedIds.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Выбрано: ${_selectedIds.length}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<SampleStatus>(
+                    initialValue: _bulkStatus,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      labelText: 'Сменить статус',
+                    ),
+                    items: SampleStatus.values
+                        .map(
+                          (s) => DropdownMenuItem<SampleStatus>(
+                            value: s,
+                            child: Text(sampleStatusLabels[s] ?? s.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: _bulkLoading
+                        ? null
+                        : (v) => setState(() => _bulkStatus = v),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _bulkLoading || _bulkStatus == null
+                      ? null
+                      : _applyBulkStatus,
+                  child: _bulkLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Применить'),
+                ),
+              ],
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Checkbox(
+                value:
+                    filtered.isNotEmpty &&
+                    _selectedIds.length == filtered.length,
+                onChanged: (_) => _toggleSelectAll(),
+              ),
+              Text(
+                'Проб: ${filtered.length}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(child: Text('Нет проб по фильтру'))
+              : ListView.separated(
+                  itemCount: filtered.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) =>
+                      _sampleTile(context, filtered[i], i + 1),
+                ),
+        ),
+      ],
     );
   }
 
-  /// c-7f-fix: только номер пробы + статус. ТИ и Н/З — в шапке тары,
-  /// не дублируем под каждой пробой.
   Widget _sampleTile(BuildContext context, Sample sample, int num) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 32,
-            child: Text(
-              '$num.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+    final selected = _selectedIds.contains(sample.id);
+    return InkWell(
+      onTap: () => _openEditSample(sample),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            Checkbox(
+              value: selected,
+              onChanged: (_) => _toggleSelect(sample.id),
+            ),
+            SizedBox(
+              width: 32,
+              child: Text(
+                '$num.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: Text(
-              sample.sampleNumber,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.w500,
+            Expanded(
+              child: Text(
+                sample.sampleNumber,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(sample.statusLabel, style: theme.textTheme.bodySmall),
-        ],
+            const SizedBox(width: 8),
+            SampleStatusChip(status: sample.status),
+            IconButton(
+              tooltip: 'Редактировать',
+              icon: const Icon(Icons.edit, size: 18),
+              onPressed: () => _openEditSample(sample),
+            ),
+          ],
+        ),
       ),
     );
   }
