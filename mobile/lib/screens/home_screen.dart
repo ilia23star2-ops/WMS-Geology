@@ -1,3 +1,17 @@
+/// Главный экран (c-6g + c-7h + c-9-drawer).
+///
+/// Drawer (гамбургер) — разделы как в вебе:
+/// - рабочие: Главная;
+/// - заглушки: Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология,
+///   Справочники — по клику SnackBar «Раздел в разработке»;
+/// - Выход.
+///
+/// Сканер и Синхронизация — кнопками на Главной (не в Drawer).
+///
+/// Импорт Excel в мобилке не планируется (синхронизация заменяет).
+/// Актуализация (инвентаризация) — отдельным разделом позже.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -67,6 +81,17 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadHistory();
   }
 
+  Future<void> _openSync() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
+  }
+
+  void _showComingSoon(String section) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$section — раздел в разработке')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -88,6 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      drawer: _buildDrawer(context, auth, theme),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -154,13 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 return Tooltip(
                   message: tooltip,
                   child: OutlinedButton.icon(
-                    onPressed: blocked
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SyncScreen(),
-                            ),
-                          ),
+                    onPressed: blocked ? null : _openSync,
                     icon: blocked
                         ? const Icon(Icons.cloud_off)
                         : Badge(
@@ -202,6 +222,94 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDrawer(
+    BuildContext context,
+    AuthProvider auth,
+    ThemeData theme,
+  ) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: theme.colorScheme.inversePrimary),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Icon(
+                  Icons.warehouse_outlined,
+                  size: 40,
+                  color: theme.colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'WMS Geology',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                Text(
+                  auth.user?.displayName ?? 'пользователь',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ----- Рабочий раздел -----
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Главная'),
+            selected: true,
+            onTap: () => Navigator.of(context).pop(),
+          ),
+
+          const Divider(),
+
+          // ----- Заглушки (как в вебе, раздел в разработке) -----
+          _drawerStub(context, Icons.inventory_2_outlined, 'Тара'),
+          _drawerStub(context, Icons.science_outlined, 'Пробы'),
+          _drawerStub(context, Icons.assignment_outlined, 'Наряд-заказы'),
+          _drawerStub(context, Icons.move_to_inbox_outlined, 'Приёмка'),
+          _drawerStub(context, Icons.print_outlined, 'Печать'),
+          _drawerStub(context, Icons.account_tree_outlined, 'Топология'),
+          _drawerStub(context, Icons.menu_book_outlined, 'Справочники'),
+
+          const Divider(),
+
+          // ----- Выход -----
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Выйти'),
+            enabled: !auth.isLoading,
+            onTap: auth.isLoading
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    context.read<AuthProvider>().logout();
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _drawerStub(BuildContext context, IconData icon, String label) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: const Text('Скоро'),
+      enabled: true,
+      onTap: () {
+        Navigator.of(context).pop();
+        _showComingSoon(label);
+      },
     );
   }
 }
