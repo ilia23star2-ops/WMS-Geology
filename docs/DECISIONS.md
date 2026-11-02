@@ -347,165 +347,378 @@
 **Где:** `mobile/lib/utils/scan_window.dart`, `mobile/lib/screens/scanner_screen.dart`.
 **Статус:** ✅ действует (реализовано в `c-6d-fix` + `c-6d-fix-3`).
 
----
+### 1.82. 2026-11-02 — `NetworkStatusProvider` (heartbeat `/health/` 10 с)
 
-## 2. Что не делаем и почему
+**Решение:** вместо откаченного `c-6f` (`NetworkMonitor` с `WidgetsBindingObserver`) — упрощённый `NetworkStatusProvider`:
+- `Timer.periodic(interval=10s)` → `GET /health/` текущего `AppConfig.apiHost` (2 с таймаут).
+- При неудаче — `NetworkProbe.resolve()` (auto-detect заново).
+- При смене хоста — `onBaseUrlChanged(url)` → `ApiClient.dio.options.baseUrl = url`.
+- При `--dart-define=API_HOST` — только статус, без swap.
 
-- Не используем `SampleParts` — разделение вне WMS.
-- Не храним две колонки для Н/З — не масштабируется.
-- Не заставляем лаборатории использовать наш формат.
-- Не переклеиваем старые этикетки.
-- Не используем закрытые лицензии в ядре.
-- Не создаём кастомную модель User.
-- Не используем Django fixtures для seeds.
-- Не запускаем Django-команды через кнопку «Run» в VS Code.
-- Не клеим QR на поддоны и пробы в MVP.
-- Не удаляем пробы физически без явного DELETE с обработкой `ProtectedError`.
-- Не блокируем размещение при превышении вместимости.
-- Не реализуем bin packing и учёт веса в MVP.
-- Не реализуем логику керна в MVP.
-- Не патчим миграции v1 через 0002.
-- Не используем session-based auth для API.
-- Не пишем OpenAPI вручную.
-- Не создаём SampleDecryption на MVP.
-- Не парсим номер пробы позиционно.
-- Не навязываем свой формат Excel.
-- Не используем pillow 10.4 (11.3).
-- Не полагаемся на сортировку кириллицы в БД.
-- Не импортируем модели напрямую при циклах.
-- Не печатаем ID под QR (внутри payload).
-- Не масштабируем шрифт этикетки вниз — 10 pt всегда.
-- Не разрываем этикетку между листами A4.
-- Не используем A5 как лист печати.
-- Не используем Django signals для sync-логики (1.58).
-- Не используем Django signals для аудита (1.70).
-- Не создаём тару с обязательным `container_number` в bulk-create (1.60).
-- Не считаем `container_number` глобально уникальным (1.61).
-- Не задаём маппинг `PENDING_FILLING → Sample.status` (1.62).
-- Не используем полные этикетки тары для QR секций/ячеек (1.63).
-- Не обнуляем draft-поля после fill-samples (1.69).
-- Не используем baseUrl в tsconfig.json (TS ≥4.4).
-- Не пишем аудит через Django signals (1.70).
-- Не считаем `print_batch_status = CANCELLED` (1.71).
-- Не коммитим сертификаты прокси и локальные Maven-пути (1.73).
-- **Не делаем автоматическое слияние конфликтов синхронизации** — last write wins.
-- **Не хардкодим IP в `config.dart`** — только `String.fromEnvironment` или probe (1.80).
-- **Не пишем healthcheck в `/api/v1/`** — вне, без авторизации (1.78).
-- **Не принимаем `?updated_since=` без таймзоны** — naive → 400 (1.79).
-- **Не используем `Barcode.scaleCorners`** — не учитывает landscape (1.81).
-- **Не полагаемся на native `scanWindow`** — фильтруем вручную (1.81).
+**Причина:**
+- `WidgetsBindingObserver` в `NetworkMonitor` давал регресс (конфликт lifecycle).
+- Heartbeat 10 с — компромисс между «свежестью» и батареей.
+- `NetworkBadge` читает `isOnline` через `context.select`, перерисовывается без перезахода.
 
----
+**Где:** `mobile/lib/providers/network_status_provider.dart`, `mobile/lib/widgets/network_badge.dart`, `mobile/lib/main.dart`.
+**Статус:** ✅ действует.
 
-## 3. Глоссарий
+### 1.83. 2026-11-02 — Синхронизация запрещена при офлайне / pendingOffline
 
-### Данные
+**Решение:** кнопка «Синхронизация» на `HomeScreen` и все действия на `SyncScreen` (Pull / Push / SyncAll / RetryErrors) `disabled`, если `!NetworkStatusProvider.isOnline` **или** `AuthProvider.isPendingOffline`.
 
-| Термин | Что значит |
-|---|---|
-| **Проба (Sample)** | Физическая единица хранения = навеска. |
-| **Навеска** | То же, что Проба. |
-| **Наряд-заказ (Н/З)** | Группа проб. INCOMING / CODED. |
-| **Тип исследования (ТИ)** | ResearchType. ШЛ, ХА, ИЗ. |
-| **Участок (Site)** | Место отбора проб. |
-| **Лаборатория (Laboratory)** | Откуда пришла проба. |
-| **Тара (Container)** | Физический контейнер. |
-| **Тара-заготовка** | Container без `container_number`, с draft-полями, `PENDING_FILLING`. |
-| **Draft-поля тары** | `draft_site`, `draft_research_type`, `draft_work_order_coded`, `draft_work_order_incoming`. |
-| **Тип тары (ContainerType)** | Общий или для конкретной лаборатории. |
-| **Поддон (Pallet)** | «Тихий» объект. OneToOne с ячейкой. |
-| **Ячейка (Cell)** | Место на ярусе. 1 поддон. |
-| **Секция** | Пролёт с 4 ярусами A–D. |
-| **Скважина (Well)** | Источник пробы. |
-| **Партия (Receipt)** | Группа тары, приехавшая одной машиной. |
-| **Рейс (Shipment)** | Отправка. INBOUND / OUTBOUND. |
-| **Партия печати (PrintBatch)** | Корзина тар для массовой печати. |
-| **Группа (Н/З × ТИ)** | Контекст, внутри которого номер тары уникален. |
-| **AuditLog** | Журнал значимых действий. `log_audit()` (1.70). |
-| **print_batch_status** | Статус последней не-CANCELLED партии печати (1.71). |
-| **Health-эндпоинт** | `GET /health/` — 200 без авторизации (1.78). |
+**Причина:**
+- `AuthProvider.isOffline` обновляется только при `initialize` / `login` / `logout` — стареет. `NetworkStatusProvider.isOnline` — свежий (heartbeat 10 с).
+- Pending-offline — пользователь ещё не подтверждён JWT, синхронизация невозможна.
 
-### Процесс
+**UI:**
+- `HomeScreen`: `Consumer2<SyncProvider, NetworkStatusProvider>`, `blocked = !net.isOnline || auth.isPendingOffline`, иконка `cloud_off`, текст «Синхронизация (нет связи)», tooltip.
+- `SyncScreen`: `_OfflineBanner` (красный Card) сверху, все кнопки `disabled`.
 
-| Термин | Что значит |
-|---|---|
-| **Шифровка** | Присвоение Н/З нового названия. |
-| **Приёмка** | Поступление тары. |
-| **Двухфазная приёмка** | Excel → предзаполнение → подтверждение. |
-| **Акт приёмки** | PDF с расхождениями (1.50). |
-| **Формирование поддона** | Сбор тар на поддон. |
-| **Выборка (picking)** | Извлечение проб по списку. |
-| **Отправка (shipment)** | Группа проб. |
-| **Утилизация** | Soft-delete (DISPOSED). |
-| **Инвентаризация** | Сверка физического наличия. |
-| **Расхождение (issue)** | Проблема по инвентаризации. |
-| **Помощник по сортировке** | Рекомендация места. |
-| **Префикс** | Код участка или лаборатории в номере пробы. |
-| **Партия (шифр)** | 5 цифр в шифрованном номере. |
-| **Порядковый номер (sequence)** | Последние цифры номера пробы. |
-| **Портал лаборатории** | Веб-раздел для лабораторий. |
-| **Продолжение этикетки** | Вторая этикетка без шапки. |
-| **Sync-сервис** | Явная функция синхронизации статусов (1.58). |
-| **Аудит** | Журнал действий с объектом (1.70). |
-| **Deferred Offline Login** | Вход по QR без сети (1.75). |
-| **Offline-печать** | PDF на мобилке без сервера (1.77). |
-| **Auto-detect сети** | Probe `/health/` → выбор `apiBaseUrl` (1.80). |
-| **ScanWindow** | Мёртвая зона 220×220 (1.81). |
-| **Incremental Pull** | `?updated_since=` (1.79). |
+**Где:** `mobile/lib/screens/home_screen.dart`, `mobile/lib/screens/sync_screen.dart`.
+**Статус:** ✅ действует.
 
-### Инфраструктура
+### 1.84. 2026-11-02 — Иконка сети на `LoginScreen`
 
-| Термин | Что значит |
-|---|---|
-| **Docker Compose** | PG в контейнере (домашний ПК). |
-| **Портативный PostgreSQL** | PG без установки (рабочий ПК). |
-| **poetry run** | Запуск в venv. |
-| **JWT** | JSON Web Token. |
-| **drf-spectacular** | Генератор OpenAPI 3. |
-| **fpdf2** | Генерация PDF (Python). |
-| **Proxy Bypass** | Набор настроек рабочего ПК (1.73). |
-| **`adb reverse`** | Проброс порта ПК на планшет через USB. |
-| **`FLUTTER_STORAGE_BASE_URL`** | Зеркало engine-артефактов Flutter. |
+**Решение:** `NetworkBadge` в `AppBar.actions` `LoginScreen` — видно статус до входа. `AppBar` прозрачный (`elevation: 0`, `backgroundColor: Colors.transparent`), карточка логина не сдвигается.
 
-### UI
+**Причина:** до ввода пароля пользователь должен знать, есть ли связь с сервером (особенно на работе с USB).
 
-| Термин | Что значит |
-|---|---|
-| **Дашборд** | Главный экран. |
-| **Сканер** | Экран сканирования. |
-| **Виртуальный вид секции** | Ярусы A–D и ячейки. |
-| **Корзина печати** | Пул тар для массовой печати. |
-| **Единое окно тары** | ContainerDetailDialog (1.72). |
-| **Модалка предпросмотра** | ContainerPreviewDialog (1.72). |
-| **SyncScreen** | Экран ручной синхронизации. |
+**Тест:** `widget_test.dart` обёрнут в `MultiProvider` с `NetworkStatusProvider` (иначе `ProviderNotFoundException`).
 
----
+**Где:** `mobile/lib/screens/login_screen.dart`, `mobile/test/widget_test.dart`.
+**Статус:** ✅ действует.
 
-## 4. Что НЕ значат эти термины
+### 1.85. 2026-11-02 — Адаптив карточки тары (портрет / ландшафт)
 
-- «**Часть пробы**» — не используется. Есть навеска.
-- «**Логическая проба**» — не сущность в системе.
-- «**Ячейка**» — не слот на 3 поддона. 1 поддон.
-- «**Поддон**» — «тихий» объект, без QR.
-- «**Наряд-заказ**» — входящий и зашифрованный — разные строки.
-- «**Проба**» — не уникальна по номеру.
-- «**User**» — Django-овский.
-- «**Справочник**» — редактируемый, не жёсткий choices.
-- «**Префикс**» — не часть sequence.
-- «**Партия в номере**» — не Receipt.
-- «**Рейс**» — не одна тара.
-- «**ContainerType.laboratory = NULL**» — не «без лаборатории», а «общий тип».
-- «**Тара-заготовка**» — не «пустая тара физически». Это Container без `container_number`.
-- «**Container.container_number**» — не уникален глобально (1.61).
-- «**PENDING_FILLING**» — состояние в системе (1.62).
-- «**Draft-поля тары**» — обновляются актуальными значениями (1.69).
-- «**baseUrl в tsconfig.json**» — не используется.
-- «**AuditLog**» — не Django signals, только явные вызовы (1.70).
-- «**print_batch_status**» — не «все партии», только последняя не-CANCELLED (1.71).
-- «**ContainerDetailDialog**» — не «редактор», а просмотр + действия (1.72).
-- «**Proxy Bypass**» — не «взлом прокси». Легальная настройка (1.73).
-- «**Deferred Offline Login**» — не «вход без пароля», а отложенная синхронизация токена.
-- «**Health-эндпоинт**» — не «API v1». Вне `/api/v1/`, без авторизации (1.78).
-- «**`?updated_since=`**» — не «фильтр для Web». Только для Mobile Pull (1.79).
-- «**Auto-detect**» — не «выбор по IP-адресу в коде», а probe `/health/` (1.80).
-- «**ScanWindow**» — не «native-ограничение», а `_pickBarcodeInScanWindow` (1.81).
+**Решение:** `ContainerDetailScreen` использует `LayoutBuilder` и два layout'а:
+- **Портрет** (`maxWidth < maxHeight`): `AppBar` + `TabBar.bottom`, шапка в `SliverToBoxAdapter` (`NestedScrollView`) — растягивается на натуральную высоту, при скролле уезжает. `TabBarView` в body.
+- **Ландшафт** (`maxWidth > maxHeight`): `Row`, слева панель ~40% ширины (`clamp 320..460`) со шапкой (скроллится независимо), справа `TabBar` + `TabBarView` на всю высоту.
+- Кнопки `[Предпросмотр] [Разместить]` — в `bottomNavigationBar` + `SafeArea`, не уходят под системный бар.
+
+**Причина:**
+- `SliverAppBar.flexibleSpace` ограничивает шапку toolbar+tabbar → 216 px, шапка обрезается и наезжает на вкладки.
+- В ландшафте `~600 px` высоты, шапка сверху съедала всё.
+- `RefreshIndicator` на `Column` не работал (нет scrollview) — убран, вместо него кнопка `[Обновить]` в `AppBar.actions`.
+
+**Где:** `mobile/lib/screens/container_detail_screen.dart`.
+**Статус:** ✅ действует.
+
+### 1.86. 2026-11-02 — Форма шапки тары в bottom sheet
+
+**Решение:** кнопка ✏ в `AppBar.actions` открывает `showModalBottomSheet` с `ContainerEditForm`. Вкладка «Редактирование» занята `FillContainerContent` (как в вебе), форма шапки не дублирует.
+
+**Поля формы:** `container_number`, `container_type`, `comment`, `position_on_pallet`, `draft_site`, `draft_research_type`, `draft_work_order_coded`, `draft_work_order_incoming`. Справочники — `CatalogService`.
+
+**Причина:**
+- В вебе форма шапки — отдельный `ContainerEditDialog`, не в карточке. Mobile объединяет: 3 вкладки как в вебе + форма шапки через карандаш.
+- Bottom sheet (а не dialog) — удобнее в портрете на планшете (max 85% высоты, скролл).
+
+**Где:** `mobile/lib/widgets/container_edit_form.dart`, `mobile/lib/screens/container_detail_screen.dart`.
+**Статус:** ✅ действует.
+
+### 1.87. 2026-11-02 — `FillContainerContent` на mobile (Dart-порт веба)
+
+**Решение:** вкладка «Редактирование» = Dart-порт `FillContainerContent.tsx`:
+- `parseSampleInput` — Dart-порт парсера диапазонов (`TAA-A34076001-031`, `TST124001-005`, `TAA-A34076001`).
+- `buildSampleNumbers` — полные номера.
+- `RangeEditDialog` — skip / selected.
+- `parseIntRanges` / `formatIntRanges` — `"2, 4-7"` ↔ `[2,4,5,6,7]`.
+- Submit: `SampleService.fillSamples` + `deleteSample` для удалённых.
+
+**`wellName`:** если `draftWorkOrderIncoming` пуст → `middle` (нешифрованная); иначе → `null` (шифрованная).
+
+**Причина:** паритет с web. Один и тот же UX заполнения тары.
+
+**Где:** `mobile/lib/utils/sample_range_parser.dart`, `mobile/lib/utils/int_ranges.dart`, `mobile/lib/widgets/fill_container_content.dart`, `mobile/lib/widgets/range_edit_dialog.dart`.
+**Статус:** ✅ действует.
+
+### 1.88. 2026-11-02 — Вкладка «Пробы» как в вебе
+
+**Решение:** вкладка «Пробы» `ContainerDetailScreen`:
+- поиск (номер пробы / скважина);
+- чекбоксы (индивидуальные + «все»);
+- bulk-статус: dropdown `SampleStatus` + кнопка [Применить] (последовательный `PATCH`, ошибки — SnackBar);
+- `SampleStatusChip` — цветной чип статуса (success/warning/info/error по статусу);
+- ✏ у каждой пробы → `SampleEditDialog` (edit / dispose / restore / delete).
+
+**`SampleEditDialog`:** поля `sample_number`, `research_type`, `site`, `status`. Действия `dispose` / `restore` / `delete` через `SampleService`. Отдаёт `true` — родитель перезагружает список и историю.
+
+**`SampleStatusChip`:** цвета — `IN_STORAGE` green, `IN_TRANSIT` blue, `CONSUMED`/`PENDING_PLACEMENT` orange, `DISPOSED` red, `SELECTED` / `unknown` surface.
+
+**Причина:** паритет с `ContainerDetailDialog.tsx` (вкладка «Пробы»).
+
+**Где:** `mobile/lib/models/sample.dart` (`sampleStatusToApi`), `mobile/lib/services/sample_service.dart` (`fetchById`, `update`, `dispose`, `restore`), `mobile/lib/widgets/sample_status_chip.dart`, `mobile/lib/widgets/sample_edit_dialog.dart`, `mobile/lib/screens/container_detail_screen.dart`, `mobile/lib/widgets/fill_container_content.dart`.
+**Статус:** ✅ действует.
+
+### 1.89. 2026-11-02 — История сканов с `Н/З · ТИ · номер`
+
+**Решение:** `ScanHistoryService` хранит `List<ScanHistoryEntry>` (JSON-строки) в `shared_preferences` (ключ `scan_history_entries`). Чип на главной:
+- `<Н/З> · <ТИ> · <номер>` — полный;
+- `<Н/З> · <ТИ>` — заготовка без номера;
+- `<номер>` — без Н/З и ТИ;
+- `Тара #ID` — fallback (старый формат).
+
+**Миграция:** при первом чтении, если `scan_history_entries` пуст, но есть старый `scan_history_ids` (`List<int>`) → преобразуются в `ScanHistoryEntry` с fallback-label, старый ключ удаляется.
+
+**Порядок полей (c-7h-fix):** именно `Н/З · ТИ · номер`, не наоборот.
+
+**Причина:** «Тара #185» бесполезен в UI. Снимок из `Container` (`draftWorkOrderCoded`, `draftResearchTypeName`, `containerNumber`) сразу показывает контекст.
+
+**Где:** `mobile/lib/models/scan_history_entry.dart`, `mobile/lib/services/scan_history_service.dart`, `mobile/lib/screens/home_screen.dart`, `mobile/lib/screens/scanner_screen.dart`.
+**Статус:** ✅ действует.
+
+### 1.90. 2026-11-02 — Правило: перед `git add` — `git status --short`
+
+**Решение:** при выдаче закрывающего блока с `git add` **перед** `git add` выполнять:
+
+```bash
+git status --short | grep "mobile/lib"
+Все M (modified) и ?? (untracked) из mobile/lib/* включать в git add явными именами. mobile/android/* и tools/ — не включать (правило 15).
+
+Причина:
+
+Дважды за сессию (c-7b, c-7h) файлы остались uncommitted — flutter analyze и flutter test проходили (файлы физически на диске), но git clone с нуля ломался.
+
+Дозакоммиты c-7b-fix / c-7h-fix-2 — некрасивая история.
+
+Где: чек-лист перед закрытием захода; в CONTEXT.md §«Mobile» — уже добавлено.
+Статус: ✅ действует.
+
+2. Что не делаем и почему
+Не используем SampleParts — разделение вне WMS.
+
+Не храним две колонки для Н/З — не масштабируется.
+
+Не заставляем лаборатории использовать наш формат.
+
+Не переклеиваем старые этикетки.
+
+Не используем закрытые лицензии в ядре.
+
+Не создаём кастомную модель User.
+
+Не используем Django fixtures для seeds.
+
+Не запускаем Django-команды через кнопку «Run» в VS Code.
+
+Не клеим QR на поддоны и пробы в MVP.
+
+Не удаляем пробы физически без явного DELETE с обработкой ProtectedError.
+
+Не блокируем размещение при превышении вместимости.
+
+Не реализуем bin packing и учёт веса в MVP.
+
+Не реализуем логику керна в MVP.
+
+Не патчим миграции v1 через 0002.
+
+Не используем session-based auth для API.
+
+Не пишем OpenAPI вручную.
+
+Не создаём SampleDecryption на MVP.
+
+Не парсим номер пробы позиционно.
+
+Не навязываем свой формат Excel.
+
+Не используем pillow 10.4 (11.3).
+
+Не полагаемся на сортировку кириллицы в БД.
+
+Не импортируем модели напрямую при циклах.
+
+Не печатаем ID под QR (внутри payload).
+
+Не масштабируем шрифт этикетки вниз — 10 pt всегда.
+
+Не разрываем этикетку между листами A4.
+
+Не используем A5 как лист печати.
+
+Не используем Django signals для sync-логики (1.58).
+
+Не используем Django signals для аудита (1.70).
+
+Не создаём тару с обязательным container_number в bulk-create (1.60).
+
+Не считаем container_number глобально уникальным (1.61).
+
+Не задаём маппинг PENDING_FILLING → Sample.status (1.62).
+
+Не используем полные этикетки тары для QR секций/ячеек (1.63).
+
+Не обнуляем draft-поля после fill-samples (1.69).
+
+Не используем baseUrl в tsconfig.json (TS ≥4.4).
+
+Не пишем аудит через Django signals (1.70).
+
+Не считаем print_batch_status = CANCELLED (1.71).
+
+Не коммитим сертификаты прокси и локальные Maven-пути (1.73).
+
+Не делаем автоматическое слияние конфликтов синхронизации — last write wins.
+
+Не хардкодим IP в config.dart — только String.fromEnvironment или probe (1.80).
+
+Не пишем healthcheck в /api/v1/ — вне, без авторизации (1.78).
+
+Не принимаем ?updated_since= без таймзоны — naive → 400 (1.79).
+
+Не используем Barcode.scaleCorners — не учитывает landscape (1.81).
+
+Не полагаемся на native scanWindow — фильтруем вручную (1.81).
+
+Не используем WidgetsBindingObserver для heartbeat сети (был регресс в c-6f, 1.82).
+
+Не разрешаем синхронизацию при isPendingOffline (1.83).
+
+Не держим форму шапки в вкладке «Редактирование» — там FillContainerContent как в вебе (1.86).
+
+Не дублируем ТИ / Н/З под каждой пробой — они в шапке тары (1.85, c-7f-fix).
+
+Не храним историю сканов как List<int> — только ScanHistoryEntry с JSON (1.89).
+
+Не выдаём git add без git status --short | grep "mobile/lib" (1.90).
+
+3. Глоссарий
+Данные
+Термин	Что значит
+Проба (Sample)	Физическая единица хранения = навеска.
+Навеска	То же, что Проба.
+Наряд-заказ (Н/З)	Группа проб. INCOMING / CODED.
+Тип исследования (ТИ)	ResearchType. ШЛ, ХА, ИЗ.
+Участок (Site)	Место отбора проб.
+Лаборатория (Laboratory)	Откуда пришла проба.
+Тара (Container)	Физический контейнер.
+Тара-заготовка	Container без container_number, с draft-полями, PENDING_FILLING.
+Draft-поля тары	draft_site, draft_research_type, draft_work_order_coded, draft_work_order_incoming.
+Тип тары (ContainerType)	Общий или для конкретной лаборатории.
+Поддон (Pallet)	«Тихий» объект. OneToOne с ячейкой.
+Ячейка (Cell)	Место на ярусе. 1 поддон.
+Секция	Пролёт с 4 ярусами A–D.
+Скважина (Well)	Источник пробы.
+Партия (Receipt)	Группа тары, приехавшая одной машиной.
+Рейс (Shipment)	Отправка. INBOUND / OUTBOUND.
+Партия печати (PrintBatch)	Корзина тар для массовой печати.
+Группа (Н/З × ТИ)	Контекст, внутри которого номер тары уникален.
+AuditLog	Журнал значимых действий. log_audit() (1.70).
+print_batch_status	Статус последней не-CANCELLED партии печати (1.71).
+Health-эндпоинт	GET /health/ — 200 без авторизации (1.78).
+Процесс
+Термин	Что значит
+Шифровка	Присвоение Н/З нового названия.
+Приёмка	Поступление тары.
+Двухфазная приёмка	Excel → предзаполнение → подтверждение.
+Акт приёмки	PDF с расхождениями (1.50).
+Формирование поддона	Сбор тар на поддон.
+Выборка (picking)	Извлечение проб по списку.
+Отправка (shipment)	Группа проб.
+Утилизация	Soft-delete (DISPOSED).
+Инвентаризация	Сверка физического наличия.
+Расхождение (issue)	Проблема по инвентаризации.
+Помощник по сортировке	Рекомендация места.
+Префикс	Код участка или лаборатории в номере пробы.
+Партия (шифр)	5 цифр в шифрованном номере.
+Порядковый номер (sequence)	Последние цифры номера пробы.
+Портал лаборатории	Веб-раздел для лабораторий.
+Продолжение этикетки	Вторая этикетка без шапки.
+Sync-сервис	Явная функция синхронизации статусов (1.58).
+Аудит	Журнал действий с объектом (1.70).
+Deferred Offline Login	Вход по QR без сети (1.75).
+Offline-печать	PDF на мобилке без сервера (1.77).
+Auto-detect сети	Probe /health/ → выбор apiBaseUrl (1.80).
+ScanWindow	Мёртвая зона 220×220 (1.81).
+Incremental Pull	?updated_since= (1.79).
+NetworkStatusProvider	Heartbeat /health/ 10 с, isOnline, auto-switch (1.82).
+NetworkBadge	Иконка cloud_done / cloud_off / vpn_key в AppBar (1.82).
+ContainerEditForm	Форма шапки тары в bottom sheet (1.86).
+FillContainerContent (mobile)	Вкладка «Редактирование» — диапазоны + skip/selected + удаление (1.87).
+ScanHistoryEntry	Снимок истории сканов Н/З · ТИ · номер (1.89).
+SampleEditDialog (mobile)	Диалог редактирования пробы (edit / dispose / restore / delete) (1.88).
+SampleStatusChip	Цветной чип статуса пробы (1.88).
+Инфраструктура
+Термин	Что значит
+Docker Compose	PG в контейнере (домашний ПК).
+Портативный PostgreSQL	PG без установки (рабочий ПК).
+poetry run	Запуск в venv.
+JWT	JSON Web Token.
+drf-spectacular	Генератор OpenAPI 3.
+fpdf2	Генерация PDF (Python).
+Proxy Bypass	Набор настроек рабочего ПК (1.73).
+adb reverse	Проброс порта ПК на планшет через USB.
+FLUTTER_STORAGE_BASE_URL	Зеркало engine-артефактов Flutter.
+UI
+Термин	Что значит
+Дашборд	Главный экран.
+Сканер	Экран сканирования.
+Виртуальный вид секции	Ярусы A–D и ячейки.
+Корзина печати	Пул тар для массовой печати.
+Единое окно тары	ContainerDetailDialog (1.72).
+Модалка предпросмотра	ContainerPreviewDialog (1.72).
+SyncScreen	Экран ручной синхронизации.
+4. Что НЕ значат эти термины
+«Часть пробы» — не используется. Есть навеска.
+
+«Логическая проба» — не сущность в системе.
+
+«Ячейка» — не слот на 3 поддона. 1 поддон.
+
+«Поддон» — «тихий» объект, без QR.
+
+«Наряд-заказ» — входящий и зашифрованный — разные строки.
+
+«Проба» — не уникальна по номеру.
+
+«User» — Django-овский.
+
+«Справочник» — редактируемый, не жёсткий choices.
+
+«Префикс» — не часть sequence.
+
+«Партия в номере» — не Receipt.
+
+«Рейс» — не одна тара.
+
+«ContainerType.laboratory = NULL» — не «без лаборатории», а «общий тип».
+
+«Тара-заготовка» — не «пустая тара физически». Это Container без container_number.
+
+«Container.container_number» — не уникален глобально (1.61).
+
+«PENDING_FILLING» — состояние в системе (1.62).
+
+«Draft-поля тары» — обновляются актуальными значениями (1.69).
+
+«baseUrl в tsconfig.json» — не используется.
+
+«AuditLog» — не Django signals, только явные вызовы (1.70).
+
+«print_batch_status» — не «все партии», только последняя не-CANCELLED (1.71).
+
+«ContainerDetailDialog» — не «редактор», а просмотр + действия (1.72).
+
+«Proxy Bypass» — не «взлом прокси». Легальная настройка (1.73).
+
+«Deferred Offline Login» — не «вход без пароля», а отложенная синхронизация токена.
+
+«Health-эндпоинт» — не «API v1». Вне /api/v1/, без авторизации (1.78).
+
+«?updated_since=» — не «фильтр для Web». Только для Mobile Pull (1.79).
+
+«Auto-detect» — не «выбор по IP-адресу в коде», а probe /health/ (1.80).
+
+«ScanWindow» — не «native-ограничение», а _pickBarcodeInScanWindow (1.81).
+
+«NetworkStatusProvider» — не NetworkMonitor (тот откачен, 1.82).
+
+«FillContainerContent» на mobile — не диалог, а вкладка (1.87). В вебе — тоже без Dialog, вынесен (2f-17a).
+
+«ScanHistoryEntry» — не полный Container, только снимок (1.89).
+
+«ContainerEditForm» — не «редактор вкладки», а bottom sheet (1.86).
+
+«Н/З · ТИ · номер» — именно в этом порядке (c-7h-fix).
