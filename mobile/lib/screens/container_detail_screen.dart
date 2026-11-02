@@ -1,4 +1,4 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + c-9-overflow-fix-2).
 ///
 /// Вкладки (как в вебе):
 /// - **Пробы** — список + поиск + чекбоксы + bulk-статус + ✏.
@@ -7,18 +7,14 @@
 ///
 /// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`).
 ///
-/// c-7d: кнопка «Предпросмотр» скачивает PDF этикетки через `ApiClient`
-/// (JWT) и открывает системный вьювер через `open_filex`.
+/// c-7d: кнопка «Предпросмотр» — PDF этикетки (online + offline-fallback).
+/// c-7c: «Разместить» / «Местоположение» — раздельные кнопки, как в вебе.
 ///
-/// c-7c: кнопки в нижней панели — раздельные, как в вебе:
-/// - **[Предпросмотр]** — всегда;
-/// - **[Разместить]** — если `status == pendingFilling || pendingPlacement`
-///   → `PlaceContainerDialog` (каскад, online + offline-очередь);
-/// - **[Местоположение]** — если `cellId != null` → `ContainerLocationDialog`
-///   (показ адреса, не меняет статус).
+/// c-9-overflow-fix-2: bulk-статус dropdown — `isExpanded: true`,
+/// `Text('Выбрано: N')` на отдельной строке, items с ellipsis.
+/// Убирает RenderFlex overflow 85 px в узком портрете.
 ///
-/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
-/// `Container` (flutter/src/widgets/container.dart).
+/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
 
 import 'dart:io';
@@ -240,18 +236,12 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     await _loadHistory();
   }
 
-  /// c-7d: скачать PDF этикетки и открыть в системном вьювере.
-  ///
-  /// JWT — через `ApiClient.dio` interceptor (системный вьювер не умеет
-  /// авторизоваться, поэтому сначала скачиваем байты, потом открываем
-  /// локальный файл).
   Future<void> _onPreview() async {
     if (_previewLoading) return;
     setState(() => _previewLoading = true);
     final service = context.read<ContainerService>();
     final samplesForOffline = _samples ?? const <Sample>[];
     try {
-      // 1. Пытаемся получить PDF с сервера.
       final bytes = await service.fetchLabelPdf(_container.id);
       if (!mounted) return;
 
@@ -268,7 +258,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      // c-7f-2: офлайн — генерируем PDF локально.
       if (e.isNetworkError) {
         await _renderOfflinePreview(samplesForOffline);
       } else {
@@ -284,7 +273,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
-  /// c-7f-2: офлайн-fallback — генерация PDF на устройстве.
   Future<void> _renderOfflinePreview(List<Sample> samples) async {
     try {
       final data = LabelData.fromContainer(_container, samples);
@@ -302,14 +290,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
-  /// c-7c: открыть диалог размещения (онлайн + офлайн-очередь).
-  ///
-  /// - `PlaceOutcome.online` — POST ушёл на сервер; перезагружаем карточку
-  ///   (`fetchById`), история дополнится записью `PLACE`, SnackBar «Тара размещена».
-  /// - `PlaceOutcome.queued` — POST в `sync_queue` (офлайн); карточка на
-  ///   сервере не изменилась, поэтому `fetchById` **не** делаем. SnackBar
-  ///   «Размещение сохранено. Отправится при синхронизации.».
-  /// - `null` — отмена диалога.
   Future<void> _onPlace() async {
     final service = context.read<ContainerService>();
     final outcome = await showDialog<PlaceOutcome>(
@@ -335,9 +315,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       if (!mounted) return;
       setState(() => _container = updated);
       _loadHistory();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Тара размещена')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Тара размещена')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -346,10 +325,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
-  /// c-7c: показать адрес тары (не меняет статус).
-  ///
-  /// В вебе аналог — переход в `/topology?cell_id=`. В мобилке раздела
-  /// топологии нет, поэтому показываем `ContainerLocationDialog` с адресом.
   Future<void> _onShowLocation() {
     return showDialog<void>(
       context: context,
@@ -632,15 +607,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
-  /// c-7c: раздельные кнопки (как в вебе).
-  ///
-  /// - `[Предпросмотр]` — всегда.
-  /// - `[Разместить]` — `canPlace = pendingFilling || pendingPlacement`.
-  /// - `[Местоположение]` — `hasCell = cellId != null`.
-  ///
-  /// `canPlace` и `hasCell` практически взаимоисключающие: после
-  /// размещения статус становится `active`, `canPlace = false`, а `cellId`
-  /// появляется. Так что одновременно в панели не больше двух кнопок.
   Widget _buildActionButtons(BuildContext context) {
     final canPlace =
         _container.status == ContainerStatus.pendingFilling ||
@@ -757,49 +723,62 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             onChanged: (_) => setState(() {}),
           ),
         ),
+        // c-9-overflow-fix-2: «Выбрано: N» — на отдельной строке,
+        // dropdown + кнопка — ниже. `isExpanded: true` + ellipsis
+        // в items. Без этого — RenderFlex overflow 85 px.
         if (_selectedIds.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
                   'Выбрано: ${_selectedIds.length}',
                   style: theme.textTheme.bodyMedium,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<SampleStatus>(
-                    initialValue: _bulkStatus,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                      labelText: 'Сменить статус',
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<SampleStatus>(
+                        initialValue: _bulkStatus,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          labelText: 'Сменить статус',
+                        ),
+                        items: SampleStatus.values
+                            .map(
+                              (s) => DropdownMenuItem<SampleStatus>(
+                                value: s,
+                                child: Text(
+                                  sampleStatusLabels[s] ?? s.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _bulkLoading
+                            ? null
+                            : (v) => setState(() => _bulkStatus = v),
+                      ),
                     ),
-                    items: SampleStatus.values
-                        .map(
-                          (s) => DropdownMenuItem<SampleStatus>(
-                            value: s,
-                            child: Text(sampleStatusLabels[s] ?? s.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _bulkLoading
-                        ? null
-                        : (v) => setState(() => _bulkStatus = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _bulkLoading || _bulkStatus == null
-                      ? null
-                      : _applyBulkStatus,
-                  child: _bulkLoading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Применить'),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _bulkLoading || _bulkStatus == null
+                          ? null
+                          : _applyBulkStatus,
+                      child: _bulkLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Применить'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -862,6 +841,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             Expanded(
               child: Text(
                 sample.sampleNumber,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontFamily: 'monospace',
                   fontWeight: FontWeight.w500,
