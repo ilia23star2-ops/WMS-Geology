@@ -1,19 +1,37 @@
-/// Сервис проб (c-1, c-7f, c-7g).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1).
 ///
 /// - `fetchByContainerId` — список проб в таре (с офлайн-кэшем).
 /// - `fillSamples` — заполнить тару пробами (`POST .../fill-samples/`).
 /// - `deleteSample` — удалить пробу (`DELETE /samples/{id}/`).
 /// - `fetchById` / `update` / `dispose` / `restore` — одна проба.
+///
+/// c-7e-1: `fetchByContainerId` при `ApiException.isNetworkError == true`
+/// возвращает кэш **всегда** — включая пустой список. Пустая тара офлайн —
+/// нормальный случай, не ошибка. Валидационные ошибки (не network) —
+/// пробрасываются.
 library;
 
 import '../db/sample_dao.dart';
 import '../models/sample.dart';
 import 'api_client.dart';
 
+/// DI-хук для тестов. По умолчанию — `SampleDao.saveAll`.
+typedef SaveSamples = Future<void> Function(List<Map<String, dynamic>> raw);
+typedef GetSamplesByContainer = Future<List<Map<String, dynamic>>> Function(
+  int containerId,
+);
+
 class SampleService {
-  SampleService(this._client);
+  SampleService(
+    this._client, {
+    SaveSamples? saveSamples,
+    GetSamplesByContainer? getCached,
+  }) : _saveSamples = saveSamples ?? SampleDao.saveAll,
+       _getCached = getCached ?? SampleDao.getByContainerId;
 
   final ApiClient _client;
+  final SaveSamples _saveSamples;
+  final GetSamplesByContainer _getCached;
 
   Future<List<Sample>> fetchByContainerId(int containerId) async {
     try {
@@ -33,18 +51,17 @@ class SampleService {
       final rawList = results.cast<Map<String, dynamic>>();
 
       try {
-        await SampleDao.saveAll(rawList);
+        await _saveSamples(rawList);
       } catch (_) {
         // Кэш не критичен.
       }
 
       return rawList.map(Sample.fromJson).toList();
-    } catch (e) {
-      final cached = await SampleDao.getByContainerId(containerId);
-      if (cached.isNotEmpty) {
-        return cached.map(Sample.fromJson).toList();
-      }
-      rethrow;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      // c-7e-1: офлайн — возвращаем кэш, включая пустой.
+      final cached = await _getCached(containerId);
+      return cached.map(Sample.fromJson).toList();
     }
   }
 
