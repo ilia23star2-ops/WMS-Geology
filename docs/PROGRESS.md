@@ -8,87 +8,89 @@
 ## Серия `feature/3.x-offline`
 
 **Дата:** 2026-10-28 — активна.
-**Ветка:** `fix/2.x-mobile-bundle-c-2`.
-**Контекст:** Офлайн-режим для мобильного приложения. SQLite + SyncQueue + Deferred Offline Login + USB-режим. Backend на старте серии — 779 тестов.
-
-### Что закрыто (mobile)
-
-- ✅ **`c-1`** — SQLite: таблицы `containers`, `samples`, DAO (`ContainerDao`, `SampleDao`), инициализация БД.
-- ✅ **`c-2`** (2026-10-29) — `SyncService` (Pull): постраничная синхронизация с сервера (по 50 записей), DI для тестов (передача `saveContainers` / `saveSamples`).
-  - `mobile/lib/services/sync_service.dart` — написан.
-  - `mobile/test/services/sync_service_test.dart` — 4 теста (пустой ответ, одна страница, несколько страниц, ошибка).
-  - **Сборка:** успешно собрано на домашнем ПК (Flutter 3.47.6, JDK 17, Gradle 9.3.1).
-  - **Рабочий ПК:** подготовлена папка `work-pc-setup` для обхода прокси (сертификаты, `maven-local`, скрипт `setup.ps1`).
-- ✅ **`c-3`** (2026-10-29) — `SyncQueue` (таблица в SQLite) + `SyncQueueDao` + `SyncPusher` (POST/PATCH/DELETE).
-  - `mobile/lib/db/sync_queue_dao.dart` — написан.
-  - `mobile/lib/services/sync_pusher.dart` — написан.
-  - `mobile/test/services/sync_pusher_test.dart` — 3 теста.
-- ✅ **`c-4`** (2026-10-29) — `SyncProvider` (`ChangeNotifier`), `SyncScreen` (Pull/Push/Sync All + статистика), кнопка «Синхронизация» на `HomeScreen` с бейджем.
-  - `mobile/lib/providers/sync_provider.dart` — написан.
-  - `mobile/lib/screens/sync_screen.dart` — написан.
-  - `mobile/test/providers/sync_provider_test.dart` — 7 тестов.
-- ✅ **`c-4.5`** (2026-10-30) — `Deferred Offline Login`:
-  - QR содержит **base64-JSON** `{token, purpose, expires_at, user}` (роль из QR — не `guest`).
-  - `AuthService` — `savePendingOfflineToken` / `getPendingOfflineToken` / `clearPendingOfflineToken`.
-  - `AuthProvider.loginWithQr` (попытка online → fallback на pending), `_tryExchangePendingToken` (обмен при `initialize`).
-  - `QrLoginScreen` — парсинг base64-JSON с fallback на raw-строку.
-  - Плашки на `HomeScreen`: «Офлайн-режим» (красная, `isOffline`) / «Временный доступ» (оранжевая, `isPendingOffline`).
-  - `DeviceIdService` — UUID v4 на `shared_preferences` (без пакета `uuid`).
-  - `ScanHistoryService` — история 10 последних тар.
-  - `ContainerService.fetchById` — fallback на `ContainerDao.getById` при сетевой ошибке.
-  - `SampleService.fetchByContainerId` — fallback на `SampleDao.getByContainerId`.
-  - `ApiException.isNetworkError` + `AuthProvider._isNetworkError` (правильная классификация).
-  - Миграция `users/0003_*` (поле `qr_svg` в `AccessToken`).
-- ✅ **`c-4.6`** (2026-10-30) — USB-режим:
-  - `adb reverse tcp:8000 tcp:8000` → планшет видит `127.0.0.1:8000` ПК через USB.
-  - `flutter run --dart-define=API_HOST=127.0.0.1` — на работе (USB), дома дефолт `192.168.0.77`.
-  - `config.dart`: `String.fromEnvironment('API_HOST', defaultValue: '192.168.0.77')`.
-  - SQLite `version = 4` (миграция `onUpgrade` = `DROP TABLE` + `createTables`).
-  - Fix `home_screen.dart`: без `hide Container`, `_openScanner` с локальным `ChangeNotifierProvider`, `_openContainerById` через `ContainerService`.
-  - **Успешная сборка на рабочем ПК** (прокси): NDK r28c, Platform 36, Build-tools 36.0.0, `maven-local` (aapt2, aapt2-proto, kotlin-dsl, kotlin.jvm), сертификаты `Polymetal.ru` + `storage.flutter-io.cn`, `FLUTTER_STORAGE_BASE_URL=storage.flutter-io.cn`.
-
-### Что закрыто (web)
-
-- ✅ **`3.x-offline-auth`** — «Коды доступа»: создание токенов, просмотр QR для активных, отзыв. `AccessTokensPage`.
-  - Иконка QR скрыта для неактивных (`is_active && qr_svg`).
-  - `qr_svg` хранится в БД и доступен для повторного показа.
+**Ветка:** `fix/2.x-mobile-bundle-c-2` (долгоживущий offline-бранч).
+**Контекст:** Офлайн-режим мобильного приложения. SQLite + SyncQueue + Deferred Offline Login + USB + auto-detect + scanWindow + инкрементальный Pull. Backend на старте серии — 779 тестов.
 
 ### Что закрыто (backend)
 
-- ✅ **`3.x-offline-auth`** — `AccessToken` (`web_login` / `offline`, TTL 14 ч, привязка к `device_id`).
-- ✅ `POST /auth/code-login/` — одноразовый код → JWT.
-- ✅ `POST /auth/offline-login/` — offline-токен → JWT, привязка к `device_id` (второе устройство → 409).
-- ✅ `AccessToken.qr_svg` — TextField, заполняется при `create`, отдаётся в `list`.
-- ✅ `make_access_token_qr_svg(purpose, raw, expires_at, user)` — base64-JSON.
+- ✅ **`c-6a-pre`** (2026-10-30) — починка pre-existing регрессов, обнаруженных полным прогоном:
+  - `log_audit(old_value=..., new_value=...)` — восстановлен параметр `old_value` (регресс, `DECISIONS 1.70`), передаётся в `AuditLog`.
+  - `UserProfile.__str__` — fallback `"без роли"` при `role=None`.
+  - `test_access_tokens.py` — 3 stale-теста: `len(raw_token) == 43` (было `== 64` после `token_urlsafe(32)`), `make_access_token_qr_svg(4 args)` (base64-JSON из `c-4.5`).
+  - Коммиты `58549e5` (pre) + merge.
+- ✅ **`c-6a`** (2026-10-30) — `GET /health/` (200 без авторизации, `{status, service, time}`) + денормализация `ContainerSerializer` (`container_type_name`, `floor_room_name`, `cell_full_address`) + `select_related("pallet__cell", ...)` в `ContainerViewSet.get_queryset` (без N+1).
+  - `wms_geology/health.py` — новый.
+  - `apps/storage/tests/test_serializers_denormalization.py` — 5 тестов.
+  - `tests/test_health.py` — 2 теста.
+- ✅ **`c-6b`** (2026-10-30) — `?updated_since=<ISO 8601>` на `/storage/containers/` и `/samples/`.
+  - `apps/storage/filters.py::apply_updated_since` — DRY-хелпер.
+  - ISO с таймзоной; naive / невалидный → 400 (`ValidationError`).
+  - Тесты: `test_updated_since.py` × 2 (4 storage + 3 samples).
 
-### В работе
+### Что закрыто (mobile)
 
-- 🟡 **`c-6a`** — backend: health + денормализация сериализаторов (следующая сессия).
-- 🟡 **`c-6b`** — backend: инкрементальный Pull (`Container.updated_at` + `?updated_since=`).
-- 🟡 **`c-6c`** — mobile: auto-detect сети.
-- 🟡 **`c-6d`** — mobile: scanWindow (мёртвая зона).
-- 🟡 **`c-6e`** — mobile: баннер pending + бейдж сети.
+- ✅ **`c-1`** — SQLite: `containers`, `samples`, DAO, инициализация.
+- ✅ **`c-2`** (2026-10-29) — `SyncService` (Pull), 50/стр, DI для тестов. 4 теста.
+- ✅ **`c-3`** (2026-10-29) — `SyncQueue` (SQLite) + `SyncQueueDao` + `SyncPusher`. 3 теста.
+- ✅ **`c-4`** (2026-10-29) — `SyncProvider` + `SyncScreen` + кнопка. 7 тестов.
+- ✅ **`c-4.5`** (2026-10-30) — Deferred Offline Login:
+  - QR = base64-JSON `{token, purpose, expires_at, user}`.
+  - `AuthService.savePendingOfflineToken` / `get` / `clear`.
+  - `AuthProvider.loginWithQr` (fallback), `_tryExchangePendingToken`.
+  - `QrLoginScreen` — base64-JSON с fallback на raw.
+  - Плашки «Офлайн-режим» / «Временный доступ».
+  - `DeviceIdService` (UUID v4 на `shared_preferences`).
+  - `ScanHistoryService` — история 10 тар.
+  - `ContainerService.fetchById` / `SampleService.fetchByContainerId` — fallback на DAO.
+  - `ApiException.isNetworkError` + `AuthProvider._isNetworkError`.
+  - Миграция `users/0003_*` (`qr_svg`).
+- ✅ **`c-4.6`** (2026-10-30) — USB-режим:
+  - `adb reverse tcp:8000 tcp:8000` → `127.0.0.1:8000`.
+  - `--dart-define=API_HOST=127.0.0.1`.
+  - SQLite `version = 4`.
+  - Fix `home_screen.dart`.
+  - **Успешная сборка на рабочем ПК** (прокси).
+- ✅ **`c-6c`** (2026-10-30) — auto-detect сети:
+  - `lib/services/network_probe.dart` — `NetworkProbe.resolve()` (parallel ping `GET /health/`, 2 с).
+  - `lib/config.dart::AppConfig.resolve()` — приоритет `--dart-define=API_HOST` → probe (`127.0.0.1` / `192.168.0.77` / `10.0.2.2`) → fallback `192.168.0.77`.
+  - `lib/main.dart` — `WidgetsFlutterBinding.ensureInitialized()` + `await AppConfig.resolve()` перед `runApp`.
+  - `test/services/network_probe_test.dart` — 6 тестов.
+  - **Device-check:** портрет ok, ландшафт ok (после `c-6d`).
+- ✅ **`c-6d-fix`** (2026-11-02) — scanWindow 220×220:
+  - `lib/utils/scan_window.dart::calculateScanWindow` + `barcodeCenterFromCorners`.
+  - `lib/screens/scanner_screen.dart`: `_pickBarcodeInScanWindow` (по `corners`), `DetectionSpeed.normal`, `_widgetSize` + `_scanWindow` из `LayoutBuilder`.
+  - `test/utils/scan_window_test.dart` — 10 тестов.
+  - **Первая попытка `c-6d`**: native `scanWindow` в `mobile_scanner 7.4.2` на Android не ограничивает (issue #633).
+  - **`c-6d-fix-2`**: попытка `BarcodeCapture.rotation` (нет в 7.4.2) → `scaleCorners` (не учитывает rotation) → откат, ничего не вмержено.
+- ✅ **`c-6d-fix-3`** (2026-11-02) — landscape-фикс:
+  - **Причина:** `capture.size` в `mobile_scanner` на Android **не** меняется при повороте (остаётся 1440×1920), а `corners` приходят уже в rotated системе (1920×1440). BoxFit.cover с `capture.size` даёт сдвиг → в ландшафте QR внутри не сканируется.
+  - **Фикс:** `mapImageToWidgetFrame` swap effectiveSize при `widget landscape + image portrait`.
+  - `test/utils/scan_window_test.dart` — +4 теста (landscape-кейсы из реального лога).
+  - **Device-check:** портрет + ландшафт, QR внутри/вне — ok.
 
-### Что дальше
+### Инфраструктура (рабочий ПК, прокси)
 
-Следующие фазы (см. `PLAN.md`):
-- `c-7a`..`c-7g` — экраны «как в вебе» (карточка тары 3 вкладки, списки тар/проб, ячейка, WorkOrders полный CRUD, offline-печать).
-- `c-8a`..`c-8e` — изменения в офлайне (PATCH статусов, размещение, auto-sync USB).
-- `c-5` — файловая синхронизация (sneakernet через флешку) — отложено.
+- **`setup.ps1` обязателен после `git reset --hard`** — восстанавливает сертификаты, `maven-local`, `local.properties`, `~/.gradle/gradle.properties`, aapt2-путь, NDK.
+- **`aapt2FromMavenOverride`** в `mobile/android/gradle.properties` — иначе `Connection reset` с `dl.google.com`.
+- **`kotlin.incremental=false` + `kotlin.compiler.execution.strategy=in-process` + `org.gradle.parallel=false` + `org.gradle.workers.max=2`** в `mobile/android/gradle.properties` — иначе D8 OOM на `mergeExtDexDebug` (даже с `-Xmx8G` и 16 GB RAM).
+- **NDK `source.properties`** — `setup.ps1` пишет с BOM, CMake не парсит. Фикс: `printf` без BOM.
+- **`cat >> file`** без завершающего `\n` склеивает строки.
+- **`flutter run --android-skip-build-dependency-validation`** — флаг обязателен на рабочем ПК.
+- **`export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — в каждом новом окне Git Bash.
+- **`git push --force-with-lease`** использован один раз (`c-6c`, исправление прямого коммита в долгоживущий).
+
+### Что осталось
+
+- ⬜ **`c-6e`** — Mobile баннер pending + бейдж сети. Следующий.
+- ⬜ **`c-7a`..`c-7g`** — экраны «как в вебе» (карточка тары, списки, ячейка, WorkOrders, offline-печать).
+- ⬜ **`c-8a`..`c-8e`** — изменения в офлайне (PATCH статусов, размещение, auto-sync USB).
+- ⏸ **`c-5`** — sneakernet через флешку (отложено).
 
 ### Метрики
 
-- **Mobile: 43 юнит-теста** (было 32 в серии `2.x-mobile`; +11 за серию `3.x-offline`: 4 `sync_service`, 3 `sync_pusher`, 7 `sync_provider` — с учётом переделок).
-- Backend: 779 тестов (без изменений).
-- Web: 24 юнит-теста (без изменений).
-
-### Инфраструктура
-
-- **Рабочий ПК:** NDK r28c, Platform 36, Build-tools 36.0.0, JDK 17, Gradle 9.3.1.
-- **`maven-local`:** aapt2, aapt2-proto, kotlin-dsl 6.5.2, kotlin.jvm 2.2.20.
-- **Сертификаты:** Polymetal.ru + storage.flutter-io.cn в `D:\Dev\jdk-17\lib\security\cacerts`.
-- **`work-pc-setup/`:** сертификаты, maven-local, `setup.ps1`, `flutter_tools_*.gradle.kts`.
-- **`D:\Dev\wms-bundle\`:** `install_bundle.ps1` + NDK + platform + build-tools + aapt2-proto.
+- **Backend: 842 теста** (было 779 в начале серии, +35 pre-existing фиксов + 14 новых).
+- **Web: 24 юнит-теста** (без изменений).
+- **Mobile: 63 юнит-теста** (было 32 в серии `2.x-mobile`, +31 за `3.x-offline`: sync_service 4, sync_pusher 3, sync_provider 7, network_probe 6, scan_window 10+4, app_config_fallback 2, + прочие).
 
 ---
 
@@ -96,333 +98,90 @@
 
 **Дата:** 2026-10-12 — 2026-10-27.
 **Ветка:** `feature/2.x-web-v2` (влита в `main`, архив).
-**Контекст:** Расширение web-клиента: приёмка, ручной ввод тары
-с пробами, полный CRUD в интерфейсе, полировка. Стратегия —
-Web первый, Mobile по требованию. Backend на старте серии —
-552 теста.
+**Контекст:** Web: приёмка, ручной ввод тары, полный CRUD, полировка. Backend на старте — 552 теста.
 
 ### Что закрыто (backend)
 
-- ✅ **`bundle-1`** — `current_location` в `SampleSerializer`,
-  фильтры `?q=` (icontains), `?no_work_order=`.
-- ✅ **`bundle-2`** — `GET /samples/grouped/` (пагинация по
-  группам Н/З + тип исследования).
-- ✅ **`bundle-5`** — `POST /storage/containers/bulk-create/`
-  (тара + пробы одним запросом). Позже переработан в 7a-1 / 7a-2.
-- ✅ **`bundle-6a`** — фильтр по дате в Excel-импорте,
-  поле `expected_date`.
-- ✅ **`bundle-6b`** — `target_date` (обязательно),
-  `duplicate_action` (cancel/overwrite/create), 409 на дубликат.
-- ✅ **`bundle-7a-1`** — `Sample.STATUS_PENDING_PLACEMENT` +
-  сервис `sync_sample_status_for_container` (явный вызов, без
-  Django signals, см. решение 1.58). +12 тестов.
-- ✅ **`bundle-7a-2`** — разделение bulk-create на два эндпоинта:
-  `POST /storage/containers/bulk-create/` (только тары) +
-  `POST /storage/containers/{id}/fill-samples/` (пробы для
-  существующей тары). См. решение 1.59. −8 старых тестов,
-  +18 новых.
-- ✅ **`bundle-7a-2b`** — `Container`: 4 draft-поля
-  (`draft_site`, `draft_research_type`, `draft_work_order_coded`,
-  `draft_work_order_incoming`) + `container_number` → nullable.
-  Заготовка создаётся без номера, номер присваивается в
-  `fill-samples`, draft-поля обнуляются. См. решение 1.60.
-  Миграция `0005_*`. −19 старых тестов, +26 новых.
-- ✅ **`receiving-1a`** — backend: парсер — группы
-  «типы + Дата», список дат в ячейке, составное количество `1+1`.
-- ✅ **`receiving-1a-2`** — backend: парсер — поиск строки
-  заголовков в первых `MAX_HEADER_SEARCH=20` строках, строка
-  типа тары (обязательна для каждой колонки типа),
-  `MISSING_CONTAINER_TYPE`.
-- ✅ **`receiving-1b`** — backend: сервис `apply_shipment_import`:
-  `Shipment` (INBOUND, SENT) + `Receipt` (site=NULL) +
-  `ReceiptItem` + N `Container` (status=IN_TRANSIT, draft-поля).
-  Спорные ячейки — в `parse_errors` с
-  `code=NEEDS_CONFIRMATION` (3 reason). +16 тестов.
-- ✅ **`receiving-1c`** — backend: эндпоинт
-  `POST /import-sessions/import-shipment/`. +12 тестов views.
-- ✅ **`receiving-3a`** — `multi_date_match` создаёт только
-  вопрос `NEEDS_CONFIRMATION`, без `ReceiptItem`/`Container`.
-- ✅ **`receiving-3b-1`** — `GET /receipts/{id}/conflicts/`
-  + `POST /receipts/{id}/resolve-conflicts/` + `suggested_count`.
-- ✅ **`receiving-3b-1-2a`** — `ReceiptItem.container_type`
-  (FK на `ContainerType`, nullable), миграция `receiving/0002`.
-- ✅ **`receiving-3b-2`** — `POST /receipts/{id}/check/`
-  (сверка тары, batch). +14 тестов.
-- ✅ **`receiving-3c`** — `POST /receipts/{id}/complete/`
-  (завершение приёмки; блокирует при unresolved/EXPECTED).
-- ✅ **`receiving-3d-3-fix-2`** — снять `unique=True`
-  с `Container.container_number`, миграция `storage/0006`.
-  См. решение 1.61.
-- ✅ **`3f-1`** — `GET /receipts/{id}/act/` — PDF «Акт приёмки»
-  (только `status=CONFIRMED`). `apps/labels/services/act_service.py`.
-  +9 тестов (`test_receipt_act_endpoint.py`).
-- ✅ **`3f-1b`** — stale tests: `Container.container_number`
-  без unique (переделаны `test_container_number_unique` и
-  `test_container_number_unique_validation`).
-- ✅ **`2f-1`** — фильтры `?draft_work_order_coded=` (icontains)
-  + `?draft_research_type_id=` в `/storage/containers/`;
-  `DELETE /storage/containers/{id}/` → 409 при `ProtectedError`.
-  +5 тестов (`test_container_filters.py`).
-- ✅ **`2f-2b`** — `POST /samples/{id}/dispose/` +
-  `POST /samples/{id}/restore/` (soft-утилизация с аудитом);
-  `DELETE /samples/{id}/` → 409 при `ProtectedError`.
-  +7 тестов (`test_sample_actions.py`).
-- ✅ **`2f-4c-1`** — автогенерация `qr_code` для `Section` и
-  `Cell` (`WMSG:SECTION:<id>` / `WMSG:CELL:<id>`);
-  `GET /storage/sections/{id}/qr.pdf/` +
-  `GET /storage/cells/{id}/qr.pdf/` +
-  `POST /storage/sections/qr-batch/`; PDF через
-  `apps/storage/services/qr_topology.py` (A4, сетка 2×3,
-  QR 65×65). Миграция `storage/0007` (AlterField по help_text).
-  +10 тестов (`test_qr_topology.py`).
-- ✅ **`2f-5a-1`** — каскадное удаление `ReceiptItem`:
-  `DELETE /receipt-items/{id}/` одной транзакцией удаляет
-  пробы → тару → строку; `ProtectedError` на пробе → 409.
-  +5 тестов (`test_receipt_item_delete.py`).
-- ✅ **`2f-5c-1`** — новый статус `Container.STATUS_PENDING_FILLING`
-  («Ожидает заполнения»); `bulk-create` и `check_receipt`
-  создают тары в этом статусе; `fill-samples` переводит
-  `PENDING_FILLING → PENDING_PLACEMENT`. Миграция `storage/0008`
-  + data-migration (старые `PENDING_PLACEMENT` без проб →
-  `PENDING_FILLING`). Обновлены тесты `test_bulk_create.py`,
-  `test_fill_samples.py`, `test_receipt_check.py`.
-- ✅ **`2f-10`** — `POST /storage/containers/bulk-place/`
-  (размещение в ячейку или на пол).
-- ✅ **`2f-11c`** — `SampleGroupSerializer` и `ContainerSerializer`
-  отдают `cell_id` и `pallet_id` для перехода в Топологию.
-- ✅ **`2f-12a`** — `POST /storage/containers/create-in-cell/` —
-  атомарное создание тары, проб и размещение.
-  `?force=true` в `DELETE` тары (1.65, 1.67).
-- ✅ **`2f-8 (backend)`** — `WorkOrder`: admin-регистрация
-  (`apps/work_orders/admin.py` — новый), миграция
-  `0003_alter_workorder_linked_order_and_more`, сериализаторы
-  с `samples_count`, `containers`, `linked_order_number`,
-  `prefetch_related` в `views.py`, `TYPE_CODED` label → «Текущий».
-- ✅ **`2f-8-fix`** — stale-импорты в `test_label_service.py`:
-  удалены `A4_LABEL_GAP_MM` (удалён в 2f-9b) и `_qr_grid_capacity`
-  (удалён в 2f-9b), `test_qr_grid_capacity_88` переписан
-  через `_qr_grid_dimensions()`.
-- ✅ **`2f-8-fix-2`** — stale-тесты под правки прошлых заходов:
-  - `test_patch_non_draft_fails` → `..._comment_non_draft_allowed`
-    (2f-7e: `name`/`comment` в любом статусе);
-  - `test_bulk_create_existing_container` → `..._duplicate_number_allowed`
-    (1.61: глобальный UNIQUE снят);
-  - `test_fill_samples_number_conflict` → `..._duplicate_number_allowed` (1.61);
-  - `test_fill_samples_active_container` → `..._still_creates_pending_placement`
-    (2f-5c-1);
-  - `test_fill_samples_clears_draft_fields` → `..._updates_draft_fields`
-    (2f-7f: draft-поля обновляются из запроса, не обнуляются);
-  - `test_issued_container_sets_sample_issued` → `..._does_not_touch_sample`
-    (2f-9c: маппинга нет);
-  - `test_pending_decryption_sample_not_touched` — **удалён**
-    (2f-9c: статуса нет);
-  - `test_work_order_str_coded` — «Зашифрованный» → «Текущий»
-    (2f-8: `TYPE_CODED` label).
-- ✅ **`2f-14a`** — аудит операций с тарой: сервис
-  `log_audit()` в `apps/users/services.py`, вызовы в 6 actions
-  `ContainerViewSet` (`bulk_create`, `fill_samples`,
-  `bulk_place`, `create_in_cell`, `perform_create`/`update`,
-  `destroy`), action `history` → `GET /storage/containers/{id}/history/`,
-  сериализатор `AuditLogSerializer` (с `username`, `action_display`).
-  Снимок `_container_snapshot` — компактный (6 полей). См. 1.70.
-  +8 тестов (`test_container_history.py`).
-- ✅ **`2f-17b`** — `ContainerSerializer.print_batch_status`
-  (`SerializerMethodField`) — статус последней не-CANCELLED
-  партии печати. `prefetch_related("print_batch_items",
-  to_attr="active_print_items")` в `ContainerViewSet.get_queryset` —
-  без N+1. См. 1.71. +4 теста (`test_container_print_status.py`).
+- ✅ **`bundle-1`** — `current_location` в `SampleSerializer`, фильтры `?q=`, `?no_work_order=`.
+- ✅ **`bundle-2`** — `GET /samples/grouped/`.
+- ✅ **`bundle-5`** — `POST /storage/containers/bulk-create/` (переработан в 7a-1/7a-2).
+- ✅ **`bundle-6a`** — фильтр по дате в Excel, `expected_date`.
+- ✅ **`bundle-6b`** — `target_date`, `duplicate_action`, 409.
+- ✅ **`bundle-7a-1`** — `Sample.STATUS_PENDING_PLACEMENT` + `sync_sample_status_for_container`.
+- ✅ **`bundle-7a-2`** — разделение bulk-create на два эндпоинта (1.59).
+- ✅ **`bundle-7a-2b`** — Container draft-поля + nullable number (1.60).
+- ✅ **`receiving-1a` / `1a-2`** — парсер Excel (группы, шапка, тип тары, `1+1`, список дат).
+- ✅ **`receiving-1b`** — `apply_shipment_import`: Shipment + Receipt + ReceiptItem + Container.
+- ✅ **`receiving-1c`** — `POST /import-sessions/import-shipment/`.
+- ✅ **`receiving-3a`** — `multi_date_match` только вопрос.
+- ✅ **`receiving-3b-1`** — `conflicts` + `resolve-conflicts`.
+- ✅ **`receiving-3b-1-2a`** — `ReceiptItem.container_type`.
+- ✅ **`receiving-3b-2`** — `POST /receipts/{id}/check/`.
+- ✅ **`receiving-3c`** — `POST /receipts/{id}/complete/`.
+- ✅ **`receiving-3d-3-fix-2`** — снять `unique=True` с `container_number` (1.61).
+- ✅ **`3f-1`** — `GET /receipts/{id}/act/` PDF «Акт приёмки».
+- ✅ **`3f-1b`** — stale-тесты `container_number`.
+- ✅ **`2f-1`** — фильтры `?draft_work_order_coded=`, `?draft_research_type_id=`, 409 при delete, `?force=true`.
+- ✅ **`2f-2b`** — dispose/restore, 409 при delete пробы.
+- ✅ **`2f-4c-1`** — автогенерация `qr_code` для Section/Cell, PDF, batch.
+- ✅ **`2f-5a-1`** — каскадное удаление `ReceiptItem`.
+- ✅ **`2f-5c-1`** — `Container.STATUS_PENDING_FILLING` (1.62).
+- ✅ **`2f-10`** — `bulk-place`.
+- ✅ **`2f-11c`** — `cell_id` / `pallet_id` в сериализаторах.
+- ✅ **`2f-12a`** — `create-in-cell`.
+- ✅ **`2f-8`** — WorkOrder: admin, samples_count, containers, linked_order_number, `TYPE_CODED = «Текущий»`.
+- ✅ **`2f-8-fix` / `2f-8-fix-2`** — stale-тесты под правки 2f-5c-1, 2f-7e, 2f-7f, 2f-9c, 1.61.
+- ✅ **`2f-14a`** — аудит: `log_audit()` в 6 actions, `history`, snapshot 6 полей (1.70).
+- ✅ **`2f-17b`** — `print_batch_status` + prefetch (1.71).
 
 ### Что закрыто (web)
 
-- ✅ **`bundle-7a-3`** — форма «Создать тару» (заготовки).
-  Кнопка на `/containers` → диалог с полями Участок, Н/З, чекбокс
-  вх. Н/З, ТИ, Тип тары, Кол-во. Создаёт N заготовок через
-  `bulk-create`.
-- ✅ **`bundle-7a-4ab`** — парсер `parseSampleInput` +
-  хук `useFillSamples`. 18 юнит-тестов парсера.
-- ✅ **`bundle-7a-4c-1`** — форма «Заполнить тару пробами».
-  Шапка read-only из draft-полей, поле номера тары, парсер
-  диапазонов, блокировка дубликатов.
-- ✅ **`bundle-7a-4c-2a`** — `useContainer`, `container_id`
-  в фильтре проб, `fetchLabelPdfUrl`, `PENDING_PLACEMENT` в
-  `SamplesPage`.
-- ✅ **`bundle-7a-4c-2b`** — диалог `ContainerPreviewDialog`
-  (3 вкладки: Список проб / Этикетка / QR).
-- ✅ **`bundle-7a-4c-2c`** — интеграция — после save
-  автоматически открывается preview.
-- ✅ **`receiving-3d-1`** — API-хуки: `useReceiptConflicts`,
-  `useResolveConflicts`, `useCheckReceipt`, `useCompleteReceipt`.
-- ✅ **`receiving-3d-2`** — `ReceiptCheckPage`
-  (страница сверки приёмки, `/receiving/:id/check`).
-- ✅ **`receiving-3d-3`** — интеграция: роут, кнопка
-  «Начать сверку», удаление `/questions`.
-- ✅ **`3f-2`** — web: кнопка «Акт приёмки» на
-  `ReceiptCheckPage` (`fetchReceiptActBlob` +
-  `PictureAsPdfIcon`), открывает PDF в новой вкладке.
-  Отдельно добавлен `fetchReceiptActBlob` в `api/index.ts`.
-- ✅ **`2f-1`** — реестр тары: колонки «Н/З» (draft) и «ТИ»
-  (draft), фильтры «Н/З» (текст) и «ТИ» (селект),
-  `ContainerEditDialog` (edit), `Delete` с confirm
-  и обработкой 409.
-- ✅ **`2f-2a`** — группированный список проб:
-  `SamplesGroupedList` (аккордеоны по Н/З × ТИ, карточки тар,
-  чипы проб). Единый вид `/samples`, без вкладок.
-- ✅ **`2f-2b`** — `SampleEditDialog` (edit / dispose / restore /
-  delete пробы), клик по чипу пробы в группированном списке.
-- ✅ **`2f-2c`** — dev-логирование API-запросов в консоль
-  (`import.meta.env.DEV`). React Query Devtools **не ставили** —
-  корпоративная сеть рабочего ПК блокирует `registry.npmjs.org`
-  (ТД-36).
-- ✅ **`2f-3a`** — справочники: CRUD для ТИ, участков,
-  лабораторий. `CatalogEntityDialog` (единый диалог),
-  `CatalogsPage` (3 вкладки), деактивация (`is_active=false`),
-  hard-delete с confirm, обработка 409 при `ProtectedError`.
-- ✅ **`2f-4a`** — топология: новая страница `/topology`
-  (двухпанельный вид: дерево Room → Rack → Section → Tier
-  слева, таблица ячеек справа). CRUD всех 5 уровней через
-  `TopologyEntityDialog`. Автогенерация `Cell.full_address`
-  из пути. Пункт «Топология» в sidebar. UI-защита: нельзя
-  удалить узел с детьми (кнопка disabled).
-- ✅ **`2f-4b`** — поддоны: `PalletDialog` (создание/правка/
-  удаление поддона в ячейке), колонка «Поддон» в таблице
-  ячеек, `usePalletByCell`.
-- ✅ **`2f-4c-2`** — QR топологии в UI: иконка «QR» у Section
-  в дереве (одиночный PDF); иконка «QR» в таблице ячеек
-  (одиночный PDF); чекбоксы в таблице ячеек + кнопка
-  «Печать QR (N)» (batch через `POST /storage/sections/qr-batch/`).
-- ✅ **`2f-5a-2`** — `ReceiptItemEditDialog` (edit строки);
-  колонка действий в таблице тар на `/receiving/:id`
-  (Edit / Delete с обработкой 409); кнопка «Отменить партию»
-  на `/receiving/:id` и на `/receiving/:id/check`.
-- ✅ **`2f-5b-fix`** — после импорта Excel с вопросами
-  (`PARSED` + `questions_count > 0`) → сразу переход
-  на `/receiving/:id/check`, где карточки конфликтов.
-  При `APPLIED` → на карточку рейса.
-- ✅ **`2f-5c-2`** — новый статус `PENDING_FILLING` в UI:
-  метка «Ожидает заполнения», фильтр «Статус» на `/containers`
-  (5 значений), клик по таре в этом статусе → открывает
-  форму заполнения пробами (независимо от того, есть ли
-  номер). Если номер есть — поле предзаполнено и disabled.
-- ✅ **`2f-5c-3`** — `ContainerEditDialog`: добавлены
-  draft-поля (участок, ТИ, Н/З вх./тек.). `UpdateContainerPayload`
-  расширен теми же полями.
-- ✅ **`2f-7h`** — компактный реестр тары: иконки статусов,
-  тултипы, убраны лишние колонки.
-- ✅ **`2f-8a`** (историч., ранее `2f-8`) — дерево-таблица проб
-  (`SamplesTreeTable`): группы Н/З × ТИ, тары, пробы.
-  Единый вид `/samples`.
-- ✅ **`2f-9a`** — пропуски и редактирование диапазонов
-  (`RangeEditDialog`), карандашик.
-- ✅ **`2f-9b`** — выбранные пробы (`SELECTED`), черная галочка
-  на этикетке.
-- ✅ **`2f-9c`** — управление пробами в таре
-  (`FillContainerDialog` для существующих тар).
-- ✅ **`2f-10`** — `PlaceContainerDialog` (в ячейку / на пол),
-  массовое перемещение из `ContainersPage`.
-- ✅ **`2f-11a`** — `CellContentsDialog` (поиск, группировка,
-  чекбоксы, массовое перемещение).
-- ✅ **`2f-11b`** — `ContainerPreviewDialog` (фильтр по пробам,
-  массовая смена статуса).
-- ✅ **`2f-11c`** — переходы из дерева проб и реестра тары
-  в Топологию (`?cell_id=`).
-- ✅ **`2f-12b`** — `CreateInCellDialog` (создание тары прямо
-  в ячейке) + предпросмотр после заполнения, force-удаление тары.
-- ✅ **`2f-8`** (закрыт 2026-10-27) — Наряд-заказы:
-  - страница `/work-orders` (`WorkOrdersPage.tsx`);
-  - `WorkOrderDialog`, `LinkWorkOrderDialog` (фильтр по номеру +
-    «создать новый»), `WorkOrderContainersDialog` (список тар Н/З);
-  - `workOrders.ts` — хуки React Query;
-  - колонка «Проб» с числом, кнопка «Глаз»;
-  - sidebar — пункт «Наряд-заказы»;
-  - Топология: force-удаление Room / Rack / Section / Tier / Cell
-    в дереве, автораскрытие, `?cell_id=` в `CellContentsDialog`;
-  - `ContainersPage` — фикс `any` в force-удалении.
-- ✅ **`2f-8-fix (tsconfig)`** — `web/tsconfig.json`: убран
-  deprecated `baseUrl` (TS 6 → 7 миграция). `paths` не тронуты.
-- ✅ **`2f-15`** — предпросмотр этикетки до создания тары.
-  `LocalPreviewDialog` расширен: `container` стал опционален,
-  добавлен `previewData` (mock-данные формы) + плейсхолдер
-  «QR появится после сохранения». Кнопка «Предпросмотр» в
-  `CreateContainersDialog` и `CreateInCellDialog`. В `FillContainerDialog`
-  регресс: настоящий QR (реальный `container.id`).
-- ✅ **`2f-14b`** — web: вкладка «История» в `ContainerPreviewDialog`.
-  `ContainerHistoryTab` (новый) — таблица событий (дата / кто /
-  действие / diff old → new по ключам). `useContainerHistory`
-  в `containers.ts` + `index.ts`. 4 цвета иконок действий.
-- ✅ **`2f-17a`** — рефакторинг `FillContainerDialog` →
-  `FillContainerContent` (тело без `Dialog`-обёртки). 0
-  функциональных изменений. `FillContainerDialog` — тонкая
-  обёртка `<Dialog>`.
-- ✅ **`2f-17c`** — единое окно `ContainerDetailDialog`
-  (шапка + 3 вкладки: Пробы / Редактирование / История +
-  кнопки `[Предпросмотр] [Разместить / Местоположение]`).
-  `ContainerPreviewDialog` → переделан в модалку предпросмотра
-  (2 вкладки: Этикетка / QR). `AddToPrintBatchDialog` — добавлен
-  выбор «Новая партия / Существующая (DRAFT)». `ContainersPage` —
-  клик по таре → `ContainerDetailDialog`, иконка «Этикетка»
-  по `print_batch_status` (4 цвета: серая / жёлтая / синяя /
-  зелёная) + инвалидация кэша `containers` / `container` /
-  `container-history` после add-containers. `CellContentsDialog` —
-  клик по таре → `ContainerDetailDialog`. См. 1.72.
-- ✅ **`3.x-offline-auth`** — web: `AccessTokensPage` (создание,
-  просмотр QR, отзыв).
-
-### Что закрыто (docs)
-
-- ✅ **`docs/2.x-web-v2-update`** — API.md (bulk-create +
-  fill-samples, разделение), DECISIONS 1.58/1.59,
-  CONTEXT / PLAN / PROGRESS.
-- ✅ **`docs/2.x-web-v2-update-2`** — API.md (draft-поля,
-  опциональный `container_number`), DATABASE.md (v6),
-  DECISIONS 1.60, CONTEXT / PLAN / PROGRESS.
-- ✅ **`docs/2.x-web-v2-update-3`** (2026-10-16) — CONTEXT / PLAN /
-  DECISIONS (1.50 «закрыто», 1.61) / API (receiving-3, 3f,
-  2f-1/2a/2b/2c) / PROGRESS / TESTING (ТД-26).
-- ✅ **`docs/2.x-web-v2-update-4`** (2026-10-16) — CONTEXT / PLAN /
-  DECISIONS (1.62 PENDING_FILLING, 1.63 PDF QR топологии,
-  1.64 каскадное удаление ReceiptItem) / API (qr.pdf, qr-batch,
-  delete receipt-items) / PROGRESS / TESTING.
-- ✅ **`docs/2.x-web-v2-update-5`** (2026-10-27) — CONTEXT / PLAN /
-  DECISIONS (1.65-1.68) / API (bulk-place, create-in-cell,
-  force-удаление, cell_id) / PROGRESS / TESTING.
-- ✅ **`docs/2f-8-closed`** (2026-10-27) — CONTEXT / PLAN /
-  PROGRESS / TESTING / DECISIONS (1.69 — draft-поля после
-  fill-samples; переименование `2f-8` (дерево-таблица) →
-  `2f-8a`).
-- ✅ **`docs/2f-14-17-closed`** (2026-10-27) — CONTEXT / PLAN /
-  PROGRESS / TESTING / DECISIONS (1.70 аудит тары, 1.71
-  print_batch_status, 1.72 ContainerDetailDialog).
-- ✅ **`docs/3.x-offline-c-2-closed`** (2026-10-29) — CONTEXT / PLAN /
-  PROGRESS / DECISIONS (1.73 Proxy Bypass) / PROJECT (правило 14).
-- ✅ **`docs/3.x-offline-c-4.6-closed`** (2026-10-30) — CONTEXT / PLAN /
-  PROGRESS / DECISIONS / PROJECT.
-
-### В работе
-
-- 🟡 **`bundle-7`** — web-форма «Создать тару» (WIP, неверный UX,
-  переделана в 7a-3 / 7a-4). Ветка
-  `fix/2.x-web-v2-bundle-7` — **не закрыта, не мержить**.
-
-### Что дальше
-
-Серия `2f` — закрыта. Следующие серии (см. PLAN.md):
-
-- ⬜ **`3.x-offline`** (продолжение: `c-6` / `c-7` / `c-8`).
-- ⬜ **`2.x-lifecycle`** — пересмотр статусов Container / Sample.
-- ⬜ **`2.x-rbac`** — роли и права.
-- ⬜ **`2.x-lab-portal`** — портал лабораторий.
+- ✅ **`bundle-7a-3`** — форма «Создать тару».
+- ✅ **`bundle-7a-4ab`** — `parseSampleInput` + `useFillSamples`. 18 тестов.
+- ✅ **`bundle-7a-4c-1`** — форма «Заполнить тару».
+- ✅ **`bundle-7a-4c-2a`** — `useContainer`, `container_id` в фильтре проб.
+- ✅ **`bundle-7a-4c-2b`** — `ContainerPreviewDialog` (3 вкладки).
+- ✅ **`bundle-7a-4c-2c`** — preview после save.
+- ✅ **`receiving-3d-1`** — API-хуки приёмки.
+- ✅ **`receiving-3d-2`** — `ReceiptCheckPage`.
+- ✅ **`receiving-3d-3`** — интеграция, `/questions` удалён.
+- ✅ **`3f-2`** — кнопка «Акт приёмки».
+- ✅ **`2f-1`** — реестр тары: Н/З, ТИ, фильтры, edit, delete + 409.
+- ✅ **`2f-2a`** — `SamplesGroupedList` (аккордеоны).
+- ✅ **`2f-2b`** — `SampleEditDialog`.
+- ✅ **`2f-2c`** — dev-логирование API (ТД-36).
+- ✅ **`2f-3a`** — справочники (CRUD, `CatalogEntityDialog`, деактивация, 409).
+- ✅ **`2f-4a`** — `/topology` (дерево + DataGrid, `TopologyEntityDialog`, `full_address`).
+- ✅ **`2f-4b`** — `PalletDialog`.
+- ✅ **`2f-4c-2`** — QR топологии в UI (иконки, batch).
+- ✅ **`2f-5a-2`** — `ReceiptItemEditDialog`, отмена партии.
+- ✅ **`2f-5b-fix`** — переход на `/receiving/:id/check` при `PARSED + questions_count > 0`.
+- ✅ **`2f-5c-2`** — `PENDING_FILLING` в UI, фильтр, клик → `FillContainerDialog`.
+- ✅ **`2f-5c-3`** — draft-поля в `ContainerEditDialog`.
+- ✅ **`2f-7h`** — компактный реестр тары.
+- ✅ **`2f-8a`** — `SamplesTreeTable`.
+- ✅ **`2f-9a`** — пропуски и `RangeEditDialog`.
+- ✅ **`2f-9b`** — выбранные пробы (`SELECTED`), чёрная галочка.
+- ✅ **`2f-9c`** — `FillContainerDialog` для существующих тар.
+- ✅ **`2f-10`** — `PlaceContainerDialog`.
+- ✅ **`2f-11a`** — `CellContentsDialog`.
+- ✅ **`2f-11b`** — `ContainerPreviewDialog` (фильтр, массовая смена статуса).
+- ✅ **`2f-11c`** — переходы в Топологию (`?cell_id=`).
+- ✅ **`2f-12b`** — `CreateInCellDialog` + force-удаление тары.
+- ✅ **`2f-8`** — `/work-orders` (WorkOrderDialog, LinkWorkOrderDialog, WorkOrderContainersDialog).
+- ✅ **`2f-8-fix (tsconfig)`** — убран `baseUrl`.
+- ✅ **`2f-15`** — предпросмотр этикетки до создания.
+- ✅ **`2f-14b`** — вкладка «История» в `ContainerPreviewDialog`.
+- ✅ **`2f-17a`** — рефакторинг `FillContainerDialog` → `FillContainerContent`.
+- ✅ **`2f-17c`** — `ContainerDetailDialog` (3 вкладки + кнопки), `ContainerPreviewDialog` (модалка), `AddToPrintBatchDialog` (новая/существующая), иконки печати по `print_batch_status`.
+- ✅ **`3.x-offline-auth`** — `AccessTokensPage`.
 
 ### Метрики
 
-- Заходов закрыто (с 2026-10-12): 75.
-  - backend: 34 (список — в `docs/2f-14-17-closed` и `docs/3.x-offline-c-2-closed`).
-  - web: 37 (список — там же + `3.x-offline-auth`).
-  - docs: 9.
-- «Не норм» на первом прогоне: 5 (см. `docs/2f-14-17-closed`).
-- Откатов: 0.
-- **Backend: 779 тестов** (без изменений).
-- **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 43 юнит-теста** (было 32, +11 за серию `3.x-offline`).
+- Заходов закрыто: 75.
+- Backend: 779 тестов (к концу серии).
+- Web: 24 юнит-теста.
+- Mobile: 32 (в `2.x-mobile`) → 43 (на старте `3.x-offline`).
 
 ---
 
@@ -430,58 +189,30 @@ Web первый, Mobile по требованию. Backend на старте с
 
 **Дата:** 2026-10-10 — 2026-10-12
 **Ветка:** `feature/2.x-mobile` (влита в `main`, архив).
-**Контекст:** Flutter-приложение для Android-планшетов. Стек:
-Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
-`flutter_secure_storage` + `mobile_scanner`.
-
-Создана через `git merge feature/1.2-mobile-init` — переиспользованы
-заходы серии 1.2 (init + API-клиент).
+**Контекст:** Flutter-приложение для Android-планшетов. Flutter 3.47 + Dio 5 + Provider 6 + `flutter_secure_storage` + `mobile_scanner`.
 
 ### Что закрыто
 
-- ✅ **`bundle-1a` / `1b`** — Flutter init (из серии 1.2).
-- ✅ **`bundle-2`** — API-клиент Dio + JWT (из серии 1.2).
-- ✅ **`bundle-3a`** — TokenStorage (`flutter_secure_storage`),
-  AuthService (`login`/`logout`/`refresh`/`fetchMe`), модель `User`.
-- ✅ **`bundle-3b`** — UI: `AuthProvider` (ChangeNotifier), экран
-  логина, главная-заглушка, `AuthGate` в `main.dart`.
-  Плюс — фикс `ApiClient`: `Content-Type: application/json` для
-  `post`/`patch`.
-- ✅ **`bundle-4a`** — парсер QR (`parseQrPayload`), модель
-  `Container`, `ContainerService`.
-- ✅ **`bundle-4b-1`** — разрешение камеры в `AndroidManifest.xml`,
-  публичные геттеры `apiClient` (AuthService) и `service`
-  (AuthProvider), `Provider<ContainerService>` в `main.dart`.
-- ✅ **`bundle-4b-2`** — экран сканера (`mobile_scanner`),
-  `ContainerProvider`, `ContainerDetailScreen`, кнопка
-  «Сканировать QR» на главной.
-- ✅ **`bundle-5`** — список проб в карточке тары. Модель `Sample`,
-  `SampleService` (`GET /samples/?container_id=`), pull-to-refresh.
-- ✅ **`docs/2.x-mobile-update`** — CONTEXT, PLAN, PROGRESS:
-  зафиксирована mobile-серия в работе.
+- ✅ **`bundle-1a` / `1b`** — Flutter init (из 1.2).
+- ✅ **`bundle-2`** — API-клиент Dio + JWT.
+- ✅ **`bundle-3a`** — `TokenStorage`, `AuthService`, модель `User`.
+- ✅ **`bundle-3b`** — `AuthProvider`, экран логина, `AuthGate`.
+- ✅ **`bundle-4a`** — `parseQrPayload`, модель `Container`, `ContainerService`.
+- ✅ **`bundle-4b-1`** — камера в `AndroidManifest.xml`, геттеры.
+- ✅ **`bundle-4b-2`** — сканер QR, `ContainerProvider`, `ContainerDetailScreen`.
+- ✅ **`bundle-5`** — список проб, `SampleService`, pull-to-refresh.
+- ✅ **`docs/2.x-mobile-update`** — CONTEXT, PLAN, PROGRESS.
 
-### Что осталось (перенесено в будущие серии)
+### Что осталось (перенесено)
 
-- ⬜ Приёмка в mobile — **отменена**, переносится в web (`2.x-web-v2`).
-- ⬜ Поиск проб в mobile — по требованию (после web).
-- ⬜ Инвентаризация в mobile — по требованию.
-- ⬜ Нижнее меню / drawer — по требованию.
+- Приёмка в mobile — отменена (в web).
+- Поиск проб, инвентаризация — по требованию.
 
 ### Метрики
 
-- Заходов закрыто: 8.
-- «Не норм» на первом прогоне: 5 (NDK не установлен, IP без кавычек
-  в `config.dart`, `_qrPrefix` в тексте ошибок, конфликт имён
-  `Container` Flutter vs модель, `DJANGO_ALLOWED_HOSTS`).
-- Откатов: 0.
-- **Итог: 32 юнит-теста mobile.**
-
-### Инфраструктура
-
-- NDK **28.2.13676358** — установлен.
-- Android SDK Platform 36 — установлен.
-- `config.dart` — `_apiHostOverride = '<IP домашнего ПК>'` (в git).
-- `.env` (backend) — `DJANGO_ALLOWED_HOSTS=*` (не в git).
+- Заходов: 8.
+- «Не норм» на первом прогоне: 5 (NDK, IP без кавычек, `_qrPrefix`, конфликт `Container`, `ALLOWED_HOSTS`).
+- **Итог: 32 юнит-теста.**
 
 ---
 
@@ -489,47 +220,29 @@ Flutter 3.47 + Dart 3.13 + Dio 5 + Provider 6 +
 
 **Дата:** 2026-10-10
 **Ветка:** `feature/2.x-web` (влита в `main`, архив).
-**Контекст:** React-приложение. Стек: Vite 8 + React 19 + TypeScript +
-MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
+**Контекст:** React: Vite 8 + React 19 + TS + MUI 9 + Zustand + TanStack Query + React Router 7.
 
 ### Что закрыто
 
-- ✅ **`bundle-1a`** — инициализация: `package.json`, `vite.config.ts`,
-  `tsconfig.json`, `tsconfig.node.json`, `index.html`, `.gitignore`.
-- ✅ **`bundle-1b`** — ESLint (flat config), Prettier, MUI-тема
-  (seed `#1E3A5F`), `main.tsx`, `App.tsx`, `vite-env.d.ts`.
-- ✅ **`bundle-2`** — API-клиент: `axios`, JWT-интерцептор с
-  авто-refresh, `tokenStorage` (localStorage), `auth.ts`, тесты.
-- ✅ **`bundle-3`** — auth: Zustand-стор, login-форма MUI,
-  `ProtectedRoute`, race condition при F5 закрыт `isBootstrapping`.
-- ✅ **`bundle-4`** — layout: MUI sidebar (Drawer) + header,
-  адаптив (мобильный temporary drawer), активный пункт — primary.
-- ✅ **`bundle-5`** — главная: 4 карточки (Тара / Пробы / Ожидает
-  размещения / Партии печати), TanStack Query provider.
-- ✅ **`bundle-6`** — реестр тары: DataGrid, фильтры (статус, тип),
-  пагинация, PDF-этикетка в строке.
-- ✅ **`bundle-7`** — реестр проб: DataGrid, фильтры (номер, тип,
-  участок, статус), «Показать утилизированные». Справочники
-  (research-types, sites) подключены.
-- ✅ **`bundle-8a`** — партии печати: список, детали, add/remove
-  тар через диалог, mark-ready / mark-printed / cancel,
-  скачивание PDF (этикетки / QR-сетка).
-- ✅ **`bundle-8b`** — интеграция в реестр тары: чекбоксы, bulk-кнопка
-  «В партию печати» (создать новую / добавить в черновик).
-- ✅ **`bundle-9`** — справочники: типы исследования, участки,
-  лаборатории (просмотр, 3 вкладки). Редактирование — Django Admin.
+- ✅ **`bundle-1a`** — инициализация.
+- ✅ **`bundle-1b`** — ESLint, Prettier, MUI-тема, `App.tsx`.
+- ✅ **`bundle-2`** — `axios`, JWT-интерцептор, `tokenStorage`, тесты.
+- ✅ **`bundle-3`** — `authStore`, `ProtectedRoute`, `isBootstrapping`.
+- ✅ **`bundle-4`** — MUI sidebar + header.
+- ✅ **`bundle-5`** — главная, 4 карточки, TanStack Query.
+- ✅ **`bundle-6`** — реестр тары DataGrid.
+- ✅ **`bundle-7`** — реестр проб DataGrid.
+- ✅ **`bundle-8a`** — партии печати (список, детали, add/remove, mark-ready/printed/cancel, PDF).
+- ✅ **`bundle-8b`** — bulk «В партию печати».
+- ✅ **`bundle-9`** — справочники (просмотр).
 - ✅ **`docs/2.x-web-closed`** — CONTEXT, PLAN, PROGRESS.
 
 ### Метрики
 
-- Заходов закрыто: 10 (bundle-1 разделён на 1a / 1b, bundle-8
-  на 8a / 8b).
-- «Не норм» на первом прогоне: 4 (типы GridRowSelectionModel в v9,
-  Alert неиспользуемый, Stack alignItems, URL справочников
-  без префикса `/samples/`).
-- Откатов: 0.
-- **Backend: 552 теста (без изменений).**
-- **Web: 6 юнит-тестов (tokenStorage + authStore).**
+- Заходов: 10.
+- «Не норм» на первом прогоне: 4.
+- Backend: 552 теста (без изменений).
+- Web: 6 юнит-тестов.
 
 ---
 
@@ -537,33 +250,23 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
 
 **Дата:** 2026-10-09 — 2026-10-10
 **Ветка:** `feature/2.1-label-generator` (влита в `main`, архив).
-**Контекст:** Генератор этикеток тары. QR, PDF, партии печати,
-раскладка на A4, API печати.
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — QR-сервис: `generate_qr_png`, `generate_qr_svg`,
-  `make_payload` (payload `WMSG:<TYPE>:<id>`).
-- ✅ **`bundle-2`** — PDF-этикетка через fpdf2, шрифт `DejaVuSans.ttf`.
-- ✅ **`bundle-3`** — API `GET /storage/containers/{id}/label.pdf/`.
-- ✅ **`bundle-4a`** — модели `PrintBatch` + `PrintBatchItem`,
-  миграция, тесты.
-- ✅ **`bundle-4b`** — API партии печати: сериализаторы, ViewSet,
-  actions (`add-containers`, `remove-container`, `mark-ready`,
-  `cancel`), сервис генерации `batch_number`.
-- ✅ **`bundle-4d-1`** — раскладка этикеток (сетка размеров,
-  шапка 28 мм, авто-колонки, A4, продолжения).
-- ✅ **`bundle-4d-3`** — QR-сетка `QR_ONLY`: 8 × 11 = 88 QR 25×25
-  на A4, общие линии реза.
-- ✅ **`bundle-4d-4`** — API печати партии (гибрид `pdf` +
-  `mark-printed`).
+- ✅ **`bundle-1`** — QR-сервис.
+- ✅ **`bundle-2`** — PDF-этикетка (fpdf2, DejaVuSans).
+- ✅ **`bundle-3`** — `GET /storage/containers/{id}/label.pdf/`.
+- ✅ **`bundle-4a`** — `PrintBatch` + `PrintBatchItem`.
+- ✅ **`bundle-4b`** — API партии печати.
+- ✅ **`bundle-4d-1`** — раскладка A4.
+- ✅ **`bundle-4d-3`** — QR-сетка 8×11.
+- ✅ **`bundle-4d-4`** — API печати партии.
 
 ### Метрики
 
-- Заходов закрыто: 7.
-- «Не норм» на первом прогоне: 4.
-- Откатов: 0.
-- **Итог: 552 теста (было 433 → +119).**
+- Заходов: 7.
+- «Не норм»: 4.
+- Итог: 552 теста (было 433).
 
 ---
 
@@ -571,79 +274,58 @@ MUI 9 + Zustand + TanStack Query + React Router 7 + axios + Vitest.
 
 **Дата:** 2026-10-09
 **Ветка:** `feature/2.0-excel-parser` (влита в `main`, архив).
-**Контекст:** Парсер Excel-приёмки (формат лабораторий, решение 1.49).
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — парсер `.xlsx` (`openpyxl`), структура листов.
-- ✅ **`bundle-2`** — сервис импорта: разбор → предзаполнение
-  `Receipt` + `ReceiptItem`.
-- ✅ **`bundle-3`** — API `POST /receiving/import-sessions/upload/`.
+- ✅ **`bundle-1`** — парсер `.xlsx`.
+- ✅ **`bundle-2`** — сервис импорта.
+- ✅ **`bundle-3`** — `POST /receiving/import-sessions/upload/`.
 
 ### Метрики
 
 - Заходов: 3.
-- «Не норм» на первом прогоне: 0.
-- Откатов: 0.
-- **Итог: 433 теста (было 400 → +33).**
+- Итог: 433 теста (было 400).
 
 ---
 
 ## Серия `feature/1.3-backend-v2`
 
 **Дата:** 2026-10-08 — 2026-10-09
-**Ветка:** влита в `main`, архив.
-**Контекст:** Справочники, FK-миграции Sample, Container/WorkOrder,
-модели приёмки, Shipment-расширение, ContainerType.laboratory.
+**Ветка:** `feature/1.3-backend-v2` (влита в `main`, архив).
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — справочники: `ResearchType`, `Site`,
-  `Laboratory`, `ContainerComment` + admin.
-- ✅ **`bundle-2`** — тесты справочников + сериализаторы.
-- ✅ **`bundle-3`** — API справочников.
-- ✅ **`bundle-3a`** — восстановление тестов views.
-- ✅ **`bundle-4`** — seeds: `seed_catalogs`, `seed_container_comments`.
-- ✅ **`bundle-5`** — Sample: FK на `ResearchType` и `Site`.
-- ✅ **`bundle-5a`** — восстановление тестов.
-- ✅ **`bundle-6a`** — Container: `comment`, `comment_template`,
-  `PENDING_PLACEMENT`.
-- ✅ **`bundle-6b`** — WorkOrder: `site` FK.
-- ✅ **`bundle-7a`** — модели приёмки: `Receipt`, `ReceiptItem`,
-  `ImportSession`.
-- ✅ **`bundle-7b`** — API приёмки.
-- ✅ **`bundle-8a`** — Shipment: `direction`, статусы, лаборатория,
-  рейс.
-- ✅ **`bundle-8b`** — ContainerType: `laboratory`.
+- ✅ **`bundle-1`..`3a`** — справочники ResearchType, Site, Laboratory, ContainerComment.
+- ✅ **`bundle-4`** — seeds.
+- ✅ **`bundle-5`..`5a`** — Sample FK на ResearchType и Site.
+- ✅ **`bundle-6a`** — Container: comment, comment_template, PENDING_PLACEMENT.
+- ✅ **`bundle-6b`** — WorkOrder: site FK.
+- ✅ **`bundle-7a`..`7b`** — модели + API приёмки.
+- ✅ **`bundle-8a`** — Shipment: direction, статусы, рейс.
+- ✅ **`bundle-8b`** — ContainerType: laboratory.
 
 ### Метрики
 
 - Заходов: 13.
-- «Не норм» на первом прогоне: 2.
-- Откатов: 0.
-- **Итог: 400 тестов (было 268 → +132).**
+- Итог: 400 тестов (было 268).
 
 ---
 
 ## Серия `feature/1.2-mobile-init`
 
 **Дата:** 2026-10-08
-**Ветка:** `feature/1.2-mobile-init` (влита в `2.x-mobile` через
-merge, 2026-10-10).
-**Контекст:** Инициализация Flutter-проекта.
+**Ветка:** `feature/1.2-mobile-init` (влита в `2.x-mobile` через merge 2026-10-10).
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — Flutter init + структура проекта, `main.dart`,
-  `pubspec.yaml`, README.
-- ✅ **`bundle-1b`** — `widget_test.dart` под `WmsGeologyApp`.
-- ✅ **`bundle-2`** — API-клиент: `config.dart`, `ApiClient`
-  с JWT-интерцептором, `ApiException`.
+- ✅ **`bundle-1`** — Flutter init.
+- ✅ **`bundle-1b`** — `widget_test`.
+- ✅ **`bundle-2`** — API-клиент с JWT.
 
 ### Метрики
 
-- Заходов: 3. Откатов: 0.
-- **Итог: 12 тестов mobile.**
+- Заходов: 3.
+- Итог: 12 тестов mobile.
 
 ---
 
@@ -651,26 +333,15 @@ merge, 2026-10-10).
 
 **Дата:** 2026-10-07 — 2026-10-08
 **Ветка:** влита в `main`, архив (commit `d693ffd`).
-**Контекст:** REST API по `docs/API.md`, JWT, OpenAPI.
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — сериализаторы storage (8 моделей).
-- ✅ **`bundle-2`** — ViewSets + роутеры storage.
-- ✅ **`bundle-3`** — API work_orders + custom `link`.
-- ✅ **`bundle-4`** — API samples + фильтр `?work_order=`.
-- ✅ **`bundle-5`** — API inventory.
-- ✅ **`bundle-6`** — API picking (PickList, Shipment).
-- ✅ **`bundle-7`** — API movements (MoveOperation).
-- ✅ **`bundle-8`** — JWT-аутентификация.
-- ✅ **`bundle-9`** — OpenAPI (drf-spectacular) + contract-тесты.
+- ✅ **`bundle-1`..`bundle-9`** — сериализаторы, ViewSets, JWT, OpenAPI.
 
 ### Метрики
 
 - Заходов: 9.
-- «Не норм» на первом прогоне: 1.
-- Откатов: 0.
-- **Итог: 268 тестов (было 128 → +140).**
+- Итог: 268 тестов (было 128).
 
 ---
 
@@ -678,23 +349,17 @@ merge, 2026-10-10).
 
 **Дата:** 2026-10-07
 **Ветка:** влита в `main`, архив.
-**Контекст:** Переработка моделей под топологию v2.
 
 ### Что закрыто
 
-- ✅ **`bundle-1`** — storage v2: `ContainerType`, `Section.qr_code`,
-  `Cell.cell_type`, `Pallet` OneToOne, `Container.container_type`,
-  `position_on_pallet`.
-- ✅ **`bundle-2`** — samples (soft-delete) + inventory (`raw_barcode`,
-  `InventoryIssue`).
-- ✅ **`bundle-3`** — `picking` + `movements`.
+- ✅ **`bundle-1`** — storage v2.
+- ✅ **`bundle-2`** — samples (soft-delete) + inventory.
+- ✅ **`bundle-3`** — picking + movements.
 
 ### Метрики
 
 - Заходов: 3 код + 4 docs.
-- «Не норм» на первом прогоне: 2.
-- Откатов: 0.
-- **Итог: 128 тестов (было 78 → +50).**
+- Итог: 128 тестов (было 78).
 
 ---
 
@@ -702,27 +367,16 @@ merge, 2026-10-10).
 
 **Дата:** 2026-10-07
 **Ветка:** влита в `main`, архив.
-**Контекст:** Инициализация Django-проекта.
 
 ### Что закрыто
 
 - ✅ **`bundle-1`** — Poetry init.
-- ✅ **`bundle-2`** — Django skeleton: `manage.py`, settings, urls.
-- ✅ **`bundle-3`** — приложения storage, samples, work_orders.
-- ✅ **`bundle-4`** — приложения inventory, labels, users.
-- ✅ **`bundle-5`** — модели storage (v1) + 19 тестов.
-- ✅ **`bundle-6`** — модели users + 14 тестов.
-- ✅ **`bundle-7`** — модель work_orders + 12 тестов.
-- ✅ **`bundle-8`** — модели samples + 15 тестов.
-- ✅ **`bundle-9`** — модели inventory + 13 тестов.
-- ✅ **`bundle-10`** — seeds ролей + 5 тестов.
+- ✅ **`bundle-2`..`bundle-10`** — Django skeleton, 6 приложений, модели, seeds.
 
 ### Метрики
 
 - Заходов: 11.
-- «Не норм» на первом прогоне: 2.
-- Откатов: 0.
-- **Итог: 78 тестов.**
+- Итог: 78 тестов.
 
 ---
 
@@ -730,19 +384,14 @@ merge, 2026-10-10).
 
 **Дата:** 2026-10-07
 **Ветка:** docs → `main` (commit `0a72c9f`).
-**Контекст:** Подготовка структуры под кодовую фазу.
 
 ### Что закрыто
 
-- ✅ **`Структура папок`** — `backend/`, `mobile/`, `web/`,
-  `label-generator/` с README в каждой.
-- ✅ **`.env.example`** — переменные окружения backend.
-- ✅ **`.github/workflows/ci.yml`** — условный CI.
-- ✅ **`TEMPLATES-PROJECT.md`** — дополнения к шаблонам.
+- ✅ **`Структура папок`**, `.env.example`, CI, `TEMPLATES-PROJECT.md`.
 
 ### Метрики
 
-- Заходов: 3. Откатов: 0.
+- Заходов: 3.
 
 ---
 
@@ -750,17 +399,11 @@ merge, 2026-10-10).
 
 **Дата:** 2026-10-07
 **Ветка:** docs → `main` (commit `2e7ea42`).
-**Контекст:** Фундамент репозитория.
 
 ### Что закрыто
 
-- ✅ **`Стартовые доки`** — README, LICENSE, .gitignore, PROJECT,
-  CONTEXT, DECISIONS.
-- ✅ **`DATABASE.md`** (v1).
-- ✅ **`API.md`**.
-- ✅ **`SCENARIOS.md`** (v1).
-- ✅ **`TESTING.md`**.
+- ✅ Стартовые доки (README, LICENSE, .gitignore, PROJECT, CONTEXT, DECISIONS), DATABASE, API, SCENARIOS, TESTING.
 
 ### Метрики
 
-- Заходов: 1. Откатов: 0.
+- Заходов: 1.

@@ -7,6 +7,24 @@
 
 ---
 
+## Healthcheck
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| `GET` | `/health/` | `200` без авторизации, `{status, service, time}` |
+
+**`GET /health/`** — вне `/api/v1/`, без JWT. Используется Mobile (`c-6c`) для auto-detect сети. Не обращается к БД.
+
+**Пример ответа:**
+
+    {
+      "status": "ok",
+      "service": "wms-geology",
+      "time": "2026-11-02T12:00:00.000000+00:00"
+    }
+
+---
+
 ## Аутентификация
 
 | Метод | Путь | Что делает |
@@ -15,6 +33,11 @@
 | `POST` | `/auth/refresh` | Обновление access-токена |
 | `POST` | `/auth/logout` | Logout (blacklist refresh) |
 | `GET` | `/auth/me` | Текущий пользователь |
+| `POST` | `/auth/code-login/` | Одноразовый код → JWT |
+| `POST` | `/auth/offline-login/` | Offline-токен → JWT (привязка к `device_id`) |
+| `GET` | `/auth/access-tokens/` | Список токенов (свои + созданные) |
+| `POST` | `/auth/access-tokens/` | Создать токен (QR) |
+| `POST` | `/auth/access-tokens/{id}/revoke/` | Отозвать |
 
 ---
 
@@ -27,9 +50,9 @@
 | `POST` | `/samples` | Создать пробу |
 | `PATCH` | `/samples/{id}` | Обновить |
 | `DELETE` | `/samples/{id}` | Удалить (hard; 409 при `ProtectedError`) |
-| `POST` | `/samples/{id}/dispose/` | Утилизировать (soft, с аудитом) |
+| `POST` | `/samples/{id}/dispose/` | Утилизировать (soft) |
 | `POST` | `/samples/{id}/restore/` | Вернуть из утилизации |
-| `GET` | `/samples/grouped/` | Сгруппированный список (Н/З + тип → тара) |
+| `GET` | `/samples/grouped/` | Сгруппированный список |
 
 **Фильтры `GET /samples`:**
 - `q` — частичный поиск по номеру (`icontains`);
@@ -41,7 +64,14 @@
 - `well_id`, `container_id`, `status`;
 - `no_work_order=true` — пробы без Н/З;
 - `show_disposed=true` — показать утилизированные;
+- **`updated_since=<ISO 8601>`** — только с `updated_at > момента` (c-6b);
 - `page`, `per_page` — пагинация.
+
+**`updated_since` (`c-6b`):**
+- ISO 8601 с таймзоной (UTC, `Z` или `+00:00`).
+- Naive datetime → 400 (`{"updated_since": ["updated_since должен содержать таймзону..."]}`).
+- Невалидный ISO → 400.
+- Пусто → без фильтра (полный Pull).
 
 **Пример `GET /samples?q=34076001`:**
 
@@ -60,7 +90,8 @@
           "current_work_order": 11,
           "current_work_order_number": "TST0001",
           "status": "IN_STORAGE",
-          "current_location": "Комната 1 / Стеллаж A / Пролёт 1 / Ярус 2 / Ячейка 1"
+          "current_location": "Комната 1 / Стеллаж A / Пролёт 1 / Ярус 2 / Ячейка 1",
+          "updated_at": "2026-11-02T10:00:00Z"
         }
       ]
     }
@@ -85,59 +116,37 @@
 
 ### `POST /samples/{id}/dispose/`
 
-Soft-утилизация пробы. Устанавливает `status=DISPOSED`,
-`disposed_at=now`, `disposed_by=request.user`,
-`disposal_reason` (опционально).
+Soft-утилизация. `status=DISPOSED`, `disposed_at=now`, `disposed_by=user`, `disposal_reason` (опционально).
 
-**Тело запроса:**
-
-    {
-      "disposal_reason": "Разбита"
-    }
-
-`disposal_reason` — опционально. Пустая строка допустима.
-
-**Ответ 200:** `SampleSerializer` с новыми значениями.
-
-**Ошибки:**
-- 404 — проба не найдена;
-- 400 — проба уже утилизирована.
-
-### `POST /samples/{id}/restore/`
-
-Возврат из утилизации. Сбрасывает `disposed_at`, `disposed_by`,
-`disposal_reason`, ставит `status=IN_STORAGE`.
-
-**Тело:** пустое (`{}`).
+**Тело:** `{"disposal_reason": "Разбита"}` (опционально).
 
 **Ответ 200:** `SampleSerializer`.
 
-**Ошибки:**
-- 404 — проба не найдена;
-- 400 — проба не в статусе `DISPOSED`.
+**Ошибки:** 404 — не найдена; 400 — уже утилизирована.
+
+### `POST /samples/{id}/restore/`
+
+Возврат. Сбрасывает `disposed_*`, `status=IN_STORAGE`.
+
+**Тело:** `{}`.
+
+**Ответ 200:** `SampleSerializer`.
+
+**Ошибки:** 404 — не найдена; 400 — не в `DISPOSED`.
 
 ### `DELETE /samples/{id}/`
 
-Hard-delete пробы. Если проба фигурирует в `PickListItem` или
-`ShipmentItem` — 409.
-
-**Ошибки:**
-- 404 — проба не найдена;
-- 409 — `{"error": "Нельзя удалить пробу: на неё ссылаются связанные объекты (N)."}`.
+Hard-delete. `ProtectedError` (`PickListItem`, `ShipmentItem`) → 409.
 
 ### `GET /samples/grouped/`
 
-Сгруппированный список проб. Группа = `(Н/З, тип исследования)`.
-Внутри — тары с пробами. Пагинация — **по группам** (20 на страницу).
-
-**Порядок групп:** по алфавиту `work_order.order_number`; пробы
-без Н/З — **в конце**; внутри одного Н/З — по коду типа.
+Сгруппированный список. Группа = `(Н/З, ТИ)`. Пагинация по группам (20).
 
 **Формат ответа:**
 
     {
       "count": 120,
-      "next": "http://.../api/v1/samples/grouped/?page=2",
+      "next": null,
       "previous": null,
       "page_size": 20,
       "results": [
@@ -148,8 +157,8 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
           "containers": [
             {
               "container": {
-                "id": 10, 
-                "number": "T-001", 
+                "id": 10,
+                "number": "T-001",
                 "status": "ACTIVE",
                 "cell_id": 15,
                 "pallet_id": 3
@@ -160,7 +169,7 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
                   "id": 1,
                   "sample_number": "TAA-A34076001-001",
                   "status": "IN_STORAGE",
-                  "updated_at": "2026-10-12T10:00:00Z"
+                  "updated_at": "2026-11-02T10:00:00Z"
                 }
               ]
             }
@@ -170,8 +179,6 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
     }
 
 Все фильтры `GET /samples` работают и для `grouped`.
-Поля `cell_id` и `pallet_id` добавлены в `container` (2f-11c)
-для сквозной навигации на вкладку «Топология».
 
 ---
 
@@ -194,61 +201,19 @@ Hard-delete пробы. Если проба фигурирует в `PickListIte
 | Метод | Путь | Что делает |
 |---|---|---|
 | `GET` | `/storage/rooms` | Список комнат |
-| `GET` | `/storage/racks?room_id=` | Стеллажи комнаты |
+| `GET` | `/storage/racks?room_id=` | Стеллажи |
 | `GET` | `/storage/sections?rack_id=` | Пролёты |
 | `GET` | `/storage/tiers?section_id=` | Ярусы |
 | `GET` | `/storage/cells?tier_id=` | Ячейки |
 | `GET` | `/storage/cells/{id}` | Одна ячейка |
-| `POST` | `/storage/cells` | Создать (admin) |
-| `GET` | `/storage/sections/{id}/qr.pdf/` | PDF с QR секции (2f-4c-1) |
-| `GET` | `/storage/cells/{id}/qr.pdf/` | PDF с QR ячейки (2f-4c-1) |
-| `POST` | `/storage/sections/qr-batch/` | PDF с партией QR (2f-4c-1) |
+| `POST` | `/storage/cells` | Создать |
+| `GET` | `/storage/sections/{id}/qr.pdf/` | PDF с QR секции |
+| `GET` | `/storage/cells/{id}/qr.pdf/` | PDF с QR ячейки |
+| `POST` | `/storage/sections/qr-batch/` | PDF с партией QR |
 
-### QR топологии
+**QR топологии:** `Section.qr_code` / `Cell.qr_code` автогенерируются (`WMSG:SECTION:<id>` / `WMSG:CELL:<id>`). PDF: A4, QR 65×65, адрес под QR.
 
-`Section.qr_code` и `Cell.qr_code` **автогенерируются** при
-создании, если не заданы явно. Payload:
-`WMSG:SECTION:<id>` / `WMSG:CELL:<id>`.
-
-### `GET /storage/sections/{id}/qr.pdf/`
-
-PDF с QR одной секции. Формат: A4, QR 65×65 мм, под ним
-адрес `Room / Rack / Section`.
-
-**Ответ 200:** `application/pdf`.
-
-### `GET /storage/cells/{id}/qr.pdf/`
-
-PDF с QR одной ячейки. Под QR — `full_address`.
-
-**Ответ 200:** `application/pdf`.
-
-### `POST /storage/sections/qr-batch/`
-
-PDF с партией QR (Section + Cell). Раскладка 2 × 3 = 6 QR на
-лист A4. Адреса собираются на сервере.
-
-**Тело запроса:**
-
-    {
-      "items": [
-        {"type": "SECTION", "id": 12},
-        {"type": "CELL", "id": 45},
-        {"type": "CELL", "id": 46}
-      ]
-    }
-
-**Логика:**
-- `type` — `SECTION` или `CELL`;
-- для `SECTION` адрес собирается из `Room / Rack / Section`;
-- для `CELL` — `full_address`.
-
-**Ответ 200:** `application/pdf`.
-
-**Ошибки:**
-- 400 — `items` пустой или не список;
-- 404 — объект по id не найден;
-- 400 — неизвестный `type`.
+**`POST /storage/sections/qr-batch/`** — тело `{"items": [{"type": "SECTION"|"CELL", "id": int}, ...]}`.
 
 ---
 
@@ -260,61 +225,51 @@ PDF с партией QR (Section + Cell). Раскладка 2 × 3 = 6 QR на
 | `GET` | `/storage/containers/{id}` | Одна тара + пробы внутри |
 | `POST` | `/storage/containers` | Создать одну |
 | `PATCH` | `/storage/containers/{id}` | Обновить |
-| `DELETE` | `/storage/containers/{id}` | Удалить (409 при `ProtectedError` или `?force=true`) |
-| `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка тары |
-| `POST` | `/storage/containers/bulk-create/` | Создать N тар-заготовок (без проб) |
-| `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить тару пробами |
-| `POST` | `/storage/containers/bulk-place/` | Разместить тары в ячейку или на пол (2f-10) |
-| `POST` | `/storage/containers/create-in-cell/` | Создать тару с пробами прямо в ячейке (2f-12a) |
+| `DELETE` | `/storage/containers/{id}` | Удалить (409 / `?force=true`) |
+| `GET` | `/storage/containers/{id}/label.pdf/` | PDF-этикетка |
+| `POST` | `/storage/containers/bulk-create/` | N тар-заготовок |
+| `POST` | `/storage/containers/{id}/fill-samples/` | Заполнить пробами |
+| `POST` | `/storage/containers/bulk-place/` | Разместить (ячейка / пол) |
+| `POST` | `/storage/containers/create-in-cell/` | Создать тару в ячейке |
 | `GET` | `/storage/pallets` | Список поддонов |
 | `POST` | `/storage/pallets` | Создать поддон |
+| `GET` | `/storage/containers/{id}/history/` | Аудит тары |
 
-**Фильтры контейнеров:** `pallet_id`, `floor_room_id`,
-`container_type_id`, `status`, `comment_template_id`,
-`draft_work_order_coded` (icontains), `draft_research_type_id`.
+**Фильтры контейнеров:**
+- `pallet_id`, `floor_room_id`, `container_type_id`, `status`, `comment_template_id`;
+- `draft_work_order_coded` (icontains), `draft_research_type_id`;
+- **`updated_since=<ISO 8601>`** — только с `updated_at > момента` (c-6b).
 
-**Статусы контейнера (2f-5c-1):**
+**Статусы контейнера:**
 - `PENDING_FILLING` — «Ожидает заполнения» (создана, проб нет);
 - `PENDING_PLACEMENT` — «Ожидает размещения» (пробы есть, места нет);
 - `ACTIVE` — «Размещена»;
 - `IN_TRANSIT` — «В пути»;
 - `ISSUED` — «Выдана».
 
-**`DELETE /storage/containers/{id}/`** (2f-1, 2f-12b):
+**`ContainerSerializer` (c-6a, денормализация):**
+- `container_type` (ID) + `container_type_name` (строка);
+- `floor_room` (ID) + `floor_room_name` (строка);
+- `pallet` (ID) + `cell_id` (ID) + `cell_full_address` (строка);
+- `comment_template` (ID) + `comment_template_text` (строка);
+- `draft_site` (ID) + `draft_site_name` (строка);
+- `draft_research_type` (ID) + `draft_research_type_name` (строка);
+- `print_batch_status` — статус последней не-CANCELLED партии (`null` / `DRAFT` / `READY` / `PRINTED`).
 
-Hard-delete тары. `ProtectedError` (тара в `PrintBatchItem`, на
-ней есть пробы) → 409.
-Если передан `?force=true`, бэкенд сначала удаляет все пробы
-тары, а затем саму тару (в одной транзакции).
+**`?updated_since=` (c-6b):** ISO с таймзоной; naive / невалидный → 400; пусто — полный Pull.
 
-**Ошибки:**
-- 404 — тара не найдена;
-- 409 — `{"error": "Нельзя удалить тару: на неё ссылаются связанные объекты (N)."}`.
-
-**Draft-фильтры** (2f-1):
-- `?draft_work_order_coded=TST0001` — частичный поиск по
-  draft-номеру (`icontains`);
-- `?draft_research_type_id=3` — точное совпадение по ID.
+**`DELETE /storage/containers/{id}/`:** `ProtectedError` (`PrintBatchItem`, пробы) → 409. `?force=true` — сначала удалить пробы, потом тару, одной транзакцией.
 
 ### `POST /storage/containers/bulk-create/`
 
-Создать партию тары-заготовок **без проб**. Пробы добавляются
-отдельным запросом — `fill-samples` (см. ниже).
+Создать N тар-заготовок. Пробы добавляются отдельно (`fill-samples`).
 
-Draft-поля (участок, ТИ, Н/З) — общие для всей партии, сохраняются
-на каждой таре. Обнуляются после успешного заполнения.
-
-**Тело запроса:**
+**Тело:**
 
     {
       "containers": [
-        {
-          "container_number": "T-BULK-001",
-          "container_type_id": 1
-        },
-        {
-          "container_type_id": 1
-        }
+        {"container_number": "T-BULK-001", "container_type_id": 1},
+        {"container_type_id": 1}
       ],
       "draft_site_id": 1,
       "draft_research_type_id": 1,
@@ -322,32 +277,21 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       "draft_work_order_incoming": "02-Тест001"
     }
 
-**Логика (обновлено в 2f-5c-1):**
-- Каждая тара создаётся со статусом **`PENDING_FILLING`**.
-- `container_number` **опционален**: если не указан — тара без
-  номера (заготовка). Номер присваивается на шаге `fill-samples`.
-- Draft-поля сохраняются на каждой таре.
-- `status` в теле запроса **не принимается**.
+**Логика:**
+- Каждая тара — `PENDING_FILLING`.
+- `container_number` опционален (`NULL` — заготовка).
+- Draft-поля сохраняются.
+- `status` в теле не принимается.
 
-**Ответ (201 Created):**
+**Ответ 201:** `{created_containers: [...], total_containers: N}`.
 
-    {
-      "created_containers": [ {...ContainerSerializer...} ],
-      "total_containers": 2
-    }
-
-**Ошибки:**
-- 400 — номер тары уже существует;
-- 400 — `container_type_id` не найден;
-- 400 — `draft_site_id` / `draft_research_type_id` не найдены;
-- 400 — номера тар в запросе не уникальны;
-- 400 — список `containers` пуст.
+**Ошибки:** 400 — номер уже есть, `container_type_id` не найден, номера не уникальны в запросе, пустой `containers`.
 
 ### `POST /storage/containers/{id}/fill-samples/`
 
-Заполнить существующую тару пробами.
+Заполнить тару пробами.
 
-**Тело запроса:**
+**Тело:**
 
     {
       "container_number": "T-FILL-001",
@@ -377,19 +321,14 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
     }
 
 **Логика:**
-- Найти или создать `WorkOrder` (CODED) по `work_order_coded`.
-- Если задан `work_order_incoming` — найти/создать INCOMING
-  и связать `linked_order` в обе стороны.
-- **Одна тара = один тип исследования.** Пробы другого ТИ — 400.
-- Повторное заполнение тем же ТИ — разрешено.
-- **`container_number`** — опционален. Если задан и у тары номер
-  пуст — присваивается. Если уже есть — не перезаписывается.
-- **Статус тары:** `PENDING_FILLING` → `PENDING_PLACEMENT`.
-- Статус проб синхронизируется со статусом тары (кроме
-  `SELECTED` и `DISPOSED`).
-- `status` в группе: `"NORMAL"` (обычная) или `"SELECTED"` (выбрана на доп. исследование).
+- Найти/создать `WorkOrder` (CODED). Если `work_order_incoming` — связать INCOMING ↔ CODED.
+- Одна тара = один ТИ. Пробы другого ТИ — 400.
+- `container_number` опционален; если задан и пуст — присвоить; если уже есть — не перезаписывать.
+- Статус: `PENDING_FILLING → PENDING_PLACEMENT`.
+- Статусы проб синхронизируются (кроме `SELECTED`, `DISPOSED`).
+- Draft-поля обновляются из запроса (1.69).
 
-**Ответ (201 Created):**
+**Ответ 201:**
 
     {
       "container_id": 10,
@@ -401,50 +340,29 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       "total_samples": 2
     }
 
-**Ошибки:**
-- 404 — тара не найдена;
-- 400 — `research_type_id` / `site_id` не найдены;
-- 400 — `sequence_from > sequence_to`;
-- 400 — диапазон > 1000 проб в одной группе;
-- 400 — в таре уже есть пробы другого типа исследования.
+**Ошибки:** 404 — тара не найдена; 400 — `research_type_id`/`site_id` не найдены, `sequence_from > sequence_to`, диапазон > 1000, пробы другого ТИ.
 
 ### `POST /storage/containers/bulk-place/`
 
-Разместить одну или несколько тар в ячейку (через поддон) или на пол
-в комнате (2f-10).
+Разместить тары в ячейку (через поддон) или на пол.
 
-**Тело запроса:**
+**Тело:**
 
-    {
-      "container_ids": [10, 11, 12],
-      "cell_id": 5
-    }
+    {"container_ids": [10, 11, 12], "cell_id": 5}
 
-или 
+или
 
-    {
-      "container_ids": [10],
-      "floor_room_id": 2
-    }
+    {"container_ids": [10], "floor_room_id": 2}
 
-**Логика:**
-- Если `cell_id`: в ячейке создается поддон (если нет), тары
-  привязываются к нему, статус меняется на `ACTIVE`.
-- Если `floor_room_id`: тары привязываются к комнате на полу,
-  статус меняется на `ACTIVE`.
+**Логика:** `cell_id` — поддон создаётся, если нет; `floor_room_id` — на пол. Статус → `ACTIVE`.
 
-**Ответ 200:**
+**Ответ 200:** `{"message": "..."}`.
 
-    {
-      "message": "Успешно размещено в ячейку Комната 1 / A / S1 / A / 5: 3 тар."
-    }
+### `POST /storage/containers/create-in-cell/`
 
-### `POST /storage/containers/create-in-cell/` (2f-12a)
+Атомарно: создать тару + заполнить + привязать к ячейке.
 
-Создать тару, заполнить её пробами и сразу привязать к поддону
-в указанной ячейке (атомарно).
-
-**Тело запроса:**
+**Тело:**
 
     {
       "cell_id": 5,
@@ -453,24 +371,33 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
       "work_order_coded": "Sev00544",
       "research_type_id": 1,
       "site_id": 1,
-      "sample_groups": [
-        {
-          "prefix": "TST",
-          "middle": "124",
-          "sequence_from": 1,
-          "sequence_to": 5,
-          "status": "NORMAL"
-        }
-      ]
+      "sample_groups": [...]
     }
 
-**Ответ 201 Created:**
+**Ответ 201:** `{container_id, container_number, total_samples}`.
 
-    {
-      "container_id": 15,
-      "container_number": "T-123",
-      "total_samples": 5
-    }
+### `GET /storage/containers/{id}/history/`
+
+Аудит тары. Возвращает `AuditLog` по `entity_type="Container"`, `entity_id=id`, `-created_at`.
+
+**Формат:**
+
+    [
+      {
+        "id": 1,
+        "user": 1,
+        "username": "admin",
+        "action": "CREATE",
+        "action_display": "Создана",
+        "entity_type": "Container",
+        "entity_id": 42,
+        "old_value": null,
+        "new_value": {"status": "PENDING_FILLING", "container_number": "T-001", "container_type_id": 3, "pallet_id": null, "floor_room_id": null, "sample_count": 0},
+        "created_at": "2026-11-02T10:00:00Z"
+      }
+    ]
+
+**Действия:** `CREATE`, `UPDATE`, `DELETE`, `FILL_SAMPLES`, `PLACE`, `CREATE_IN_CELL`.
 
 ---
 
@@ -482,19 +409,19 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 | `GET` | `/labels/print-batches/{id}` | Одна партия с items |
 | `POST` | `/labels/print-batches` | Создать черновик |
 | `PATCH` | `/labels/print-batches/{id}` | Изменить (`name`, `comment` — в любом статусе) |
-| `DELETE` | `/labels/print-batches/{id}` | Hard-delete (только DRAFT / CANCELLED) |
+| `DELETE` | `/labels/print-batches/{id}` | Hard-delete (только `DRAFT` / `CANCELLED`) |
 | `POST` | `/labels/print-batches/{id}/add-containers/` | Добавить тары |
 | `POST` | `/labels/print-batches/{id}/remove-container/` | Убрать тару |
-| `POST` | `/labels/print-batches/{id}/mark-ready/` | DRAFT → READY |
+| `POST` | `/labels/print-batches/{id}/mark-ready/` | `DRAFT → READY` |
 | `POST` | `/labels/print-batches/{id}/cancel/` | Отмена (soft) |
-| `GET` | `/labels/print-batches/{id}/pdf/` | PDF (READY → PRINTED авто) |
+| `GET` | `/labels/print-batches/{id}/pdf/` | PDF (`READY → PRINTED` авто) |
 | `GET` | `/labels/print-batches/{id}/companion.pdf/` | Сопроводительный лист |
-| `POST` | `/labels/print-batches/{id}/mark-printed/` | Ручная пометка PRINTED |
+| `POST` | `/labels/print-batches/{id}/mark-printed/` | Ручная пометка `PRINTED` |
 
 **Ограничения:**
 - `PUT` — запрещён (405).
-- Изменять/наполнять можно только `DRAFT`.
-- Отменить можно `DRAFT` и `READY`, нельзя `PRINTED` и `CANCELLED`.
+- Изменять/наполнять — только `DRAFT`.
+- Отменить — `DRAFT` и `READY`, нельзя `PRINTED` и `CANCELLED`.
 
 **Фильтры:** `?status=`, `?print_type=`.
 
@@ -506,7 +433,7 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 |---|---|---|
 | `GET` | `/receipts` | Список партий |
 | `GET` | `/receipts/{id}` | Одна партия |
-| `POST` | `/receipts/{id}/confirm` | Подтвердить приёмку (ручной override) |
+| `POST` | `/receipts/{id}/confirm` | Подтвердить (ручной override) |
 | `POST` | `/receipts/{id}/cancel` | Отменить |
 | `GET` | `/receipts/{id}/conflicts/` | Неразобранные `NEEDS_CONFIRMATION` |
 | `POST` | `/receipts/{id}/resolve-conflicts/` | Разобрать конфликты |
@@ -514,240 +441,104 @@ Draft-поля (участок, ТИ, Н/З) — общие для всей па
 | `POST` | `/receipts/{id}/complete/` | Завершить приёмку |
 | `GET` | `/receipts/{id}/act/` | PDF «Акт приёмки» (только `CONFIRMED`) |
 | `GET` | `/receipt-items` | Строки партии |
-| `DELETE` | `/receipt-items/{id}` | Удалить строку (каскад, 2f-5a-1) |
+| `DELETE` | `/receipt-items/{id}` | Удалить строку (каскад) |
 | `GET` | `/import-sessions` | Сессии импорта |
 | `POST` | `/import-sessions/upload/` | Excel → Receipt + ReceiptItem |
 | `POST` | `/import-sessions/import-shipment/` | Excel → Shipment + Receipt + Container |
 
-**Фильтры `GET /receipts`:** `status`, `laboratory_id`, `site_id`,
-`shipment_id`.
-**Фильтры `GET /receipt-items`:** `receipt_id`, `status`,
-`container_id`.
+**Фильтры `GET /receipts`:** `status`, `laboratory_id`, `site_id`, `shipment_id`.
+**Фильтры `GET /receipt-items`:** `receipt_id`, `status`, `container_id`.
 
 ### `GET /receipts/{id}/conflicts/`
 
-Неразобранные конфликты партии (`code=NEEDS_CONFIRMATION`,
-`resolved != true`). Каждый элемент содержит поля вопроса +
-`question_index` + `suggested_count`.
-
-**Ответ 200:**
-
-    {
-      "receipt_id": 8,
-      "conflicts": [
-        {
-          "question_index": 3,
-          "code": "NEEDS_CONFIRMATION",
-          "title": "Требует уточнения",
-          "reason": "multi_date_match",
-          "sheet": "Тестовый",
-          "work_order": "TST0001",
-          "research_type": "ШЛ",
-          "container_type": "Коробка",
-          "containers_count": 4,
-          "raw_dates": ["2026-10-13", "2026-10-14"],
-          "target_date": "2026-10-14",
-          "message": "В ячейке несколько дат, включая 14.10.2026.",
-          "suggested_count": 2
-        }
-      ],
-      "total_conflicts_count": 3,
-      "resolved_conflicts_count": 2
-    }
+Неразобранные (`code=NEEDS_CONFIRMATION`, `resolved != true`). С полями вопроса, `question_index`, `suggested_count`.
 
 ### `POST /receipts/{id}/resolve-conflicts/`
 
-Разобрать конфликты партии. Создаёт N `ReceiptItem` (без
-`Container`), помечает вопрос `resolved`.
+**Тело:** `{"conflicts": [{"question_index": 3, "containers_count": 2}]}`.
 
-**Тело запроса:**
+Создаёт N `ReceiptItem` (без `Container`), помечает вопрос `resolved`.
 
-    {
-      "conflicts": [
-        {"question_index": 3, "containers_count": 2}
-      ]
-    }
+**Ответ 200:** `{receipt_id, created_items_count, resolved_conflicts_count, total_conflicts_count, errors: []}`.
 
-**Ответ 200:**
-
-    {
-      "receipt_id": 8,
-      "created_items_count": 2,
-      "resolved_conflicts_count": 3,
-      "total_conflicts_count": 3,
-      "errors": []
-    }
-
-**Ошибки 400:** невалидный индекс, вопрос уже разобран,
-`containers_count > declared_count`, дубликат `question_index`.
+**Ошибки 400:** невалидный индекс, уже разобран, `containers_count > declared_count`, дубликат `question_index`.
 
 ### `POST /receipts/{id}/check/`
 
-Сверка тары по партии (batch).
+**Тело:**
 
-**Тело запроса:**
+    {"items": [{"item_id": 101, "matched": true, "container_number": "1"}, {"item_id": 102, "matched": false}]}
 
-    {
-      "items": [
-        {"item_id": 101, "matched": true, "container_number": "1"},
-        {"item_id": 102, "matched": false}
-      ]
-    }
+**Логика:**
+- `matched=true` → `Container` со статусом **`PENDING_FILLING`**, присвоить номер, `ReceiptItem.status=MATCHED`.
+- `matched=false` → удалить `Container` (если нет проб), `ReceiptItem.status=MISSING`.
+- `Receipt.status=IN_PROGRESS`.
 
-**Логика (обновлено в 2f-5c-1):**
-- `matched=true` → создать/обновить `Container`
-  со статусом **`PENDING_FILLING`** («Ожидает заполнения» —
-  тара есть, проб нет), присвоить номер,
-  `ReceiptItem.status=MATCHED`.
-- `matched=false` → удалить `Container` (если нет проб),
-  `ReceiptItem.status=MISSING`.
-- `Receipt.status=IN_PROGRESS`, если была `EXPECTED`.
+**Ответ 200:** `{receipt_id, total_items_count, matched_count, missing_count, errors: []}`.
 
-**Ответ 200:**
-
-    {
-      "receipt_id": 8,
-      "total_items_count": 10,
-      "matched_count": 8,
-      "missing_count": 2,
-      "errors": []
-    }
-
-**Ошибки 400:**
-- строка не принадлежит партии;
-- `container_type` не заполнен у `matched`-строки;
-- номер тары дублируется в запросе.
+**Ошибки 400:** строка не из партии, `container_type` не заполнен, дубликат номера.
 
 ### `POST /receipts/{id}/complete/`
 
-Завершить приёмку партии.
+**Проверки:** нет неразобранных `NEEDS_CONFIRMATION`; нет `ReceiptItem.status=EXPECTED`.
 
-**Проверки:**
-- нет неразобранных `NEEDS_CONFIRMATION`;
-- нет `ReceiptItem.status=EXPECTED`.
+**Действия:** `Receipt.status=CONFIRMED`, `received_at=now`; `Shipment.status=RECEIVED` или `PARTIALLY_RECEIVED`.
 
-**Действия:**
-- `Receipt.status=CONFIRMED`, `received_at=now`,
-  `received_by=request.user`;
-- `Shipment.status=RECEIVED` (все `MATCHED`) или
-  `PARTIALLY_RECEIVED` (есть `MISSING`).
+**Ответ 200:** `{receipt_id, status, total_items_count, matched_count, missing_count, other_count, shipment_id, shipment_status, errors: []}`.
 
-**Ответ 200:**
-
-    {
-      "receipt_id": 8,
-      "status": "CONFIRMED",
-      "total_items_count": 10,
-      "matched_count": 8,
-      "missing_count": 2,
-      "other_count": 0,
-      "shipment_id": 5,
-      "shipment_status": "PARTIALLY_RECEIVED",
-      "errors": []
-    }
-
-**Ошибки 400:** остались конфликты; остались `EXPECTED`;
-партия пуста; партия уже `CONFIRMED` / `CANCELLED`.
+**Ошибки 400:** остались конфликты; `EXPECTED`; партия пуста; уже `CONFIRMED`/`CANCELLED`.
 
 ### `GET /receipts/{id}/act/`
 
-PDF «Акт приёмки» (решение 1.50). Доступен только для
-`Receipt.status=CONFIRMED`.
+PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 
-**Ответ 200:** `application/pdf`, `Content-Disposition: inline;
-filename="act_<receipt_number>.pdf"`.
-
-Содержимое PDF:
-- шапка: «АКТ ПРИЁМКИ № <receipt_number>»;
-- метаданные: дата рейса, рейс, лаборатория, участок;
-- сводка: всего / принято / не пришло / прочее;
-- таблица «Не приехало»;
-- подписи.
+**Ответ 200:** `application/pdf`, `Content-Disposition: inline; filename="act_<receipt_number>.pdf"`.
 
 **Ошибки 400:** статус не `CONFIRMED`.
 
-### `DELETE /receipt-items/{id}/` (2f-5a-1)
+### `DELETE /receipt-items/{id}/`
 
-Каскадное удаление строки приёмки. Одна транзакция:
-1. Если у строки есть `Container`:
-   - удалить все её пробы (по одной, чтобы поймать
-     `ProtectedError` на конкретной пробе);
-   - удалить `Container`.
-2. Удалить саму строку.
+Каскад: пробы → тара → строка. Одна транзакция.
 
-**Ответ 204:** пустое тело.
-
-**Ошибки:**
-- 404 — строки нет;
-- 409 — `{"error": "Нельзя удалить тару: проба «...» уже используется (…)."}`
-  или
-  `{"error": "Нельзя удалить тару: на неё ссылаются связанные объекты (N)."}`.
+**Ошибки:** 404 — нет; 409 — проба защищена (`PickListItem` / `ShipmentItem`) или тара защищена (`PrintBatchItem`).
 
 ### `POST /import-sessions/upload/`
 
-Старый импорт: создаёт `Receipt` + `ReceiptItem`, **без** `Shipment`
-и `Container`.
+Старый импорт: `Receipt` + `ReceiptItem`, **без** `Shipment` и `Container`.
 
 **Form-data:**
 - `file` — обязателен (`.xlsx` / `.xlsm`);
 - `target_date` — обязателен (ISO `2026-10-12` или рус. `12.10.2026`);
-- `duplicate_action` — `cancel` (default) / `overwrite` / `create`.
+- `duplicate_action` — `cancel` / `overwrite` / `create` (default `cancel`).
 
-**Ответ 200:** `{import_session_id, status, file_format, sheets_count,
-rows_count, containers_count, parse_errors, receipts}`.
-**Ответ 409:** `DUPLICATE_DATE` — партия за эту дату уже есть.
+**Ответ 200:** `{import_session_id, status, file_format, sheets_count, rows_count, containers_count, parse_errors, receipts}`.
+**Ответ 409:** `DUPLICATE_DATE`.
 
 ### `POST /import-sessions/import-shipment/`
 
-Новый импорт: создаёт **рейс целиком**.
-- `Shipment` (direction=INBOUND, status=SENT, site=NULL);
-- один `Receipt` на рейс (`site=NULL`, `shipment=shipment`);
-- по одному `ReceiptItem` на каждую тару (`expected_samples_count=1`);
-- по одному `Container` (`status=IN_TRANSIT`,
-  `container_number=NULL`, draft-поля).
+Новый импорт: создаёт рейс целиком.
+- `Shipment` (INBOUND, SENT, site=NULL);
+- один `Receipt` (`site=NULL`, `shipment=shipment`);
+- `ReceiptItem` на каждую тару (`expected_samples_count=1`);
+- `Container` (`status=IN_TRANSIT`, `container_number=NULL`, draft-поля).
 
 **Form-data:**
 - `file` — обязателен (`.xlsx` / `.xlsm`);
-- `target_date` — обязателен (ISO или рус.);
-- `shipment_number` — опционален; если нет — генерируется
-  `Р-{year}-NNN`;
-- `laboratory_id` — опционален (откуда).
+- `target_date` — обязателен;
+- `shipment_number` — опционален (`Р-{year}-NNN` по умолчанию);
+- `laboratory_id` — опционален.
 
-**Спорные ячейки** — пишутся в `parse_errors` с
-`code=NEEDS_CONFIRMATION` и `reason`:
-- `no_dates` — в ячейке нет ни одной даты;
-- `multi_date_match` — несколько дат, `target_date` входит;
-- `target_date_not_matched` — даты есть, `target_date` не входит.
+**Спорные ячейки** — в `parse_errors` с `code=NEEDS_CONFIRMATION` и `reason`: `no_dates`, `multi_date_match`, `target_date_not_matched`. Такие ячейки **пропускаются**, `status=PARSED` (не `APPLIED`).
 
-Такие ячейки **пропускаются**, `status=PARSED` (не `APPLIED`).
+**Ответ 200:** `{import_session_id, status, shipment_id, shipment_number, receipt_id, receipt_number, containers_count, questions_count, parse_errors}`.
 
-**Ответ 200:**
-
-    {
-      "import_session_id": 12,
-      "status": "APPLIED",
-      "shipment_id": 5,
-      "shipment_number": "Р-2026-001",
-      "receipt_id": 8,
-      "receipt_number": "ПР-5",
-      "containers_count": 5,
-      "questions_count": 0,
-      "parse_errors": []
-    }
-
-**Ошибки:**
-- 400 — нет файла / плохая дата / неподдерживаемый формат;
-- 200 + `status=ERROR`, `shipment_id=null` — нечего создавать.
+**Ошибки:** 400 — нет файла / плохая дата / неподдерживаемый формат; 200 + `status=ERROR`, `shipment_id=null` — нечего создавать.
 
 **Формат Excel:**
-- Файл может содержать 1–2 строки «шапки» до заголовков
-  (`MAX_HEADER_SEARCH=20`).
-- Строка заголовков: `№ Наряд-заказа` / `Н/З` / `Наряд` + блоки
-  типов + `Дата`.
-- **Сразу после заголовков** — строка **типа тары** (`Ящики`,
-  `Биг-бэг`). Обязательна для каждой колонки типа.
-- Каждый блок «типы + Дата» — своя дата. В ячейке «Дата» —
-  список через запятую (`13.08,02.09,25.05`).
+- 1–2 строки «шапки» до заголовков (`MAX_HEADER_SEARCH=20`).
+- Строка заголовков: `№ Наряд-заказа` / `Н/З` / `Наряд` + блоки типов + `Дата`.
+- **Сразу после заголовков** — строка **типа тары** (`Ящики`, `Биг-бэг`). Обязательна для каждой колонки типа.
+- Каждый блок «типы + Дата» — своя дата. В ячейке «Дата» — список через запятую.
 - Количество тары: число или `1+1` (сумма).
 - Дата без года (`13.08`) — текущий год.
 
@@ -755,7 +546,7 @@ rows_count, containers_count, parse_errors, receipts}`.
 
 ## Формат ошибок
 
-Единый формат для всех 4xx/5xx:
+Единый для всех 4xx/5xx:
 
     {
       "error": {
@@ -765,16 +556,17 @@ rows_count, containers_count, parse_errors, receipts}`.
       }
     }
 
-Коды: `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`,
-`CONFLICT`, `INTERNAL_ERROR`.
+Коды: `VALIDATION_ERROR`, `NOT_FOUND`, `PERMISSION_DENIED`, `CONFLICT`, `INTERNAL_ERROR`.
 
 **Исключение** — custom actions, возвращающие простую форму:
 
     {"error": "<строка>"}
 
-Так делают: `check`, `complete`, `act`, `dispose`, `restore`,
-`destroy` (409), `delete receipt-item` (409), `qr-batch` (400/404),
-`bulk-place`, `create-in-cell`.
+Так делают: `check`, `complete`, `act`, `dispose`, `restore`, `destroy` (409), `delete receipt-item` (409), `qr-batch` (400/404), `bulk-place`, `create-in-cell`.
+
+**`?updated_since=` (c-6b) — DRF ValidationError:**
+
+    {"updated_since": ["updated_since должен содержать таймзону (UTC, суффикс Z)."]}
 
 ---
 
@@ -782,7 +574,5 @@ rows_count, containers_count, parse_errors, receipts}`.
 
 - Версионирование API в URL или заголовке? → сейчас в URL.
 - Лимит `per_page`? → предложить 200.
-- Глобальный `/search` — пока не реализован. Используются фильтры
-  `GET /samples?q=` и `?work_order=`.
-- `POST /receiving/items/{id}/fill/` — заполнение заготовки приёмки
-  (для Excel-сценария) — в разработке.
+- Глобальный `/search` — пока не реализован. Используются фильтры `GET /samples?q=` и `?work_order=`.
+- `POST /receiving/items/{id}/fill/` — заполнение заготовки приёмки — в разработке.
