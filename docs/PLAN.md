@@ -51,12 +51,16 @@
 | c-7d | PDF предпросмотр (online) | `ApiClient.download` + `open_filex` | ✅ |
 | c-7f-1 | Offline-PDF: подготовка | ассеты `pdf`, `qr`, `DejaVuSans.ttf`, `LabelData` | ✅ |
 | c-7f-2 | Offline-PDF: рендер на Dart | `pw.Text`, `pw.BarcodeWidget`, галочка `CustomPaint` | ✅ |
-| c-7c | Разместить | `PlaceContainerDialog` (каскад), `bulk-place` | ⬜ **следующий** |
-| c-7e | Кэш истории | SQLite `container_history` (v5), fallback в `fetchHistory` | ⬜ |
+| c-7c | Разместить / Местоположение | `PlaceContainerDialog` (каскад), `bulk-place`, offline-place через `sync_queue`, `ContainerLocationDialog` | ✅ |
+| c-7-offline-catalog | Кэш справочников офлайн | SQLite `catalog` (v5), `CatalogDao`, Pull + fallback в `CatalogService` | ✅ |
+| c-7e-1 | Fix `SampleService` офлайн | `fetchByContainerId` — пустой кэш не ошибка | ✅ |
+| c-7e-2 | Кэш истории тары | SQLite v6, `ContainerHistoryDao`, `fetchHistory` fallback | ✅ |
+| c-7e-3 | Pre-fetch истории в Pull | `SyncService.pullAll` — история всех тар | ✅ |
+| c-8-catalog-create | Создание справочников с мобилки | UI + `CatalogService.create` через `sync_queue` | ⬜ **следующий** |
 | c-8a | Backend: PATCH статусов | Эндпоинты для `sync_queue` | ⬜ |
 | c-8b | Mobile: Смена статуса тары | `PENDING_FILLING` → `PENDING_PLACEMENT` → `ACTIVE` | ⬜ |
 | c-8c | Mobile: Смена статуса пробы | `IN_STORAGE` → `SELECTED` → `DISPOSED` | ⬜ |
-| c-8d | Mobile: Размещение тары | В ячейку / на пол через `sync_queue` | ⬜ |
+| c-8d | Mobile: Размещение тары | В ячейку / на пол через `sync_queue` | ✅ (закрыто в `c-7c`) |
 | c-8e | Mobile: Auto-sync USB | Push → Pull, автотриггер | ⬜ |
 | c-5 | Файловая синхронизация | Sneakernet через флешку (`.json.gz`) | ⏸ отложено |
 
@@ -109,8 +113,10 @@
 - [ ] **Экспорт отчётов** в Excel/CSV/PDF.
 - [x] **Офлайн-режим mobile** — `c-1`..`c-4.6`, `c-6a`..`c-6h`, `c-7a`..`c-7h`.
 - [x] **PDF предпросмотр mobile** — `c-7d` (online), `c-7f-1` + `c-7f-2` (offline).
-- [ ] **Разместить в mobile** — `c-7c`.
-- [ ] **Кэш истории** — `c-7e`.
+- [x] **Разместить в mobile** — `c-7c` (онлайн + офлайн через `sync_queue`).
+- [x] **Кэш справочников в mobile** — `c-7-offline-catalog` (1.93).
+- [x] **Кэш истории тары в mobile** — `c-7e-2` + `c-7e-3` (pre-fetch в Pull, 1.93).
+- [ ] **Создание справочников с мобилки** — `c-8-catalog-create`.
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
 - [ ] **Роли и права** детализированные.
 - [ ] **Дашборд с виджетами** под каждую роль.
@@ -153,9 +159,13 @@
 | ТД-51 | `c-6f` (`NetworkMonitor` lifecycle) откачен, `c-6g` — упрощённый | низкий | при первом баг-репорте |
 | ТД-52 | `Barcode.scaleCorners` — не учитывает rotation, не используем | низкий | если плагин исправит |
 | ТД-53 | Mobile: `SampleEditDialog` — нет права выбора `well`, `depth` | низкий | при необходимости |
-| ТД-54 | Mobile: `c-7e` — кэш истории (SQLite `container_history`) | высокий | следующий после `c-7c` |
+| ТД-54 | Mobile: `c-7e` — кэш истории (SQLite `container_history`) | высокий | ✅ `c-7e-2` + `c-7e-3` |
 | ТД-55 | В `c-7b-fix` и `c-7h-fix-2` — дозакоммит недостающих файлов. В `CONTEXT` §«Mobile» — правило: перед `git add` — `git status --short \| grep "mobile/lib"` | ✅ | 1.90 |
 | ТД-56 | Синхронизация констант `label_service.py` ↔ `label_pdf_generator.dart` (порт 1:1). При изменении серверного рендера — править оба | средний | при первом изменении серверного рендера |
+| ТД-57 | Offline-place: `SyncPusher` отправляет очередь по одной операции; при массовом офлайне — батчинг | низкий | при жалобах на скорость синхронизации |
+| ТД-58 | Pull больших справочников (сотни ячеек) — батчинг / пагинация в одном запросе | низкий | при жалобах на скорость Sync |
+| ТД-59 | Pull истории всех тар = N запросов (N = число тар). Backend batch-эндпоинт `GET /audit-logs/?entity_type=Container&updated_since=…` | средний | когда тар станет сотни/тысячи |
+| ТД-60 | Offline-справочники: если сервер не отдал поле-родителя в JSON, `catalogParentId` = null, офлайн-каскад по родителю пустой. Проверить на реальных данных | низкий | при первом баг-репорте офлайн-каскада |
 
 ---
 

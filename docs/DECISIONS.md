@@ -285,7 +285,7 @@
 **Причина:** мобилка должна работать без сервера; печать после оцифровки.
 
 **Где:** `mobile/lib/services/label_service.dart` (план `c-7f`).
-**Статус:** ✅ действует (спецификация для `c-7f`).
+**Статус:** ✅ действует (реализовано в `c-7f-1` + `c-7f-2`).
 
 ### 1.78. 2026-11-02 — `GET /health/` вне `/api/v1/`, без авторизации
 
@@ -499,6 +499,74 @@ git status --short | grep "mobile/lib"
 Где: чек-лист перед каждым заходом; CONTEXT.md §«Правила текущей сессии» — обновлено.
 Статус: ✅ действует.
 
+1.92. 2026-11-02 — Offline-place через sync_queue (c-7c)
+Решение: размещение тары (POST /storage/containers/bulk-place/) на мобилке работает и офлайн, и онлайн через ContainerService.bulkPlace:
+
+Онлайн: POST сразу на сервер → PlaceOutcome.online → UI перезагружает карточку (fetchById), история дополняется PLACE.
+
+Офлайн: при ApiException.isNetworkError == true — POST в sync_queue (action='POST', endpoint='/storage/containers/bulk-place/', payload=body) → PlaceOutcome.queued → UI показывает SnackBar «Размещение сохранено. Отправится при синхронизации.», карточку не перезагружает (сервер не менялся).
+
+Отправка очереди: существующий SyncPusher.pushAll() — action == 'POST' → _client.post(endpoint, data: payload). Изменений в SyncPusher / SyncQueueDao / database.dart не нужно — операция PLACE кодируется как обычный POST на bulk-place.
+
+Кнопки в карточке тары — раздельные, как в вебе (ContainerDetailDialog.tsx):
+
+[Предпросмотр] — всегда.
+
+[Разместить] — canPlace = status ∈ {PENDING_FILLING, PENDING_PLACEMENT}.
+
+[Местоположение] — hasCell = cellId != null; в вебе ведёт в /topology?cell_id=, в мобилке открывает ContainerLocationDialog с адресом (раздела топологии нет).
+
+Причина:
+
+Требование заказчика: «мобилка должна работать офлайн так же, как веб». Размещение — ключевая операция кладовщика, без неё офлайн-режим бесполезен.
+
+sync_queue уже поддерживает POST /storage/containers/bulk-place/ без изменений — c-8d (запланированный на потом) закрывается в c-7c.
+
+Раздельные кнопки — паритет с вебом: [Местоположение] показывает, а не меняет.
+
+Где: mobile/lib/services/container_service.dart (PlaceOutcome, bulkPlace, DI enqueue), mobile/lib/widgets/place_container_dialog.dart, mobile/lib/widgets/container_location_dialog.dart, mobile/lib/screens/container_detail_screen.dart (_onPlace, _onShowLocation, _buildActionButtons).
+Статус: ✅ действует.
+
+1.93. 2026-11-02 — Мобилка = полное двустороннее зеркало сервера
+Решение: мобильное приложение обязано в офлайне видеть всё, что есть на сервере, и уметь создавать / менять данные локально, чтобы при следующей синхронизации они уходили на сервер.
+
+Правила:
+
+Pull при синхронизации тянет ВСЁ, а не только containers / samples. Обязательный минимум:
+
+топология: rooms, racks, sections, tiers, cells;
+
+справочники: sites, research-types, laboratories, storage/container-types;
+
+containers, samples;
+
+история всех тар (GET /storage/containers/{id}/history/ для каждой).
+
+Каждый справочник кэшируется в SQLite и читается через *Dao с fallback: онлайн → API + save в кэш; ошибка сети → getAll / getByParent из кэша.
+
+История тары кэшируется, причём pre-fetch в Pull (не lazy). После Pull история любой тары доступна офлайн, даже если карточку онлайн не открывали.
+
+Создание / редактирование справочника работает офлайн через sync_queue (POST / PATCH), как bulkPlace (1.92). При следующем SyncPusher.pushAll() — уходит на сервер.
+
+UI на мобилке повторяет веб-возможности, а не «только чтение». Если в вебе можно создать комнату — на мобилке тоже.
+
+Реализовано в: c-7-offline-catalog (правила 1–2), c-7e-1/c-7e-2/c-7e-3 (правило 3). Правило 4 — c-8-catalog-create (следующий).
+
+Причина:
+
+Требование заказчика: «мобилка должна работать офлайн так же, как веб».
+
+c-7c показал разрыв: каскад размещения требует справочников, а они были онлайн-only. Синхронизировался → ушёл в офлайн → каскад не открывается.
+
+Открыл историю онлайн → ушёл в офлайн → тара с неоткрытой историей — пусто. Pre-fetch в Pull решает это.
+
+Где: SyncService.pullAll (расширен), CatalogService (fallback), CatalogDao (новый), ContainerHistoryDao (новый), database.dart (v6 — catalog + container_history), fetchHistory (fallback), fetchByContainerId (фикс пустого кэша).
+
+ТД-59: Pull истории = N запросов (N = число тар). Для сотен/тысяч тар нужен backend batch-эндпоинт (GET /audit-logs/?entity_type=Container&updated_since=…).
+
+Связанные решения: 1.76 (инкрементальный Pull), 1.92 (offline-place через sync_queue).
+Статус: 🟡 правила 1–3 закрыты, правило 4 — c-8-catalog-create (следующий).
+
 2. Что не делаем и почему
 Не используем SampleParts — разделение вне WMS.
 
@@ -600,6 +668,18 @@ git status --short | grep "mobile/lib"
 
 Не выдаём код нового захода, пока предыдущий не закоммичен (1.91).
 
+Не показываем [Местоположение] для тары без ячейки (только hasCell = cellId != null, как в вебе, 1.92).
+
+Не открываем PlaceContainerDialog по кнопке [Местоположение] — это разные действия (1.92).
+
+Не трогаем SyncPusher / SyncQueueDao для offline-place — обычный POST покрывает операцию (1.92).
+
+Не считаем, что Pull нужен только для containers/samples (1.93).
+
+Не делаем lazy-кэш истории — только pre-fetch в Pull, чтобы офлайн работала история любой тары (1.93).
+
+Не пересоздаём sync_queue при миграции SQLite — там несохранённые изменения (1.93).
+
 3. Глоссарий
 Данные
 Термин	Что значит
@@ -658,6 +738,12 @@ SampleEditDialog (mobile)	Диалог редактирования пробы (
 SampleStatusChip	Цветной чип статуса пробы (1.88).
 LabelData (offline)	Модель для offline-рендера PDF этикетки (1.77, c-7f-1).
 label_pdf_generator	Offline-рендер PDF на Dart, порт label_service.py (1.77, c-7f-2).
+NamedCatalog	Универсальный {id, label} для каскада размещения (1.92, c-7c).
+PlaceOutcome	Результат bulkPlace: online / queued (1.92).
+ContainerLocationDialog	Диалог «где тара» — адрес + «Закрыть» (1.92).
+CatalogDao	DAO кэша справочников (SQLite, kind/parent_id) (1.93).
+ContainerHistoryDao	DAO кэша истории тары (SQLite, v6) (1.93).
+Pre-fetch истории	Загрузка истории всех тар в Pull (1.93, c-7e-3).
 Инфраструктура
 Термин	Что значит
 Docker Compose	PG в контейнере (домашний ПК).
@@ -740,3 +826,11 @@ SyncScreen	Экран ручной синхронизации.
 «ContainerEditForm» — не «редактор вкладки», а bottom sheet (1.86).
 
 «Н/З · ТИ · номер» — именно в этом порядке (c-7h-fix).
+
+«Местоположение» на мобилке — не переход в топологию (её там нет) и не размещение, а диалог с адресом (1.92).
+
+«PlaceOutcome.queued» — не ошибка, а отложенная операция в sync_queue (1.92).
+
+«Pull» — не только containers/samples. Справочники + история всех тар (1.93).
+
+«Кэш истории» — не lazy. Pre-fetch в Pull (1.93).
