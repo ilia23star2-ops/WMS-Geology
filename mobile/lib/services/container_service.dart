@@ -1,7 +1,8 @@
 /// Сервис тары.
 ///
 /// - `fetchById` — карточка тары (с офлайн-кэшем).
-/// - `fetchHistory` — история изменений (`GET /storage/containers/{id}/history/`).
+/// - `fetchHistory` — история изменений (`GET /storage/containers/{id}/history/`),
+///   с офлайн-кэшем (c-7e-2).
 /// - `update` — редактирование (PATCH), только онлайн.
 /// - `fetchLabelPdf` — PDF этикетки (`GET /storage/containers/{id}/label.pdf/`), c-7d.
 /// - `bulkPlace` — размещение тары (`POST /storage/containers/bulk-place/`), c-7c.
@@ -9,15 +10,13 @@
 library;
 
 import '../db/container_dao.dart';
+import '../db/container_history_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../models/container.dart';
 import '../models/container_history_entry.dart';
 import 'api_client.dart';
 
 /// Результат `bulkPlace` (c-7c).
-///
-/// - `online` — POST ушёл на сервер, статус тары на сервере изменился.
-/// - `queued` — POST отложен в `sync_queue`, уйдёт при `SyncPusher.pushAll()`.
 enum PlaceOutcome { online, queued }
 
 /// DI-хук для тестов. По умолчанию — `SyncQueueDao.enqueue`.
@@ -27,12 +26,30 @@ typedef EnqueuePlace = Future<void> Function({
   required Map<String, dynamic> payload,
 });
 
+/// DI-хук для тестов истории (c-7e-2).
+typedef SaveHistory = Future<void> Function(
+  int containerId,
+  List<Map<String, dynamic>> items,
+);
+typedef GetCachedHistory = Future<List<Map<String, dynamic>>> Function(
+  int containerId,
+);
+
 class ContainerService {
-  ContainerService(this._client, {EnqueuePlace? enqueue})
-    : _enqueue = enqueue ?? _defaultEnqueue;
+  ContainerService(
+    this._client, {
+    EnqueuePlace? enqueue,
+    SaveHistory? saveHistory,
+    GetCachedHistory? getCachedHistory,
+  }) : _enqueue = enqueue ?? _defaultEnqueue,
+       _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
+       _getCachedHistory =
+           getCachedHistory ?? ContainerHistoryDao.getByContainerId;
 
   final ApiClient _client;
   final EnqueuePlace _enqueue;
+  final SaveHistory _saveHistory;
+  final GetCachedHistory _getCachedHistory;
 
   static Future<void> _defaultEnqueue({
     required String action,
@@ -75,16 +92,38 @@ class ContainerService {
     }
   }
 
+  /// GET /storage/containers/{id}/history/ (c-7e-2: с офлайн-кэшем).
+  ///
+  /// - Онлайн: запрос → сохранить в кэш → вернуть.
+  /// - Офлайн (`ApiException.isNetworkError`): вернуть из кэша (может быть
+  ///   пусто, если история никогда не открывалась онлайн — это нормальный
+  ///   ответ, не ошибка).
+  /// - Валидационная ошибка (не network) — пробросить.
   Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {
-    final response = await _client.get<List<dynamic>>(
-      '/storage/containers/$id/history/',
-    );
-    final data = response.data;
-    if (data == null) return const [];
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(ContainerHistoryEntry.fromJson)
-        .toList(growable: false);
+    try {
+      final response = await _client.get<List<dynamic>>(
+        '/storage/containers/$id/history/',
+      );
+      final data = response.data;
+      if (data == null) return const [];
+      final rawList = data.whereType<Map<String, dynamic>>().toList(
+        growable: false,
+      );
+
+      try {
+        await _saveHistory(id, rawList);
+      } catch (_) {
+        // Кэш не критичен.
+      }
+
+      return rawList
+          .map(ContainerHistoryEntry.fromJson)
+          .toList(growable: false);
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      final cached = await _getCachedHistory(id);
+      return cached.map(ContainerHistoryEntry.fromJson).toList(growable: false);
+    }
   }
 
   Future<Container> update(int id, Map<String, dynamic> payload) async {
@@ -111,16 +150,11 @@ class ContainerService {
 
   /// POST /storage/containers/bulk-place/ (c-7c).
   ///
-  /// Размещение тары:
-  /// - `cellId` — в ячейку (поддон создаётся автоматически, если нет);
-  /// - `floorRoomId` — на пол в комнате.
+  /// Ровно один из `cellId` / `floorRoomId`. Оба null или оба заданы →
+  /// `ArgumentError`.
   ///
-  /// Ровно один из двух аргументов. Оба `null` или оба заданы → `ArgumentError`.
-  ///
-  /// **Офлайн-fallback (`c-7c`):** при `ApiException.isNetworkError == true`
-  /// POST ставится в `sync_queue` как `POST /storage/containers/bulk-place/`,
-  /// возвращается `PlaceOutcome.queued`. При следующем `SyncPusher.pushAll()`
-  /// операция уйдёт на сервер. Валидационные ошибки (не network) — пробрасываются.
+  /// При `ApiException.isNetworkError == true` POST ставится в `sync_queue`
+  /// и возвращается `PlaceOutcome.queued`.
   Future<PlaceOutcome> bulkPlace({
     required List<int> containerIds,
     int? cellId,
@@ -155,10 +189,6 @@ class ContainerService {
   /// GET /storage/containers/{id}/label.pdf/
   ///
   /// Скачивает PDF как байты. JWT — через `ApiClient.dio` interceptor.
-  /// Ошибка — `ApiException` (в т.ч. `isNetworkError` при офлайне).
-  ///
-  /// Использовать только онлайн — при офлайне бросает
-  /// `ApiException(isNetworkError: true)`, экран показывает SnackBar.
   Future<List<int>> fetchLabelPdf(int id) {
     return _client.download('/storage/containers/$id/label.pdf/');
   }

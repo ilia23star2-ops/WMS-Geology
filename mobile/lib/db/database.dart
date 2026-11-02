@@ -1,12 +1,11 @@
 /// Локальная SQLite (3.x-offline).
 ///
-/// Версия 5 (c-7-offline-catalog): +таблица `catalog` для кэша справочников
-/// (`room`, `rack`, `section`, `tier`, `cell`, `site`, `research_type`,
-/// `laboratory`, `container_type`).
+/// Версия 6 (c-7e-2): +таблица `container_history` для кэша истории тары.
 ///
 /// `sync_queue` при миграции **не пересоздаём** — там несохранённые
-/// изменения. `containers`, `samples`, `catalog` — пересоздаются
-/// (восстановятся при следующем Pull).
+/// изменения. `containers`, `samples`, `catalog`, `container_history` —
+/// пересоздаются (история восстановится при следующем открытии карточки
+/// онлайн).
 library;
 
 import 'package:path/path.dart';
@@ -19,7 +18,7 @@ class AppDatabase {
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 6;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -38,11 +37,10 @@ class AppDatabase {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Пересоздаём кэш-таблицы. sync_queue НЕ трогаем —
-        // там локальные изменения, которые ещё не ушли на сервер.
         await db.execute('DROP TABLE IF EXISTS containers');
         await db.execute('DROP TABLE IF EXISTS samples');
         await db.execute('DROP TABLE IF EXISTS catalog');
+        await db.execute('DROP TABLE IF EXISTS container_history');
         await _createTables(db);
       },
     );
@@ -75,11 +73,6 @@ class AppDatabase {
         created_at TEXT NOT NULL
       )
     ''');
-    // c-7-offline-catalog: кэш справочников.
-    // kind — 'room' | 'rack' | 'section' | 'tier' | 'cell'
-    //        | 'site' | 'research_type' | 'laboratory' | 'container_type'
-    // parent_id — ID родителя для topology (rack→room, section→rack,
-    //             tier→section, cell→tier). NULL для верхнеуровневых.
     await db.execute('''
       CREATE TABLE IF NOT EXISTS catalog (
         kind TEXT NOT NULL,
@@ -92,6 +85,23 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_catalog_kind_parent '
       'ON catalog (kind, parent_id)',
+    );
+    // c-7e-2: кэш истории тары.
+    // container_id — к какой таре относится запись.
+    // id — id AuditLog (PK в паре с container_id).
+    // created_at — для сортировки (новые сверху).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS container_history (
+        container_id INTEGER NOT NULL,
+        id INTEGER NOT NULL,
+        created_at TEXT,
+        data TEXT NOT NULL,
+        PRIMARY KEY (container_id, id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_history_container '
+      'ON container_history (container_id)',
     );
   }
 
