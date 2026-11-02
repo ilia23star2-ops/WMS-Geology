@@ -1,14 +1,12 @@
 /// Сервис тары.
 ///
-/// Основной метод — `fetchById`. Используется для карточки тары
-/// после сканирования QR.
-///
-/// Поддерживает офлайн-режим: если сеть недоступна,
-/// данные берутся из локального кэша (SQLite).
+/// - `fetchById` — карточка тары после сканирования QR (с офлайн-кэшем).
+/// - `fetchHistory` — история изменений (`GET /storage/containers/{id}/history/`).
 library;
 
 import '../db/container_dao.dart';
 import '../models/container.dart';
+import '../models/container_history_entry.dart';
 import 'api_client.dart';
 
 class ContainerService {
@@ -34,22 +32,35 @@ class ContainerService {
         );
       }
 
-      // Кэшируем успешный ответ для офлайн-режима
       try {
         await ContainerDao.saveAll([data]);
       } catch (_) {
-        // Если не удалось сохранить в кэш — не критично, продолжаем
+        // Кэш не критичен — продолжаем.
       }
 
       return Container.fromJson(data);
     } catch (e) {
-      // Любая ошибка (сеть, 404, парсинг) — пробуем взять из кэша
       final cached = await ContainerDao.getById(id);
       if (cached != null) {
         return Container.fromJson(cached);
       }
-      // Если кэша нет — пробрасываем исходную ошибку
       rethrow;
     }
+  }
+
+  /// GET /storage/containers/{id}/history/
+  ///
+  /// Возвращает записи аудита (от новых к старым).
+  /// Без кэша: если сети нет — `ApiException.isNetworkError` пробросится.
+  Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {
+    final response = await _client.get<List<dynamic>>(
+      '/storage/containers/$id/history/',
+    );
+    final data = response.data;
+    if (data == null) return const [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(ContainerHistoryEntry.fromJson)
+        .toList(growable: false);
   }
 }

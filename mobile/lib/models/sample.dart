@@ -7,20 +7,20 @@ library;
 enum SampleStatus {
   inStorage,
   inTransit,
-  issued,
   consumed,
   disposed,
-  pendingDecryption,
+  pendingPlacement,
+  selected,
   unknown,
 }
 
 const Map<SampleStatus, String> sampleStatusLabels = {
-  SampleStatus.inStorage: 'В хранении',
+  SampleStatus.inStorage: 'На хранении',
   SampleStatus.inTransit: 'В пути',
-  SampleStatus.issued: 'Выдана',
   SampleStatus.consumed: 'Израсходована',
   SampleStatus.disposed: 'Утилизирована',
-  SampleStatus.pendingDecryption: 'Ожидает расшифровки',
+  SampleStatus.pendingPlacement: 'Ожидает размещения',
+  SampleStatus.selected: 'Выбрана',
   SampleStatus.unknown: 'Неизвестно',
 };
 
@@ -30,14 +30,14 @@ SampleStatus _parseStatus(String? raw) {
       return SampleStatus.inStorage;
     case 'IN_TRANSIT':
       return SampleStatus.inTransit;
-    case 'ISSUED':
-      return SampleStatus.issued;
     case 'CONSUMED':
       return SampleStatus.consumed;
     case 'DISPOSED':
       return SampleStatus.disposed;
-    case 'PENDING_DECRYPTION':
-      return SampleStatus.pendingDecryption;
+    case 'PENDING_PLACEMENT':
+      return SampleStatus.pendingPlacement;
+    case 'SELECTED':
+      return SampleStatus.selected;
     default:
       return SampleStatus.unknown;
   }

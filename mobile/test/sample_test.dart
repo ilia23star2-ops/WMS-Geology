@@ -1,65 +1,94 @@
-// Тесты модели Sample — парсинг JSON.
+// Тесты модели Sample.
 //
-// SampleService — I/O (Dio), юнит-тестами не покрываем (RULES.md §12.3).
+// Покрывают `Sample.fromJson` — парсинг ответа backend
+// `GET /samples/` — SampleSerializer.
+//
+// Статусы: `ISSUED` и `PENDING_DECRYPTION` удалены из `Sample.STATUS_CHOICES`
+// в `2f-9c` (DECISIONS 1.58). В модели — только реальные статусы.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wms_geology_mobile/models/sample.dart';
 
 void main() {
   group('Sample.fromJson', () {
-    test('полный ответ', () {
+    test('полный ответ backend', () {
       final s = Sample.fromJson({
-        'id': 42,
+        'id': 1,
         'sample_number': 'TAA-A34076001-001',
         'research_type_name': 'Шлифы',
         'current_work_order_number': 'TST0001',
         'status': 'IN_STORAGE',
       });
-      expect(s.id, 42);
+      expect(s.id, 1);
       expect(s.sampleNumber, 'TAA-A34076001-001');
       expect(s.researchTypeName, 'Шлифы');
       expect(s.currentWorkOrderNumber, 'TST0001');
       expect(s.status, SampleStatus.inStorage);
-      expect(s.statusLabel, 'В хранении');
+      expect(s.statusLabel, 'На хранении');
     });
 
     test('без Н/З', () {
       final s = Sample.fromJson({
-        'id': 1,
-        'sample_number': 'X',
-        'research_type_name': 'ШЛ',
-        'status': 'DISPOSED',
+        'id': 2,
+        'sample_number': 'TST-002',
+        'research_type_name': 'Шлифы',
+        'current_work_order_number': null,
+        'status': 'IN_STORAGE',
       });
       expect(s.currentWorkOrderNumber, isNull);
-      expect(s.status, SampleStatus.disposed);
     });
 
     test('без research_type_name — пустая строка', () {
       final s = Sample.fromJson({
-        'id': 1,
-        'sample_number': 'X',
-        'status': 'CONSUMED',
+        'id': 3,
+        'sample_number': 'TST-003',
+        'status': 'IN_STORAGE',
       });
       expect(s.researchTypeName, '');
-      expect(s.status, SampleStatus.consumed);
     });
 
     test('неизвестный статус — unknown', () {
       final s = Sample.fromJson({
-        'id': 1,
-        'sample_number': 'X',
-        'status': 'FOO',
+        'id': 4,
+        'sample_number': 'TST-004',
+        'research_type_name': 'Шлифы',
+        'status': 'SOMETHING_NEW',
       });
       expect(s.status, SampleStatus.unknown);
+      expect(s.statusLabel, 'Неизвестно');
     });
 
-    test('PENDING_DECRYPTION', () {
+    test('PENDING_PLACEMENT (2f-5c-1) — не «Неизвестно»', () {
       final s = Sample.fromJson({
-        'id': 1,
-        'sample_number': 'X',
-        'status': 'PENDING_DECRYPTION',
+        'id': 5,
+        'sample_number': 'TST-005',
+        'research_type_name': 'Шлифы',
+        'status': 'PENDING_PLACEMENT',
       });
-      expect(s.status, SampleStatus.pendingDecryption);
+      expect(s.status, SampleStatus.pendingPlacement);
+      expect(s.statusLabel, 'Ожидает размещения');
+    });
+
+    test('SELECTED (2f-9b) — не «Неизвестно»', () {
+      final s = Sample.fromJson({
+        'id': 6,
+        'sample_number': 'TST-006',
+        'research_type_name': 'Шлифы',
+        'status': 'SELECTED',
+      });
+      expect(s.status, SampleStatus.selected);
+      expect(s.statusLabel, 'Выбрана');
+    });
+
+    test('DISPOSED', () {
+      final s = Sample.fromJson({
+        'id': 7,
+        'sample_number': 'TST-007',
+        'research_type_name': 'Шлифы',
+        'status': 'DISPOSED',
+      });
+      expect(s.status, SampleStatus.disposed);
+      expect(s.statusLabel, 'Утилизирована');
     });
   });
 }
