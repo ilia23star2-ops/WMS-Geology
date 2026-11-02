@@ -1,12 +1,19 @@
-/// Реестр тары (c-9-container-list + c-9-container-list-order).
+/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix).
 ///
 /// Аналог `ContainersPage.tsx` в вебе (упрощённый для мобилки):
-/// - 4 фильтра: статус, тип тары, Н/З draft, ТИ draft;
+/// - 4 фильтра: статус, тип тары, Н/З draft, ТИ draft (адаптивно:
+///   в узком экране — столбиком, в широком — в ряд);
 /// - server-side пагинация по 50;
 /// - карточки: Н/З · ТИ (крупно) + иконки статуса и печати справа,
 ///   затем Тип · номер (mono или chip «Заготовка»), локация, комментарий;
+/// - действия (кнопки): `Wrap`, чтобы «Местоположение» + «Разместить»
+///   переносились на новую строку в узком портрете;
 /// - тап по карточке → `ContainerDetailScreen`;
 /// - FAB «+ Создать тару» — пока заглушка «скоро».
+///
+/// c-9-overflow-fix: убраны RenderFlex overflow (46 px / 212 px) —
+/// `isExpanded: true` у `DropdownButtonFormField`, `overflow: ellipsis`
+/// у текстов, `Wrap` для кнопок, адаптивные фильтры.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -198,112 +205,172 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
+  /// c-9-overflow-fix: адаптив. В узком экране (портрет на телефоне) —
+  /// каждый фильтр на своей строке. В широком (планшет / ландшафт) —
+  /// 2×2. `DropdownButtonFormField` — `isExpanded: true` + `ellipsis`.
   Widget _buildFilters(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 600;
+        final statusDD = _statusDropdown();
+        final typeDD = _containerTypeDropdown();
+        final woField = _woField();
+        final rtDD = _researchTypeDropdown();
+        final resetBtn = IconButton(
+          tooltip: 'Сбросить',
+          icon: const Icon(Icons.clear),
+          onPressed: _resetFilters,
+        );
+
+        if (wide) {
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: statusDD),
+                    const SizedBox(width: 8),
+                    Expanded(child: typeDD),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: woField),
+                    const SizedBox(width: 8),
+                    Expanded(child: rtDD),
+                    resetBtn,
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
             children: [
-              Expanded(
-                child: DropdownButtonFormField<ContainerStatus?>(
-                  initialValue: _status,
-                  isDense: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Статус',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Все')),
-                    ...ContainerStatus.values
-                        .where((s) => s != ContainerStatus.unknown)
-                        .map(
-                          (s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(containerStatusLabels[s] ?? s.name),
-                          ),
-                        ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _status = v);
-                    _applyFilters();
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<int?>(
-                  initialValue: _containerTypeId,
-                  isDense: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Тип',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Все')),
-                    ..._containerTypes.map(
-                      (t) => DropdownMenuItem(
-                        value: t.id,
-                        child: Text(t.label, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _containerTypeId = v);
-                    _applyFilters();
-                  },
-                ),
+              statusDD,
+              const SizedBox(height: 8),
+              typeDD,
+              const SizedBox(height: 8),
+              woField,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: rtDD),
+                  resetBtn,
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _woCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Н/З (draft)',
-                    hintText: 'TST0001…',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _applyFilters(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonFormField<int?>(
-                  initialValue: _draftResearchTypeId,
-                  isDense: true,
-                  decoration: const InputDecoration(
-                    labelText: 'ТИ (draft)',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Все')),
-                    ..._researchTypes.map(
-                      (t) => DropdownMenuItem(
-                        value: t.id,
-                        child: Text(t.label, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    setState(() => _draftResearchTypeId = v);
-                    _applyFilters();
-                  },
-                ),
-              ),
-              IconButton(
-                tooltip: 'Сбросить',
-                icon: const Icon(Icons.clear),
-                onPressed: _resetFilters,
-              ),
-            ],
-          ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _statusDropdown() {
+    return DropdownButtonFormField<ContainerStatus?>(
+      initialValue: _status,
+      isExpanded: true,
+      isDense: true,
+      decoration: const InputDecoration(
+        labelText: 'Статус',
+        border: OutlineInputBorder(),
       ),
+      items: [
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Все', overflow: TextOverflow.ellipsis),
+        ),
+        ...ContainerStatus.values
+            .where((s) => s != ContainerStatus.unknown)
+            .map(
+              (s) => DropdownMenuItem(
+                value: s,
+                child: Text(
+                  containerStatusLabels[s] ?? s.name,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ),
+      ],
+      onChanged: (v) {
+        setState(() => _status = v);
+        _applyFilters();
+      },
+    );
+  }
+
+  Widget _containerTypeDropdown() {
+    return DropdownButtonFormField<int?>(
+      initialValue: _containerTypeId,
+      isExpanded: true,
+      isDense: true,
+      decoration: const InputDecoration(
+        labelText: 'Тип',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Все', overflow: TextOverflow.ellipsis),
+        ),
+        ..._containerTypes.map(
+          (t) => DropdownMenuItem(
+            value: t.id,
+            child: Text(t.label, overflow: TextOverflow.ellipsis, maxLines: 1),
+          ),
+        ),
+      ],
+      onChanged: (v) {
+        setState(() => _containerTypeId = v);
+        _applyFilters();
+      },
+    );
+  }
+
+  Widget _researchTypeDropdown() {
+    return DropdownButtonFormField<int?>(
+      initialValue: _draftResearchTypeId,
+      isExpanded: true,
+      isDense: true,
+      decoration: const InputDecoration(
+        labelText: 'ТИ (draft)',
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem(
+          value: null,
+          child: Text('Все', overflow: TextOverflow.ellipsis),
+        ),
+        ..._researchTypes.map(
+          (t) => DropdownMenuItem(
+            value: t.id,
+            child: Text(t.label, overflow: TextOverflow.ellipsis, maxLines: 1),
+          ),
+        ),
+      ],
+      onChanged: (v) {
+        setState(() => _draftResearchTypeId = v);
+        _applyFilters();
+      },
+    );
+  }
+
+  Widget _woField() {
+    return TextField(
+      controller: _woCtrl,
+      decoration: const InputDecoration(
+        labelText: 'Н/З (draft)',
+        hintText: 'TST0001…',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      onSubmitted: (_) => _applyFilters(),
     );
   }
 
@@ -359,11 +426,7 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
-  /// c-9-container-list-order: порядок отображения —
-  /// 1) `Н/З · ТИ` (крупно) + иконки статуса и печати,
-  /// 2) `Тип · номер` (номер mono или chip «Заготовка»),
-  /// 3) локация,
-  /// 4) комментарий (если есть).
+  /// c-9-overflow-fix: все тексты с `overflow: ellipsis`, кнопки в `Wrap`.
   Widget _containerTile(ThemeData theme, Container c) {
     final isPlaced = c.status == ContainerStatus.active;
     final hasCell = c.cellId != null;
@@ -390,6 +453,8 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
                 Expanded(
                   child: Text(
                     '$woText · $rtText',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
@@ -405,23 +470,30 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
             // 2. Тип · номер (номер mono или chip «Заготовка»).
             Row(
               children: [
-                Text(
-                  '$typeText · ',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                Flexible(
+                  child: Text(
+                    '$typeText · ',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 if (numberText != null)
-                  Text(
-                    numberText,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                  Flexible(
+                    child: Text(
+                      numberText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                   )
                 else
-                  // «Заготовка» — Flutter-виджеты, не модель Container.
                   DecoratedBox(
                     decoration: BoxDecoration(
                       border: Border.all(color: theme.colorScheme.tertiary),
@@ -445,7 +517,12 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
             ),
             const SizedBox(height: 2),
             // 3. Локация.
-            Text(c.locationLabel, style: theme.textTheme.bodySmall),
+            Text(
+              c.locationLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall,
+            ),
             // 4. Комментарий (если есть).
             if (c.commentTemplateText != null &&
                 c.commentTemplateText!.isNotEmpty)
@@ -456,8 +533,12 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
                 style: theme.textTheme.bodySmall,
               ),
             const SizedBox(height: 4),
-            // Действия.
-            Row(
+            // Действия — `Wrap`, чтобы «Местоположение» и «Разместить»
+            // переносились на новую строку в узком портрете.
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (hasCell)
                   TextButton.icon(
@@ -471,7 +552,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
                     icon: const Icon(Icons.inventory_2_outlined, size: 18),
                     label: const Text('Разместить'),
                   ),
-                const Spacer(),
                 IconButton(
                   tooltip: 'Открыть карточку',
                   icon: const Icon(Icons.open_in_new),
@@ -526,7 +606,14 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(
             children: [
-              Text('Всего: $total', style: theme.textTheme.bodySmall),
+              Flexible(
+                child: Text(
+                  'Всего: $total',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.chevron_left),
