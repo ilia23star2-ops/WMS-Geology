@@ -121,6 +121,20 @@
   - `c-7h-fix` — порядок `Н/З · ТИ · номер` (было `номер · Н/З · ТИ`).
   - `c-7h-fix-2` — дозакоммит недостающих файлов (`home_screen.dart`, `scanner_screen.dart`, `scan_history_service.dart`).
 
+### Что закрыто (mobile, PDF-серия)
+
+- ✅ **`c-7d`** (2026-11-02) — PDF предпросмотр (online):
+  - `ApiClient.download` + `open_filex`.
+  - Кнопка [Предпросмотр] открывает `label.pdf` тары.
+- ✅ **`c-7f-1`** (2026-11-02) — подготовка offline-рендера PDF:
+  - Ассеты `pdf`, `qr`, `DejaVuSans.ttf`.
+  - `LabelData` — модель для offline-рендера.
+- ✅ **`c-7f-2`** (2026-11-02) — offline-рендер PDF на Dart:
+  - `label_pdf_generator.dart` — `pw.Text`, `pw.BarcodeWidget`, галочка `SELECTED` через `pw.CustomPaint` (Y-вверх, как на сервере).
+  - `label_service.dart` — переключение серверный / offline рендер.
+  - `container_detail_screen.dart` — fallback на offline при недоступности сервера.
+  - `label_pdf_generator_test.dart` — 7 тестов.
+
 ### Инфраструктура (рабочий ПК, прокси)
 
 - **`setup.ps1` обязателен после `git reset --hard`** — восстанавливает сертификаты, `maven-local`, `local.properties`, `~/.gradle/gradle.properties`, aapt2-путь, NDK.
@@ -135,17 +149,16 @@
 
 ### Что осталось
 
-- ⬜ **`c-7d`** — PDF предпросмотр (`label.pdf` через `url_launcher`). Следующий.
-- ⬜ **`c-7c`** — кнопка «Разместить» (`PlaceContainerDialog` каскад `Room → Rack → Section → Tier → Cell` + `bulk-place`).
+- ⬜ **`c-7c`** — кнопка «Разместить» (`PlaceContainerDialog` каскад `Room → Rack → Section → Tier → Cell` + `bulk-place`). **Следующий.**
 - ⬜ **`c-7e`** — кэш истории офлайн (SQLite `container_history`, v5, fallback в `fetchHistory`).
 - ⬜ **`c-8a`..`c-8e`** — изменения в офлайне (PATCH статусов, размещение, auto-sync USB).
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
 
 ### Метрики
 
-- **Backend: 842 теста** (было 779 в начале серии, +35 pre-existing фиксов + 14 новых).
+- **Backend: 842 теста** (было 779 в начале серии, +35 pre-existing фиксов + 14 новых + 28 из `c-7d`/`c-7f-*` и смежных).
 - **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 104 юнит-теста** (было 32 в серии `2.x-mobile`; +72 за `3.x-offline`: sync_service 4, sync_pusher 3, sync_provider 7, network_probe 6, network_status_provider 3, scan_window 10+4, sample_range_parser 13, int_ranges 4, catalog 6, container 5, container_history_entry 2, sample 7, scan_history_entry 5, user 4, widget_test 1, api_client, token_storage, parse_qr — исторически).
+- **Mobile: 111 юнит-тестов** (было 32 в серии `2.x-mobile`; +79 за `3.x-offline`: sync_service 4, sync_pusher 3, sync_provider 7, network_probe 6, network_status_provider 3, scan_window 10+4, sample_range_parser 13, int_ranges 4, catalog 6, container 5, container_history_entry 2, sample 7, scan_history_entry 5, label_pdf_generator 7, user 4, widget_test 1, api_client, token_storage, parse_qr — исторически).
 
 ---
 
