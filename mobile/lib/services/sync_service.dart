@@ -1,5 +1,5 @@
 /// Сервис синхронизации (Pull) с сервера в локальную SQLite
-/// (3.x-offline-sync c-2, c-7-offline-catalog).
+/// (3.x-offline-sync c-2, c-7-offline-catalog, c-7e-3).
 ///
 /// Данные могут быть большими (10к+ записей), поэтому скачиваем
 /// страницами по 50 штук (`?page=N`). Каждая страница сразу
@@ -10,14 +10,18 @@
 /// - справочники (c-7-offline-catalog): `sites`, `research-types`,
 ///   `laboratories`, `storage/container-types`, `storage/rooms`,
 ///   `storage/racks`, `storage/sections`, `storage/tiers`,
-///   `storage/cells`.
+///   `storage/cells`;
+/// - **историю каждой тары** (c-7e-3): `GET /storage/containers/{id}/history/`
+///   по одной таре. N запросов, где N = число тар. Ошибка по одной таре
+///   не валит Pull.
 ///
-/// Без справочников офлайн-каскад размещения (`c-7c`) не открывается —
-/// см. `DECISIONS 1.93`.
+/// **Для больших складов (сотни/тысячи тар):** N запросов в Pull —
+/// узкое место. Нужен backend batch-эндпоинт (ТД-59). Пока — так.
 library;
 
 import '../db/catalog_dao.dart';
 import '../db/container_dao.dart';
+import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
 import 'api_client.dart';
 
@@ -28,15 +32,19 @@ class SyncService {
     Future<void> Function(List<Map<String, dynamic>>)? saveSamples,
     Future<void> Function(String kind, List<Map<String, dynamic>> items)?
     saveCatalog,
+    Future<void> Function(int containerId, List<Map<String, dynamic>> items)?
+    saveHistory,
   }) : _saveContainers = saveContainers ?? ContainerDao.saveAll,
        _saveSamples = saveSamples ?? SampleDao.saveAll,
-       _saveCatalog = saveCatalog ?? _defaultSaveCatalog;
+       _saveCatalog = saveCatalog ?? _defaultSaveCatalog,
+       _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll;
 
   final ApiClient _client;
 
   final Future<void> Function(List<Map<String, dynamic>>) _saveContainers;
   final Future<void> Function(List<Map<String, dynamic>>) _saveSamples;
   final Future<void> Function(String, List<Map<String, dynamic>>) _saveCatalog;
+  final Future<void> Function(int, List<Map<String, dynamic>>) _saveHistory;
 
   static Future<void> _defaultSaveCatalog(
     String kind,
@@ -45,11 +53,10 @@ class SyncService {
     return CatalogDao.saveAll(kind, items);
   }
 
-  /// Скачать всё: контейнеры, пробы, справочники.
+  /// Скачать всё: контейнеры, пробы, справочники, историю каждой тары.
   Future<void> pullAll() async {
-    await _pullContainers();
+    final containerIds = await _pullContainers();
     await _pullSamples();
-    // Справочники (c-7-offline-catalog).
     await _pullCatalog('/sites/', 'site');
     await _pullCatalog('/research-types/', 'research_type');
     await _pullCatalog('/laboratories/', 'laboratory');
@@ -59,9 +66,16 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
+    // c-7e-3: pre-fetch истории для всех тар.
+    // N запросов. Ошибка по одной таре не валит Pull.
+    for (final id in containerIds) {
+      await _pullHistoryFor(id);
+    }
   }
 
-  Future<void> _pullContainers() async {
+  /// Возвращает ID всех тар (для pre-fetch истории).
+  Future<List<int>> _pullContainers() async {
+    final ids = <int>[];
     int page = 1;
     while (true) {
       final res = await _client.get<Map<String, dynamic>>(
@@ -74,10 +88,15 @@ class SyncService {
           (data['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
+      for (final r in results) {
+        final id = r['id'];
+        if (id is int) ids.add(id);
+      }
       await _saveContainers(results);
       if (data['next'] == null) break;
       page++;
     }
+    return ids;
   }
 
   Future<void> _pullSamples() async {
@@ -99,12 +118,6 @@ class SyncService {
     }
   }
 
-  /// Универсальный постраничный Pull справочника.
-  ///
-  /// `parent_id` для topology (`rack`/`section`/`tier`/`cell`) извлекается
-  /// из JSON в `CatalogDao.saveAll` (см. `catalogParentId`). Если сервер
-  /// не отдал поле-родителя — запись сохранится с `parent_id = NULL`,
-  /// и офлайн-фильтр по родителю не покажет её (онлайн при этом работает).
   Future<void> _pullCatalog(String endpoint, String kind) async {
     int page = 1;
     while (true) {
@@ -121,6 +134,27 @@ class SyncService {
       await _saveCatalog(kind, results);
       if (data['next'] == null) break;
       page++;
+    }
+  }
+
+  /// c-7e-3: pre-fetch истории одной тары.
+  ///
+  /// Ошибки глотаем: история не критична для синхронизации. Если по
+  /// одной таре упало — остальные тары и остальные части Pull в порядке.
+  /// При следующем Pull попробуем снова.
+  Future<void> _pullHistoryFor(int containerId) async {
+    try {
+      final res = await _client.get<List<dynamic>>(
+        '/storage/containers/$containerId/history/',
+      );
+      final data = res.data;
+      if (data == null) return;
+      final items = data.whereType<Map<String, dynamic>>().toList(
+        growable: false,
+      );
+      await _saveHistory(containerId, items);
+    } catch (_) {
+      // см. doc-комментарий
     }
   }
 }
