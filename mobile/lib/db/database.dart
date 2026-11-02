@@ -1,3 +1,14 @@
+/// Локальная SQLite (3.x-offline).
+///
+/// Версия 5 (c-7-offline-catalog): +таблица `catalog` для кэша справочников
+/// (`room`, `rack`, `section`, `tier`, `cell`, `site`, `research_type`,
+/// `laboratory`, `container_type`).
+///
+/// `sync_queue` при миграции **не пересоздаём** — там несохранённые
+/// изменения. `containers`, `samples`, `catalog` — пересоздаются
+/// (восстановятся при следующем Pull).
+library;
+
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -8,10 +19,7 @@ class AppDatabase {
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  // Версия 4: в таблицу `samples` добавлена колонка `container_id`
-  // (её пишет `SampleDao.saveAll`, без неё Pull падал с "no column named
-  // container_id").
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -30,10 +38,11 @@ class AppDatabase {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Пересоздаём таблицы кэша. Данные восстановятся при следующем
-        // Pull (когда есть сеть).
+        // Пересоздаём кэш-таблицы. sync_queue НЕ трогаем —
+        // там локальные изменения, которые ещё не ушли на сервер.
         await db.execute('DROP TABLE IF EXISTS containers');
         await db.execute('DROP TABLE IF EXISTS samples');
+        await db.execute('DROP TABLE IF EXISTS catalog');
         await _createTables(db);
       },
     );
@@ -66,6 +75,24 @@ class AppDatabase {
         created_at TEXT NOT NULL
       )
     ''');
+    // c-7-offline-catalog: кэш справочников.
+    // kind — 'room' | 'rack' | 'section' | 'tier' | 'cell'
+    //        | 'site' | 'research_type' | 'laboratory' | 'container_type'
+    // parent_id — ID родителя для topology (rack→room, section→rack,
+    //             tier→section, cell→tier). NULL для верхнеуровневых.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog (
+        kind TEXT NOT NULL,
+        id INTEGER NOT NULL,
+        parent_id INTEGER,
+        data TEXT NOT NULL,
+        PRIMARY KEY (kind, id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_catalog_kind_parent '
+      'ON catalog (kind, parent_id)',
+    );
   }
 
   static Future<void> close() async {
