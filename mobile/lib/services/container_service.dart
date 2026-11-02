@@ -1,8 +1,9 @@
 /// Сервис тары.
 ///
-/// - `fetchById` — карточка тары после сканирования QR (с офлайн-кэшем).
+/// - `fetchById` — карточка тары (с офлайн-кэшем).
 /// - `fetchHistory` — история изменений (`GET /storage/containers/{id}/history/`).
 /// - `update` — редактирование (PATCH), только онлайн.
+/// - `fetchLabelPdf` — PDF этикетки (`GET /storage/containers/{id}/label.pdf/`), c-7d.
 library;
 
 import '../db/container_dao.dart';
@@ -15,11 +16,6 @@ class ContainerService {
 
   final ApiClient _client;
 
-  /// GET /storage/containers/{id}/
-  ///
-  /// 1. Пытается загрузить с сервера.
-  /// 2. При успехе кэширует ответ в SQLite.
-  /// 3. При ошибке сети (или 404) пытается отдать данные из SQLite.
   Future<Container> fetchById(int id) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
@@ -36,7 +32,7 @@ class ContainerService {
       try {
         await ContainerDao.saveAll([data]);
       } catch (_) {
-        // Кэш не критичен — продолжаем.
+        // Кэш не критичен.
       }
 
       return Container.fromJson(data);
@@ -49,11 +45,6 @@ class ContainerService {
     }
   }
 
-  /// GET /storage/containers/{id}/history/
-  ///
-  /// Возвращает записи аудита (от новых к старым).
-  /// Без кэша: если сети нет — `ApiException.isNetworkError` пробросится.
-  /// Кэш истории — отдельный заход `c-7e`.
   Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {
     final response = await _client.get<List<dynamic>>(
       '/storage/containers/$id/history/',
@@ -66,13 +57,6 @@ class ContainerService {
         .toList(growable: false);
   }
 
-  /// PATCH /storage/containers/{id}/
-  ///
-  /// Обновление полей тары. Только онлайн — офлайн-изменения
-  /// через `sync_queue` появятся в `c-8`.
-  ///
-  /// Кэширует ответ в SQLite (`ContainerDao.saveAll`), чтобы при
-  /// следующем офлайн-открытии карточка показывала актуальные данные.
   Future<Container> update(int id, Map<String, dynamic> payload) async {
     final response = await _client.patch<Map<String, dynamic>>(
       '/storage/containers/$id/',
@@ -93,5 +77,16 @@ class ContainerService {
     }
 
     return Container.fromJson(data);
+  }
+
+  /// GET /storage/containers/{id}/label.pdf/
+  ///
+  /// Скачивает PDF как байты. JWT — через `ApiClient.dio` interceptor.
+  /// Ошибка — `ApiException` (в т.ч. `isNetworkError` при офлайне).
+  ///
+  /// Использовать только онлайн — при офлайне бросает
+  /// `ApiException(isNetworkError: true)`, экран показывает SnackBar.
+  Future<List<int>> fetchLabelPdf(int id) {
+    return _client.download('/storage/containers/$id/label.pdf/');
   }
 }

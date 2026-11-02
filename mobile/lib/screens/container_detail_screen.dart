@@ -1,4 +1,4 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d).
 ///
 /// Вкладки (как в вебе):
 /// - **Пробы** — список + поиск + чекбоксы + bulk-статус + ✏.
@@ -7,16 +7,24 @@
 ///
 /// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`).
 ///
+/// c-7d: кнопка «Предпросмотр» скачивает PDF этикетки через `ApiClient`
+/// (JWT) и открывает системный вьювер через `open_filex`.
+///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
 /// `Container` (flutter/src/widgets/container.dart).
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart' hide Container;
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/container.dart';
 import '../models/container_history_entry.dart';
 import '../models/sample.dart';
+import '../services/api_client.dart';
 import '../services/container_service.dart';
 import '../services/sample_service.dart';
 import '../widgets/container_edit_form.dart';
@@ -50,6 +58,9 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   SampleStatus? _bulkStatus;
   bool _bulkLoading = false;
 
+  // c-7d: загрузка PDF
+  bool _previewLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -77,7 +88,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       setState(() {
         _samples = samples;
         _samplesLoading = false;
-        // Очистить выделение от исчезнувших проб.
         _selectedIds.removeWhere((id) => !samples.any((s) => s.id == id));
       });
     } catch (e) {
@@ -217,6 +227,43 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
     await _loadSamples();
     await _loadHistory();
+  }
+
+  /// c-7d: скачать PDF этикетки и открыть в системном вьювере.
+  ///
+  /// JWT — через `ApiClient.dio` interceptor (системный вьювер не умеет
+  /// авторизоваться, поэтому сначала скачиваем байты, потом открываем
+  /// локальный файл).
+  Future<void> _onPreview() async {
+    if (_previewLoading) return;
+    setState(() => _previewLoading = true);
+    final service = context.read<ContainerService>();
+    try {
+      final bytes = await service.fetchLabelPdf(_container.id);
+      if (!mounted) return;
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/label-${_container.id}.pdf');
+      await file.writeAsBytes(bytes, flush: true);
+
+      final result = await OpenFilex.open(file.path);
+      if (!mounted) return;
+      if (result.type != ResultType.done) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось открыть PDF: ${result.message}')),
+        );
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      final msg = e.isNetworkError ? 'Нет связи с сервером' : e.message;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Не удалось открыть PDF: $e')));
+    } finally {
+      if (mounted) setState(() => _previewLoading = false);
+    }
   }
 
   List<Sample> get _filteredSamples {
@@ -500,9 +547,16 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: null, // c-7d
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('Предпросмотр'),
+            // c-7d: реальный предпросмотр PDF.
+            onPressed: _previewLoading ? null : _onPreview,
+            icon: _previewLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(_previewLoading ? 'Загрузка...' : 'Предпросмотр'),
           ),
         ),
         const SizedBox(width: 8),
@@ -517,9 +571,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
-  // ----------------------------------------------------------
-  // c-7g: вкладка «Пробы» — поиск, чекбоксы, bulk-статус, ✏.
-  // ----------------------------------------------------------
   Widget _buildSamplesTab(BuildContext context) {
     final theme = Theme.of(context);
 
