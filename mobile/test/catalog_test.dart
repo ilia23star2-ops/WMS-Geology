@@ -1,7 +1,12 @@
-/// Тесты моделей справочников и `CatalogService` (c-7b-full).
+/// Тесты моделей справочников и `CatalogService` (c-7b-full,
+/// c-7-offline-catalog).
 ///
 /// `Site.fromJson` / `ResearchType.fromJson` / `ContainerType.fromJson` —
 /// парсинг. `CatalogService` — через fake HttpClientAdapter (без сети).
+///
+/// c-7-offline-catalog: `fetchSites` / `fetchResearchTypes` /
+/// `fetchContainerTypes` теперь сохраняют в кэш (`CatalogDao`). В тестах
+/// `saveCatalog` подменяется на no-op, чтобы не требовать SQLite.
 library;
 
 import 'dart:typed_data';
@@ -51,6 +56,13 @@ Dio _dioWithResponses(Map<String, String> responses) {
   return dio;
 }
 
+/// No-op `saveCatalog` для тестов, чтобы не трогать SQLite.
+Future<void> _noSave(
+  String kind,
+  List<Map<String, dynamic>> items, {
+  int? parentId,
+}) async {}
+
 void main() {
   group('Site.fromJson', () {
     test('полный', () {
@@ -97,7 +109,10 @@ void main() {
         '/api/v1/sites/':
             '{"count":1,"results":[{"id":1,"code":"TST","name":"Тестовый"}]}',
       });
-      final service = CatalogService(ApiClient(dioOverride: dio));
+      final service = CatalogService(
+        ApiClient(dioOverride: dio),
+        saveCatalog: _noSave,
+      );
       final sites = await service.fetchSites();
       expect(sites.length, 1);
       expect(sites.first.code, 'TST');
@@ -109,7 +124,10 @@ void main() {
         '/api/v1/research-types/':
             '{"count":1,"results":[{"id":1,"code":"ШЛ","name":"Шлифы"}]}',
       });
-      final service = CatalogService(ApiClient(dioOverride: dio));
+      final service = CatalogService(
+        ApiClient(dioOverride: dio),
+        saveCatalog: _noSave,
+      );
       final types = await service.fetchResearchTypes();
       expect(types.length, 1);
       expect(types.first.code, 'ШЛ');
@@ -119,7 +137,10 @@ void main() {
       final dio = _dioWithResponses({
         '/api/v1/storage/container-types/': '{"count":1,"results":[{"id":3,"name":"Коробка","laboratory_name":null}]}',
       });
-      final service = CatalogService(ApiClient(dioOverride: dio));
+      final service = CatalogService(
+        ApiClient(dioOverride: dio),
+        saveCatalog: _noSave,
+      );
       final types = await service.fetchContainerTypes();
       expect(types.length, 1);
       expect(types.first.id, 3);
