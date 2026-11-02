@@ -1,9 +1,11 @@
-/// Сервис справочников (c-7b-full, c-7f).
+/// Сервис справочников (c-7b-full, c-7f, c-7c).
 ///
 /// - `fetchSites` — `GET /sites/` (с `match_patterns`);
 /// - `fetchResearchTypes` — `GET /research-types/`;
 /// - `fetchContainerTypes` — `GET /storage/container-types/`;
 /// - `fetchLaboratories` — `GET /laboratories/` (с `prefixes`).
+/// - `fetchRooms` / `fetchRacks` / `fetchSections` / `fetchTiers` /
+///   `fetchCells` — каскад размещения (`c-7c`).
 ///
 /// Только первая страница (PAGE_SIZE=50), если больше — TODO.
 library;
@@ -61,6 +63,39 @@ class CatalogService {
     return results
         .whereType<Map<String, dynamic>>()
         .map(Laboratory.fromJson)
+        .toList(growable: false);
+  }
+
+  // ----- c-7c: каскад размещения (Room → Rack → Section → Tier → Cell) -----
+
+  Future<List<NamedCatalog>> fetchRooms() {
+    return _fetchNamedCatalog('/storage/rooms/');
+  }
+
+  Future<List<NamedCatalog>> fetchRacks(int roomId) {
+    return _fetchNamedCatalog('/storage/racks/?room_id=$roomId');
+  }
+
+  Future<List<NamedCatalog>> fetchSections(int rackId) {
+    return _fetchNamedCatalog('/storage/sections/?rack_id=$rackId');
+  }
+
+  Future<List<NamedCatalog>> fetchTiers(int sectionId) {
+    return _fetchNamedCatalog('/storage/tiers/?section_id=$sectionId');
+  }
+
+  Future<List<NamedCatalog>> fetchCells(int tierId) {
+    return _fetchNamedCatalog('/storage/cells/?tier_id=$tierId');
+  }
+
+  Future<List<NamedCatalog>> _fetchNamedCatalog(String path) async {
+    final response = await _client.get<Map<String, dynamic>>(path);
+    final data = response.data;
+    if (data == null) return const [];
+    final results = data['results'] as List<dynamic>? ?? const [];
+    return results
+        .whereType<Map<String, dynamic>>()
+        .map(NamedCatalog.fromJson)
         .toList(growable: false);
   }
 }

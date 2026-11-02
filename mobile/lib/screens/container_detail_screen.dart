@@ -1,4 +1,4 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c).
 ///
 /// Вкладки (как в вебе):
 /// - **Пробы** — список + поиск + чекбоксы + bulk-статус + ✏.
@@ -9,6 +9,13 @@
 ///
 /// c-7d: кнопка «Предпросмотр» скачивает PDF этикетки через `ApiClient`
 /// (JWT) и открывает системный вьювер через `open_filex`.
+///
+/// c-7c: кнопки в нижней панели — раздельные, как в вебе:
+/// - **[Предпросмотр]** — всегда;
+/// - **[Разместить]** — если `status == pendingFilling || pendingPlacement`
+///   → `PlaceContainerDialog` (каскад, online + offline-очередь);
+/// - **[Местоположение]** — если `cellId != null` → `ContainerLocationDialog`
+///   (показ адреса, не меняет статус).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
 /// `Container` (flutter/src/widgets/container.dart).
@@ -30,7 +37,9 @@ import '../services/container_service.dart';
 import '../services/label_service.dart';
 import '../services/sample_service.dart';
 import '../widgets/container_edit_form.dart';
+import '../widgets/container_location_dialog.dart';
 import '../widgets/fill_container_content.dart';
+import '../widgets/place_container_dialog.dart';
 import '../widgets/sample_edit_dialog.dart';
 import '../widgets/sample_status_chip.dart';
 
@@ -291,6 +300,61 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Ошибка офлайн-рендера: $e')));
     }
+  }
+
+  /// c-7c: открыть диалог размещения (онлайн + офлайн-очередь).
+  ///
+  /// - `PlaceOutcome.online` — POST ушёл на сервер; перезагружаем карточку
+  ///   (`fetchById`), история дополнится записью `PLACE`, SnackBar «Тара размещена».
+  /// - `PlaceOutcome.queued` — POST в `sync_queue` (офлайн); карточка на
+  ///   сервере не изменилась, поэтому `fetchById` **не** делаем. SnackBar
+  ///   «Размещение сохранено. Отправится при синхронизации.».
+  /// - `null` — отмена диалога.
+  Future<void> _onPlace() async {
+    final service = context.read<ContainerService>();
+    final outcome = await showDialog<PlaceOutcome>(
+      context: context,
+      builder: (_) => PlaceContainerDialog(
+        containerId: _container.id,
+        currentLocation: _container.locationLabel,
+      ),
+    );
+    if (outcome == null || !mounted) return;
+
+    if (outcome == PlaceOutcome.queued) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Размещение сохранено. Отправится при синхронизации.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final updated = await service.fetchById(_container.id);
+      if (!mounted) return;
+      setState(() => _container = updated);
+      _loadHistory();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Тара размещена')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Размещено, но не удалось обновить: $e')),
+      );
+    }
+  }
+
+  /// c-7c: показать адрес тары (не меняет статус).
+  ///
+  /// В вебе аналог — переход в `/topology?cell_id=`. В мобилке раздела
+  /// топологии нет, поэтому показываем `ContainerLocationDialog` с адресом.
+  Future<void> _onShowLocation() {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => ContainerLocationDialog(container: _container),
+    );
   }
 
   List<Sample> get _filteredSamples {
@@ -568,34 +632,64 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     }
   }
 
+  /// c-7c: раздельные кнопки (как в вебе).
+  ///
+  /// - `[Предпросмотр]` — всегда.
+  /// - `[Разместить]` — `canPlace = pendingFilling || pendingPlacement`.
+  /// - `[Местоположение]` — `hasCell = cellId != null`.
+  ///
+  /// `canPlace` и `hasCell` практически взаимоисключающие: после
+  /// размещения статус становится `active`, `canPlace = false`, а `cellId`
+  /// появляется. Так что одновременно в панели не больше двух кнопок.
   Widget _buildActionButtons(BuildContext context) {
-    final canPlace = _container.status != ContainerStatus.active;
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            // c-7d: реальный предпросмотр PDF.
-            onPressed: _previewLoading ? null : _onPreview,
-            icon: _previewLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.picture_as_pdf_outlined),
-            label: Text(_previewLoading ? 'Загрузка...' : 'Предпросмотр'),
-          ),
+    final canPlace =
+        _container.status == ContainerStatus.pendingFilling ||
+        _container.status == ContainerStatus.pendingPlacement;
+    final hasCell = _container.cellId != null;
+
+    final buttons = <Widget>[
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: _previewLoading ? null : _onPreview,
+          icon: _previewLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(_previewLoading ? 'Загрузка...' : 'Предпросмотр'),
         ),
-        const SizedBox(width: 8),
+      ),
+    ];
+
+    if (canPlace) {
+      buttons.add(const SizedBox(width: 8));
+      buttons.add(
         Expanded(
           child: FilledButton.icon(
-            onPressed: null, // c-7c
-            icon: const Icon(Icons.place_outlined),
-            label: Text(canPlace ? 'Разместить' : 'Местоположение'),
+            onPressed: () => _onPlace(),
+            icon: const Icon(Icons.inventory_2_outlined),
+            label: const Text('Разместить'),
           ),
         ),
-      ],
-    );
+      );
+    }
+
+    if (hasCell) {
+      buttons.add(const SizedBox(width: 8));
+      buttons.add(
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _onShowLocation,
+            icon: const Icon(Icons.place_outlined),
+            label: const Text('Местоположение'),
+          ),
+        ),
+      );
+    }
+
+    return Row(children: buttons);
   }
 
   Widget _buildSamplesTab(BuildContext context) {
