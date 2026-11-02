@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/container_provider.dart';
+import '../providers/network_status_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/container_service.dart';
 import '../services/scan_history_service.dart';
@@ -76,7 +77,6 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('WMS Geology'),
         backgroundColor: theme.colorScheme.inversePrimary,
         actions: [
-          // c-6g: иконка сети (online / offline / pendingOffline).
           const NetworkBadge(),
           IconButton(
             tooltip: 'Выйти',
@@ -140,24 +140,43 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Consumer<SyncProvider>(
-              builder: (context, sync, _) {
+            // c-6h: синхронизация запрещена при offline / pendingOffline.
+            Consumer2<SyncProvider, NetworkStatusProvider>(
+              builder: (context, sync, net, _) {
                 final total = sync.pendingCount + sync.errorCount;
-                return OutlinedButton.icon(
-                  onPressed: auth.isPendingOffline
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const SyncScreen()),
-                        ),
-                  icon: Badge(
-                    isLabelVisible: total > 0,
-                    label: Text('$total'),
-                    child: const Icon(Icons.sync),
-                  ),
-                  label: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      total > 0 ? 'Синхронизация ($total)' : 'Синхронизация',
+                final blocked = !net.isOnline || auth.isPendingOffline;
+                final tooltip = auth.isPendingOffline
+                    ? 'Временный доступ: синхронизация недоступна'
+                    : (!net.isOnline
+                          ? 'Нет связи с сервером'
+                          : 'Открыть экран синхронизации');
+
+                return Tooltip(
+                  message: tooltip,
+                  child: OutlinedButton.icon(
+                    onPressed: blocked
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SyncScreen(),
+                            ),
+                          ),
+                    icon: blocked
+                        ? const Icon(Icons.cloud_off)
+                        : Badge(
+                            isLabelVisible: total > 0,
+                            label: Text('$total'),
+                            child: const Icon(Icons.sync),
+                          ),
+                    label: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        blocked
+                            ? 'Синхронизация (нет связи)'
+                            : (total > 0
+                                  ? 'Синхронизация ($total)'
+                                  : 'Синхронизация'),
+                      ),
                     ),
                   ),
                 );
