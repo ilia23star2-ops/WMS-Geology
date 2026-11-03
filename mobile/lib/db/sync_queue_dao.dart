@@ -1,10 +1,4 @@
-/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1).
-///
-/// - `enqueue` / `getPending` / `markAsSynced` / `markAsError` / `resetErrors`.
-/// - `getPayloadByEndpoint` — найти payload по endpoint + POST (для
-///   пересборки после офлайн-редактирования проб).
-/// - `updatePayloadByEndpoint` — заменить payload у существующей записи
-///   (endpoint + POST, любой статус). Возвращает `true`, если нашли.
+/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a).
 library;
 
 import 'dart:convert';
@@ -82,6 +76,15 @@ class SyncQueueDao {
     return maps.map((map) => SyncQueueItem.fromMap(map)).toList();
   }
 
+  /// c-9-fill-offline-2c-3-fix-3a: **все** записи (PENDING + ERROR).
+  /// Для reconcile: если проба/тара с `pending_sync = 1`, но её нет в
+  /// очереди — значит операция уже ушла или потеряна, флаг можно сбросить.
+  static Future<List<SyncQueueItem>> getAll() async {
+    final db = await AppDatabase.instance.database;
+    final maps = await db.query('sync_queue', orderBy: 'created_at ASC');
+    return maps.map((map) => SyncQueueItem.fromMap(map)).toList();
+  }
+
   static Future<void> markAsSynced(int id) async {
     final db = await AppDatabase.instance.database;
     await db.delete('sync_queue', where: 'id = ?', whereArgs: [id]);
@@ -107,12 +110,6 @@ class SyncQueueDao {
     );
   }
 
-  /// c-9-fill-offline-2c-1: прочитать payload существующей записи
-  /// (`action = 'POST'`, `endpoint`). Нужно для пересборки `sample_groups`
-  /// при офлайн-редактировании проб: остальные поля (work_order_coded,
-  /// research_type_id, site_id, container_number) сохраняются.
-  ///
-  /// Возвращает `null`, если записи нет.
   static Future<Map<String, dynamic>?> getPayloadByEndpoint(
     String endpoint,
   ) async {
@@ -128,11 +125,6 @@ class SyncQueueDao {
     return jsonDecode(rows.first['payload'] as String) as Map<String, dynamic>;
   }
 
-  /// c-9-fill-offline-2c-1: заменить payload у существующей записи
-  /// (`action = 'POST'`, `endpoint`). Статус (PENDING / ERROR) не меняется.
-  ///
-  /// Возвращает `true`, если нашли и обновили. `false` — записи нет
-  /// (например, она уже ушла в Push или была удалена).
   static Future<bool> updatePayloadByEndpoint(
     String endpoint,
     Map<String, dynamic> payload,
