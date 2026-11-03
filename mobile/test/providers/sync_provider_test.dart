@@ -20,9 +20,10 @@ class FakeSyncPusher extends Fake implements SyncPusher {
   bool shouldThrow = false;
 
   @override
-  Future<void> pushAll() async {
+  Future<PushResult> pushAll() async {
     pushCallCount++;
     if (shouldThrow) throw Exception('Push error');
+    return const PushResult(sent: 0, failed: 0);
   }
 }
 
@@ -104,12 +105,20 @@ void main() {
       pendingCount = 5;
       items = [
         SyncQueueItem(
-          id: 1, action: 'POST', endpoint: '/', payload: {},
-          status: 'ERROR', createdAt: '2026-10-29T00:00:00Z',
+          id: 1,
+          action: 'POST',
+          endpoint: '/',
+          payload: {},
+          status: 'ERROR',
+          createdAt: '2026-10-29T00:00:00Z',
         ),
         SyncQueueItem(
-          id: 2, action: 'POST', endpoint: '/', payload: {},
-          status: 'PENDING', createdAt: '2026-10-29T00:00:00Z',
+          id: 2,
+          action: 'POST',
+          endpoint: '/',
+          payload: {},
+          status: 'PENDING',
+          createdAt: '2026-10-29T00:00:00Z',
         ),
       ];
       final provider = createProvider();

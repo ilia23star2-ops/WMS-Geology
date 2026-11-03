@@ -1,7 +1,36 @@
+/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2).
+///
+/// c-9-fill-offline-2c-3-fix-2:
+/// - `pushAll` возвращает `PushResult { sent, failed }`.
+/// - После **каждой** успешной операции зовёт `onSuccess(endpoint, payload)`.
+///   Дефолт парсит endpoint и сбрасывает `_pending_sync` (проба) /
+///   `pending_sync` (тара) — иконка `cloud_off` исчезает сразу после Push,
+///   не дожидаясь Pull.
+library;
+
+import '../db/container_dao.dart';
+import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
 
-/// Сервис Push-синхронизации (отправка локальных изменений на сервер).
+class PushResult {
+  const PushResult({required this.sent, required this.failed});
+
+  /// Сколько операций успешно ушло на сервер.
+  final int sent;
+
+  /// Сколько упало (помечены ERROR).
+  final int failed;
+
+  @override
+  String toString() => 'PushResult(sent: $sent, failed: $failed)';
+}
+
+typedef OnSuccess = Future<void> Function(
+  String endpoint,
+  Map<String, dynamic> payload,
+);
+
 class SyncPusher {
   SyncPusher(
     this._client, {
@@ -9,26 +38,28 @@ class SyncPusher {
     Future<void> Function(int id)? markSynced,
     Future<void> Function(int id, String error)? markError,
     Future<void> Function()? resetErrors,
+    OnSuccess? onSuccess,
   }) : _getPendingItems = getPendingItems ?? SyncQueueDao.getPending,
        _markSynced = markSynced ?? SyncQueueDao.markAsSynced,
        _markError = markError ?? SyncQueueDao.markAsError,
-       _resetErrors = resetErrors ?? SyncQueueDao.resetErrors;
+       _resetErrors = resetErrors ?? SyncQueueDao.resetErrors,
+       _onSuccess = onSuccess ?? _defaultOnSuccess;
 
   final ApiClient _client;
   final Future<List<SyncQueueItem>> Function() _getPendingItems;
   final Future<void> Function(int id) _markSynced;
   final Future<void> Function(int id, String error) _markError;
   final Future<void> Function() _resetErrors;
+  final OnSuccess _onSuccess;
 
   /// Отправить все накопленные изменения из очереди.
-  Future<void> pushAll() async {
-    // 1. Сбрасываем ошибки в PENDING (пробуем отправить снова)
+  Future<PushResult> pushAll() async {
     await _resetErrors();
     final items = await _getPendingItems();
+    if (items.isEmpty) return const PushResult(sent: 0, failed: 0);
 
-    if (items.isEmpty) return;
-
-    // 2. Отправляем по одному
+    var sent = 0;
+    var failed = 0;
     for (final item in items) {
       try {
         if (item.action == 'POST') {
@@ -39,14 +70,62 @@ class SyncPusher {
           await _client.delete(item.endpoint);
         }
 
-        // Успех — удаляем из очереди
         if (item.id != null) {
           await _markSynced(item.id!);
         }
+
+        // c-9-fill-offline-2c-3-fix-2: сбросить pending-флаги.
+        try {
+          await _onSuccess(item.endpoint, item.payload);
+        } catch (_) {
+          // Сброс флага не критичен — Pull потом перезапишет.
+        }
+
+        sent++;
       } catch (e) {
-        // Ошибка — помечаем и идём к следующему
         if (item.id != null) {
           await _markError(item.id!, e.toString());
+        }
+        failed++;
+      }
+    }
+    return PushResult(sent: sent, failed: failed);
+  }
+
+  /// Дефолтный `onSuccess`: парсит endpoint и сбрасывает pending-флаги.
+  ///
+  /// - `/samples/{id}/` (PATCH, DELETE) — `_pending_sync` у пробы.
+  /// - `/samples/{id}/dispose/`, `/samples/{id}/restore/` (POST) —
+  ///   `_pending_sync` у пробы.
+  /// - `/storage/containers/{id}/fill-samples/` (POST) — `pending_sync`
+  ///   у тары.
+  /// - `/storage/containers/bulk-place/` (POST) — `pending_sync` у каждой
+  ///   тары из `payload['container_ids']`.
+  static Future<void> _defaultOnSuccess(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) async {
+    final sampleRe = RegExp(r'^/samples/(\d+)(?:/dispose/|/restore/)?$');
+    final sm = sampleRe.firstMatch(endpoint);
+    if (sm != null) {
+      await SampleDao.clearPendingSyncBySampleId(int.parse(sm.group(1)!));
+      return;
+    }
+
+    final fillRe = RegExp(r'^/storage/containers/(\d+)/fill-samples/$');
+    final fm = fillRe.firstMatch(endpoint);
+    if (fm != null) {
+      await ContainerDao.clearPendingSync(int.parse(fm.group(1)!));
+      return;
+    }
+
+    if (endpoint == '/storage/containers/bulk-place/') {
+      final ids = payload['container_ids'];
+      if (ids is List) {
+        for (final raw in ids) {
+          if (raw is int) {
+            await ContainerDao.clearPendingSync(raw);
+          }
         }
       }
     }
