@@ -1,4 +1,11 @@
-/// DAO для работы с кэшем проб (3.x-offline-sync c-1, c-9-fill-samples-offline).
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1).
+///
+/// - `saveAll` / `getByContainerId` / `deleteById` / `cleanupAfterPull`.
+/// - `saveLocalOffline` — локальные пробы (negative ID) с разбивкой
+///   (`_prefix` / `_middle` / `_sequence` / `_sequence_digits` / `_well_name`)
+///   для пересборки payload.
+/// - `getLocalNegativeByContainer` — все negatives тары (для пересборки).
+/// - `updateLocalStatus` — обновить `status` в JSON локальной пробы.
 library;
 
 import 'dart:convert';
@@ -67,6 +74,13 @@ class SampleDao {
         'status': s['status'] as String? ?? 'PENDING_PLACEMENT',
         'well_name': s['well_name'],
         'research_type_name': s['research_type_name'] ?? '',
+        'site_name': s['site_name'] ?? '',
+        // 2c-1: разбивка для пересборки sample_groups.
+        '_prefix': s['_prefix'] ?? '',
+        '_middle': s['_middle'] ?? '',
+        '_sequence': s['_sequence'] ?? 0,
+        '_sequence_digits': s['_sequence_digits'] ?? 3,
+        '_well_name': s['_well_name'],
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       batch.insert('samples', {
@@ -106,10 +120,47 @@ class SampleDao {
     await batch.commit(noResult: true);
   }
 
-  /// c-9-fill-samples-offline: удалить одну пробу по ID (для negative
-  /// локальных, когда пользователь отменяет офлайн-филл).
   static Future<void> deleteById(int id) async {
     final db = await AppDatabase.instance.database;
     await db.delete('samples', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// c-9-fill-offline-2c-1: все локальные negatives тары.
+  static Future<List<Map<String, dynamic>>> getLocalNegativeByContainer(
+    int containerId,
+  ) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'samples',
+      where: 'container_id = ? AND id < 0',
+      whereArgs: [containerId],
+      orderBy: 'id ASC',
+    );
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  /// c-9-fill-offline-2c-1: обновить `status` в JSON локальной пробы.
+  /// `status` — строка API (`PENDING_PLACEMENT`, `SELECTED`, `DISPOSED`,
+  /// `IN_STORAGE`, ...). Ничего не делает, если пробы нет.
+  static Future<void> updateLocalStatus(int sampleId, String status) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'samples',
+      where: 'id = ?',
+      whereArgs: [sampleId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final json =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    json['status'] = status;
+    await db.update(
+      'samples',
+      {'data': jsonEncode(json)},
+      where: 'id = ?',
+      whereArgs: [sampleId],
+    );
   }
 }

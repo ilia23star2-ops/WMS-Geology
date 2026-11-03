@@ -1,12 +1,22 @@
+/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1).
+///
+/// - `enqueue` / `getPending` / `markAsSynced` / `markAsError` / `resetErrors`.
+/// - `getPayloadByEndpoint` — найти payload по endpoint + POST (для
+///   пересборки после офлайн-редактирования проб).
+/// - `updatePayloadByEndpoint` — заменить payload у существующей записи
+///   (endpoint + POST, любой статус). Возвращает `true`, если нашли.
+library;
+
 import 'dart:convert';
+
 import '../db/database.dart';
 
 class SyncQueueItem {
   final int? id;
-  final String action; // 'POST', 'PATCH', 'DELETE'
-  final String endpoint; // '/samples/', '/storage/containers/'
+  final String action;
+  final String endpoint;
   final Map<String, dynamic> payload;
-  final String status; // 'PENDING', 'ERROR'
+  final String status;
   final String? errorMessage;
   final String createdAt;
 
@@ -95,5 +105,45 @@ class SyncQueueDao {
       where: 'status = ?',
       whereArgs: ['ERROR'],
     );
+  }
+
+  /// c-9-fill-offline-2c-1: прочитать payload существующей записи
+  /// (`action = 'POST'`, `endpoint`). Нужно для пересборки `sample_groups`
+  /// при офлайн-редактировании проб: остальные поля (work_order_coded,
+  /// research_type_id, site_id, container_number) сохраняются.
+  ///
+  /// Возвращает `null`, если записи нет.
+  static Future<Map<String, dynamic>?> getPayloadByEndpoint(
+    String endpoint,
+  ) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'sync_queue',
+      where: 'endpoint = ? AND action = ?',
+      whereArgs: [endpoint, 'POST'],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return jsonDecode(rows.first['payload'] as String) as Map<String, dynamic>;
+  }
+
+  /// c-9-fill-offline-2c-1: заменить payload у существующей записи
+  /// (`action = 'POST'`, `endpoint`). Статус (PENDING / ERROR) не меняется.
+  ///
+  /// Возвращает `true`, если нашли и обновили. `false` — записи нет
+  /// (например, она уже ушла в Push или была удалена).
+  static Future<bool> updatePayloadByEndpoint(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) async {
+    final db = await AppDatabase.instance.database;
+    final count = await db.update(
+      'sync_queue',
+      {'payload': jsonEncode(payload)},
+      where: 'endpoint = ? AND action = ?',
+      whereArgs: [endpoint, 'POST'],
+    );
+    return count > 0;
   }
 }

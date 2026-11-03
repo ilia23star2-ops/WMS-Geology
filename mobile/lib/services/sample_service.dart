@@ -1,5 +1,4 @@
-/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-samples-offline,
-/// c-9-fill-samples-offline-2a, -2a-fix, -2b).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a, -2a-fix, -2b, -2c-1).
 library;
 
 import '../db/container_dao.dart';
@@ -31,6 +30,18 @@ typedef Enqueue = Future<void> Function({
 typedef UpdateContainerNumber = Future<void> Function(int id, String number);
 typedef UpdateContainerStatus = Future<void> Function(int id, String status);
 typedef SetPendingSync = Future<void> Function(int id, bool pending);
+typedef GetLocalNegative = Future<List<Map<String, dynamic>>> Function(
+  int containerId,
+);
+typedef UpdateLocalStatus = Future<void> Function(int sampleId, String status);
+typedef DeleteLocal = Future<void> Function(int sampleId);
+typedef GetQueuePayload = Future<Map<String, dynamic>?> Function(
+  String endpoint,
+);
+typedef UpdateQueuePayload = Future<bool> Function(
+  String endpoint,
+  Map<String, dynamic> payload,
+);
 
 class SampleService {
   SampleService(
@@ -43,6 +54,11 @@ class SampleService {
     UpdateContainerNumber? updateContainerNumber,
     UpdateContainerStatus? updateContainerStatus,
     SetPendingSync? setPendingSync,
+    GetLocalNegative? getLocalNegative,
+    UpdateLocalStatus? updateLocalStatus,
+    DeleteLocal? deleteLocal,
+    GetQueuePayload? getQueuePayload,
+    UpdateQueuePayload? updateQueuePayload,
   }) : _saveSamples = saveSamples ?? SampleDao.saveAll,
        _getCached = getCached ?? SampleDao.getByContainerId,
        _saveLocalOffline = saveLocalOffline ?? _defaultSaveLocal,
@@ -52,7 +68,14 @@ class SampleService {
            updateContainerNumber ?? ContainerDao.updateNumberLocal,
        _updateContainerStatus =
            updateContainerStatus ?? ContainerDao.updateStatusLocal,
-       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync;
+       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync,
+       _getLocalNegative =
+           getLocalNegative ?? SampleDao.getLocalNegativeByContainer,
+       _updateLocalStatus = updateLocalStatus ?? SampleDao.updateLocalStatus,
+       _deleteLocal = deleteLocal ?? SampleDao.deleteById,
+       _getQueuePayload = getQueuePayload ?? SyncQueueDao.getPayloadByEndpoint,
+       _updateQueuePayload =
+           updateQueuePayload ?? SyncQueueDao.updatePayloadByEndpoint;
 
   final ApiClient _client;
   final SaveSamples _saveSamples;
@@ -63,6 +86,11 @@ class SampleService {
   final UpdateContainerNumber _updateContainerNumber;
   final UpdateContainerStatus _updateContainerStatus;
   final SetPendingSync _setPendingSync;
+  final GetLocalNegative _getLocalNegative;
+  final UpdateLocalStatus _updateLocalStatus;
+  final DeleteLocal _deleteLocal;
+  final GetQueuePayload _getQueuePayload;
+  final UpdateQueuePayload _updateQueuePayload;
 
   static Future<void> _defaultSaveLocal({
     required int containerId,
@@ -105,9 +133,7 @@ class SampleService {
 
       try {
         await _saveSamples(rawList);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
       try {
         final serverNumbers = rawList
@@ -115,9 +141,7 @@ class SampleService {
             .whereType<String>()
             .toSet();
         await _cleanupOffline(containerId, serverNumbers);
-      } catch (_) {
-        // Cleanup не критичен.
-      }
+      } catch (_) {}
 
       return rawList.map(Sample.fromJson).toList();
     } on ApiException catch (e) {
@@ -139,7 +163,6 @@ class SampleService {
     return Sample.fromJson(data);
   }
 
-  /// POST /storage/containers/{id}/fill-samples/
   Future<FillOutcome> fillSamples(
     int containerId, {
     String? containerNumber,
@@ -186,23 +209,16 @@ class SampleService {
       if (containerNumber != null && containerNumber.trim().isNotEmpty) {
         try {
           await _updateContainerNumber(containerId, containerNumber.trim());
-        } catch (_) {
-          // Кэш не критичен.
-        }
+        } catch (_) {}
       }
 
       try {
         await _updateContainerStatus(containerId, 'PENDING_PLACEMENT');
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
-      // 2b: пометить тару как несинхронизированную.
       try {
         await _setPendingSync(containerId, true);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
       await _enqueue(
         action: 'POST',
@@ -211,6 +227,83 @@ class SampleService {
       );
       return FillOutcome.queued;
     }
+  }
+
+  /// c-9-fill-offline-2c-1: обновить `status` локальной пробы (negative ID)
+  /// и пересобрать `sample_groups` в payload очереди.
+  Future<void> updateLocalOffline(
+    int sampleId, {
+    required int containerId,
+    required SampleStatus status,
+  }) async {
+    await _updateLocalStatus(sampleId, sampleStatusToApi(status));
+    await _rebuildFillPayload(containerId);
+  }
+
+  /// c-9-fill-offline-2c-1: удалить локальную пробу (negative ID) и
+  /// пересобрать `sample_groups` в payload очереди.
+  Future<void> deleteLocalOffline(
+    int sampleId, {
+    required int containerId,
+  }) async {
+    await _deleteLocal(sampleId);
+    await _rebuildFillPayload(containerId);
+  }
+
+  Future<void> _rebuildFillPayload(int containerId) async {
+    final endpoint = '/storage/containers/$containerId/fill-samples/';
+    final existing = await _getQueuePayload(endpoint);
+    if (existing == null) return;
+
+    final locals = await _getLocalNegative(containerId);
+    final newGroups = _buildGroups(locals);
+    existing['sample_groups'] = newGroups;
+    await _updateQueuePayload(endpoint, existing);
+  }
+
+  List<Map<String, dynamic>> _buildGroups(List<Map<String, dynamic>> locals) {
+    final groups = <String, List<int>>{};
+    final meta = <String, Map<String, dynamic>>{};
+    for (final raw in locals) {
+      final prefix = raw['_prefix'] as String? ?? '';
+      final middle = raw['_middle'] as String? ?? '';
+      final digits = raw['_sequence_digits'] as int? ?? 3;
+      final seq = raw['_sequence'] as int?;
+      final well = raw['_well_name'] as String?;
+      if (seq == null) continue;
+      final sampleStatus = raw['status'] as String? ?? 'PENDING_PLACEMENT';
+      final internal = sampleStatus == 'SELECTED' ? 'SELECTED' : 'NORMAL';
+      final key = '$prefix|$middle|$digits|${well ?? ''}|$internal';
+      groups.putIfAbsent(key, () => []).add(seq);
+      meta[key] = {
+        'prefix': prefix,
+        'middle': middle,
+        'sequence_digits': digits,
+        'well_name': well,
+        'status': internal,
+      };
+    }
+
+    final result = <Map<String, dynamic>>[];
+    for (final entry in groups.entries) {
+      final m = meta[entry.key]!;
+      final seqs = entry.value..sort();
+      if (seqs.isEmpty) continue;
+      var start = seqs.first;
+      var prev = seqs.first;
+      for (var i = 1; i < seqs.length; i++) {
+        final v = seqs[i];
+        if (v == prev + 1) {
+          prev = v;
+        } else {
+          result.add({...m, 'sequence_from': start, 'sequence_to': prev});
+          start = v;
+          prev = v;
+        }
+      }
+      result.add({...m, 'sequence_from': start, 'sequence_to': prev});
+    }
+    return result;
   }
 
   List<Map<String, dynamic>> _expandGroups(
@@ -233,26 +326,29 @@ class SampleService {
         final sampleStatus = rawStatus == 'SELECTED'
             ? 'SELECTED'
             : 'PENDING_PLACEMENT';
-        final numbers = buildSampleNumbers(parsed);
-        for (final num in numbers) {
+        for (var i = parsed.sequenceFrom; i <= parsed.sequenceTo; i++) {
+          final seq = i.toString().padLeft(parsed.sequenceDigits, '0');
           result.add({
-            'sample_number': num,
+            'sample_number': '${parsed.prefix}${parsed.middle}$seq',
             'status': sampleStatus,
             'well_name': g['well_name'],
             'research_type_name': researchTypeName ?? '',
             'site_name': siteName ?? '',
+            '_prefix': parsed.prefix,
+            '_middle': parsed.middle,
+            '_sequence': i,
+            '_sequence_digits': parsed.sequenceDigits,
+            '_well_name': parsed.wellName,
           });
         }
-      } catch (_) {
-        // Пропускаем битую группу.
-      }
+      } catch (_) {}
     }
     return result;
   }
 
   Future<void> deleteSample(int sampleId) async {
     if (sampleId < 0) {
-      await SampleDao.deleteById(sampleId);
+      await _deleteLocal(sampleId);
       return;
     }
     await _client.delete<dynamic>('/samples/$sampleId/');
