@@ -1,4 +1,4 @@
-/// Управление пробами в таре — как `FillContainerContent.tsx` (c-7f + c-7g).
+/// Управление пробами в таре — как `FillContainerContent.tsx` (c-7f + c-7g + c-9-fill-samples-offline).
 ///
 /// Блоки:
 /// 1. **Добавить новые пробы** — поле диапазона + таблица добавленных.
@@ -8,9 +8,11 @@
 /// c-7g: у каждой существующей пробы — цветной чип статуса
 /// (`SampleStatusChip`) и кнопка ✏ (открывает `SampleEditDialog`).
 ///
-/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом
-/// `Container` (flutter/src/widgets/container.dart). В этом файле
-/// `Container` — модель тары, не виджет.
+/// c-9-fill-samples-offline: после [Сохранить] офлайн — `fillSamples`
+/// возвращает `queued`, пробы создаются локально (negative ID), в списке
+/// помечаются «офлайн». ✏/🗑 для них запрещены до синхронизации.
+///
+/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -119,7 +121,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
       setState(() {
         _existingSamples = samples;
         _samplesLoading = false;
-        // Убрать из _deletedIds те, что уже не в списке (удалены ранее).
         _deletedIds.removeWhere((id) => !samples.any((s) => s.id == id));
       });
     } catch (e) {
@@ -275,6 +276,14 @@ class _FillContainerContentState extends State<FillContainerContent> {
   }
 
   Future<void> _handleDeleteExisting(Sample s) async {
+    if (s.isOfflinePending) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Удаление доступно после синхронизации этой пробы.'),
+        ),
+      );
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -297,11 +306,17 @@ class _FillContainerContentState extends State<FillContainerContent> {
     }
   }
 
-  /// c-7g: открыть `SampleEditDialog` на существующей пробе.
-  ///
-  /// Если что-то изменено (edit / dispose / restore / delete) — перезагрузить
-  /// список (проба могла быть удалена, статус мог смениться).
   Future<void> _openEditSample(Sample s) async {
+    if (s.isOfflinePending) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Редактирование доступно после синхронизации этой пробы.',
+          ),
+        ),
+      );
+      return;
+    }
     final changed = await showDialog<bool>(
       context: context,
       builder: (_) => SampleEditDialog(initial: s),
@@ -409,6 +424,7 @@ class _FillContainerContentState extends State<FillContainerContent> {
         await sampleService.deleteSample(id);
       }
 
+      FillOutcome? outcome;
       if (totalToCreate > 0) {
         final workOrderCoded = widget.container.draftWorkOrderCoded.trim();
         final researchTypeId = widget.container.draftResearchTypeId;
@@ -421,7 +437,7 @@ class _FillContainerContentState extends State<FillContainerContent> {
           return;
         }
 
-        await sampleService.fillSamples(
+        outcome = await sampleService.fillSamples(
           widget.container.id,
           containerNumber: widget.container.containerNumber == null
               ? trimmedNumber
@@ -439,6 +455,16 @@ class _FillContainerContentState extends State<FillContainerContent> {
           .where((s) => !_deletedIds.contains(s.id))
           .length;
       widget.onSuccess(widget.container.id, existingCount + totalToCreate);
+
+      if (outcome == FillOutcome.queued) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Сохранено офлайн. Отправится при синхронизации.'),
+          ),
+        );
+        // Перезагрузить пробы, чтобы показать negatives.
+        await _loadSamples();
+      }
 
       setState(() {
         _ranges = [];
@@ -657,8 +683,11 @@ class _FillContainerContentState extends State<FillContainerContent> {
     );
   }
 
+  /// c-9-fill-samples-offline: для `isOfflinePending` — маркер «офлайн»
+  /// и запрет ✏/🗑 до синхронизации.
   Widget _buildExistingRow(Sample s) {
     final theme = Theme.of(context);
+    final offline = s.isOfflinePending;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
@@ -675,19 +704,58 @@ class _FillContainerContentState extends State<FillContainerContent> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                SampleStatusChip(status: s.status),
+                Row(
+                  children: [
+                    SampleStatusChip(status: s.status),
+                    if (offline) ...[
+                      const SizedBox(width: 6),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.cloud_off,
+                                size: 12,
+                                color: theme.colorScheme.onTertiaryContainer,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'офлайн',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.onTertiaryContainer,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
           IconButton(
-            tooltip: 'Редактировать',
+            tooltip: offline
+                ? 'Редактирование после синхронизации'
+                : 'Редактировать',
             icon: const Icon(Icons.edit),
-            onPressed: () => _openEditSample(s),
+            onPressed: offline ? null : () => _openEditSample(s),
           ),
           IconButton(
-            tooltip: 'Удалить',
+            tooltip: offline ? 'Удаление после синхронизации' : 'Удалить',
             icon: Icon(Icons.delete, color: theme.colorScheme.error),
-            onPressed: () => _handleDeleteExisting(s),
+            onPressed: offline ? null : () => _handleDeleteExisting(s),
           ),
         ],
       ),

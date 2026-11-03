@@ -1,9 +1,12 @@
-/// Модель пробы (c-1, c-7a, c-7g).
+/// Модель пробы (c-1, c-7a, c-7g, c-9-fill-samples-offline).
 ///
 /// Проба = навеска. Номер не уникален.
 /// c-7g: расширено — ID FK для справочников (`researchTypeId`, `siteId`),
 /// `wellName`, `disposedAt`, `disposalReason`, `containerNumber`.
-/// Плюс `sampleStatusToApi` — reverse mapping для PATCH.
+///
+/// c-9-fill-samples-offline: `isOfflinePending` — проба создана офлайн
+/// (`id < 0`), на сервер ещё не ушла. В UI помечается «офлайн», edit/delete
+/// запрещены до синхронизации.
 library;
 
 enum SampleStatus {
@@ -95,6 +98,11 @@ class Sample {
 
   String get statusLabel =>
       sampleStatusLabels[status] ?? sampleStatusLabels[SampleStatus.unknown]!;
+
+  /// c-9-fill-samples-offline: проба создана офлайн (`id < 0`),
+  /// на сервер ещё не ушла. В UI помечается «офлайн», edit/delete
+  /// запрещены до синхронизации.
+  bool get isOfflinePending => id < 0;
 
   factory Sample.fromJson(Map<String, dynamic> json) {
     return Sample(
