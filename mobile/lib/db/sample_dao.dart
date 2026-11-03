@@ -1,8 +1,4 @@
-/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-1).
-///
-/// - `saveAll` **не перезаписывает** пробы с `_pending_sync = 1`.
-/// - `hasPendingForContainer` — есть ли pending-пробы для контейнера.
-/// - `setPendingSyncLocal` / `updateLocalStatus` — флаги и статус.
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2).
 library;
 
 import 'dart:convert';
@@ -197,8 +193,6 @@ class SampleDao {
     );
   }
 
-  /// c-9-fill-offline-2c-3-fix-1: есть ли pending-пробы для контейнера.
-  /// `true` — в кэше есть `_pending_sync = 1` (офлайн-правки не ушли).
   static Future<bool> hasPendingForContainer(int containerId) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(
@@ -211,5 +205,12 @@ class SampleDao {
       if (json['_pending_sync'] == true) return true;
     }
     return false;
+  }
+
+  /// c-9-fill-offline-2c-3-fix-2: сбросить `_pending_sync` у пробы после
+  /// успешного Push. Ничего не делает, если пробы нет или флаг уже снят.
+  static Future<void> clearPendingSyncBySampleId(int sampleId) async {
+    if (sampleId <= 0) return;
+    await setPendingSyncLocal(sampleId, false);
   }
 }
