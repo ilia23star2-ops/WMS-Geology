@@ -1,4 +1,5 @@
-/// Управление пробами в таре — как `FillContainerContent.tsx` (c-7f + c-7g + c-9-fill-samples-offline).
+/// Управление пробами в таре — как `FillContainerContent.tsx`
+/// (c-7f + c-7g + c-9-fill-samples-offline + c-9-fill-offline-2a-fix).
 ///
 /// Блоки:
 /// 1. **Добавить новые пробы** — поле диапазона + таблица добавленных.
@@ -11,6 +12,10 @@
 /// c-9-fill-samples-offline: после [Сохранить] офлайн — `fillSamples`
 /// возвращает `queued`, пробы создаются локально (negative ID), в списке
 /// помечаются «офлайн». ✏/🗑 для них запрещены до синхронизации.
+///
+/// c-9-fill-offline-2a-fix: при вызове `fillSamples` передаются
+/// `researchTypeName` / `siteName` из тары — в просмотре офлайн-пробы
+/// ТИ и участок видны сразу.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -437,6 +442,8 @@ class _FillContainerContentState extends State<FillContainerContent> {
           return;
         }
 
+        // c-9-fill-offline-2a-fix: передать researchTypeName / siteName,
+        // чтобы офлайн-пробы сразу показывали ТИ и участок.
         outcome = await sampleService.fillSamples(
           widget.container.id,
           containerNumber: widget.container.containerNumber == null
@@ -447,6 +454,8 @@ class _FillContainerContentState extends State<FillContainerContent> {
           researchTypeId: researchTypeId,
           siteId: widget.container.draftSiteId,
           sampleGroups: sampleGroups,
+          researchTypeName: widget.container.draftResearchTypeName,
+          siteName: widget.container.draftSiteName,
         );
       }
 
@@ -462,7 +471,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
             content: Text('Сохранено офлайн. Отправится при синхронизации.'),
           ),
         );
-        // Перезагрузить пробы, чтобы показать negatives.
         await _loadSamples();
       }
 
@@ -704,11 +712,13 @@ class _FillContainerContentState extends State<FillContainerContent> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     SampleStatusChip(status: s.status),
-                    if (offline) ...[
-                      const SizedBox(width: 6),
+                    if (offline)
                       DecoratedBox(
                         decoration: BoxDecoration(
                           color: theme.colorScheme.tertiaryContainer,
@@ -739,7 +749,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
                           ),
                         ),
                       ),
-                    ],
                   ],
                 ),
               ],
