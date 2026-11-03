@@ -1,12 +1,16 @@
-/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix + c-9-container-create).
+/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix + c-9-container-create + c-9-container-list-actions).
 ///
 /// Аналог `ContainersPage.tsx` в вебе:
-/// - 4 фильтра (статус, тип тары, Н/З draft, ТИ draft), адаптив;
+/// - 4 фильтра (статус, тип, Н/З draft, ТИ draft), адаптив;
 /// - server-side пагинация по 50;
 /// - карточки: Н/З · ТИ (крупно) + иконки статуса и печати справа,
 ///   затем Тип · номер (mono или chip «Заготовка»), локация, комментарий;
-/// - действия (кнопки в Wrap);
-/// - FAB «+ Создать тару» → `CreateContainersDialog` (`c-9-container-create`).
+/// - кнопка по статусу:
+///   `PENDING_FILLING` → «Заполнить» (карточка на вкладке «Редактирование»),
+///   `PENDING_PLACEMENT` → «Разместить» (PlaceContainerDialog),
+///   `ACTIVE` + ячейка → «Местоположение» (ContainerLocationDialog),
+///   `IN_TRANSIT` / `ISSUED` — без действия;
+/// - FAB «+ Создать тару» → CreateContainersDialog.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт с Flutter-виджетом.
 library;
@@ -145,6 +149,17 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
   Future<void> _openContainer(Container c) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ContainerDetailScreen(container: c)),
+    );
+    _loadPage();
+  }
+
+  /// c-9-container-list-actions: «Заполнить» — открывает карточку сразу
+  /// на вкладке «Редактирование» (индекс 1).
+  Future<void> _openContainerEdit(Container c) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ContainerDetailScreen(container: c, initialTabIndex: 1),
+      ),
     );
     _loadPage();
   }
@@ -427,9 +442,12 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
+  /// c-9-container-list-actions: кнопка по статусу.
+  /// `PENDING_FILLING` → «Заполнить» (вкладка «Редактирование»).
+  /// `PENDING_PLACEMENT` → «Разместить».
+  /// `ACTIVE` + ячейка → «Местоположение».
+  /// `IN_TRANSIT` / `ISSUED` — без действия.
   Widget _containerTile(ThemeData theme, Container c) {
-    final isPlaced = c.status == ContainerStatus.active;
-    final hasCell = c.cellId != null;
     final numberText =
         (c.containerNumber != null && c.containerNumber!.isNotEmpty)
         ? c.containerNumber!
@@ -439,6 +457,7 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
         : '—';
     final rtText = c.draftResearchTypeName ?? '—';
     final typeText = c.containerTypeName ?? 'Тип #${c.containerType}';
+    final hasCell = c.cellId != null;
 
     return InkWell(
       onTap: () => _openContainer(c),
@@ -534,17 +553,21 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (hasCell)
+                // Кнопка действия по статусу.
+                ..._actionButtons(theme, c),
+                if (hasCell && c.status != ContainerStatus.active)
+                  // Тара ещё не ACTIVE, но ячейка уже есть (переходное
+                  // состояние после offline-place) — показать адрес.
                   TextButton.icon(
                     onPressed: () => _openLocation(c),
                     icon: const Icon(Icons.place_outlined, size: 18),
                     label: const Text('Местоположение'),
                   ),
-                if (!isPlaced)
+                if (hasCell && c.status == ContainerStatus.active)
                   TextButton.icon(
-                    onPressed: () => _openPlace(c),
-                    icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                    label: const Text('Разместить'),
+                    onPressed: () => _openLocation(c),
+                    icon: const Icon(Icons.place_outlined, size: 18),
+                    label: const Text('Местоположение'),
                   ),
                 IconButton(
                   tooltip: 'Открыть карточку',
@@ -557,6 +580,36 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
         ),
       ),
     );
+  }
+
+  /// c-9-container-list-actions: действия по статусу.
+  List<Widget> _actionButtons(ThemeData theme, Container c) {
+    switch (c.status) {
+      case ContainerStatus.pendingFilling:
+        return [
+          TextButton.icon(
+            onPressed: () => _openContainerEdit(c),
+            icon: const Icon(Icons.edit_note, size: 18),
+            label: const Text('Заполнить'),
+          ),
+        ];
+      case ContainerStatus.pendingPlacement:
+        return [
+          TextButton.icon(
+            onPressed: () => _openPlace(c),
+            icon: const Icon(Icons.inventory_2_outlined, size: 18),
+            label: const Text('Разместить'),
+          ),
+        ];
+      case ContainerStatus.active:
+        // «Местоположение» добавляется отдельно (кнопка ниже),
+        // если есть cellId. Здесь — без действия.
+        return const [];
+      case ContainerStatus.inTransit:
+      case ContainerStatus.issued:
+      case ContainerStatus.unknown:
+        return const [];
+    }
   }
 
   Widget _statusIcon(ContainerStatus s) {
