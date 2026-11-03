@@ -1,11 +1,13 @@
 /// Локальная SQLite (3.x-offline).
 ///
-/// Версия 6 (c-7e-2): +таблица `container_history` для кэша истории тары.
+/// Версия 7 (c-9-fill-offline-2b): +колонка `pending_sync` в `containers`.
 ///
-/// `sync_queue` при миграции **не пересоздаём** — там несохранённые
-/// изменения. `containers`, `samples`, `catalog`, `container_history` —
-/// пересоздаются (история восстановится при следующем открытии карточки
-/// онлайн).
+/// **Миграция v6 → v7:** только `ALTER TABLE containers ADD COLUMN
+/// pending_sync`. `samples` / `catalog` / `container_history` /
+/// `sync_queue` **не трогаем** — там офлайн-данные (negatives, кэш,
+/// очередь), потерять нельзя.
+///
+/// Полное пересоздание — только `v < 6` (легаси, до офлайн-филла).
 library;
 
 import 'package:path/path.dart';
@@ -18,7 +20,7 @@ class AppDatabase {
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  static const int _dbVersion = 6;
+  static const int _dbVersion = 7;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -37,11 +39,23 @@ class AppDatabase {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        await db.execute('DROP TABLE IF EXISTS containers');
-        await db.execute('DROP TABLE IF EXISTS samples');
-        await db.execute('DROP TABLE IF EXISTS catalog');
-        await db.execute('DROP TABLE IF EXISTS container_history');
-        await _createTables(db);
+        // v < 6: полное пересоздание (до офлайн-филла, терять нечего).
+        if (oldVersion < 6) {
+          await db.execute('DROP TABLE IF EXISTS containers');
+          await db.execute('DROP TABLE IF EXISTS samples');
+          await db.execute('DROP TABLE IF EXISTS catalog');
+          await db.execute('DROP TABLE IF EXISTS container_history');
+          await _createTables(db);
+          return;
+        }
+        // v6 → v7: только ALTER, данные сохраняем.
+        // samples / catalog / container_history / sync_queue — не трогаем.
+        if (oldVersion < 7) {
+          await db.execute(
+            'ALTER TABLE containers ADD COLUMN '
+            'pending_sync INTEGER NOT NULL DEFAULT 0',
+          );
+        }
       },
     );
   }
@@ -51,6 +65,7 @@ class AppDatabase {
       CREATE TABLE IF NOT EXISTS containers (
         id INTEGER PRIMARY KEY,
         updated_at TEXT,
+        pending_sync INTEGER NOT NULL DEFAULT 0,
         data TEXT NOT NULL
       )
     ''');
@@ -86,10 +101,6 @@ class AppDatabase {
       'CREATE INDEX IF NOT EXISTS idx_catalog_kind_parent '
       'ON catalog (kind, parent_id)',
     );
-    // c-7e-2: кэш истории тары.
-    // container_id — к какой таре относится запись.
-    // id — id AuditLog (PK в паре с container_id).
-    // created_at — для сортировки (новые сверху).
     await db.execute('''
       CREATE TABLE IF NOT EXISTS container_history (
         container_id INTEGER NOT NULL,

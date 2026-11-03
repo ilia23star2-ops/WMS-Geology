@@ -1,12 +1,10 @@
 /// Модель тары.
 ///
 /// Ответ backend `GET /storage/containers/{id}/` — ContainerSerializer.
-/// С `c-6a` бэкенд отдаёт денормализованные поля (`container_type_name`,
-/// `floor_room_name`, `cell_full_address`, `draft_*_name`) — UI показывает
-/// строки, а не ID.
 ///
-/// c-7b-full: добавлены `draftSiteId` и `draftResearchTypeId` (FK id) —
-/// для предзаполнения dropdown'ов в форме редактирования.
+/// c-9-fill-offline-2b: `pendingSync` — есть несинхронизированные локальные
+/// изменения (офлайн-филл / офлайн-размещение). В реестре и шапке
+/// показывается иконка `cloud_off`. Сбрасывается при `Pull` (`saveAll`).
 library;
 
 enum ContainerStatus {
@@ -70,6 +68,7 @@ class Container {
     required this.labelPrintedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.pendingSync = false,
   });
 
   final int id;
@@ -96,6 +95,9 @@ class Container {
   final DateTime? labelPrintedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// c-9-fill-offline-2b: есть несинхронизированные локальные изменения.
+  final bool pendingSync;
 
   /// Отображаемое имя тары: номер или «Черновик #ID».
   String get displayName =>
@@ -154,10 +156,12 @@ class Container {
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'] as String)
           : null,
+      pendingSync: json['_pending_sync'] as bool? ?? false,
     );
   }
 
   @override
   String toString() =>
-      'Container(id: $id, number: $containerNumber, status: $status)';
+      'Container(id: $id, number: $containerNumber, status: $status, '
+      'pendingSync: $pendingSync)';
 }

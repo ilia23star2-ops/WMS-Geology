@@ -1,13 +1,7 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + c-9-overflow-fix-2 + c-9-container-list-actions).
+/// Карточка тары (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + overflow-fix-2 + list-actions + fill-offline-2b).
 ///
-/// Вкладки: Пробы (0) / Редактирование (1) / История (2).
-/// `initialTabIndex` — какая вкладка открывается первой (по умолчанию 0).
-/// Реестр тары использует `initialTabIndex: 1` для кнопки «Заполнить»
-/// у тар в статусе `PENDING_FILLING`.
-///
-/// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`).
-/// c-7d: «Предпросмотр» — PDF этикетки (online + offline-fallback).
-/// c-7c: «Разместить» / «Местоположение» — раздельные кнопки, как в вебе.
+/// c-9-fill-offline-2b: если `_container.pendingSync` — в шапке строка
+/// «Синхронизация: Не синхронизировано» с иконкой `cloud_off`.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -42,9 +36,6 @@ class ContainerDetailScreen extends StatefulWidget {
   });
 
   final Container container;
-
-  /// c-9-container-list-actions: 0 — Пробы, 1 — Редактирование, 2 — История.
-  /// Реестр открывает с `initialTabIndex: 1` для кнопки «Заполнить».
   final int initialTabIndex;
 
   @override
@@ -520,6 +511,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
     final container = _container;
     return Card(
       child: Padding(
@@ -530,6 +522,44 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             _row(context, 'Номер', container.displayName, mono: true),
             _row(context, 'ID', '#${container.id}'),
             _row(context, 'Статус', container.statusLabel),
+            // 2b: строка «Синхронизация» для несинхронизированных тар.
+            if (container.pendingSync)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 150,
+                      child: Text(
+                        'Синхронизация',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.cloud_off,
+                            color: Colors.orange,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Не синхронизировано',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                              color: Colors.orange.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             _row(
               context,
               'Тип тары',
