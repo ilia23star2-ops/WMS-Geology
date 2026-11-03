@@ -206,6 +206,8 @@ Android-приложение для планшетов. QR-коды как ос�
     # 1. Проброс порта через USB
     adb reverse tcp:8000 tcp:8000
 
+    export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
+    
     # 2. Запуск с API_HOST=127.0.0.1
     flutter run --dart-define=API_HOST=127.0.0.1 --android-skip-build-dependency-validation
 
