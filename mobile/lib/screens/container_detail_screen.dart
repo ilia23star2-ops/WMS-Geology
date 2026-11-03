@@ -1,18 +1,13 @@
-/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + c-9-overflow-fix-2).
+/// Карточка тары после сканирования QR (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + c-9-overflow-fix-2 + c-9-container-list-actions).
 ///
-/// Вкладки (как в вебе):
-/// - **Пробы** — список + поиск + чекбоксы + bulk-статус + ✏.
-/// - **Редактирование** — `FillContainerContent`.
-/// - **История** — аудит.
+/// Вкладки: Пробы (0) / Редактирование (1) / История (2).
+/// `initialTabIndex` — какая вкладка открывается первой (по умолчанию 0).
+/// Реестр тары использует `initialTabIndex: 1` для кнопки «Заполнить»
+/// у тар в статусе `PENDING_FILLING`.
 ///
 /// Карандаш ✏ в `AppBar` — форма шапки (`ContainerEditForm`).
-///
-/// c-7d: кнопка «Предпросмотр» — PDF этикетки (online + offline-fallback).
+/// c-7d: «Предпросмотр» — PDF этикетки (online + offline-fallback).
 /// c-7c: «Разместить» / «Местоположение» — раздельные кнопки, как в вебе.
-///
-/// c-9-overflow-fix-2: bulk-статус dropdown — `isExpanded: true`,
-/// `Text('Выбрано: N')` на отдельной строке, items с ellipsis.
-/// Убирает RenderFlex overflow 85 px в узком портрете.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -40,9 +35,17 @@ import '../widgets/sample_edit_dialog.dart';
 import '../widgets/sample_status_chip.dart';
 
 class ContainerDetailScreen extends StatefulWidget {
-  const ContainerDetailScreen({super.key, required this.container});
+  const ContainerDetailScreen({
+    super.key,
+    required this.container,
+    this.initialTabIndex = 0,
+  });
 
   final Container container;
+
+  /// c-9-container-list-actions: 0 — Пробы, 1 — Редактирование, 2 — История.
+  /// Реестр открывает с `initialTabIndex: 1` для кнопки «Заполнить».
+  final int initialTabIndex;
 
   @override
   State<ContainerDetailScreen> createState() => _ContainerDetailScreenState();
@@ -59,13 +62,11 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   String? _historyError;
   bool _historyLoading = true;
 
-  // c-7g: поиск + bulk
   final _searchCtrl = TextEditingController();
   final Set<int> _selectedIds = {};
   SampleStatus? _bulkStatus;
   bool _bulkLoading = false;
 
-  // c-7d: загрузка PDF
   bool _previewLoading = false;
 
   @override
@@ -371,6 +372,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     final theme = Theme.of(context);
     return DefaultTabController(
       length: 3,
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isLandscape = constraints.maxWidth > constraints.maxHeight;
@@ -723,9 +725,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             onChanged: (_) => setState(() {}),
           ),
         ),
-        // c-9-overflow-fix-2: «Выбрано: N» — на отдельной строке,
-        // dropdown + кнопка — ниже. `isExpanded: true` + ellipsis
-        // в items. Без этого — RenderFlex overflow 85 px.
         if (_selectedIds.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
