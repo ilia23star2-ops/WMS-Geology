@@ -1,4 +1,9 @@
-/// DAO для работы с кэшем тар (3.x-offline-sync c-1).
+/// DAO для работы с кэшем тар (3.x-offline-sync c-1, c-9-fill-samples-offline-2a).
+///
+/// - `saveAll` — upsert серверных тар.
+/// - `getById` / `getAll` / `deleteById` — чтение / удаление.
+/// - `updateNumberLocal` — обновить `container_number` в локальном JSON
+///   (офлайн-филл, номер присвоен локально, сервер ещё не знает).
 library;
 
 import 'dart:convert';
@@ -8,8 +13,6 @@ import 'package:sqflite/sqflite.dart';
 import 'database.dart';
 
 class ContainerDao {
-  /// Сохранить список тар в кэш (bulk insert/update).
-  /// [data] — список сырых JSON с сервера.
   static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
     final db = await AppDatabase.instance.database;
     final batch = db.batch();
@@ -28,7 +31,6 @@ class ContainerDao {
     await batch.commit(noResult: true);
   }
 
-  /// Получить тару по ID из кэша.
   static Future<Map<String, dynamic>?> getById(int id) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(
@@ -42,7 +44,6 @@ class ContainerDao {
     return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
-  /// Получить все тары (для списка).
   static Future<List<Map<String, dynamic>>> getAll() async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query('containers', orderBy: 'id DESC');
@@ -51,9 +52,36 @@ class ContainerDao {
         .toList();
   }
 
-  /// Удалить тару из кэша (если сервер прислал удаление).
   static Future<void> deleteById(int id) async {
     final db = await AppDatabase.instance.database;
     await db.delete('containers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// c-9-fill-samples-offline-2a: обновить `container_number` в локальном
+  /// JSON тары. Нужно после офлайн-филла, где номер введён пользователем,
+  /// но на сервер ушёл только в payload очереди. Без этого карточка
+  /// показывает «Заготовка» до Pull.
+  ///
+  /// Ничего не делает, если тары нет в кэше или `number` пустой.
+  static Future<void> updateNumberLocal(int id, String number) async {
+    final trimmed = number.trim();
+    if (trimmed.isEmpty) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'containers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final json =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    json['container_number'] = trimmed;
+    await db.update(
+      'containers',
+      {'data': jsonEncode(json)},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }
