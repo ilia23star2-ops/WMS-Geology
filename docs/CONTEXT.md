@@ -10,45 +10,36 @@
 ## Где мы
 
 **Активная серия:** `feature/3.x-offline` — офлайн-режим мобильного приложения.
-**Долгоживущий бранч:** `fix/2.x-mobile-bundle-c-2` (вся серия в нём).
+**Долгоживущий бранч:** `fix/2.x-mobile-bundle-c-2`.
 
 **Текущий заход:** серия `c` (мобильный офлайн).
 
 **Backend (`c-1`..`c-6b`):**
-- `c-1` SQLite, `c-2` SyncService (Pull), `c-3` SyncQueue (Push), `c-4` SyncScreen, `c-4.5` Deferred Offline Login, `c-4.6` USB-режим — ✅ **закрыты**.
-- `c-6a-pre` / `c-6a` / `c-6b` — ✅ **закрыты 2026-10-30**.
+- `c-1` SQLite, `c-2` SyncService, `c-3` SyncQueue, `c-4` SyncScreen, `c-4.5` Deferred Offline Login, `c-4.6` USB — ✅.
+- `c-6a-pre` / `c-6a` / `c-6b` — ✅.
 
 **Mobile (сеть, сканер):**
-- `c-6c` — auto-detect сети — ✅ **закрыт 2026-10-30**.
-- `c-6d-fix` + `c-6d-fix-3` — scanWindow 220×220 + landscape-фикс — ✅ **закрыты 2026-11-02**.
-- `c-6g` — `NetworkStatusProvider` + `NetworkBadge` — ✅ **закрыт 2026-11-02**.
-- `c-6h` — синхронизация запрещена при `!isOnline` / `pendingOffline` — ✅ **закрыт 2026-11-02**.
-- `c-6g-login` — иконка сети на `LoginScreen` — ✅ **закрыт 2026-11-02**.
-- `c-6f` — `NetworkMonitor` — **откачен** (регресс, заменён на `c-6g`).
+- `c-6c` auto-detect, `c-6d-fix` + `c-6d-fix-3` scanWindow, `c-6g` NetworkStatusProvider, `c-6h` блок синхронизации, `c-6g-login` иконка на Login — ✅.
+- `c-6g-tap-ping` — тап на иконке → `pingNow()` — ✅.
 
-**Mobile (карточка тары, `c-7a`..`c-7h`):**
-- `c-7a`, `c-7b` (+`c-7b-fix`), `c-7f` (+`c-7f-fix`), `c-7g`, `c-7h` (+`c-7h-fix`, `c-7h-fix-2`) — ✅ **закрыты 2026-11-02**.
+**Mobile (карточка тары, `c-7a`..`c-7h`, PDF, размещение, офлайн-справочники):**
+- `c-7a`..`c-7h` — ✅.
+- `c-7d`, `c-7f-1`, `c-7f-2` — PDF (online + offline) — ✅.
+- `c-7c` — Разместить / Местоположение — ✅.
+- `c-7-offline-catalog`, `c-7e-1`, `c-7e-2`, `c-7e-3` — кэш справочников + истории — ✅.
 
-**Mobile (PDF-серия, `c-7d`, `c-7f-1`, `c-7f-2`):**
-- `c-7d` — PDF online (`ApiClient.download` + `open_filex`) — ✅ **закрыт 2026-11-02**.
-- `c-7f-1` — ассеты + `LabelData` — ✅ **закрыт 2026-11-02**.
-- `c-7f-2` — offline-рендер на Dart (`pw.Text`, `pw.BarcodeWidget`, `CustomPaint`) — ✅ **закрыт 2026-11-02**.
-
-**Mobile (размещение, `c-7c`):**
-- `c-7c` — `PlaceContainerDialog` (каскад), `bulk-place`, offline-place через `sync_queue`, `ContainerLocationDialog`, раздельные кнопки — ✅ **закрыт 2026-11-02**.
-
-**Mobile (офлайн-справочники и история, `c-7-offline-catalog`, `c-7e-1..3`):**
-- `c-7-offline-catalog` — SQLite v5 (`catalog`), `CatalogDao`, `CatalogService` fallback, `SyncService.pullAll` +9 эндпоинтов — ✅ **закрыт 2026-11-02**.
-- `c-7e-1` — `SampleService` офлайн возвращает кэш, включая пустой — ✅ **закрыт 2026-11-02**.
-- `c-7e-2` — SQLite v6 (`container_history`), `ContainerHistoryDao`, `fetchHistory` fallback — ✅ **закрыт 2026-11-02**.
-- `c-7e-3` — pre-fetch истории всех тар в `pullAll` — ✅ **закрыт 2026-11-02**.
+**Mobile (Drawer, реестр, офлайн-редактирование, `c-9`):**
+- `c-9-drawer`, `c-9-container-list`, `c-9-container-list-order`, `c-9-overflow-fix`, `c-9-overflow-fix-2`, `c-9-container-create`, `c-9-container-list-actions` — ✅.
+- `c-9-fill-offline-2a`, `2a-fix`, `2b`, `2c-1`, `2c-2`, `2c-3`, `2c-3-fix-1/2/3a/3b`, `2c-4` — офлайн-редактирование проб — ✅.
+- `c-9-auto-sync` — двусторонняя автосинхронизация при возврате сети — ✅.
+- `c-9-natural-sort` — сортировка проб по `sample_number` — ✅.
+- `c-6b-updated-since-pull` — `?updated_since=` в Pull, `PullStats` = изменённые — ✅.
 
 **Следующие заходы:**
-- `c-8-catalog-create` — создание справочников с мобилки через `sync_queue`. ⬜ **следующий**
-- `c-8a`..`c-8c` — PATCH статусов тары и пробы через `sync_queue`. ⬜
-- `c-8e` — auto-sync USB. ⬜
-
-**Закрыто досрочно:** `c-8d` (размещение через `sync_queue`) — реализовано в `c-7c`.
+- `c-8-catalog-create` — создание справочников офлайн (`CatalogService.create` через `sync_queue`). ⬜ **следующий по 1.93**
+- `c-2d-2` — офлайн-создание тары (negative ID + `local_ref`). ⬜
+- `c-8a`..`c-8e` — PATCH статусов тары/пробы, auto-sync USB. ⬜
+- `c-9-overflow-fix-4` — 2 overflow (3.5 px, 7.2 px), `ТД-61`. ⬜
 
 **Отложено:** `c-5` (sneakernet через флешку).
 
@@ -58,27 +49,31 @@
 - Логин (пароль + QR), logout, refresh токенов.
 - Сканер QR, карточка тары, список проб.
 - SQLite (`c-1`), Pull (`c-2`), Push (`c-3`), `SyncScreen` (`c-4`).
-- Deferred Offline Login (`c-4.5`), USB-режим (`c-4.6`).
-- Auto-detect сети (`c-6c`), `NetworkStatusProvider` (`c-6g`).
-- ScanWindow 220×220 + landscape-фикс (`c-6d-fix-3`).
-- Карточка тары: 3 вкладки, адаптив, форма шапки, `FillContainerContent`, вкладка «Пробы» как в вебе, история сканов `Н/З · ТИ · номер`.
-- PDF предпросмотр: online (`c-7d`) + offline на Dart (`c-7f-1`, `c-7f-2`).
-- Размещение: `[Разместить]` (online + offline через `sync_queue`), `[Местоположение]` (диалог адреса) (`c-7c`).
-- **Офлайн-справочники:** каскад размещения и форма шапки работают офлайн из кэша (`c-7-offline-catalog`).
-- **Офлайн-история:** pre-fetch всех тар при Pull; история любой тары доступна офлайн (`c-7e-2`, `c-7e-3`).
+- Deferred Offline Login (`c-4.5`), USB (`c-4.6`).
+- Auto-detect (`c-6c`), `NetworkStatusProvider` + тап-пинг (`c-6g`, `c-6g-tap-ping`).
+- ScanWindow (`c-6d-fix-3`).
+- Карточка тары: 3 вкладки, адаптив, `ContainerEditForm`, `FillContainerContent`, вкладка «Пробы», история сканов.
+- PDF online + offline (`c-7d`, `c-7f-1`, `c-7f-2`).
+- Размещение online/offline (`c-7c`).
+- Офлайн-справочники + история (`c-7-offline-catalog`, `c-7e-*`).
+- Drawer + реестр тары + создание + действия по статусу (`c-9-container-*`).
+- Офлайн-редактирование проб (создание, статус, номер, dispose/restore/delete) — `c-9-fill-offline-*`.
+- Автосинхронизация Push + Pull при возврате сети — `c-9-auto-sync`.
+- Natural sort проб — `c-9-natural-sort`.
+- Инкрементальный Pull `?updated_since=` — `c-6b-updated-since-pull`.
 
 **Сборка на рабочем ПК (прокси):**
 - `work-pc-setup/setup.ps1` — **обязателен после `git reset --hard`**.
-- `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` — в каждом новом окне.
+- `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` — в каждом окне.
 - `flutter run --android-skip-build-dependency-validation`.
-- `adb reverse tcp:8000 tcp:8000` — вручную (после USB-reconnect).
+- `adb reverse tcp:8000 tcp:8000` — вручную.
 
 **Backend:** 842 теста.
 **Web:** 24 юнит-теста.
-**Mobile:** 139 юнит-тестов.
+**Mobile:** 174 юнит-теста.
 
 **Ближайшая работа:**
-- Docs закрыты. Дальше — `c-8-catalog-create` (создание справочников с мобилки) → `c-8a`..`c-8c` (статусы) → `c-8e` (auto-sync).
+- Docs закрыты. Дальше — `c-8-catalog-create` (создание справочников офлайн) → `c-2d-2` (офлайн-создание тары) → `c-8a`..`c-8e` (статусы через `sync_queue`, auto-sync USB).
 
 ---
 
@@ -131,107 +126,90 @@
 | Карточка тары | `ContainerDetailDialog` (3 вкладки + Предпросмотр / Разместить / Местоположение). |
 | Коды доступа | `AccessTokensPage` — создание, QR, отзыв. |
 
-### Mobile (Flutter, 139 юнит-тестов)
+### Mobile (Flutter, 174 юнит-теста)
 | Раздел | Что внутри |
 |---|---|
-| Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage` на `flutter_secure_storage`. |
+| Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage`. |
 | API | `ApiClient` (Dio), JWT-интерцептор. |
-| Сеть | `NetworkProbe` + `AppConfig.resolve` (auto-detect). `NetworkStatusProvider` (heartbeat 10 с). `NetworkBadge`. |
-| Главная | Приветствие + «Сканировать», «Синхронизация», история тар (`Н/З · ТИ · номер`). |
-| Сканер | `mobile_scanner 7.4.2`, `WMSG:<TYPE>:<ID>`. ScanWindow 220×220 (portrait + landscape). |
-| Карточка тары | 3 вкладки, адаптив, `ContainerEditForm` в bottom sheet. |
-| Пробы | Поиск, чекбоксы, bulk-статус, `SampleEditDialog`, цветные чипы. Офлайн: `fetchByContainerId` возвращает кэш (включая пустой, `c-7e-1`). |
-| Редактирование | `FillContainerContent` — диапазоны, skip/selected, добавление, удаление. |
-| История | Аудит тары. Офлайн: `ContainerHistoryDao` (SQLite v6), pre-fetch в Pull (`c-7e-2`, `c-7e-3`). |
-| PDF | Online (`ApiClient.download` + `open_filex`) + offline на Dart (`label_pdf_generator.dart`, `LabelData`). |
-| Размещение | `PlaceContainerDialog` (каскад), online + offline через `sync_queue`. `ContainerLocationDialog` — показ адреса. |
-| Офлайн-справочники | `CatalogDao` (SQLite v5, `catalog`), `CatalogService` fallback, Pull +9 эндпоинтов (`c-7-offline-catalog`). |
-| Офлайн (SQLite) | `Database` v6: `containers`, `samples`, `catalog`, `container_history`, `sync_queue`. |
-| Офлайн (Sync) | `SyncService.pullAll()` (containers + samples + 9 справочников + pre-fetch истории всех тар), `SyncPusher.pushAll()`. Блокировка при `!isOnline`. `bulkPlace` → `sync_queue` при network error. |
+| Сеть | `NetworkProbe` + `AppConfig.resolve`. `NetworkStatusProvider` (heartbeat 10 с, тап → `pingNow`). `NetworkBadge`. |
+| Главная | Приветствие + «Сканировать», «Синхронизация (N)», история тар. |
+| Drawer | Главная, Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники, Выход. |
+| Реестр тары | 4 фильтра, пагинация, офлайн-кэш, действия по статусу (Заполнить / Разместить / Местоположение), создание тары. |
+| Карточка тары | 3 вкладки, адаптив, `ContainerEditForm`, `FillContainerContent`, `SampleEditDialog` (online + offline), история. |
+| Пробы | Поиск, чекбоксы, bulk-статус, чипы, `SampleEditDialog`. Офлайн: создание (negative ID), редактирование статуса/номера, dispose/restore/delete — все через `sync_queue`. `cloud_off` при `pendingSync`/`isOfflinePending`. |
+| История | Аудит тары (online + офлайн через `ContainerHistoryDao`). |
+| PDF | Online (`ApiClient.download` + `open_filex`) + offline на Dart. |
+| Размещение | `PlaceContainerDialog` (online + offline через `sync_queue`). |
+| Офлайн-справочники | `CatalogDao` (SQLite v5), `CatalogService` fallback. |
+| Синхронизация | Pull + Push + автосинхронизация при возврате сети (SnackBar «Отправлено: N, загружено: M»). Incremental Pull `?updated_since=`. Natural sort проб. |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (93), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (100), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
 ## Известные грабли
 
 ### PostgreSQL
-- **Домашний ПК:** Docker (`docker compose up -d`).
+- **Домашний ПК:** Docker.
 - **Рабочий ПК:** портативный `pg_ctl`.
 - **После `git pull` с миграциями — всегда `migrate`.**
 
 ### Django
-- Все команды — только через `poetry run python manage.py ...`.
-- `CheckConstraint(condition=...)`, не `check=`.
-- **`log_audit(old_value=..., new_value=...)` — оба параметра обязательны** (`c-6a-pre`, 1.70).
-- **`UserProfile.__str__`** — fallback `"без роли"`.
-- **`AccessToken.token_hash`** — `secrets.token_urlsafe(32)` (43 символа).
-- **`make_access_token_qr_svg(purpose, raw, expires_at, user)`** — 4 аргумента.
+- Все команды — только через `poetry run`.
+- `log_audit(old_value=..., new_value=...)` — оба обязательны.
 - `ProtectedError` → 409 (есть `?force=true`).
-- **stale-тесты** — копятся, если гонять только `apps/<app>/`. Перед закрытием — `pytest -q` целиком.
-- **`prefetch_related` с `Prefetch(to_attr=...)`** — `getattr(obj, "<to_attr>", None)`.
+- **stale-тесты** копятся при прогоне только `apps/<app>/`. Перед закрытием — `pytest -q` целиком.
 - **Django signals не используем** (1.58, 1.70).
-- **`apps/storage/services/`, `apps/receiving/parsers/`, `apps/receiving/services/` — пакеты**.
 
 ### API
-- JWT (`Authorization: Bearer <access>`), `PageNumberPagination`, `PAGE_SIZE=50`.
-- **`?updated_since=<ISO 8601>`** — с таймзоной; naive / невалидный → 400 (`c-6b`).
-- **`GET /health/`** — вне `/api/v1/`, без авторизации (`c-6a`).
-- **Денормализация `ContainerSerializer`** — `container_type_name`, `floor_room_name`, `cell_full_address`, `draft_site_name`, `draft_research_type_name`.
-- **`?work_order=`** — учитывает `linked_order`.
+- JWT, `PageNumberPagination`, `PAGE_SIZE=50`.
+- `?updated_since=<ISO 8601>` — с таймзоной; naive / невалидный → 400.
+- `GET /health/` — вне `/api/v1/`, без авторизации.
+- Денормализация `ContainerSerializer` — `*_name` поля.
 
 ### Домен
-- Проба = **навеска**. Не уникальна по номеру.
-- Одна тара = один тип исследования.
-- **`Container.container_number` — НЕ уникален глобально** (1.61).
-- **`Container.STATUS_PENDING_FILLING`** — начальный статус (1.62).
-- **`Sample.STATUS_SELECTED`** — защищён от перезаписи (1.66).
-- **`fill-samples` обновляет draft-поля из запроса** (1.69).
-- **`AuditLog` для Container**: 6 действий, snapshot 6 полей (1.70).
-- **`print_batch_status`**: последняя не-CANCELLED партия, 4 значения (1.71).
+- Проба = навеска. Не уникальна по номеру.
+- `container_number` — НЕ уникален глобально.
+- `PENDING_FILLING` — начальный статус.
+- `SELECTED` — защищён от перезаписи.
+- `fill-samples` обновляет draft-поля.
 
 ### Web
-- **Vite proxy:** `/api/*` → `http://localhost:8000`.
-- **MUI X v9:** `GridRowSelectionModel = { type, ids: Set<GridRowId> }`.
-- **MUI 9:** `Grid size={{...}}`, `Stack` — `sx`.
-- **MUI icons:** `DeleteOutline` / `AddCircleOutline` **не существуют**.
-- **URL справочников:** `/research-types/`, `/sites/`, `/laboratories/` — без префикса.
-- **React Query Devtools не ставим** (ТД-36).
-- **`parseSampleInput`:** префикс — точно в `Laboratory.prefixes` + `Site.match_patterns`.
-- **`ContainerDetailDialog`:** `canPlace = PENDING_FILLING || PENDING_PLACEMENT`; `hasCell = cell_id !== null`; кнопки `[Разместить]` / `[Местоположение]` раздельные (1.72, 1.92).
+- Vite proxy `/api/*` → `localhost:8000`.
+- MUI X v9: `GridRowSelectionModel = { type, ids: Set<GridRowId> }`.
+- `ContainerDetailDialog`: `canPlace = PENDING_FILLING || PENDING_PLACEMENT`; `hasCell = cell_id !== null`.
 
 ### Mobile
-- **URL API:** `config.dart` — `AppConfig.resolve()`: `--dart-define=API_HOST` → probe → fallback `192.168.0.77`.
-- **`export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — в каждом новом окне Git Bash.
-- **`adb reverse` сбрасывается** при reconnect USB / перезагрузке. Повторять вручную.
-- **`mobile_scanner 7.4.2`**: `BarcodeCapture.rotation` **не существует**; `capture.size` не swap при повороте, `corners` — swap. Фикс в `mapImageToWidgetFrame`.
-- **`Barcode.scaleCorners`** не учитывает landscape — не используем.
-- **`hide Container`** — только в файлах с моделью `Container` (`container_detail_screen.dart`, `fill_container_content.dart`, `container_location_dialog.dart`). В `home_screen.dart` — без `hide`.
-- **`Container(...)`** в файле с `hide Container` — резолвится в **модель** (28 required параметров). Для Flutter-виджета — `Material` / `DecoratedBox` / `Padding`.
-- **`context.read<...>` после `await`** → `use_build_context_synchronously`. Сервис брать **до** первого `await`.
-- **`context.read<...>`** — нужен `import 'package:provider/provider.dart';`.
+- **`AppConfig.resolve()`**: `--dart-define=API_HOST` → probe → fallback `192.168.0.77`.
+- **`export FLUTTER_STORAGE_BASE_URL`** — в каждом окне.
+- **`adb reverse` сбрасывается** при reconnect USB.
+- **`mobile_scanner 7.4.2`**: `BarcodeCapture.rotation` не существует; landscape swap в `mapImageToWidgetFrame`.
+- **`hide Container`** — в файлах с моделью `Container`.
+- **`context.read` после `await`** → сервис брать до первого `await`.
 - **Перед `git add` — `git status --short | grep "mobile/lib"`** (1.90).
-- **Перед выдачей кода нового захода — `git status --short | grep "mobile/lib"` должно быть пусто** (1.91).
-- **`mobile/android/*`** — машинные, **не коммитить** (правило 15). **`tools/`** — тоже.
-- **`flutter pub get`** после `pubspec.yaml`.
-- **`shared_preferences`** — `scan_history_entries` (JSON) + миграция со старого `scan_history_ids`. Ключ `device_id`.
-- **`flutter_secure_storage`** — JWT + `cached_user_json` + `pending_offline_*`.
-- **SQLite v6 (c-7e-2):** таблицы `containers`, `samples`, `sync_queue`, `catalog`, `container_history`. При миграции `onUpgrade` **не пересоздаёт `sync_queue`** — там несохранённые изменения. Остальные пересоздаются, восстановятся при Pull.
-- **`CatalogDao.saveAll`**: если сервер не отдал поле-родителя в JSON, `parentId = null`, офлайн-фильтр по родителю вернёт пусто. Онлайн при этом работает. Проверить при первом баг-репорте (ТД-60).
-- **Офлайн-place:** `ContainerService.bulkPlace` при `isNetworkError` → `SyncQueueDao.enqueue`. `SyncPusher` уже шлёт `POST` (1.92).
-- **Офлайн-история:** `fetchHistory` онлайн → save в кэш; `isNetworkError` → кэш. Pre-fetch в Pull (`SyncService.pullAll`) — история всех тар (1.93, `c-7e-3`). N запросов = N тар (ТД-59).
+- **Перед выдачей кода — то же, должно быть пусто** (1.91).
+- **`mobile/android/*` и `tools/`** — машинные, не коммитить.
+- **SQLite v7 (c-9-fill-offline-2b):** таблицы `containers` (+`pending_sync`), `samples`, `sync_queue`, `catalog`, `container_history`. `onUpgrade v6→v7` — только `ALTER TABLE`, без `DROP` (иначе теряются офлайн-пробы).
+- **`SampleDao.saveAll`** не перезаписывает пробы с `_pending_sync = 1`.
+- **`fetchByContainerId`** возвращает кэш при `hasPendingForContainer`.
+- **Reconcile при Pull** сбрасывает `_pending_sync`, если записи в `sync_queue` нет.
+- **`sync_queue` regex**: `^/samples/(\d+)/(?:dispose/|restore/)?$` — PATCH/DELETE (`/samples/5/`) и dispose/restore.
+- **`_lastPullSince` в памяти** — Pull раз в сессию полный (ТД-62).
+- **Natural sort** — `naturalCompare` в `SampleDao.getByContainerId`, `SampleService.fetchByContainerId`, `LabelData.fromContainer`.
+- **`NetworkBadge`** — `IconButton`, тап → `pingNow`, спиннер во время ping.
+- **`scaffoldMessengerKey`** — глобальный, для SnackBar из `AuthGate`.
 
 ### Рабочий ПК (прокси)
-- **После `git reset --hard`**: `setup.ps1` → `export FLUTTER_STORAGE_BASE_URL=...` → `flutter run --android-skip-build-dependency-validation`.
-- **`aapt2FromMavenOverride`**, **`kotlin.incremental=false`**, **`kotlin.compiler.execution.strategy=in-process`**, **`org.gradle.parallel=false`**, **`org.gradle.workers.max=2`** в `mobile/android/gradle.properties`.
-- **NDK `source.properties`** — `setup.ps1` пишет с BOM; CMake не парсит. Фикс: `printf` без BOM.
-- **Не делать `git add .`** — правило 15.
+- **После `git reset --hard`**: `setup.ps1` → `export FLUTTER_STORAGE_BASE_URL` → `flutter run --android-skip-build-dependency-validation`.
+- **`checkRevocation=false`**, **`aapt2FromMavenOverride`**, **`kotlin.incremental=false`**, **`kotlin.compiler.execution.strategy=in-process`**, **`org.gradle.parallel=false`**, **`org.gradle.workers.max=2`**.
+- **NDK `source.properties`** без BOM.
+- **Не делать `git add .`**.
 
 ### Инструменты
 - Git — только терминал.
-- **`cd` — первой строкой блока** (иначе двойной `cd`).
-- **`cat >> file`** без `\n` в конце — склеивает строки. Проверять `tail`.
+- **`cd` — первой строкой блока.**
+- **`cat >> file`** без `\n` — склеивает строки.
 - **`pkill`** — нет в Git Bash, только `taskkill //F //IM <name>`.
 
 ---
@@ -242,21 +220,18 @@
 - Утверждённые решения в `DECISIONS.md`.
 - Файл `.env` (только `.env.example`).
 - Ветка `fix/2.x-web-v2-bundle-7` (WIP).
-- `work-pc-setup/`, `wms-bundle/`, `D:\Dev\maven-local`, `D:\Dev\android-sdk\ndk\28.2.13676358` — машинные настройки.
+- `work-pc-setup/`, `wms-bundle/`, `D:\Dev\maven-local`, `D:\Dev\android-sdk\ndk\28.2.13676358`.
 
 ---
 
 ## Правила текущей сессии
 
 - Кодовая фаза.
-- Каждый заход — 1–3 файла кода (пачки-исключения для boilerplate).
+- Каждый заход — 1–3 файла (пачки-исключения).
 - Файлы — единым блоком.
-- Все Django-команды — через `poetry run`.
-- Все web-команды — `cd web && npm ...`.
-- Все mobile-команды — `cd mobile && flutter ...`.
 - Docs — отдельной пачкой.
 - **Перед `git add` — `git status --short | grep "mobile/lib"`** (1.90).
-- **Перед выдачей кода нового захода — `git status --short | grep "mobile/lib"` должно быть пусто** (1.91).
+- **Перед выдачей кода — то же, должно быть пусто** (1.91).
 
 ---
 

@@ -29,40 +29,62 @@
 | # | Заход | Что делает | Статус |
 |---|---|---|---|
 | c-1 | SQLite | Таблицы `containers`, `samples`, DAO | ✅ |
-| c-2 | SyncService (Pull) | Постраничная синхронизация (50/стр) | ✅ |
-| c-3 | SyncQueue (Push) | Очередь изменений, отправка | ✅ |
+| c-2 | SyncService (Pull) | Постраничная синхронизация | ✅ |
+| c-3 | SyncQueue (Push) | Очередь, отправка | ✅ |
 | c-4 | UI офлайн-режима | `SyncProvider`, `SyncScreen` | ✅ |
 | c-4.5 | Deferred Offline Login | QR с base64-JSON | ✅ |
-| c-4.6 | USB-режим | `adb reverse`, SQLite v4, fallback DAO | ✅ |
-| c-6a-pre | Pre-existing fix | `log_audit(old_value)`, `UserProfile.__str__`, stale-тесты | ✅ |
+| c-4.6 | USB-режим | `adb reverse`, SQLite v4 | ✅ |
+| c-6a-pre | Pre-existing fix | `log_audit(old_value)`, stale-тесты | ✅ |
 | c-6a | Health + денормализация | `GET /health/`, `*_name` поля | ✅ |
-| c-6b | Инкр. Pull | `?updated_since=` | ✅ |
-| c-6c | Mobile: Auto-detect | `NetworkProbe`, `AppConfig.resolve` | ✅ |
-| c-6d-fix | Mobile: ScanWindow | 220×220 (native не работает, corners) | ✅ |
-| c-6d-fix-3 | Mobile: Landscape-fix | swap effectiveSize | ✅ |
-| c-6g | Mobile: NetworkStatusProvider | heartbeat `/health/` 10 с + иконка | ✅ |
-| c-6h | Mobile: блок синхронизации | disabled при `!isOnline` / `pendingOffline` | ✅ |
-| c-6g-login | Mobile: иконка на Login | `NetworkBadge` в AppBar | ✅ |
-| c-7a | Карточка тары | 3 вкладки + адаптив (портрет / ландшафт) | ✅ |
-| c-7b | Форма шапки | `ContainerEditForm` + `CatalogService` в bottom sheet | ✅ |
-| c-7f | FillContainerContent | диапазоны, skip/selected, удаление | ✅ |
-| c-7g | Вкладка «Пробы» | поиск, чекбоксы, bulk, чипы, `SampleEditDialog` | ✅ |
-| c-7h | История сканов | `Н/З · ТИ · номер` (`ScanHistoryEntry`) | ✅ |
+| c-6b | Инкр. Pull (backend) | `?updated_since=` | ✅ |
+| c-6c | Auto-detect сети | `NetworkProbe`, `AppConfig.resolve` | ✅ |
+| c-6d-fix | ScanWindow | 220×220 | ✅ |
+| c-6d-fix-3 | Landscape-fix | swap effectiveSize | ✅ |
+| c-6g | `NetworkStatusProvider` | heartbeat 10 с + `NetworkBadge` | ✅ |
+| c-6g-tap-ping | Тап на иконке → `pingNow()` | быстрый реконект | ✅ |
+| c-6h | Блок синхронизации | disabled при офлайне | ✅ |
+| c-6g-login | Иконка на Login | `NetworkBadge` | ✅ |
+| c-7a | Карточка тары | 3 вкладки + адаптив | ✅ |
+| c-7b | Форма шапки | `ContainerEditForm` | ✅ |
+| c-7f | FillContainerContent | диапазоны, skip/selected | ✅ |
+| c-7g | Вкладка «Пробы» | поиск, bulk, `SampleEditDialog` | ✅ |
+| c-7h | История сканов | `Н/З · ТИ · номер` | ✅ |
 | c-7d | PDF предпросмотр (online) | `ApiClient.download` + `open_filex` | ✅ |
-| c-7f-1 | Offline-PDF: подготовка | ассеты `pdf`, `qr`, `DejaVuSans.ttf`, `LabelData` | ✅ |
-| c-7f-2 | Offline-PDF: рендер на Dart | `pw.Text`, `pw.BarcodeWidget`, галочка `CustomPaint` | ✅ |
-| c-7c | Разместить / Местоположение | `PlaceContainerDialog` (каскад), `bulk-place`, offline-place через `sync_queue`, `ContainerLocationDialog` | ✅ |
-| c-7-offline-catalog | Кэш справочников офлайн | SQLite `catalog` (v5), `CatalogDao`, Pull + fallback в `CatalogService` | ✅ |
-| c-7e-1 | Fix `SampleService` офлайн | `fetchByContainerId` — пустой кэш не ошибка | ✅ |
-| c-7e-2 | Кэш истории тары | SQLite v6, `ContainerHistoryDao`, `fetchHistory` fallback | ✅ |
-| c-7e-3 | Pre-fetch истории в Pull | `SyncService.pullAll` — история всех тар | ✅ |
-| c-8-catalog-create | Создание справочников с мобилки | UI + `CatalogService.create` через `sync_queue` | ⬜ **следующий** |
+| c-7f-1 | Offline-PDF: подготовка | ассеты, `LabelData` | ✅ |
+| c-7f-2 | Offline-PDF: рендер | `pw.Text`, `pw.BarcodeWidget` | ✅ |
+| c-7c | Разместить / Местоположение | `PlaceContainerDialog`, offline через `sync_queue` | ✅ |
+| c-7-offline-catalog | Кэш справочников | SQLite v5, `CatalogDao` | ✅ |
+| c-7e-1 | Fix `SampleService` офлайн | пустой кэш не ошибка | ✅ |
+| c-7e-2 | Кэш истории тары | SQLite v6, `ContainerHistoryDao` | ✅ |
+| c-7e-3 | Pre-fetch истории в Pull | `SyncService.pullAll` | ✅ |
+| c-9-drawer | Drawer (гамбургер) | разделы как в вебе | ✅ |
+| c-9-container-list | Реестр тары | фильтры, пагинация, офлайн-кэш | ✅ |
+| c-9-container-list-order | Порядок в карточке | Н/З · ТИ крупно, Тип · номер | ✅ |
+| c-9-overflow-fix | Overflow в реестре | `isExpanded`, `Wrap`, адаптив | ✅ |
+| c-9-overflow-fix-2 | Overflow в bulk-статусе | `isExpanded`, отдельная строка | ✅ |
+| c-9-container-create | Создание тары | `CreateContainersDialog`, `bulk-create` | ✅ |
+| c-9-container-list-actions | Кнопка по статусу | Заполнить / Разместить / Местоположение | ✅ |
+| c-9-fill-offline-2a | Офлайн-пробы | `fillSamples` offline, `PENDING_PLACEMENT` | ✅ |
+| c-9-fill-offline-2a-fix | Номер + статус | `updateNumberLocal`, `updateStatusLocal` | ✅ |
+| c-9-fill-offline-2b | Иконка несинхронизированных | SQLite v7 `pending_sync`, `cloud_off` | ✅ |
+| c-9-fill-offline-2c-1 | Инфраструктура edit | `SyncQueueDao.updatePayload`, `_rebuildFillPayload` | ✅ |
+| c-9-fill-offline-2c-2 | `SampleEditDialog` офлайн | read-only номер/справочники | ✅ |
+| c-9-fill-offline-2c-3 | Офлайн серверных проб | `update`/`dispose`/`restore`/`delete` через `sync_queue` | ✅ |
+| c-9-fill-offline-2c-3-fix-1 | Кэш при pending | `fetchByContainerId` отдаёт кэш | ✅ |
+| c-9-fill-offline-2c-3-fix-2 | `_pending_sync` после Push | `onSuccess` в `SyncPusher`, `PushResult` | ✅ |
+| c-9-fill-offline-2c-3-fix-3a | Reconcile при Pull | сброс флагов без записи в queue | ✅ |
+| c-9-fill-offline-2c-3-fix-3b | Счётчик и SnackBar | `refresh()` после офлайн-операций | ✅ |
+| c-9-fill-offline-2c-4 | Edit `sample_number` офлайн | `parseSampleInput` + пересборка | ✅ |
+| c-9-auto-sync | Автосинхронизация | Push + Pull при возврате сети, SnackBar | ✅ |
+| c-9-natural-sort | Natural sort | `TST6701 < TST6710` | ✅ |
+| c-6b-updated-since-pull | `?updated_since=` в Pull | `_lastPullSince`, `PullStats` = изменённые | ✅ |
+| c-8-catalog-create | Создание справочников офлайн | UI + `CatalogService.create` | ⬜ |
 | c-8a | Backend: PATCH статусов | Эндпоинты для `sync_queue` | ⬜ |
-| c-8b | Mobile: Смена статуса тары | `PENDING_FILLING` → `PENDING_PLACEMENT` → `ACTIVE` | ⬜ |
+| c-8b | Mobile: Смена статуса тары | через `sync_queue` | ⬜ |
 | c-8c | Mobile: Смена статуса пробы | `IN_STORAGE` → `SELECTED` → `DISPOSED` | ⬜ |
-| c-8d | Mobile: Размещение тары | В ячейку / на пол через `sync_queue` | ✅ (закрыто в `c-7c`) |
+| c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) |
 | c-8e | Mobile: Auto-sync USB | Push → Pull, автотриггер | ⬜ |
-| c-5 | Файловая синхронизация | Sneakernet через флешку (`.json.gz`) | ⏸ отложено |
+| c-5 | Файловая синхронизация | Sneakernet через флешку | ⏸ отложено |
 
 **Сборка на рабочем ПК:** `work-pc-setup/setup.ps1` (обязателен после `git reset --hard`), `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`, `flutter run --android-skip-build-dependency-validation`, `adb reverse` вручную.
 
@@ -111,18 +133,26 @@
 - [ ] **PostGIS** для координат скважин.
 - [ ] **Карта склада** в mobile.
 - [ ] **Экспорт отчётов** в Excel/CSV/PDF.
-- [x] **Офлайн-режим mobile** — `c-1`..`c-4.6`, `c-6a`..`c-6h`, `c-7a`..`c-7h`.
-- [x] **PDF предпросмотр mobile** — `c-7d` (online), `c-7f-1` + `c-7f-2` (offline).
-- [x] **Разместить в mobile** — `c-7c` (онлайн + офлайн через `sync_queue`).
-- [x] **Кэш справочников в mobile** — `c-7-offline-catalog` (1.93).
-- [x] **Кэш истории тары в mobile** — `c-7e-2` + `c-7e-3` (pre-fetch в Pull, 1.93).
-- [ ] **Создание справочников с мобилки** — `c-8-catalog-create`.
+- [x] **Офлайн-режим mobile** — `c-1`..`c-9-auto-sync`.
+- [x] **PDF предпросмотр mobile** — `c-7d`, `c-7f-1`, `c-7f-2`.
+- [x] **Разместить в mobile** — `c-7c`.
+- [x] **Кэш справочников в mobile** — `c-7-offline-catalog`.
+- [x] **Кэш истории тары в mobile** — `c-7e-2`, `c-7e-3`.
+- [x] **Реестр тары в mobile** — `c-9-container-list` + `c-9-container-list-actions`.
+- [x] **Создание тары в mobile (онлайн)** — `c-9-container-create`.
+- [x] **Офлайн-редактирование проб** — `c-9-fill-offline-2c-1..2c-4`.
+- [x] **Автосинхронизация** — `c-9-auto-sync`.
+- [x] **Natural sort проб** — `c-9-natural-sort`.
+- [x] **Инкрементальный Pull** — `c-6b-updated-since-pull`.
+- [x] **Тап-пинг сети** — `c-6g-tap-ping`.
+- [ ] **Создание справочников офлайн** — `c-8-catalog-create`.
+- [ ] **Офлайн-создание тары** — `c-2d-2` (bulk-create + negative ID).
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
 - [ ] **Роли и права** детализированные.
 - [ ] **Дашборд с виджетами** под каждую роль.
 - [ ] **Помощник по сортировке** — bin packing.
 - [ ] **Логика керна**.
-- [ ] **Загрузка файлов**: MEDIA_ROOT, валидация размера.
+- [ ] **Загрузка файлов**: MEDIA_ROOT.
 - [ ] **Сопроводительный документ** при печати партии.
 - [x] **Акт приёмки** (PDF).
 - [ ] **Печать на A5**.
@@ -147,12 +177,12 @@
 | ТД-34 | Web: `console.error` в catch | низкий | при доработке UI |
 | ТД-37 | `TopologyPage` — N+1 в `CellPalletChip` | низкий | если ячеек >30 |
 | ТД-38 | UI-защита удаления (CASCADE vs PROTECT) | средний | до продакшена |
-| ТД-42 | `work-pc-setup/setup.ps1` — обновить при смене Gradle/AGP | средний | при обновлении Flutter |
+| ТД-42 | `setup.ps1` — обновить при смене Gradle/AGP | средний | при обновлении Flutter |
 | ТД-43 | Offline-токен: таймер истечения на мобилке | низкий | UX-полировка |
 | ТД-44 | AGP 8.11.1 / Kotlin 2.2.20 — deprecated, апгрейд | низкий | когда Flutter потребует |
 | ТД-45 | `c-5` файловая синхронизация (sneakernet) | средний | если понадобится |
 | ТД-46 | Денормализация сериализаторов | высокий | ✅ `c-6a` |
-| ТД-47 | Инкрементальный Pull (`updated_since`) | высокий | ✅ `c-6b` |
+| ТД-47 | Инкрементальный Pull (`updated_since`) | высокий | ✅ `c-6b` + `c-6b-updated-since-pull` |
 | ТД-48 | Auto-detect сети (health-пинг) | высокий | ✅ `c-6c` |
 | ТД-49 | Offline-печать этикеток (Dart PDF) | высокий | ✅ `c-7f-1` + `c-7f-2` |
 | ТД-50 | `setup.ps1` — не пишет `\n` в конец файлов и BOM в `source.properties` | средний | при следующей правке `setup.ps1` |
@@ -163,9 +193,12 @@
 | ТД-55 | В `c-7b-fix` и `c-7h-fix-2` — дозакоммит недостающих файлов. В `CONTEXT` §«Mobile» — правило: перед `git add` — `git status --short \| grep "mobile/lib"` | ✅ | 1.90 |
 | ТД-56 | Синхронизация констант `label_service.py` ↔ `label_pdf_generator.dart` (порт 1:1). При изменении серверного рендера — править оба | средний | при первом изменении серверного рендера |
 | ТД-57 | Offline-place: `SyncPusher` отправляет очередь по одной операции; при массовом офлайне — батчинг | низкий | при жалобах на скорость синхронизации |
-| ТД-58 | Pull больших справочников (сотни ячеек) — батчинг / пагинация в одном запросе | низкий | при жалобах на скорость Sync |
-| ТД-59 | Pull истории всех тар = N запросов (N = число тар). Backend batch-эндпоинт `GET /audit-logs/?entity_type=Container&updated_since=…` | средний | когда тар станет сотни/тысячи |
-| ТД-60 | Offline-справочники: если сервер не отдал поле-родителя в JSON, `catalogParentId` = null, офлайн-каскад по родителю пустой. Проверить на реальных данных | низкий | при первом баг-репорте офлайн-каскада |
+| ТД-58 | Pull больших справочников (сотни ячеек) — батчинг / пагинация | низкий | при жалобах на скорость Sync |
+| ТД-59 | Pull истории = N запросов. Backend batch-эндпоинт `GET /audit-logs/?entity_type=Container&updated_since=…` | средний | когда тар станет сотни/тысячи |
+| ТД-60 | Offline-справочники: если сервер не отдал поле-родителя в JSON, `catalogParentId` = null, офлайн-каскад пустой | низкий | при первом баг-репорте офлайн-каскада |
+| ТД-61 | UI-проверка overflow после `c-9-overflow-fix-4` (3.5 px, 7.2 px) — не воспроизвелось; следить при новых экранах | низкий | при следующем overflow |
+| ТД-62 | `SyncProvider._lastPullSince` в памяти. При перезапуске приложения — полный Pull. Персистить (`shared_preferences`) | низкий | при жалобах на «первый Pull долго» |
+| ТД-63 | Mobile: `SampleDao.getByContainerId` сортирует после декодирования JSON (naturalCompare). Для больших тар — natural sort в SQL | низкий | при жалобах на скорость |
 
 ---
 
