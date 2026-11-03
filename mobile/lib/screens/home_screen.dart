@@ -1,12 +1,7 @@
-/// Главный экран (c-6g + c-7h + c-9-drawer + c-9-container-list).
+/// Главный экран (c-6g + c-7h + c-9-drawer + c-9-container-list + c-9-fill-offline-2c-3-fix-3b).
 ///
-/// Drawer (гамбургер) — разделы как в вебе:
-/// - рабочие: Главная, Тара;
-/// - заглушки: Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники;
-/// - Выход.
-///
-/// Сканер и Синхронизация — кнопками на Главной.
-/// Импорт Excel не планируется. Актуализация — позже.
+/// c-9-fill-offline-2c-3-fix-3b: в офлайне счётчик показывается в скобках
+/// («Синхронизация (3, нет связи)») и `Badge` поверх `cloud_off`.
 library;
 
 import 'package:flutter/material.dart';
@@ -177,25 +172,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 final tooltip = auth.isPendingOffline
                     ? 'Временный доступ: синхронизация недоступна'
                     : (!net.isOnline
-                          ? 'Нет связи с сервером'
+                          ? (total > 0
+                                ? '$total изменений ждут синхронизации'
+                                : 'Нет связи с сервером')
                           : 'Открыть экран синхронизации');
 
                 return Tooltip(
                   message: tooltip,
                   child: OutlinedButton.icon(
                     onPressed: blocked ? null : _openSync,
-                    icon: blocked
-                        ? const Icon(Icons.cloud_off)
-                        : Badge(
-                            isLabelVisible: total > 0,
-                            label: Text('$total'),
-                            child: const Icon(Icons.sync),
-                          ),
+                    icon: Badge(
+                      isLabelVisible: total > 0,
+                      label: Text('$total'),
+                      child: Icon(blocked ? Icons.cloud_off : Icons.sync),
+                    ),
                     label: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
                         blocked
-                            ? 'Синхронизация (нет связи)'
+                            ? (total > 0
+                                  ? 'Синхронизация ($total, нет связи)'
+                                  : 'Синхронизация (нет связи)')
                             : (total > 0
                                   ? 'Синхронизация ($total)'
                                   : 'Синхронизация'),
@@ -274,7 +271,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Divider(),
 
-          // ----- Рабочие разделы -----
           ListTile(
             leading: const Icon(Icons.inventory_2_outlined),
             title: const Text('Тара'),
@@ -284,7 +280,6 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
 
-          // ----- Заглушки (как в вебе) -----
           _drawerStub(context, Icons.science_outlined, 'Пробы'),
           _drawerStub(context, Icons.assignment_outlined, 'Наряд-заказы'),
           _drawerStub(context, Icons.move_to_inbox_outlined, 'Приёмка'),

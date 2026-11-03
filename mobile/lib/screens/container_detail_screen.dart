@@ -1,7 +1,7 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b).
 ///
-/// c-9-fill-offline-2c-3: `cloud_off` показывается для `sample.needsSync`
-/// (офлайн-проба `id < 0` или серверная с `_pending_sync`).
+/// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций (bulk-статус, place)
+/// — `SyncProvider.refresh()`, чтобы счётчик обновился.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -17,6 +17,7 @@ import '../models/container.dart';
 import '../models/container_history_entry.dart';
 import '../models/label_data.dart';
 import '../models/sample.dart';
+import '../providers/sync_provider.dart';
 import '../services/api_client.dart';
 import '../services/container_service.dart';
 import '../services/label_service.dart';
@@ -72,6 +73,11 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  void _refreshSync() {
+    if (!mounted) return;
+    context.read<SyncProvider>().refresh();
   }
 
   Future<void> _loadSamples() async {
@@ -223,6 +229,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       _selectedIds.clear();
       _bulkStatus = null;
     });
+    if (queued > 0) _refreshSync();
     if (failed.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось обновить ${failed.length} проб')),
@@ -307,6 +314,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     if (outcome == null || !mounted) return;
 
     if (outcome == PlaceOutcome.queued) {
+      _refreshSync();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Размещение сохранено. Отправится при синхронизации.'),
@@ -857,8 +865,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
-  /// c-9-fill-offline-2c-3: `cloud_off` для `sample.needsSync`
-  /// (офлайн-проба `id < 0` или серверная с `pendingSync`).
   Widget _sampleTile(BuildContext context, Sample sample, int num) {
     final theme = Theme.of(context);
     final selected = _selectedIds.contains(sample.id);
