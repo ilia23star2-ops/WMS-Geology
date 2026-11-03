@@ -1,9 +1,7 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b + 2c-2).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3).
 ///
-/// c-9-fill-offline-2b: `pendingSync` тары → строка «Синхронизация:
-/// Не синхронизировано».
-/// c-9-fill-offline-2c-2: офлайн-проба (`isOfflinePending`) → иконка
-/// `cloud_off` в `_sampleTile`; `SampleEditDialog` получает `containerId`.
+/// c-9-fill-offline-2c-3: `cloud_off` показывается для `sample.needsSync`
+/// (офлайн-проба `id < 0` или серверная с `_pending_sync`).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -208,9 +206,13 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     setState(() => _bulkLoading = true);
     final service = context.read<SampleService>();
     final failed = <int>[];
+    var queued = 0;
     for (final id in _selectedIds) {
       try {
-        await service.update(id, {'status': sampleStatusToApi(_bulkStatus!)});
+        final outcome = await service.update(id, {
+          'status': sampleStatusToApi(_bulkStatus!),
+        }, containerId: _container.id);
+        if (outcome == OnlineOutcome.queued) queued++;
       } catch (_) {
         failed.add(id);
       }
@@ -224,6 +226,15 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     if (failed.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось обновить ${failed.length} проб')),
+      );
+    }
+    if (queued > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$queued проб изменены офлайн. Отправится при синхронизации.',
+          ),
+        ),
       );
     }
     await _loadSamples();
@@ -846,7 +857,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
-  /// c-9-fill-offline-2c-2: у офлайн-пробы — `cloud_off` рядом со статусом.
+  /// c-9-fill-offline-2c-3: `cloud_off` для `sample.needsSync`
+  /// (офлайн-проба `id < 0` или серверная с `pendingSync`).
   Widget _sampleTile(BuildContext context, Sample sample, int num) {
     final theme = Theme.of(context);
     final selected = _selectedIds.contains(sample.id);
@@ -882,7 +894,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             ),
             const SizedBox(width: 8),
             SampleStatusChip(status: sample.status),
-            if (sample.isOfflinePending) ...[
+            if (sample.needsSync) ...[
               const SizedBox(width: 4),
               const Tooltip(
                 message: 'Не синхронизировано',
