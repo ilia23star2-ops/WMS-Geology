@@ -1,7 +1,10 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3).
 ///
 /// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций (bulk-статус, place)
 /// — `SyncProvider.refresh()`, чтобы счётчик обновился.
+///
+/// c-2d-2a-fix-3: `_loadHistory` не ходит на сервер при `id < 0` —
+/// у локальной тары истории нет (404 ожидаем, но не как ошибка).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -105,6 +108,15 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   }
 
   Future<void> _loadHistory() async {
+    // c-2d-2a-fix-3: у локальной тары истории нет — не ходим на сервер.
+    if (_container.id < 0) {
+      setState(() {
+        _history = const [];
+        _historyLoading = false;
+        _historyError = null;
+      });
+      return;
+    }
     setState(() {
       _historyLoading = true;
       _historyError = null;
@@ -969,13 +981,17 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
 
     final entries = _history ?? const <ContainerHistoryEntry>[];
     if (entries.isEmpty) {
+      // c-2d-2a-fix-3: для локальной тары истории нет — поясняем.
+      final message = _container.id < 0
+          ? 'История появится после синхронизации.'
+          : 'История пуста.';
       return ListView(
         padding: const EdgeInsets.all(16),
-        children: const [
+        children: [
           Card(
             child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('История пуста.'),
+              padding: const EdgeInsets.all(16),
+              child: Text(message),
             ),
           ),
         ],

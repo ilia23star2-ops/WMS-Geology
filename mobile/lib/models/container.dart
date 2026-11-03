@@ -5,6 +5,9 @@
 /// c-9-fill-offline-2b: `pendingSync` — есть несинхронизированные локальные
 /// изменения (офлайн-филл / офлайн-размещение). В реестре и шапке
 /// показывается иконка `cloud_off`. Сбрасывается при `Pull` (`saveAll`).
+///
+/// c-2d-2a-fix-3: `fromJson` устойчив к локальному формату
+/// (`container_type_id` / `draft_site_id` / `draft_research_type_id`).
 library;
 
 enum ContainerStatus {
@@ -99,18 +102,15 @@ class Container {
   /// c-9-fill-offline-2b: есть несинхронизированные локальные изменения.
   final bool pendingSync;
 
-  /// Отображаемое имя тары: номер или «Черновик #ID».
   String get displayName =>
       (containerNumber != null && containerNumber!.isNotEmpty)
       ? containerNumber!
       : 'Черновик #$id';
 
-  /// Отображаемая метка статуса.
   String get statusLabel =>
       containerStatusLabels[status] ??
       containerStatusLabels[ContainerStatus.unknown]!;
 
-  /// Локация одной строкой: адрес ячейки, иначе пол, иначе «не указано».
   String get locationLabel {
     if (cellFullAddress != null && cellFullAddress!.isNotEmpty) {
       return cellFullAddress!;
@@ -124,10 +124,17 @@ class Container {
   bool get isInPrintBatch => printBatchStatus != null;
 
   factory Container.fromJson(Map<String, dynamic> json) {
+    // c-2d-2a-fix-3: fallback на *_id для локальных записей.
+    // cast через `as int?` + `?? 0` — не падаем, если поля нет.
+    final typeId = (json['container_type'] ?? json['container_type_id']);
+    final draftSite = (json['draft_site'] ?? json['draft_site_id']);
+    final draftRt =
+        (json['draft_research_type'] ?? json['draft_research_type_id']);
+
     return Container(
       id: json['id'] as int,
       containerNumber: json['container_number'] as String?,
-      containerType: json['container_type'] as int,
+      containerType: (typeId as int?) ?? 0,
       containerTypeName: json['container_type_name'] as String?,
       qrCode: json['qr_code'] as String?,
       pallet: json['pallet'] as int?,
@@ -139,9 +146,9 @@ class Container {
       status: _parseStatus(json['status'] as String?),
       comment: json['comment'] as String? ?? '',
       commentTemplateText: json['comment_template_text'] as String?,
-      draftSiteId: json['draft_site'] as int?,
+      draftSiteId: draftSite as int?,
       draftSiteName: json['draft_site_name'] as String?,
-      draftResearchTypeId: json['draft_research_type'] as int?,
+      draftResearchTypeId: draftRt as int?,
       draftResearchTypeName: json['draft_research_type_name'] as String?,
       draftWorkOrderCoded: json['draft_work_order_coded'] as String? ?? '',
       draftWorkOrderIncoming:

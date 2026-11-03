@@ -1,5 +1,7 @@
-/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b).
+/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b, c-2d-2).
 library;
+
+import 'dart:convert';
 
 import '../db/container_dao.dart';
 import '../db/container_history_dao.dart';
@@ -9,6 +11,13 @@ import '../models/container_history_entry.dart';
 import 'api_client.dart';
 
 enum PlaceOutcome { online, queued }
+
+/// c-2d-2: результат `bulkCreate`.
+class BulkCreateResult {
+  const BulkCreateResult({required this.count, required this.queued});
+  final int count;
+  final bool queued;
+}
 
 class ContainersPage {
   const ContainersPage({required this.count, required this.items});
@@ -20,6 +29,7 @@ typedef EnqueuePlace = Future<void> Function({
   required String action,
   required String endpoint,
   required Map<String, dynamic> payload,
+  String? localRef,
 });
 typedef SaveHistory = Future<void> Function(
   int containerId,
@@ -57,11 +67,13 @@ class ContainerService {
     required String action,
     required String endpoint,
     required Map<String, dynamic> payload,
+    String? localRef,
   }) {
     return SyncQueueDao.enqueue(
       action: action,
       endpoint: endpoint,
       payload: payload,
+      localRef: localRef,
     );
   }
 
@@ -174,7 +186,12 @@ class ContainerService {
     }
   }
 
-  Future<int> bulkCreate({
+  /// c-2d-2: офлайн-создание тары.
+  ///
+  /// Локальный JSON — **в серверном формате** (`container_type`,
+  /// `draft_site`, `draft_research_type`), иначе `Container.fromJson`
+  /// падает на `as int` из-за отсутствия полей.
+  Future<BulkCreateResult> bulkCreate({
     required List<Map<String, dynamic>> containers,
     int? draftSiteId,
     int? draftResearchTypeId,
@@ -189,18 +206,75 @@ class ContainerService {
       'draft_work_order_coded': draftWorkOrderCoded,
       'draft_work_order_incoming': draftWorkOrderIncoming,
     };
-    final response = await _client.post<Map<String, dynamic>>(
-      '/storage/containers/bulk-create/',
-      data: body,
-    );
-    final data = response.data;
-    if (data == null) {
-      throw ApiException(
-        message: 'Пустой ответ от сервера при создании тары.',
-        statusCode: response.statusCode,
+
+    try {
+      final response = await _client.post<Map<String, dynamic>>(
+        '/storage/containers/bulk-create/',
+        data: body,
       );
+      final data = response.data;
+      if (data == null) {
+        throw ApiException(
+          message: 'Пустой ответ от сервера при создании тары.',
+          statusCode: response.statusCode,
+        );
+      }
+      final count = (data['total_containers'] as int?) ?? 0;
+      return BulkCreateResult(count: count, queued: false);
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+
+      // Офлайн-режим: negative ID + локальный кэш + очередь.
+      final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final localIds = <int>[];
+      final localContainers = <Map<String, dynamic>>[];
+      final createdAt = DateTime.now().toUtc().toIso8601String();
+
+      for (var i = 0; i < containers.length; i++) {
+        final id = -(now + i); // Уникальный negative ID
+        localIds.add(id);
+
+        // Берём `container_type_id` из входа, но пишем в серверное имя
+        // `container_type` — иначе `Container.fromJson` упадёт.
+        final typeId = containers[i]['container_type_id'];
+        final number = containers[i]['container_number'] as String?;
+
+        final containerData = <String, dynamic>{
+          'id': id,
+          'container_type': typeId,
+          'container_number': number,
+          'status': 'PENDING_FILLING',
+          'draft_site': draftSiteId,
+          'draft_research_type': draftResearchTypeId,
+          'draft_work_order_coded': draftWorkOrderCoded,
+          'draft_work_order_incoming': draftWorkOrderIncoming,
+          'comment': '',
+          'created_at': createdAt,
+          'updated_at': createdAt,
+        };
+        localContainers.add(containerData);
+      }
+
+      await ContainerDao.saveAll(localContainers);
+
+      // pending_sync = 1 → иконка `cloud_off` до успешного Push.
+      for (final id in localIds) {
+        try {
+          await _setPendingSync(id, true);
+        } catch (_) {
+          // Кэш не критичен.
+        }
+      }
+
+      await _enqueue(
+        action: 'POST',
+        endpoint: '/storage/containers/bulk-create/',
+        payload: body,
+        localRef: jsonEncode(localIds),
+      );
+
+      return BulkCreateResult(count: localIds.length, queued: true);
     }
-    return (data['total_containers'] as int?) ?? 0;
   }
 
   Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {

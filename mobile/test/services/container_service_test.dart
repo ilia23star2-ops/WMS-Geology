@@ -1,4 +1,4 @@
-/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create).
+/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create, c-2d-2).
 library;
 
 import 'package:dio/dio.dart';
@@ -69,6 +69,7 @@ void main() {
               required String action,
               required String endpoint,
               required Map<String, dynamic> payload,
+              String? localRef,
             }) async {
               enqueued.add(_EnqueueCall(action, endpoint, payload));
             },
@@ -332,7 +333,7 @@ void main() {
     });
   });
 
-  group('ContainerService.bulkCreate (c-9-container-create)', () {
+  group('ContainerService.bulkCreate (c-9-container-create + c-2d-2)', () {
     late _MockApi client;
 
     setUp(() {
@@ -341,9 +342,9 @@ void main() {
 
     ContainerService createService() => ContainerService(client);
 
-    test('POST /storage/containers/bulk-create/, возвращает total', () async {
+    test('онлайн: POST .../bulk-create/, count + queued=false', () async {
       client.postData = {'total_containers': 3, 'created_containers': []};
-      final total = await createService().bulkCreate(
+      final result = await createService().bulkCreate(
         containers: [
           {'container_type_id': 5},
           {'container_type_id': 5},
@@ -355,7 +356,8 @@ void main() {
         draftWorkOrderIncoming: '02-Тест001',
       );
 
-      expect(total, 3);
+      expect(result.count, 3);
+      expect(result.queued, isFalse);
       expect(client.postCalls.length, 1);
       expect(client.postCalls.first.key, '/storage/containers/bulk-create/');
       expect(client.postCalls.first.value, {

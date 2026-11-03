@@ -1,8 +1,10 @@
-/// Диалог создания тары-заготовок (c-9-container-create + c-8-catalog-create).
+/// Диалог создания тары-заготовок (c-9-container-create + c-8-catalog-create + c-2d-2).
 ///
 /// Рядом с dropdown'ами `site`, `research_type`, `container_type` — кнопка «+».
 /// Открывает `CatalogCreateDialog`, после успеха — перезагружает справочники
 /// и выбирает созданный элемент.
+///
+/// c-2d-2: поддержка офлайн-создания (SnackBar зависит от `queued`).
 library;
 
 import 'package:flutter/material.dart';
@@ -145,7 +147,7 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
         n,
         (_) => {'container_type_id': containerTypeId},
       );
-      final total = await service.bulkCreate(
+      final result = await service.bulkCreate(
         containers: containers,
         draftSiteId: _siteId,
         draftResearchTypeId: _researchTypeId,
@@ -153,7 +155,14 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
         draftWorkOrderIncoming: incoming,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(total);
+
+      final msg = result.queued
+          ? 'Создано тар: ${result.count} (офлайн, синхронизация при '
+                'наличии связи)'
+          : 'Создано тар: ${result.count}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+      Navigator.of(context).pop(result.count);
     } catch (e) {
       if (!mounted) return;
       setState(() {
