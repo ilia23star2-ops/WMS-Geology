@@ -1,4 +1,4 @@
-/// Статус сети с периодическим ping `/health/` (c-6g).
+/// Статус сети с периодическим ping `/health/` (c-6g, c-6g-tap-ping).
 ///
 /// Упрощённая версия откаченного `NetworkMonitor`:
 /// - Timer.periodic (10 с) пингует `/health/` текущего `AppConfig.apiHost`.
@@ -7,8 +7,10 @@
 ///   `AuthGate`, чтобы обновить `ApiClient.dio.options.baseUrl`).
 /// - При `--dart-define=API_HOST` — только статус, без swap.
 ///
-/// Без `WidgetsBindingObserver` (lifecycle) — минимальные зависимости,
-/// не провоцирует антивирус.
+/// c-6g-tap-ping: `pingNow()` — публичный метод для кнопки на иконке
+/// `NetworkBadge` (быстрый реконект без ожидания 10-сек heartbeat).
+///
+/// Без `WidgetsBindingObserver` (lifecycle) — минимальные зависимости.
 library;
 
 import 'dart:async';
@@ -60,8 +62,8 @@ class NetworkStatusProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Один цикл проверки. Публично — для тестов и кнопки «Обновить».
-  @visibleForTesting
+  /// Один цикл проверки. Публично — для тестов и для кнопки на
+  /// `NetworkBadge` (быстрый реконект без ожидания 10-сек heartbeat).
   Future<void> pingNow() => _ping();
 
   Future<void> _ping() async {
