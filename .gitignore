@@ -137,3 +137,6 @@ work-pc-setup/
 
 # Gradle daemon JVM — машинно-зависимое, настраивается через ~/.gradle/gradle.properties
 mobile/android/gradle/gradle-daemon-jvm.properties
+
+# машинные каталоги рабочего ПК (CONTEXT.md §Mobile)
+tools/
