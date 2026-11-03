@@ -1,12 +1,12 @@
-/// Модель пробы (c-1, c-7a, c-7g, c-9-fill-samples-offline).
+/// Модель пробы (c-1, c-7a, c-7g, c-9-fill-offline-2a, -2c-1, -2c-2, -2c-3).
 ///
 /// Проба = навеска. Номер не уникален.
-/// c-7g: расширено — ID FK для справочников (`researchTypeId`, `siteId`),
-/// `wellName`, `disposedAt`, `disposalReason`, `containerNumber`.
 ///
-/// c-9-fill-samples-offline: `isOfflinePending` — проба создана офлайн
-/// (`id < 0`), на сервер ещё не ушла. В UI помечается «офлайн», edit/delete
-/// запрещены до синхронизации.
+/// c-9-fill-offline-2c-3:
+/// - `isOfflinePending` — `id < 0`, создана офлайн.
+/// - `pendingSync` — есть несинхронизированные изменения (серверная проба,
+///   правленная офлайн). Сбрасывается при Pull, если сервер вернул версию
+///   без изменений.
 library;
 
 enum SampleStatus {
@@ -48,7 +48,7 @@ SampleStatus _parseStatus(String? raw) {
   }
 }
 
-/// Обратное преобразование: enum → строка API. Для PATCH /samples/{id}/.
+/// Обратное преобразование: enum → строка API.
 String sampleStatusToApi(SampleStatus status) {
   switch (status) {
     case SampleStatus.inStorage:
@@ -81,6 +81,7 @@ class Sample {
     this.containerNumber,
     this.disposedAt,
     this.disposalReason,
+    this.pendingSync = false,
   });
 
   final int id;
@@ -96,13 +97,19 @@ class Sample {
   final DateTime? disposedAt;
   final String? disposalReason;
 
+  /// c-9-fill-offline-2c-3: серверная проба с офлайн-правками
+  /// (status / dispose / restore), ещё не ушедшими на сервер.
+  final bool pendingSync;
+
   String get statusLabel =>
       sampleStatusLabels[status] ?? sampleStatusLabels[SampleStatus.unknown]!;
 
-  /// c-9-fill-samples-offline: проба создана офлайн (`id < 0`),
-  /// на сервер ещё не ушла. В UI помечается «офлайн», edit/delete
-  /// запрещены до синхронизации.
+  /// Офлайн-проба (создана локально, `id < 0`).
   bool get isOfflinePending => id < 0;
+
+  /// В UI показывать `cloud_off`: либо локальная проба, либо серверная
+  /// с несинхронизированными правками.
+  bool get needsSync => isOfflinePending || pendingSync;
 
   factory Sample.fromJson(Map<String, dynamic> json) {
     return Sample(
@@ -119,9 +126,12 @@ class Sample {
           ? DateTime.tryParse(json['disposed_at'] as String)
           : null,
       disposalReason: json['disposal_reason'] as String?,
+      pendingSync: json['_pending_sync'] as bool? ?? false,
     );
   }
 
   @override
-  String toString() => 'Sample(id: $id, number: $sampleNumber)';
+  String toString() =>
+      'Sample(id: $id, number: $sampleNumber, status: $status, '
+      'pendingSync: $pendingSync)';
 }

@@ -1,4 +1,4 @@
-/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a, -2a-fix, -2b, -2c-1).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-3, -2c-3-fix-1).
 library;
 
 import '../db/container_dao.dart';
@@ -10,10 +10,13 @@ import 'api_client.dart';
 
 enum FillOutcome { online, queued }
 
+enum OnlineOutcome { online, queued }
+
 typedef SaveSamples = Future<void> Function(List<Map<String, dynamic>> raw);
 typedef GetSamplesByContainer = Future<List<Map<String, dynamic>>> Function(
   int containerId,
 );
+typedef HasPendingForContainer = Future<bool> Function(int containerId);
 typedef SaveLocalOffline = Future<void> Function({
   required int containerId,
   required List<Map<String, dynamic>> samples,
@@ -30,6 +33,7 @@ typedef Enqueue = Future<void> Function({
 typedef UpdateContainerNumber = Future<void> Function(int id, String number);
 typedef UpdateContainerStatus = Future<void> Function(int id, String status);
 typedef SetPendingSync = Future<void> Function(int id, bool pending);
+typedef SetPendingSyncLocal = Future<void> Function(int sampleId, bool pending);
 typedef GetLocalNegative = Future<List<Map<String, dynamic>>> Function(
   int containerId,
 );
@@ -48,12 +52,14 @@ class SampleService {
     this._client, {
     SaveSamples? saveSamples,
     GetSamplesByContainer? getCached,
+    HasPendingForContainer? hasPendingForContainer,
     SaveLocalOffline? saveLocalOffline,
     CleanupOffline? cleanupOffline,
     Enqueue? enqueue,
     UpdateContainerNumber? updateContainerNumber,
     UpdateContainerStatus? updateContainerStatus,
     SetPendingSync? setPendingSync,
+    SetPendingSyncLocal? setPendingSyncLocal,
     GetLocalNegative? getLocalNegative,
     UpdateLocalStatus? updateLocalStatus,
     DeleteLocal? deleteLocal,
@@ -61,6 +67,8 @@ class SampleService {
     UpdateQueuePayload? updateQueuePayload,
   }) : _saveSamples = saveSamples ?? SampleDao.saveAll,
        _getCached = getCached ?? SampleDao.getByContainerId,
+       _hasPendingForContainer =
+           hasPendingForContainer ?? SampleDao.hasPendingForContainer,
        _saveLocalOffline = saveLocalOffline ?? _defaultSaveLocal,
        _cleanupOffline = cleanupOffline ?? SampleDao.cleanupAfterPull,
        _enqueue = enqueue ?? _defaultEnqueue,
@@ -69,6 +77,8 @@ class SampleService {
        _updateContainerStatus =
            updateContainerStatus ?? ContainerDao.updateStatusLocal,
        _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync,
+       _setPendingSyncLocal =
+           setPendingSyncLocal ?? SampleDao.setPendingSyncLocal,
        _getLocalNegative =
            getLocalNegative ?? SampleDao.getLocalNegativeByContainer,
        _updateLocalStatus = updateLocalStatus ?? SampleDao.updateLocalStatus,
@@ -80,12 +90,14 @@ class SampleService {
   final ApiClient _client;
   final SaveSamples _saveSamples;
   final GetSamplesByContainer _getCached;
+  final HasPendingForContainer _hasPendingForContainer;
   final SaveLocalOffline _saveLocalOffline;
   final CleanupOffline _cleanupOffline;
   final Enqueue _enqueue;
   final UpdateContainerNumber _updateContainerNumber;
   final UpdateContainerStatus _updateContainerStatus;
   final SetPendingSync _setPendingSync;
+  final SetPendingSyncLocal _setPendingSyncLocal;
   final GetLocalNegative _getLocalNegative;
   final UpdateLocalStatus _updateLocalStatus;
   final DeleteLocal _deleteLocal;
@@ -114,6 +126,12 @@ class SampleService {
     );
   }
 
+  /// c-9-fill-offline-2c-3-fix-1: при онлайн-успехе, если в кэше есть pending —
+  /// вернуть **кэш** (pending + серверные). Иначе — серверные.
+  ///
+  /// Без этого UI показывал серверные данные (старые), хотя в кэше лежали
+  /// офлайн-правки. После возврата сети пользователь видел «изменения
+  /// пропали».
   Future<List<Sample>> fetchByContainerId(int containerId) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
@@ -142,6 +160,12 @@ class SampleService {
             .toSet();
         await _cleanupOffline(containerId, serverNumbers);
       } catch (_) {}
+
+      final hasPending = await _hasPendingForContainer(containerId);
+      if (hasPending) {
+        final cached = await _getCached(containerId);
+        return cached.map(Sample.fromJson).toList();
+      }
 
       return rawList.map(Sample.fromJson).toList();
     } on ApiException catch (e) {
@@ -229,8 +253,142 @@ class SampleService {
     }
   }
 
-  /// c-9-fill-offline-2c-1: обновить `status` локальной пробы (negative ID)
-  /// и пересобрать `sample_groups` в payload очереди.
+  Future<OnlineOutcome> update(
+    int id,
+    Map<String, dynamic> payload, {
+    int? containerId,
+  }) async {
+    final endpoint = '/samples/$id/';
+    try {
+      await _client.patch<Map<String, dynamic>>(endpoint, data: payload);
+      return OnlineOutcome.online;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      if (id < 0) {
+        if (containerId == null) {
+          throw ArgumentError('update: containerId обязателен для id < 0');
+        }
+        final status = payload['status'] as String?;
+        if (status != null) {
+          await updateLocalOffline(
+            id,
+            containerId: containerId,
+            status: _parseSampleStatus(status),
+          );
+        }
+        return OnlineOutcome.queued;
+      }
+      await _enqueue(action: 'PATCH', endpoint: endpoint, payload: payload);
+      await _updateLocalStatus(
+        id,
+        payload['status'] as String? ?? 'PENDING_PLACEMENT',
+      );
+      await _setPendingSyncLocal(id, true);
+      if (containerId != null) {
+        try {
+          await _setPendingSync(containerId, true);
+        } catch (_) {}
+      }
+      return OnlineOutcome.queued;
+    }
+  }
+
+  Future<OnlineOutcome> dispose(
+    int id, {
+    String reason = '',
+    int? containerId,
+  }) async {
+    final endpoint = '/samples/$id/dispose/';
+    try {
+      await _client.post<Map<String, dynamic>>(
+        endpoint,
+        data: {'disposal_reason': reason},
+      );
+      return OnlineOutcome.online;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      if (id < 0) {
+        if (containerId == null) {
+          throw ArgumentError('dispose: containerId обязателен для id < 0');
+        }
+        await updateLocalOffline(
+          id,
+          containerId: containerId,
+          status: SampleStatus.disposed,
+        );
+        return OnlineOutcome.queued;
+      }
+      await _enqueue(
+        action: 'POST',
+        endpoint: endpoint,
+        payload: {'disposal_reason': reason},
+      );
+      await _updateLocalStatus(id, 'DISPOSED');
+      await _setPendingSyncLocal(id, true);
+      if (containerId != null) {
+        try {
+          await _setPendingSync(containerId, true);
+        } catch (_) {}
+      }
+      return OnlineOutcome.queued;
+    }
+  }
+
+  Future<OnlineOutcome> restore(int id, {int? containerId}) async {
+    final endpoint = '/samples/$id/restore/';
+    try {
+      await _client.post<Map<String, dynamic>>(endpoint, data: const {});
+      return OnlineOutcome.online;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      if (id < 0) {
+        if (containerId == null) {
+          throw ArgumentError('restore: containerId обязателен для id < 0');
+        }
+        await updateLocalOffline(
+          id,
+          containerId: containerId,
+          status: SampleStatus.pendingPlacement,
+        );
+        return OnlineOutcome.queued;
+      }
+      await _enqueue(action: 'POST', endpoint: endpoint, payload: const {});
+      await _updateLocalStatus(id, 'IN_STORAGE');
+      await _setPendingSyncLocal(id, true);
+      if (containerId != null) {
+        try {
+          await _setPendingSync(containerId, true);
+        } catch (_) {}
+      }
+      return OnlineOutcome.queued;
+    }
+  }
+
+  Future<OnlineOutcome> deleteSample(int id, {int? containerId}) async {
+    if (id < 0) {
+      await _deleteLocal(id);
+      if (containerId != null) {
+        await _rebuildFillPayload(containerId);
+      }
+      return OnlineOutcome.online;
+    }
+    final endpoint = '/samples/$id/';
+    try {
+      await _client.delete<dynamic>(endpoint);
+      return OnlineOutcome.online;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      await _enqueue(action: 'DELETE', endpoint: endpoint, payload: const {});
+      await _deleteLocal(id);
+      if (containerId != null) {
+        try {
+          await _setPendingSync(containerId, true);
+        } catch (_) {}
+      }
+      return OnlineOutcome.queued;
+    }
+  }
+
   Future<void> updateLocalOffline(
     int sampleId, {
     required int containerId,
@@ -240,8 +398,6 @@ class SampleService {
     await _rebuildFillPayload(containerId);
   }
 
-  /// c-9-fill-offline-2c-1: удалить локальную пробу (negative ID) и
-  /// пересобрать `sample_groups` в payload очереди.
   Future<void> deleteLocalOffline(
     int sampleId, {
     required int containerId,
@@ -346,56 +502,22 @@ class SampleService {
     return result;
   }
 
-  Future<void> deleteSample(int sampleId) async {
-    if (sampleId < 0) {
-      await _deleteLocal(sampleId);
-      return;
+  SampleStatus _parseSampleStatus(String raw) {
+    switch (raw) {
+      case 'IN_STORAGE':
+        return SampleStatus.inStorage;
+      case 'IN_TRANSIT':
+        return SampleStatus.inTransit;
+      case 'CONSUMED':
+        return SampleStatus.consumed;
+      case 'DISPOSED':
+        return SampleStatus.disposed;
+      case 'PENDING_PLACEMENT':
+        return SampleStatus.pendingPlacement;
+      case 'SELECTED':
+        return SampleStatus.selected;
+      default:
+        return SampleStatus.unknown;
     }
-    await _client.delete<dynamic>('/samples/$sampleId/');
-  }
-
-  Future<Sample> update(int id, Map<String, dynamic> payload) async {
-    final response = await _client.patch<Map<String, dynamic>>(
-      '/samples/$id/',
-      data: payload,
-    );
-    final data = response.data;
-    if (data == null) {
-      throw ApiException(
-        message: 'Пустой ответ при обновлении пробы #$id.',
-        statusCode: response.statusCode,
-      );
-    }
-    return Sample.fromJson(data);
-  }
-
-  Future<Sample> dispose(int id, {String reason = ''}) async {
-    final response = await _client.post<Map<String, dynamic>>(
-      '/samples/$id/dispose/',
-      data: {'disposal_reason': reason},
-    );
-    final data = response.data;
-    if (data == null) {
-      throw ApiException(
-        message: 'Пустой ответ при утилизации пробы #$id.',
-        statusCode: response.statusCode,
-      );
-    }
-    return Sample.fromJson(data);
-  }
-
-  Future<Sample> restore(int id) async {
-    final response = await _client.post<Map<String, dynamic>>(
-      '/samples/$id/restore/',
-      data: const {},
-    );
-    final data = response.data;
-    if (data == null) {
-      throw ApiException(
-        message: 'Пустой ответ при возврате пробы #$id.',
-        statusCode: response.statusCode,
-      );
-    }
-    return Sample.fromJson(data);
   }
 }

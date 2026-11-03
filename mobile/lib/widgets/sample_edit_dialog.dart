@@ -1,17 +1,11 @@
-/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2).
+/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2/2c-3).
 ///
-/// Порт `web/src/components/SampleEditDialog.tsx` + офлайн-режим.
+/// c-9-fill-offline-2c-3: для **серверных** проб при офлайн `update` /
+/// `dispose` / `restore` / `deleteSample` возвращают `OnlineOutcome.queued`.
+/// SnackBar «Сохранено. Отправится при синхронизации.», диалог закрывается.
 ///
-/// Онлайн: `sample_number`, `research_type`, `site`, `status` — всё
-/// редактируется, `PATCH /samples/{id}/`.
-///
-/// Офлайн-проба (`initial.isOfflinePending`): номер и справочники read-only,
-/// правится только `status`. `dispose` / `restore` / `delete` — локально
-/// через `SampleService.updateLocalOffline` / `deleteLocalOffline`,
-/// `_rebuildFillPayload` обновит `sample_groups` в очереди.
-///
-/// Возвращает `true` через `Navigator.pop(true)`, если что-то изменилось —
-/// родитель перезагружает список проб и историю.
+/// Для офлайн-проб (`id < 0`) — локальные операции (`updateLocalOffline` /
+/// `deleteLocalOffline`).
 library;
 
 import 'package:flutter/material.dart';
@@ -90,6 +84,16 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
 
   bool get _isDisposed => widget.initial.status == SampleStatus.disposed;
 
+  void _showQueuedAndPop() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Сохранено офлайн. Отправится при синхронизации.'),
+      ),
+    );
+    Navigator.of(context).pop(true);
+  }
+
   Future<void> _save() async {
     final service = context.read<SampleService>();
 
@@ -131,12 +135,16 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       _error = null;
     });
     try {
-      await service.update(widget.initial.id, {
+      final outcome = await service.update(widget.initial.id, {
         'sample_number': number,
         'research_type': _researchTypeId,
         'site': _siteId,
         'status': sampleStatusToApi(_status),
-      });
+      }, containerId: widget.containerId);
+      if (outcome == OnlineOutcome.queued) {
+        _showQueuedAndPop();
+        return;
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -151,7 +159,6 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   Future<void> _dispose() async {
     final service = context.read<SampleService>();
 
-    // Офлайн: статус → DISPOSED, причина не пишется (у локальной её нет).
     if (_isOffline) {
       setState(() {
         _busy = true;
@@ -210,7 +217,15 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       _error = null;
     });
     try {
-      await service.dispose(widget.initial.id, reason: reason);
+      final outcome = await service.dispose(
+        widget.initial.id,
+        reason: reason,
+        containerId: widget.containerId,
+      );
+      if (outcome == OnlineOutcome.queued) {
+        _showQueuedAndPop();
+        return;
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -231,7 +246,6 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
         _error = null;
       });
       try {
-        // Локальная проба ещё не размещена → возвращаем в PENDING_PLACEMENT.
         await service.updateLocalOffline(
           widget.initial.id,
           containerId: widget.containerId,
@@ -254,7 +268,14 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       _error = null;
     });
     try {
-      await service.restore(widget.initial.id);
+      final outcome = await service.restore(
+        widget.initial.id,
+        containerId: widget.containerId,
+      );
+      if (outcome == OnlineOutcome.queued) {
+        _showQueuedAndPop();
+        return;
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -302,7 +323,14 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
           containerId: widget.containerId,
         );
       } else {
-        await service.deleteSample(widget.initial.id);
+        final outcome = await service.deleteSample(
+          widget.initial.id,
+          containerId: widget.containerId,
+        );
+        if (outcome == OnlineOutcome.queued) {
+          _showQueuedAndPop();
+          return;
+        }
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);
