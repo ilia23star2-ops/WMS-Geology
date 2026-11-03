@@ -1,13 +1,9 @@
 /// Локальная SQLite (3.x-offline).
 ///
-/// Версия 7 (c-9-fill-offline-2b): +колонка `pending_sync` в `containers`.
+/// Версия 8 (c-2d-2): +колонка `local_ref` в `sync_queue`.
 ///
-/// **Миграция v6 → v7:** только `ALTER TABLE containers ADD COLUMN
-/// pending_sync`. `samples` / `catalog` / `container_history` /
-/// `sync_queue` **не трогаем** — там офлайн-данные (negatives, кэш,
-/// очередь), потерять нельзя.
-///
-/// Полное пересоздание — только `v < 6` (легаси, до офлайн-филла).
+/// **Миграция v7 → v8:** только `ALTER TABLE sync_queue ADD COLUMN
+/// local_ref TEXT`. Данные сохраняем.
 library;
 
 import 'package:path/path.dart';
@@ -20,7 +16,7 @@ class AppDatabase {
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -45,16 +41,20 @@ class AppDatabase {
           await db.execute('DROP TABLE IF EXISTS samples');
           await db.execute('DROP TABLE IF EXISTS catalog');
           await db.execute('DROP TABLE IF EXISTS container_history');
+          await db.execute('DROP TABLE IF EXISTS sync_queue');
           await _createTables(db);
           return;
         }
         // v6 → v7: только ALTER, данные сохраняем.
-        // samples / catalog / container_history / sync_queue — не трогаем.
         if (oldVersion < 7) {
           await db.execute(
             'ALTER TABLE containers ADD COLUMN '
             'pending_sync INTEGER NOT NULL DEFAULT 0',
           );
+        }
+        // v7 → v8: local_ref в sync_queue.
+        if (oldVersion < 8) {
+          await db.execute('ALTER TABLE sync_queue ADD COLUMN local_ref TEXT');
         }
       },
     );
@@ -85,7 +85,8 @@ class AppDatabase {
         payload TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'PENDING',
         error_message TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        local_ref TEXT
       )
     ''');
     await db.execute('''

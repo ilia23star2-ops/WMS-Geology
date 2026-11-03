@@ -1,4 +1,4 @@
-/// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a).
+/// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a, c-2d-2).
 library;
 
 import 'dart:convert';
@@ -139,5 +139,37 @@ class ContainerDao {
     if (cleared == 0) return 0;
     await batch.commit(noResult: true);
     return cleared;
+  }
+
+  /// c-2d-2: перемапить PK тары `oldId → newId` после успешного
+  /// `bulk-create`. Если записи с `oldId` нет — no-op.
+  /// Флаг `pending_sync` сохраняется.
+  static Future<void> remapId(int oldId, int newId) async {
+    if (oldId == newId) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'containers',
+      where: 'id = ?',
+      whereArgs: [oldId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final row = rows.first;
+    final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+    data['id'] = newId;
+
+    final pending = (row['pending_sync'] as int? ?? 0);
+    final updatedAt = (row['updated_at'] as String?) ?? '';
+
+    final batch = db.batch();
+    batch.delete('containers', where: 'id = ?', whereArgs: [oldId]);
+    batch.insert('containers', {
+      'id': newId,
+      'updated_at': updatedAt,
+      'pending_sync': pending,
+      'data': jsonEncode(data),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await batch.commit(noResult: true);
   }
 }

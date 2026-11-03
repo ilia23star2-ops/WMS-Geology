@@ -1,4 +1,4 @@
-/// Тесты `SyncPusher` (c-3, c-9-fill-offline-2c-3-fix-2).
+/// Тесты `SyncPusher` (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2).
 library;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,12 +10,16 @@ import 'package:wms_geology_mobile/services/sync_pusher.dart';
 class MockApiClient extends Fake implements ApiClient {
   final List<String> requests = [];
   bool shouldThrow = false;
+  Map<String, dynamic>? nextPostResponse;
 
   @override
   Future<Response<T>> post<T>(String path, {Object? data}) async {
     requests.add('POST $path');
     if (shouldThrow) throw Exception('Network error');
-    return Response<T>(requestOptions: RequestOptions(path: path));
+    return Response<T>(
+      requestOptions: RequestOptions(path: path),
+      data: nextPostResponse as T?,
+    );
   }
 
   @override
@@ -58,7 +62,7 @@ void main() {
         markSynced: (id) async => syncedIds.add(id),
         markError: (id, err) async => errors.add('$id: $err'),
         resetErrors: () async => resetCalled = true,
-        onSuccess: (endpoint, payload) async {
+        onSuccess: (endpoint, payload, localRef, responseData) async {
           onSuccessCalls.add(endpoint);
         },
       );
@@ -146,7 +150,7 @@ void main() {
         markSynced: (id) async => syncedIds.add(id),
         markError: (id, err) async => errors.add('$id: $err'),
         resetErrors: () async => resetCalled = true,
-        onSuccess: (endpoint, payload) async {
+        onSuccess: (endpoint, payload, localRef, responseData) async {
           onSuccessCalls.add(endpoint);
         },
       );
@@ -157,6 +161,52 @@ void main() {
       expect(syncedIds, contains(1));
       expect(errors.length, 1);
       expect(onSuccessCalls, ['/samples/5/dispose/']);
+    });
+
+    // c-2d-2: маппинг после bulk-create.
+    test('bulk-create: onSuccess получает localRef и responseData', () async {
+      client.nextPostResponse = {
+        'created_containers': [
+          {'id': 42},
+          {'id': 43},
+        ],
+        'total_containers': 2,
+      };
+      mockQueue = [
+        SyncQueueItem(
+          id: 1,
+          action: 'POST',
+          endpoint: '/storage/containers/bulk-create/',
+          payload: {
+            'containers': [
+              {'container_type_id': 1},
+              {'container_type_id': 1},
+            ],
+          },
+          createdAt: '2026-10-29T00:00:00Z',
+          localRef: '[-1,-2]',
+        ),
+      ];
+
+      String? receivedLocalRef;
+      Map<String, dynamic>? receivedData;
+      final pusher = SyncPusher(
+        client,
+        getPendingItems: () async => mockQueue,
+        markSynced: (id) async => syncedIds.add(id),
+        markError: (id, err) async => errors.add('$id: $err'),
+        resetErrors: () async => resetCalled = true,
+        onSuccess: (endpoint, payload, localRef, responseData) async {
+          receivedLocalRef = localRef;
+          receivedData = responseData;
+        },
+      );
+      final result = await pusher.pushAll();
+
+      expect(result.sent, 1);
+      expect(receivedLocalRef, '[-1,-2]');
+      expect(receivedData?['created_containers'], isA<List>());
+      expect((receivedData?['created_containers'] as List).length, 2);
     });
   });
 }

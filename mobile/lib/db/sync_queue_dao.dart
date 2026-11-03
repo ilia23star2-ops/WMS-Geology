@@ -1,7 +1,9 @@
-/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a).
+/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a, c-2d-2).
 library;
 
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 
 import '../db/database.dart';
 
@@ -13,6 +15,7 @@ class SyncQueueItem {
   final String status;
   final String? errorMessage;
   final String createdAt;
+  final String? localRef; // c-2d-2: локальные ID для маппинга
 
   SyncQueueItem({
     this.id,
@@ -22,6 +25,7 @@ class SyncQueueItem {
     this.status = 'PENDING',
     this.errorMessage,
     required this.createdAt,
+    this.localRef,
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +37,7 @@ class SyncQueueItem {
       'status': status,
       'error_message': errorMessage,
       'created_at': createdAt,
+      'local_ref': localRef,
     };
   }
 
@@ -45,6 +50,7 @@ class SyncQueueItem {
       status: map['status'] as String,
       errorMessage: map['error_message'] as String?,
       createdAt: map['created_at'] as String,
+      localRef: map['local_ref'] as String?,
     );
   }
 }
@@ -54,6 +60,7 @@ class SyncQueueDao {
     required String action,
     required String endpoint,
     required Map<String, dynamic> payload,
+    String? localRef, // c-2d-2
   }) async {
     final db = await AppDatabase.instance.database;
     final item = SyncQueueItem(
@@ -61,6 +68,7 @@ class SyncQueueDao {
       endpoint: endpoint,
       payload: payload,
       createdAt: DateTime.now().toUtc().toIso8601String(),
+      localRef: localRef,
     );
     await db.insert('sync_queue', item.toMap());
   }
@@ -77,8 +85,6 @@ class SyncQueueDao {
   }
 
   /// c-9-fill-offline-2c-3-fix-3a: **все** записи (PENDING + ERROR).
-  /// Для reconcile: если проба/тара с `pending_sync = 1`, но её нет в
-  /// очереди — значит операция уже ушла или потеряна, флаг можно сбросить.
   static Future<List<SyncQueueItem>> getAll() async {
     final db = await AppDatabase.instance.database;
     final maps = await db.query('sync_queue', orderBy: 'created_at ASC');
@@ -137,5 +143,96 @@ class SyncQueueDao {
       whereArgs: [endpoint, 'POST'],
     );
     return count > 0;
+  }
+
+  /// c-2d-2: после успешного `bulk-create` перемапить negative ID
+  /// во **всех** записях очереди (PENDING + ERROR).
+  ///
+  /// Меняет `payload` (`container_id`, `container_ids[]`,
+  /// `containers[].id`) и `local_ref` (int-строка, JSON-массив).
+  /// Идемпотентно: ключей нет в [mapping] — не трогаем.
+  static Future<void> remapAllLocalRefs(Map<int, int> mapping) async {
+    if (mapping.isEmpty) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query('sync_queue');
+    if (rows.isEmpty) return;
+
+    final batch = db.batch();
+    for (final row in rows) {
+      final payloadRaw = row['payload'] as String;
+      final localRefRaw = row['local_ref'] as String?;
+      final payload = jsonDecode(payloadRaw) as Map<String, dynamic>;
+      remapInPlace(payload, mapping);
+      final newLocalRef = remapLocalRef(localRefRaw, mapping);
+      batch.update(
+        'sync_queue',
+        {'payload': jsonEncode(payload), 'local_ref': newLocalRef},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// c-2d-2: перемапить ключи в payload in-place.
+  /// Обрабатывает `container_id`, `container_ids[]`, `containers[].id`.
+  @visibleForTesting
+  static void remapInPlace(
+    Map<String, dynamic> payload,
+    Map<int, int> mapping,
+  ) {
+    final cid = payload['container_id'];
+    if (cid is int && mapping.containsKey(cid)) {
+      payload['container_id'] = mapping[cid];
+    }
+
+    final cids = payload['container_ids'];
+    if (cids is List) {
+      payload['container_ids'] = cids
+          .map((v) => (v is int && mapping.containsKey(v)) ? mapping[v] : v)
+          .toList();
+    }
+
+    final containers = payload['containers'];
+    if (containers is List) {
+      for (final c in containers) {
+        if (c is Map<String, dynamic>) {
+          final id = c['id'];
+          if (id is int && mapping.containsKey(id)) {
+            c['id'] = mapping[id];
+          }
+        }
+      }
+    }
+  }
+
+  /// c-2d-2: перемапить `local_ref`.
+  ///
+  /// Поддерживает:
+  /// - int-строку (`"-1"` → `"42"`);
+  /// - JSON-массив int (`"[-1,-2]"` → `"[42,43]"`).
+  ///
+  /// Прочее (null, невалидный JSON, нет ключей) — без изменений.
+  @visibleForTesting
+  static String? remapLocalRef(String? localRef, Map<int, int> mapping) {
+    if (localRef == null || mapping.isEmpty) return localRef;
+
+    final asInt = int.tryParse(localRef);
+    if (asInt != null) {
+      return mapping.containsKey(asInt) ? mapping[asInt].toString() : localRef;
+    }
+
+    try {
+      final parsed = jsonDecode(localRef);
+      if (parsed is List) {
+        final mapped = parsed
+            .map((v) => (v is int && mapping.containsKey(v)) ? mapping[v] : v)
+            .toList();
+        return jsonEncode(mapped);
+      }
+    } catch (_) {
+      // не JSON — оставляем как есть
+    }
+    return localRef;
   }
 }

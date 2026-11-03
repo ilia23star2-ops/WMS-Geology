@@ -1,15 +1,14 @@
-/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2).
+/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2).
 ///
-/// c-9-fill-offline-2c-3-fix-2:
-/// - `pushAll` возвращает `PushResult { sent, failed }`.
-/// - После **каждой** успешной операции зовёт `onSuccess(endpoint, payload)`.
-///   Дефолт парсит endpoint и сбрасывает `_pending_sync` (проба) /
-///   `pending_sync` (тара) — иконка `cloud_off` исчезает сразу после Push.
-///
-/// **fix-3a:** регулярка `/samples/{id}/` теперь матчит и PATCH/DELETE
-/// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`). Раньше
-/// `cloud_off` не сбрасывался после PATCH/DELETE.
+/// c-2d-2:
+/// - Обрабатывает `local_ref` в очереди.
+/// - При успешном `bulk-create` маппит local IDs на server IDs.
+/// - Обновляет ID тар / проб в SQLite и `payload` очереди.
 library;
+
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 
 import '../db/container_dao.dart';
 import '../db/sample_dao.dart';
@@ -32,6 +31,8 @@ class PushResult {
 typedef OnSuccess = Future<void> Function(
   String endpoint,
   Map<String, dynamic> payload,
+  String? localRef,
+  Map<String, dynamic>? responseData, // c-2d-2: ответ сервера
 );
 
 class SyncPusher {
@@ -64,11 +65,20 @@ class SyncPusher {
     var sent = 0;
     var failed = 0;
     for (final item in items) {
+      Map<String, dynamic>? responseData;
       try {
         if (item.action == 'POST') {
-          await _client.post(item.endpoint, data: item.payload);
+          final resp = await _client.post<Map<String, dynamic>>(
+            item.endpoint,
+            data: item.payload,
+          );
+          responseData = resp.data;
         } else if (item.action == 'PATCH') {
-          await _client.patch(item.endpoint, data: item.payload);
+          final resp = await _client.patch<Map<String, dynamic>>(
+            item.endpoint,
+            data: item.payload,
+          );
+          responseData = resp.data;
         } else if (item.action == 'DELETE') {
           await _client.delete(item.endpoint);
         }
@@ -77,9 +87,14 @@ class SyncPusher {
           await _markSynced(item.id!);
         }
 
-        // c-9-fill-offline-2c-3-fix-2: сбросить pending-флаги.
+        // c-9-fill-offline-2c-3-fix-2 + c-2d-2: сбросить pending-флаги и маппинг.
         try {
-          await _onSuccess(item.endpoint, item.payload);
+          await _onSuccess(
+            item.endpoint,
+            item.payload,
+            item.localRef,
+            responseData,
+          );
         } catch (_) {
           // Сброс флага не критичен — Pull потом перезапишет.
         }
@@ -96,13 +111,25 @@ class SyncPusher {
   }
 
   /// Дефолтный `onSuccess`: парсит endpoint и сбрасывает pending-флаги.
-  ///
-  /// **fix-3a:** регулярка `/samples/{id}/` матчит и PATCH/DELETE
-  /// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`).
+  /// c-2d-2: маппинг local IDs -> server IDs для bulk-create.
   static Future<void> _defaultOnSuccess(
     String endpoint,
     Map<String, dynamic> payload,
+    String? localRef,
+    Map<String, dynamic>? responseData,
   ) async {
+    // c-2d-2: bulk-create — маппинг negative ID → server ID.
+    if (endpoint == '/storage/containers/bulk-create/' &&
+        localRef != null &&
+        responseData != null) {
+      try {
+        await _remapBulkCreate(localRef, responseData);
+      } catch (e) {
+        debugPrint('[c-2d-2] bulk-create onSuccess: $e');
+      }
+      return;
+    }
+
     final sampleRe = RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$');
     final sm = sampleRe.firstMatch(endpoint);
     if (sm != null) {
@@ -127,5 +154,86 @@ class SyncPusher {
         }
       }
     }
+  }
+
+  /// c-2d-2: разобрать ответ `bulk-create` и перемапить negative ID.
+  ///
+  /// См. `views.py::bulk_create` — возвращает
+  /// `created_containers: [{id, ...}]`, `total_containers: N`.
+  /// Порядок `created_containers` совпадает с порядком `containers` в
+  /// payload (см. `services.bulk_create_containers` — цикл `.create()`
+  /// в том же порядке).
+  static Future<void> _remapBulkCreate(
+    String localRef,
+    Map<String, dynamic> responseData,
+  ) async {
+    final localRaw = jsonDecode(localRef);
+    if (localRaw is! List) {
+      debugPrint('[c-2d-2] bulk-create: local_ref не список: $localRef');
+      return;
+    }
+
+    final created = responseData['created_containers'];
+    if (created is! List) {
+      debugPrint('[c-2d-2] bulk-create: в ответе нет created_containers');
+      return;
+    }
+    if (created.length != localRaw.length) {
+      debugPrint(
+        '[c-2d-2] bulk-create: сервер вернул ${created.length}, '
+        'ожидалось ${localRaw.length}. Маппинг пропущен.',
+      );
+      return;
+    }
+
+    final mapping = <int, int>{};
+    for (var i = 0; i < localRaw.length; i++) {
+      final localId = localRaw[i];
+      final item = created[i];
+      final serverId = item is Map ? item['id'] : null;
+      if (localId is int && serverId is int) {
+        mapping[localId] = serverId;
+      } else {
+        debugPrint(
+          '[c-2d-2] bulk-create: некорректная пара #$i: '
+          'local=$localId server=${item is Map ? item['id'] : '?'}',
+        );
+      }
+    }
+    if (mapping.isEmpty) return;
+
+    // 1) Локальный кэш: containers.id, samples.container_id.
+    for (final entry in mapping.entries) {
+      try {
+        await ContainerDao.remapId(entry.key, entry.value);
+      } catch (e) {
+        debugPrint(
+          '[c-2d-2] ContainerDao.remapId(${entry.key}→${entry.value}): $e',
+        );
+      }
+      try {
+        await SampleDao.remapContainerId(entry.key, entry.value);
+      } catch (e) {
+        debugPrint(
+          '[c-2d-2] SampleDao.remapContainerId(${entry.key}→${entry.value}): $e',
+        );
+      }
+    }
+
+    // 2) Очередь: payload + local_ref.
+    await SyncQueueDao.remapAllLocalRefs(mapping);
+
+    // 3) Снять pending_sync: в 2a офлайн-тары создаются без проб и без
+    //    fill-samples/place в очереди. Если в 2c появятся такие операции —
+    //    здесь понадобится проверка «есть ли ещё queued-операции для тары».
+    for (final entry in mapping.entries) {
+      try {
+        await ContainerDao.clearPendingSync(entry.value);
+      } catch (_) {
+        // Кэш не критичен.
+      }
+    }
+
+    debugPrint('[c-2d-2] bulk-create mapped: $mapping');
   }
 }

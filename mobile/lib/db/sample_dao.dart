@@ -1,4 +1,4 @@
-/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..2c-4, c-9-natural-sort).
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..2c-4, c-9-natural-sort, c-2d-2).
 ///
 /// c-9-natural-sort: `getByContainerId` сортирует по `sample_number`
 /// естественным образом (`TST6701 < TST6710`), а не по `id`.
@@ -267,5 +267,34 @@ class SampleDao {
     if (cleared == 0) return 0;
     await batch.commit(noResult: true);
     return cleared;
+  }
+
+  /// c-2d-2: перемапить `container_id` у всех проб после `bulk-create`.
+  /// Меняет и колонку, и JSON-поле `container`. `_pending_sync` сохраняется.
+  static Future<void> remapContainerId(
+    int oldContainerId,
+    int newContainerId,
+  ) async {
+    if (oldContainerId == newContainerId) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'samples',
+      where: 'container_id = ?',
+      whereArgs: [oldContainerId],
+    );
+    if (rows.isEmpty) return;
+
+    final batch = db.batch();
+    for (final r in rows) {
+      final json = jsonDecode(r['data'] as String) as Map<String, dynamic>;
+      json['container'] = newContainerId;
+      batch.update(
+        'samples',
+        {'container_id': newContainerId, 'data': jsonEncode(json)},
+        where: 'id = ?',
+        whereArgs: [r['id']],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 }
