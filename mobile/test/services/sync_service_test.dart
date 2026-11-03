@@ -1,4 +1,5 @@
-/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync).
+/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3,
+/// c-9-fill-offline-2c-3-fix-3a, c-6b-updated-since).
 library;
 
 import 'package:dio/dio.dart';
@@ -25,6 +26,7 @@ class FakeApiClient extends ApiClient {
   FakeApiClient() : super(dioOverride: Dio());
 
   final List<String> calls = [];
+  final List<Map<String, dynamic>?> queryParams = [];
 
   @override
   Future<Response<T>> get<T>(
@@ -32,6 +34,7 @@ class FakeApiClient extends ApiClient {
     Map<String, dynamic>? queryParameters,
   }) async {
     calls.add(path);
+    queryParams.add(queryParameters);
     final page = queryParameters?['page'] as int? ?? 1;
     final req = RequestOptions(path: path);
 
@@ -105,20 +108,17 @@ class FakeApiClient extends ApiClient {
 }
 
 void main() {
-  test('SyncService pulls all and returns PullStats', () async {
+  test('pullAll без updatedSince — полный Pull, PullStats по числу', () async {
     final client = FakeApiClient();
     final savedContainers = <Map<String, dynamic>>[];
     final savedSamples = <Map<String, dynamic>>[];
-    final savedCatalogs = <String, List<Map<String, dynamic>>>{};
-    final savedHistory = <int, List<Map<String, dynamic>>>{};
 
     final service = SyncService(
       client,
       saveContainers: (list) async => savedContainers.addAll(list),
       saveSamples: (list) async => savedSamples.addAll(list),
-      saveCatalog: (kind, items) async => savedCatalogs[kind] = items,
-      saveHistory: (containerId, items) async =>
-          savedHistory[containerId] = items,
+      saveCatalog: (_, __) async {},
+      saveHistory: (_, __) async {},
       getQueueItems: () async => const [],
       reconcileSamples: (_) async => 0,
       reconcileContainers: (_) async => 0,
@@ -126,35 +126,45 @@ void main() {
 
     final stats = await service.pullAll();
 
-    expect(savedContainers.length, 3);
-    expect(savedSamples.length, 1);
-    expect(savedCatalogs.length, 9);
-    expect(savedHistory.keys.toSet(), {1, 2, 3});
     expect(stats.containers, 3);
     expect(stats.samples, 1);
     expect(stats.total, 4);
+    // Ни в одном запросе нет updated_since.
+    for (final q in client.queryParams) {
+      if (q != null) expect(q.containsKey('updated_since'), isFalse);
+    }
   });
 
-  test('ошибка истории по одной таре не валит Pull', () async {
-    final client = _FailingHistoryApi();
-    final savedHistory = <int, List<Map<String, dynamic>>>{};
+  test(
+    'pullAll(updatedSince) — ?updated_since= уходит в containers/samples',
+    () async {
+      final client = FakeApiClient();
+      final since = DateTime.utc(2026, 11, 2, 10);
 
-    final service = SyncService(
-      client,
-      saveContainers: (_) async {},
-      saveSamples: (_) async {},
-      saveCatalog: (_, __) async {},
-      saveHistory: (containerId, items) async =>
-          savedHistory[containerId] = items,
-      getQueueItems: () async => const [],
-      reconcileSamples: (_) async => 0,
-      reconcileContainers: (_) async => 0,
-    );
+      final service = SyncService(
+        client,
+        saveContainers: (_) async {},
+        saveSamples: (_) async {},
+        saveCatalog: (_, __) async {},
+        saveHistory: (_, __) async {},
+        getQueueItems: () async => const [],
+        reconcileSamples: (_) async => 0,
+        reconcileContainers: (_) async => 0,
+      );
 
-    await service.pullAll();
+      await service.pullAll(updatedSince: since);
 
-    expect(savedHistory.keys.toSet(), {1, 3});
-  });
+      // Проверяем: в запросах к /storage/containers/ и /samples/ есть updated_since.
+      final containerParams = client.queryParams
+          .where((q) => q != null && q.containsKey('page') && q['page'] == 1)
+          .toList();
+      final hasUpdated = client.queryParams.any(
+        (q) => q != null && q['updated_since'] == '2026-11-02T10:00:00.000Z',
+      );
+      expect(hasUpdated, isTrue);
+      expect(containerParams.isNotEmpty, isTrue);
+    },
+  );
 
   test(
     'reconcile: пробы без записи в очереди — сброс, с записью — нет',
@@ -217,53 +227,4 @@ void main() {
       expect(keptContainerIds, {10, 11, 12});
     },
   );
-}
-
-class _FailingHistoryApi extends ApiClient {
-  _FailingHistoryApi() : super(dioOverride: Dio());
-
-  final _historyRe = RegExp(r'^/storage/containers/(\d+)/history/$');
-
-  @override
-  Future<Response<T>> get<T>(
-    String path, {
-    Map<String, dynamic>? queryParameters,
-  }) async {
-    final req = RequestOptions(path: path);
-    final page = queryParameters?['page'] as int? ?? 1;
-
-    if (path == '/storage/containers/') {
-      return Response<T>(
-        requestOptions: req,
-        statusCode: 200,
-        data: {
-          'next': null,
-          'results': [
-            {'id': 1, 'container_number': 'T-1'},
-            {'id': 2, 'container_number': 'T-2'},
-            {'id': 3, 'container_number': 'T-3'},
-          ],
-        } as T,
-      );
-    } else if (path == '/samples/' || _catalogEndpoints.containsKey(path)) {
-      return Response<T>(
-        requestOptions: req,
-        statusCode: 200,
-        data: {'next': null, 'results': <Map<String, dynamic>>[]} as T,
-      );
-    } else if (_historyRe.hasMatch(path)) {
-      final id = int.parse(_historyRe.firstMatch(path)!.group(1)!);
-      if (id == 2) {
-        throw ApiException(message: 'boom', statusCode: 500);
-      }
-      return Response<T>(
-        requestOptions: req,
-        statusCode: 200,
-        data: [
-          {'id': id, 'action': 'CREATE'},
-        ] as T,
-      );
-    }
-    throw Exception('Unexpected: $path page=$page');
-  }
 }

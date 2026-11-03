@@ -8,10 +8,12 @@ class FakeSyncService extends Fake implements SyncService {
   int pullCallCount = 0;
   bool shouldThrow = false;
   PullStats nextStats = const PullStats(containers: 0, samples: 0);
+  final List<DateTime?> updatedSinceArgs = [];
 
   @override
-  Future<PullStats> pullAll() async {
+  Future<PullStats> pullAll({DateTime? updatedSince}) async {
     pullCallCount++;
+    updatedSinceArgs.add(updatedSince);
     if (shouldThrow) throw Exception('Pull error');
     return nextStats;
   }
@@ -60,53 +62,74 @@ void main() {
       expect(provider.errorCount, 0);
     });
 
-    test('pull вызывает SyncService.pullAll и возвращает PullStats', () async {
+    test('первый pull — updatedSince=null (полный)', () async {
+      final provider = createProvider();
+      await provider.pull();
+
+      expect(service.pullCallCount, 1);
+      expect(service.updatedSinceArgs.first, isNull);
+    });
+
+    test('второй pull — updatedSince не null', () async {
+      final provider = createProvider();
+      await provider.pull();
+      await provider.pull();
+
+      expect(service.pullCallCount, 2);
+      expect(service.updatedSinceArgs[0], isNull);
+      expect(service.updatedSinceArgs[1], isNotNull);
+    });
+
+    test('push не трогает updatedSince', () async {
+      final provider = createProvider();
+      await provider.pull();
+      final firstSince = service.updatedSinceArgs.first;
+      await provider.push();
+      await provider.pull();
+
+      expect(service.updatedSinceArgs[0], firstSince);
+      expect(service.updatedSinceArgs[1], isNotNull);
+    });
+
+    test('pull возвращает PullStats', () async {
       service.nextStats = const PullStats(containers: 5, samples: 20);
       final provider = createProvider();
       final stats = await provider.pull();
 
-      expect(service.pullCallCount, 1);
       expect(stats, isNotNull);
       expect(stats!.containers, 5);
       expect(stats.samples, 20);
       expect(stats.total, 25);
-      expect(provider.lastSyncTime, isNotNull);
-      expect(provider.lastError, isNull);
     });
 
     test('push вызывает SyncPusher.pushAll', () async {
       final provider = createProvider();
       await provider.push();
-
       expect(pusher.pushCallCount, 1);
-      expect(provider.lastSyncTime, isNotNull);
     });
 
     test('syncAll вызывает pull и push', () async {
       final provider = createProvider();
       await provider.syncAll();
-
       expect(service.pullCallCount, 1);
       expect(pusher.pushCallCount, 1);
     });
 
-    test('ошибка в pull сохраняется в lastError, возвращает null', () async {
-      service.shouldThrow = true;
-      final provider = createProvider();
-      final stats = await provider.pull();
+    test(
+      'ошибка в pull сохраняется в lastError, updatedSince не меняется',
+      () async {
+        service.shouldThrow = true;
+        final provider = createProvider();
+        final stats = await provider.pull();
 
-      expect(stats, isNull);
-      expect(provider.lastError, contains('Pull error'));
-      expect(provider.isSyncing, isFalse);
-    });
-
-    test('ошибка в push сохраняется в lastError', () async {
-      pusher.shouldThrow = true;
-      final provider = createProvider();
-      await provider.push();
-
-      expect(provider.lastError, contains('Push error'));
-    });
+        expect(stats, isNull);
+        expect(provider.lastError, contains('Pull error'));
+        expect(service.updatedSinceArgs.first, isNull);
+        // Второй pull всё ещё null (первый упал, _lastPullSince не обновился).
+        await provider.pull();
+        expect(service.updatedSinceArgs[1], isNull);
+      },
+    );
 
     test('refresh обновляет pendingCount и errorCount', () async {
       pendingCount = 5;

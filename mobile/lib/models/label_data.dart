@@ -1,20 +1,15 @@
-/// Снимок данных для офлайн-рендера этикетки тары (c-7f).
+/// Снимок данных для офлайн-рендера этикетки тары (c-7f, c-9-natural-sort).
 ///
 /// Порт `_header_lines` + `_load_samples` + `_is_incoming` +
 /// `_get_work_order_display` из `apps/labels/services/label_service.py`.
 ///
 /// Строится из `Container` + список `Sample`. Ничего не знает про PDF.
 ///
-/// Шапка этикетки (как на сервере):
-///   `Уч:`     — участок
-///   `Н/З:`    — зашифрованный Н/З (или `Н/З (вх.):` если входящий)
-///   `Исл:`    — код типа исследования
-///   `№:`      — номер тары
-///
-/// Таблица (как на сервере): `п/п | ☐ | <sample_number>`.
-/// `☑` — если проба `SELECTED` (чёрная галочка).
+/// c-9-natural-sort: `samples` сортируются по `sample_number` естественным
+/// образом (`TST6701 < TST6702 < ... < TST6710`), как на сервере.
 library;
 
+import '../utils/natural_sort.dart';
 import 'container.dart';
 import 'sample.dart';
 
@@ -57,24 +52,15 @@ class LabelData {
   final String workOrderDisplay;
 
   /// Код типа исследования (`ШЛ`, `ХА`, `ИЗ`).
-  /// Fallback на имя (`Шлифы`) — если `research_type_code` не пришёл.
   final String researchTypeLabel;
 
   final List<LabelSample> samples;
 
   /// Снимок из `Container` + список проб.
-  ///
-  /// `Container` берём из ответа API / кэша — там есть draft-поля
-  /// (`draftSiteName`, `draftResearchTypeName`, `draftWorkOrderCoded`,
-  /// `draftWorkOrderIncoming`). Их достаточно для шапки.
-  ///
-  /// Пробы — из `SampleService.fetchByContainerId()` (кэш SQLite).
   factory LabelData.fromContainer(Container c, List<Sample> samples) {
     final hasIncoming = c.draftWorkOrderIncoming.isNotEmpty;
     final label = hasIncoming ? 'Н/З (вх.):' : 'Н/З:';
 
-    // Как в `_get_work_order_display`: если входящий — сначала вх, потом тек.
-    // Если только один — просто номер. Если оба пусты — `—`.
     final String woDisplay;
     if (c.draftWorkOrderIncoming.isNotEmpty &&
         c.draftWorkOrderCoded.isNotEmpty) {
@@ -89,6 +75,9 @@ class LabelData {
       woDisplay = '—';
     }
 
+    final sorted = [...samples]
+      ..sort((a, b) => naturalCompare(a.sampleNumber, b.sampleNumber));
+
     return LabelData(
       containerId: c.id,
       containerNumber: c.containerNumber ?? '',
@@ -96,7 +85,7 @@ class LabelData {
       workOrderLabel: label,
       workOrderDisplay: woDisplay,
       researchTypeLabel: c.draftResearchTypeName ?? '',
-      samples: samples
+      samples: sorted
           .map(
             (s) => LabelSample(
               sampleNumber: s.sampleNumber,

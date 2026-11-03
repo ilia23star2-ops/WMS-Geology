@@ -1,7 +1,10 @@
-/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync).
+/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3,
+/// c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync, c-6b-updated-since).
 ///
-/// c-9-auto-sync: `pullAll` возвращает `PullStats { containers, samples }`
-/// — для уведомления «Загружено с сервера: N».
+/// c-9-auto-sync: `pullAll` возвращает `PullStats { containers, samples }`.
+/// c-6b-updated-since: `pullAll(updatedSince: ...)` → в `/storage/containers/`
+/// и `/samples/` передаётся `?updated_since=<ISO 8601 UTC>`. Сервер вернёт
+/// только изменённые. Справочники и история — полный Pull (мало данных).
 library;
 
 import '../db/catalog_dao.dart';
@@ -11,7 +14,7 @@ import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
 
-/// Результат Pull: сколько тар и проб пришло с сервера.
+/// Результат Pull: сколько **изменённых** тар и проб пришло с сервера.
 class PullStats {
   const PullStats({this.containers = 0, this.samples = 0});
 
@@ -62,9 +65,16 @@ class SyncService {
     return CatalogDao.saveAll(kind, items);
   }
 
-  Future<PullStats> pullAll() async {
-    final pulled = await _pullContainers();
-    final samples = await _pullSamples();
+  /// Скачать с сервера.
+  ///
+  /// [updatedSince] — если задан, в `/storage/containers/` и `/samples/`
+  /// уйдёт `?updated_since=<ISO 8601 UTC>`, сервер вернёт только изменённые
+  /// (c-6b). Если `null` — полный Pull. Справочники и история — всегда
+  /// полный Pull (мало данных, `updated_since` там не поддерживается).
+  Future<PullStats> pullAll({DateTime? updatedSince}) async {
+    final isoSince = updatedSince?.toUtc().toIso8601String();
+    final pulled = await _pullContainers(updatedSince: isoSince);
+    final samples = await _pullSamples(updatedSince: isoSince);
     await _pullCatalog('/sites/', 'site');
     await _pullCatalog('/research-types/', 'research_type');
     await _pullCatalog('/laboratories/', 'laboratory');
@@ -74,6 +84,7 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
+    // История — pre-fetch только для изменённых тар (если updatedSince задан).
     for (final id in pulled.ids) {
       await _pullHistoryFor(id);
     }
@@ -111,15 +122,18 @@ class SyncService {
     await _reconcileContainers(keepContainerIds);
   }
 
-  /// Возвращает ID всех тар (для pre-fetch истории) + общее число.
-  Future<({List<int> ids, int total})> _pullContainers() async {
+  Future<({List<int> ids, int total})> _pullContainers({
+    String? updatedSince,
+  }) async {
     final ids = <int>[];
     var total = 0;
     int page = 1;
     while (true) {
+      final query = <String, dynamic>{'page': page};
+      if (updatedSince != null) query['updated_since'] = updatedSince;
       final res = await _client.get<Map<String, dynamic>>(
         '/storage/containers/',
-        queryParameters: {'page': page},
+        queryParameters: query,
       );
       final data = res.data;
       if (data == null) break;
@@ -139,13 +153,15 @@ class SyncService {
     return (ids: ids, total: total);
   }
 
-  Future<int> _pullSamples() async {
+  Future<int> _pullSamples({String? updatedSince}) async {
     var total = 0;
     int page = 1;
     while (true) {
+      final query = <String, dynamic>{'page': page};
+      if (updatedSince != null) query['updated_since'] = updatedSince;
       final res = await _client.get<Map<String, dynamic>>(
         '/samples/',
-        queryParameters: {'page': page},
+        queryParameters: query,
       );
       final data = res.data;
       if (data == null) break;

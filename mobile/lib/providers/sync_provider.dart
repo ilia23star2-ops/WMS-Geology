@@ -8,10 +8,10 @@ import '../services/sync_pusher.dart';
 
 /// Состояние синхронизации для UI (ChangeNotifier).
 ///
-/// c-9-fill-offline-2c-3-fix-3b: `push()` / `syncAll()` возвращают
-/// `PushResult?` (реальный счётчик отправленного).
-/// c-9-auto-sync: `pull()` возвращает `PullStats?` (сколько пришло
-/// с сервера — для уведомления «Загружено: N»).
+/// c-9-auto-sync: `pull()` возвращает `PullStats?`.
+/// c-6b-updated-since: `_lastPullSince` — время последнего успешного Pull.
+/// Передаётся в `pullAll(updatedSince: ...)`, сервер возвращает только
+/// изменённые → `PullStats` = реальные изменения (0, если ничего).
 class SyncProvider extends ChangeNotifier {
   SyncProvider({
     required SyncService syncService,
@@ -32,6 +32,7 @@ class SyncProvider extends ChangeNotifier {
 
   bool _isSyncing = false;
   DateTime? _lastSyncTime;
+  DateTime? _lastPullSince;
   int _pendingCount = 0;
   int _errorCount = 0;
   String? _lastError;
@@ -54,8 +55,6 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
-  /// Скачать данные с сервера (Pull). Возвращает `PullStats`
-  /// (сколько тар и проб пришло) или `null`, если Pull упал.
   Future<PullStats?> pull() async {
     if (_isSyncing) return null;
     _isSyncing = true;
@@ -64,7 +63,8 @@ class SyncProvider extends ChangeNotifier {
 
     PullStats? stats;
     try {
-      stats = await _syncService.pullAll();
+      stats = await _syncService.pullAll(updatedSince: _lastPullSince);
+      _lastPullSince = DateTime.now();
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка загрузки (Pull): $e';
@@ -104,7 +104,8 @@ class SyncProvider extends ChangeNotifier {
 
     PushResult? result;
     try {
-      await _syncService.pullAll();
+      await _syncService.pullAll(updatedSince: _lastPullSince);
+      _lastPullSince = DateTime.now();
       result = await _syncPusher.pushAll();
       _lastSyncTime = DateTime.now();
     } catch (e) {

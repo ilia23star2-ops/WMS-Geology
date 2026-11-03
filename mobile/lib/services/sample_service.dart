@@ -1,10 +1,11 @@
-/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-4).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-4, c-9-natural-sort).
 library;
 
 import '../db/container_dao.dart';
 import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../models/sample.dart';
+import '../utils/natural_sort.dart';
 import '../utils/sample_range_parser.dart';
 import 'api_client.dart';
 
@@ -165,14 +166,17 @@ class SampleService {
       final hasPending = await _hasPendingForContainer(containerId);
       if (hasPending) {
         final cached = await _getCached(containerId);
-        return cached.map(Sample.fromJson).toList();
+        final sorted = [...cached]..sort(naturalCompareSampleNumber);
+        return sorted.map(Sample.fromJson).toList();
       }
 
-      return rawList.map(Sample.fromJson).toList();
+      final sorted = [...rawList]..sort(naturalCompareSampleNumber);
+      return sorted.map(Sample.fromJson).toList();
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
       final cached = await _getCached(containerId);
-      return cached.map(Sample.fromJson).toList();
+      final sorted = [...cached]..sort(naturalCompareSampleNumber);
+      return sorted.map(Sample.fromJson).toList();
     }
   }
 
@@ -390,15 +394,6 @@ class SampleService {
     }
   }
 
-  /// c-9-fill-offline-2c-4: обновить офлайн-пробу (negative ID).
-  ///
-  /// Помимо `status` можно передать новый `sample_number` и разбивку
-  /// (`newPrefix` / `newMiddle` / `newSequence` / `newSequenceDigits` /
-  /// `newWellName`) — они нужны `_rebuildFillPayload`, чтобы `sample_groups`
-  /// в очереди содержали новый номер.
-  ///
-  /// Вызывающий (`SampleEditDialog`) парсит `sample_number` через
-  /// `parseSampleInput`, чтобы получить эти поля.
   Future<void> updateLocalOffline(
     int sampleId, {
     required int containerId,

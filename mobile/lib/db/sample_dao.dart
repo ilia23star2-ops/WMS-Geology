@@ -1,10 +1,14 @@
-/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..-2c-4).
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..2c-4, c-9-natural-sort).
+///
+/// c-9-natural-sort: `getByContainerId` сортирует по `sample_number`
+/// естественным образом (`TST6701 < TST6710`), а не по `id`.
 library;
 
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import '../utils/natural_sort.dart';
 import 'database.dart';
 
 class SampleDao {
@@ -46,6 +50,8 @@ class SampleDao {
     await batch.commit(noResult: true);
   }
 
+  /// Все пробы тары, отсортированные по `sample_number`
+  /// естественным образом (`TST6701 < TST6702 < ... < TST6710`).
   static Future<List<Map<String, dynamic>>> getByContainerId(
     int containerId,
   ) async {
@@ -54,12 +60,13 @@ class SampleDao {
       'samples',
       where: 'container_id = ?',
       whereArgs: [containerId],
-      orderBy: 'id ASC',
     );
 
-    return rows
+    final decoded = rows
         .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
         .toList();
+    decoded.sort(naturalCompareSampleNumber);
+    return decoded;
   }
 
   static Future<void> saveLocalOffline({
@@ -173,11 +180,6 @@ class SampleDao {
     );
   }
 
-  /// c-9-fill-offline-2c-4: обновить произвольные поля JSON пробы
-  /// (`sample_number`, `_prefix`, `_middle`, `_sequence`,
-  /// `_sequence_digits`, `_well_name`, `status`). `_pending_sync` не
-  /// трогаем — вызывающий решает. Для офлайн-проб (`id < 0`) `_pending_sync`
-  /// не нужен: они уже в очереди как часть fill-samples.
   static Future<void> updateLocalFields(
     int sampleId,
     Map<String, dynamic> fields,
