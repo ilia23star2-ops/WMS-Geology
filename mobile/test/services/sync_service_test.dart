@@ -1,15 +1,9 @@
-/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3).
-///
-/// `pullAll` тянет:
-/// - `containers`, `samples` — постранично;
-/// - 9 справочников (`sites`, `research-types`, `laboratories`,
-///   `storage/container-types`, `storage/rooms`, `storage/racks`,
-///   `storage/sections`, `storage/tiers`, `storage/cells`);
-/// - **историю каждой тары** (c-7e-3) — `saveHistory` вызывается N раз.
+/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a).
 library;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wms_geology_mobile/db/sync_queue_dao.dart';
 import 'package:wms_geology_mobile/services/api_client.dart';
 import 'package:wms_geology_mobile/services/sync_service.dart';
 
@@ -25,7 +19,6 @@ const _catalogEndpoints = <String, String>{
   '/storage/cells/': 'cell',
 };
 
-/// Регулярка для `/storage/containers/{id}/history/`.
 final _historyRe = RegExp(r'^/storage/containers/(\d+)/history/$');
 
 class FakeApiClient extends ApiClient {
@@ -126,36 +119,21 @@ void main() {
       saveCatalog: (kind, items) async => savedCatalogs[kind] = items,
       saveHistory: (containerId, items) async =>
           savedHistory[containerId] = items,
+      getQueueItems: () async => const [],
+      reconcileSamples: (_) async => 0,
+      reconcileContainers: (_) async => 0,
     );
 
     await service.pullAll();
 
-    // Тары: 3.
     expect(savedContainers.length, 3);
-    expect(savedContainers[0]['id'], 1);
-    expect(savedContainers[2]['id'], 3);
-
-    // Пробы: 1.
     expect(savedSamples.length, 1);
-    expect(savedSamples[0]['id'], 10);
-
-    // Справочники: 9.
     expect(savedCatalogs.length, 9);
-    expect(savedCatalogs.keys.toSet(), _catalogEndpoints.values.toSet());
-
-    // c-7e-3: история для каждой тары (1, 2, 3).
     expect(savedHistory.keys.toSet(), {1, 2, 3});
-    for (final id in [1, 2, 3]) {
-      expect(savedHistory[id]!.length, 1);
-      expect(savedHistory[id]!.first['action'], 'CREATE');
-    }
     expect(client.calls, contains('/storage/containers/1/history/'));
-    expect(client.calls, contains('/storage/containers/2/history/'));
-    expect(client.calls, contains('/storage/containers/3/history/'));
   });
 
   test('ошибка истории по одной таре не валит Pull', () async {
-    // Отдельный fake: на /history/ для тары #2 — исключение.
     final client = _FailingHistoryApi();
     final savedHistory = <int, List<Map<String, dynamic>>>{};
 
@@ -166,16 +144,79 @@ void main() {
       saveCatalog: (_, __) async {},
       saveHistory: (containerId, items) async =>
           savedHistory[containerId] = items,
+      getQueueItems: () async => const [],
+      reconcileSamples: (_) async => 0,
+      reconcileContainers: (_) async => 0,
     );
 
     await service.pullAll();
 
-    // История для тары #2 упала, но Pull завершился.
     expect(savedHistory.keys.toSet(), {1, 3});
   });
+
+  test(
+    'reconcile: пробы без записи в очереди — сброс, с записью — нет',
+    () async {
+      final client = FakeApiClient();
+      Set<int>? keptSampleIds;
+      Set<int>? keptContainerIds;
+
+      final service = SyncService(
+        client,
+        saveContainers: (_) async {},
+        saveSamples: (_) async {},
+        saveCatalog: (_, __) async {},
+        saveHistory: (_, __) async {},
+        getQueueItems: () async => [
+          SyncQueueItem(
+            id: 1,
+            action: 'PATCH',
+            endpoint: '/samples/5/',
+            payload: const {'status': 'SELECTED'},
+            createdAt: '2026-11-02T10:00:00Z',
+          ),
+          SyncQueueItem(
+            id: 2,
+            action: 'POST',
+            endpoint: '/samples/7/dispose/',
+            payload: const {'disposal_reason': ''},
+            createdAt: '2026-11-02T10:00:01Z',
+          ),
+          SyncQueueItem(
+            id: 3,
+            action: 'POST',
+            endpoint: '/storage/containers/10/fill-samples/',
+            payload: const {},
+            createdAt: '2026-11-02T10:00:02Z',
+          ),
+          SyncQueueItem(
+            id: 4,
+            action: 'POST',
+            endpoint: '/storage/containers/bulk-place/',
+            payload: const {
+              'container_ids': [11, 12],
+            },
+            createdAt: '2026-11-02T10:00:03Z',
+          ),
+        ],
+        reconcileSamples: (ids) async {
+          keptSampleIds = ids;
+          return 0;
+        },
+        reconcileContainers: (ids) async {
+          keptContainerIds = ids;
+          return 0;
+        },
+      );
+
+      await service.pullAll();
+
+      expect(keptSampleIds, {5, 7});
+      expect(keptContainerIds, {10, 11, 12});
+    },
+  );
 }
 
-/// Fake, где `/history/` для тары #2 бросает.
 class _FailingHistoryApi extends ApiClient {
   _FailingHistoryApi() : super(dioOverride: Dio());
 

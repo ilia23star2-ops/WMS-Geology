@@ -1,4 +1,4 @@
-/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2).
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..-2c-3-fix-3a).
 library;
 
 import 'dart:convert';
@@ -207,10 +207,39 @@ class SampleDao {
     return false;
   }
 
-  /// c-9-fill-offline-2c-3-fix-2: сбросить `_pending_sync` у пробы после
-  /// успешного Push. Ничего не делает, если пробы нет или флаг уже снят.
   static Future<void> clearPendingSyncBySampleId(int sampleId) async {
     if (sampleId <= 0) return;
     await setPendingSyncLocal(sampleId, false);
+  }
+
+  /// c-9-fill-offline-2c-3-fix-3a: reconcile.
+  ///
+  /// Для всех проб с `_pending_sync = true`, которых **нет** в
+  /// [keepSampleIds] (это id, для которых в `sync_queue` есть запись) —
+  /// сбрасываем флаг. Операция ушла или потеряна, доверяем серверу.
+  ///
+  /// Пробы из [keepSampleIds] не трогаем: их операция ждёт Push.
+  static Future<int> reconcilePendingSamples(Set<int> keepSampleIds) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query('samples');
+    var cleared = 0;
+    final batch = db.batch();
+    for (final r in rows) {
+      final json = jsonDecode(r['data'] as String) as Map<String, dynamic>;
+      if (json['_pending_sync'] != true) continue;
+      final id = r['id'] as int;
+      if (keepSampleIds.contains(id)) continue;
+      json['_pending_sync'] = false;
+      batch.update(
+        'samples',
+        {'data': jsonEncode(json)},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      cleared++;
+    }
+    if (cleared == 0) return 0;
+    await batch.commit(noResult: true);
+    return cleared;
   }
 }

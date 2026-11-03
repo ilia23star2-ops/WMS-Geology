@@ -1,28 +1,21 @@
-/// Сервис синхронизации (Pull) с сервера в локальную SQLite
-/// (3.x-offline-sync c-2, c-7-offline-catalog, c-7e-3).
+/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a).
 ///
-/// Данные могут быть большими (10к+ записей), поэтому скачиваем
-/// страницами по 50 штук (`?page=N`). Каждая страница сразу
-/// сохраняется в БД и очищается из памяти.
+/// c-9-fill-offline-2c-3-fix-3a: в конце `pullAll` — reconcile.
+/// Для каждой пробы/тары с `pending_sync = 1`, которой **нет** в
+/// `sync_queue`, сбрасываем флаг. Пробы/тары с записью в очереди
+/// не трогаем (ждём Push).
 ///
-/// `pullAll` тянет:
-/// - `containers`, `samples` (c-2);
-/// - справочники (c-7-offline-catalog): `sites`, `research-types`,
-///   `laboratories`, `storage/container-types`, `storage/rooms`,
-///   `storage/racks`, `storage/sections`, `storage/tiers`,
-///   `storage/cells`;
-/// - **историю каждой тары** (c-7e-3): `GET /storage/containers/{id}/history/`
-///   по одной таре. N запросов, где N = число тар. Ошибка по одной таре
-///   не валит Pull.
-///
-/// **Для больших складов (сотни/тысячи тар):** N запросов в Pull —
-/// узкое место. Нужен backend batch-эндпоинт (ТД-59). Пока — так.
+/// **fix-3a (regex):** `/samples/{id}/` матчит и PATCH/DELETE
+/// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`). Раньше
+/// пробы с PATCH/DELETE в очереди **теряли** флаг при Pull — данные
+/// «пропадали».
 library;
 
 import '../db/catalog_dao.dart';
 import '../db/container_dao.dart';
 import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
+import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
 
 class SyncService {
@@ -34,17 +27,27 @@ class SyncService {
     saveCatalog,
     Future<void> Function(int containerId, List<Map<String, dynamic>> items)?
     saveHistory,
+    Future<List<SyncQueueItem>> Function()? getQueueItems,
+    Future<int> Function(Set<int> keepSampleIds)? reconcileSamples,
+    Future<int> Function(Set<int> keepContainerIds)? reconcileContainers,
   }) : _saveContainers = saveContainers ?? ContainerDao.saveAll,
        _saveSamples = saveSamples ?? SampleDao.saveAll,
        _saveCatalog = saveCatalog ?? _defaultSaveCatalog,
-       _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll;
+       _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
+       _getQueueItems = getQueueItems ?? SyncQueueDao.getAll,
+       _reconcileSamples =
+           reconcileSamples ?? SampleDao.reconcilePendingSamples,
+       _reconcileContainers =
+           reconcileContainers ?? ContainerDao.reconcilePendingContainers;
 
   final ApiClient _client;
-
   final Future<void> Function(List<Map<String, dynamic>>) _saveContainers;
   final Future<void> Function(List<Map<String, dynamic>>) _saveSamples;
   final Future<void> Function(String, List<Map<String, dynamic>>) _saveCatalog;
   final Future<void> Function(int, List<Map<String, dynamic>>) _saveHistory;
+  final Future<List<SyncQueueItem>> Function() _getQueueItems;
+  final Future<int> Function(Set<int>) _reconcileSamples;
+  final Future<int> Function(Set<int>) _reconcileContainers;
 
   static Future<void> _defaultSaveCatalog(
     String kind,
@@ -53,7 +56,6 @@ class SyncService {
     return CatalogDao.saveAll(kind, items);
   }
 
-  /// Скачать всё: контейнеры, пробы, справочники, историю каждой тары.
   Future<void> pullAll() async {
     final containerIds = await _pullContainers();
     await _pullSamples();
@@ -66,14 +68,44 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
-    // c-7e-3: pre-fetch истории для всех тар.
-    // N запросов. Ошибка по одной таре не валит Pull.
     for (final id in containerIds) {
       await _pullHistoryFor(id);
     }
+    await _reconcile();
   }
 
-  /// Возвращает ID всех тар (для pre-fetch истории).
+  /// c-9-fill-offline-2c-3-fix-3a: сбросить `pending_sync` у проб/тар,
+  /// для которых в очереди нет записи.
+  Future<void> _reconcile() async {
+    final queue = await _getQueueItems();
+    final keepSampleIds = <int>{};
+    final keepContainerIds = <int>{};
+    final sampleRe = RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$');
+    final fillRe = RegExp(r'^/storage/containers/(\d+)/fill-samples/$');
+    for (final item in queue) {
+      final sm = sampleRe.firstMatch(item.endpoint);
+      if (sm != null) {
+        keepSampleIds.add(int.parse(sm.group(1)!));
+        continue;
+      }
+      final fm = fillRe.firstMatch(item.endpoint);
+      if (fm != null) {
+        keepContainerIds.add(int.parse(fm.group(1)!));
+        continue;
+      }
+      if (item.endpoint == '/storage/containers/bulk-place/') {
+        final ids = item.payload['container_ids'];
+        if (ids is List) {
+          for (final raw in ids) {
+            if (raw is int) keepContainerIds.add(raw);
+          }
+        }
+      }
+    }
+    await _reconcileSamples(keepSampleIds);
+    await _reconcileContainers(keepContainerIds);
+  }
+
   Future<List<int>> _pullContainers() async {
     final ids = <int>[];
     int page = 1;
@@ -137,11 +169,6 @@ class SyncService {
     }
   }
 
-  /// c-7e-3: pre-fetch истории одной тары.
-  ///
-  /// Ошибки глотаем: история не критична для синхронизации. Если по
-  /// одной таре упало — остальные тары и остальные части Pull в порядке.
-  /// При следующем Pull попробуем снова.
   Future<void> _pullHistoryFor(int containerId) async {
     try {
       final res = await _client.get<List<dynamic>>(

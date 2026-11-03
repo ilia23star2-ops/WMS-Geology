@@ -1,5 +1,4 @@
-/// DAO для работы с кэшем тар (c-1, c-9-fill-samples-offline-2a, -2a-fix,
-/// -2b, -2c-3-fix-2).
+/// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a).
 library;
 
 import 'dart:convert';
@@ -111,9 +110,34 @@ class ContainerDao {
     );
   }
 
-  /// c-9-fill-offline-2c-3-fix-2: сбросить `pending_sync` после успешного
-  /// Push. Обёртка над `setPendingSync(id, false)`.
   static Future<void> clearPendingSync(int id) async {
     await setPendingSync(id, false);
+  }
+
+  /// c-9-fill-offline-2c-3-fix-3a: reconcile.
+  ///
+  /// Для всех тар с `pending_sync = 1`, которых **нет** в
+  /// [keepContainerIds] (есть запись в `sync_queue`) — сбрасываем флаг.
+  static Future<int> reconcilePendingContainers(
+    Set<int> keepContainerIds,
+  ) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query('containers', where: 'pending_sync = 1');
+    var cleared = 0;
+    final batch = db.batch();
+    for (final r in rows) {
+      final id = r['id'] as int;
+      if (keepContainerIds.contains(id)) continue;
+      batch.update(
+        'containers',
+        {'pending_sync': 0},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      cleared++;
+    }
+    if (cleared == 0) return 0;
+    await batch.commit(noResult: true);
+    return cleared;
   }
 }

@@ -4,8 +4,11 @@
 /// - `pushAll` возвращает `PushResult { sent, failed }`.
 /// - После **каждой** успешной операции зовёт `onSuccess(endpoint, payload)`.
 ///   Дефолт парсит endpoint и сбрасывает `_pending_sync` (проба) /
-///   `pending_sync` (тара) — иконка `cloud_off` исчезает сразу после Push,
-///   не дожидаясь Pull.
+///   `pending_sync` (тара) — иконка `cloud_off` исчезает сразу после Push.
+///
+/// **fix-3a:** регулярка `/samples/{id}/` теперь матчит и PATCH/DELETE
+/// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`). Раньше
+/// `cloud_off` не сбрасывался после PATCH/DELETE.
 library;
 
 import '../db/container_dao.dart';
@@ -94,18 +97,13 @@ class SyncPusher {
 
   /// Дефолтный `onSuccess`: парсит endpoint и сбрасывает pending-флаги.
   ///
-  /// - `/samples/{id}/` (PATCH, DELETE) — `_pending_sync` у пробы.
-  /// - `/samples/{id}/dispose/`, `/samples/{id}/restore/` (POST) —
-  ///   `_pending_sync` у пробы.
-  /// - `/storage/containers/{id}/fill-samples/` (POST) — `pending_sync`
-  ///   у тары.
-  /// - `/storage/containers/bulk-place/` (POST) — `pending_sync` у каждой
-  ///   тары из `payload['container_ids']`.
+  /// **fix-3a:** регулярка `/samples/{id}/` матчит и PATCH/DELETE
+  /// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`).
   static Future<void> _defaultOnSuccess(
     String endpoint,
     Map<String, dynamic> payload,
   ) async {
-    final sampleRe = RegExp(r'^/samples/(\d+)(?:/dispose/|/restore/)?$');
+    final sampleRe = RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$');
     final sm = sampleRe.firstMatch(endpoint);
     if (sm != null) {
       await SampleDao.clearPendingSyncBySampleId(int.parse(sm.group(1)!));
