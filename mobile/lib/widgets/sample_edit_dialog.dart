@@ -1,8 +1,11 @@
-/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2/2c-3/2c-3-fix-3b).
+/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2/2c-3/2c-4).
 ///
-/// c-9-fill-offline-2c-3-fix-3b: после любой офлайн-операции (queued или
-/// локальная правка) — `SyncProvider.refresh()`, чтобы счётчик на кнопке
-/// «Синхронизация» обновился сразу.
+/// c-9-fill-offline-2c-4: для офлайн-пробы (`id < 0`) поле `sample_number`
+/// **редактируется**. При сохранении номер парсится через `parseSampleInput`
+/// (нужны `laboratoryPrefixes` + `siteMatchPatterns`), разбивка
+/// (`prefix`/`middle`/`sequence`/`digits`/`wellName`) передаётся в
+/// `updateLocalOffline` — `_rebuildFillPayload` пересобирает `sample_groups`
+/// с новым номером.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,6 +16,7 @@ import '../models/sample.dart';
 import '../providers/sync_provider.dart';
 import '../services/catalog_service.dart';
 import '../services/sample_service.dart';
+import '../utils/sample_range_parser.dart';
 
 class SampleEditDialog extends StatefulWidget {
   const SampleEditDialog({
@@ -36,6 +40,8 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
 
   List<ResearchType>? _researchTypes;
   List<Site>? _sites;
+  List<String> _labPrefixes = const [];
+  List<String> _sitePatterns = const [];
   bool _catalogsLoading = true;
   String? _error;
   bool _busy = false;
@@ -58,7 +64,6 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     super.dispose();
   }
 
-  /// c-9-fill-offline-2c-3-fix-3b: обновить счётчик после офлайн-операции.
   void _refreshSync() {
     if (!mounted) return;
     context.read<SyncProvider>().refresh();
@@ -70,11 +75,18 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       final results = await Future.wait<dynamic>([
         catalog.fetchResearchTypes(),
         catalog.fetchSites(),
+        catalog.fetchLaboratories(),
       ]);
       if (!mounted) return;
+      final sites = results[1] as List<Site>;
+      final labs = results[2] as List<Laboratory>;
       setState(() {
         _researchTypes = results[0] as List<ResearchType>;
-        _sites = results[1] as List<Site>;
+        _sites = sites;
+        _labPrefixes = labs.expand((l) => l.prefixes).toList(growable: false);
+        _sitePatterns = sites
+            .expand((s) => s.matchPatterns)
+            .toList(growable: false);
         _catalogsLoading = false;
       });
     } catch (e) {
@@ -99,30 +111,80 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     Navigator.of(context).pop(true);
   }
 
-  Future<void> _save() async {
-    final service = context.read<SampleService>();
+  /// Офлайн: сохранить пробу. Если номер изменился — распарсить через
+  /// `parseSampleInput`, чтобы обновить `_prefix`/`_middle`/`_sequence`
+  /// для `_rebuildFillPayload`. Иначе — только `status`.
+  Future<void> _saveOffline() async {
+    final trimmed = _numberCtrl.text.trim();
+    if (trimmed.isEmpty) {
+      setState(() => _error = 'Номер пробы обязателен');
+      return;
+    }
 
-    if (_isOffline) {
-      setState(() {
-        _busy = true;
-        _error = null;
-      });
-      try {
-        await service.updateLocalOffline(
-          widget.initial.id,
-          containerId: widget.containerId,
-          status: _status,
-        );
-        if (!mounted) return;
-        _refreshSync();
-        Navigator.of(context).pop(true);
-      } catch (e) {
-        if (!mounted) return;
-        setState(() {
-          _error = 'Не удалось сохранить локально: $e';
-          _busy = false;
-        });
+    String? newNumber;
+    String? newPrefix;
+    String? newMiddle;
+    int? newSequence;
+    int? newSequenceDigits;
+    String? newWellName;
+
+    if (trimmed != widget.initial.sampleNumber) {
+      // Номер изменился — парсим.
+      final result = parseSampleInput(
+        trimmed,
+        laboratoryPrefixes: _labPrefixes,
+        siteMatchPatterns: _sitePatterns,
+        hasIncomingWorkOrder: widget.initial.wellName == null,
+      );
+      if (!result.ok) {
+        setState(() => _error = 'Не удалось распознать номер: ${result.error}');
+        return;
       }
+      final parsed = result.value!;
+      if (parsed.sequenceFrom != parsed.sequenceTo) {
+        setState(() => _error = 'Введите номер одной пробы, не диапазон.');
+        return;
+      }
+      newNumber = trimmed;
+      newPrefix = parsed.prefix;
+      newMiddle = parsed.middle;
+      newSequence = parsed.sequenceFrom;
+      newSequenceDigits = parsed.sequenceDigits;
+      newWellName = parsed.wellName;
+    }
+
+    final service = context.read<SampleService>();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await service.updateLocalOffline(
+        widget.initial.id,
+        containerId: widget.containerId,
+        status: _status,
+        newSampleNumber: newNumber,
+        newPrefix: newPrefix,
+        newMiddle: newMiddle,
+        newSequence: newSequence,
+        newSequenceDigits: newSequenceDigits,
+        newWellName: newWellName,
+      );
+      if (!mounted) return;
+      _refreshSync();
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Не удалось сохранить локально: $e';
+        _busy = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (_isOffline) {
+      await _saveOffline();
       return;
     }
 
@@ -136,6 +198,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       return;
     }
 
+    final service = context.read<SampleService>();
     setState(() {
       _busy = true;
       _error = null;
@@ -398,8 +461,9 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Офлайн-проба. Номер и справочники — read-only. '
-                            'Изменения уйдут на сервер при синхронизации.',
+                            'Офлайн-проба. Справочники — read-only. '
+                            'Номер и статус можно менять, изменения уйдут '
+                            'на сервер при синхронизации.',
                             style: TextStyle(
                               fontSize: 12,
                               color: theme.colorScheme.onTertiaryContainer,
@@ -428,7 +492,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
               ],
               TextField(
                 controller: _numberCtrl,
-                enabled: !disabled && !_isOffline,
+                enabled: !disabled,
                 style: const TextStyle(fontFamily: 'monospace'),
                 decoration: const InputDecoration(
                   labelText: 'Номер пробы',

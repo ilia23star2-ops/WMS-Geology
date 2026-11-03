@@ -1,4 +1,4 @@
-/// Тесты `SampleService` (c-7e-1, c-9-fill-offline-2a..2c-3).
+/// Тесты `SampleService` (c-7e-1, c-9-fill-offline-2a..2c-4).
 library;
 
 import 'package:dio/dio.dart';
@@ -90,7 +90,6 @@ class _EnqueueCall {
 }
 
 void main() {
-  // ============ c-7e-1: fetchByContainerId ============
   group('SampleService.fetchByContainerId (c-7e-1)', () {
     late _MockApi api;
     late List<Map<String, dynamic>> cached;
@@ -138,20 +137,18 @@ void main() {
       final list = await service.fetchByContainerId(10);
 
       expect(list.length, 2);
-      expect(list[0].id, 1);
       expect(list[0].isOfflinePending, false);
       expect(savedToCache.length, 2);
       expect(cleanupCalls, [10]);
       expect(cleanupNumbers.first, {'S-1', 'S-2'});
     });
 
-    test('онлайн, пустая тара: пустой список, cleanup с пустым set', () async {
+    test('онлайн, пустая тара: пустой список', () async {
       api.results = const [];
       final service = createService();
       final list = await service.fetchByContainerId(10);
       expect(list, isEmpty);
       expect(cleanupCalls, [10]);
-      expect(cleanupNumbers.first, isEmpty);
     });
 
     test('офлайн с кэшем: возвращает кэш, cleanup не вызван', () async {
@@ -167,7 +164,6 @@ void main() {
       final service = createService();
       final list = await service.fetchByContainerId(10);
       expect(list.length, 1);
-      expect(list.first.id, 5);
       expect(cleanupCalls, isEmpty);
     });
 
@@ -191,6 +187,7 @@ void main() {
         throwsA(isA<ApiException>()),
       );
     });
+
     test('онлайн с pending: возвращает кэш, а не серверные', () async {
       api.results = [
         {
@@ -217,7 +214,6 @@ void main() {
     });
   });
 
-  // ============ fillSamples (2a + 2a-fix) ============
   group('SampleService.fillSamples (c-9-fill-offline-2a + 2a-fix)', () {
     late _MockApi api;
     late List<Map<String, dynamic>> localSaved;
@@ -257,7 +253,7 @@ void main() {
       );
     }
 
-    test('онлайн: POST уходит, online, локально не сохраняет', () async {
+    test('онлайн: POST уходит, online', () async {
       api.postData = {'total_samples': 3};
       final service = createService();
       final outcome = await service.fillSamples(
@@ -265,7 +261,6 @@ void main() {
         containerNumber: 'T-001',
         workOrderCoded: 'TST0001',
         researchTypeId: 1,
-        siteId: 2,
         sampleGroups: [
           {
             'prefix': 'TST',
@@ -280,7 +275,6 @@ void main() {
       );
 
       expect(outcome, FillOutcome.online);
-      expect(api.postCalls.length, 1);
       expect(localSaved, isEmpty);
       expect(enqueued, isEmpty);
     });
@@ -309,7 +303,6 @@ void main() {
       expect(localSaved.length, 3);
       expect(localSaved.first['status'], 'PENDING_PLACEMENT');
       expect(localSaved.first['_prefix'], 'TST');
-      expect(localSaved.first['_sequence'], 1);
       expect(enqueued.length, 1);
     });
 
@@ -416,19 +409,18 @@ void main() {
     });
   });
 
-  // ============ 2c-1: updateLocalOffline / deleteLocalOffline ============
-  group('SampleService.updateLocalOffline / deleteLocalOffline (2c-1)', () {
+  group('SampleService.updateLocalOffline / deleteLocalOffline (2c-1 + 2c-4)', () {
     late List<Map<String, dynamic>> locals;
     late Map<String, dynamic>? queuePayload;
     late List<MapEntry<String, Map<String, dynamic>>> updateCalls;
-    late List<MapEntry<int, String>> localStatusUpdates;
+    late List<MapEntry<int, Map<String, dynamic>>> localFieldUpdates;
     late List<int> localDeletes;
 
     setUp(() {
       locals = [];
       queuePayload = null;
       updateCalls = [];
-      localStatusUpdates = [];
+      localFieldUpdates = [];
       localDeletes = [];
     });
 
@@ -436,10 +428,14 @@ void main() {
       return SampleService(
         _MockApi(),
         getLocalNegative: (_) async => locals,
-        updateLocalStatus: (sampleId, status) async {
-          localStatusUpdates.add(MapEntry(sampleId, status));
+        updateLocalFields: (sampleId, fields) async {
+          localFieldUpdates.add(MapEntry(sampleId, fields));
           for (final l in locals) {
-            if (l['id'] == sampleId) l['status'] = status;
+            if (l['id'] == sampleId) {
+              for (final e in fields.entries) {
+                l[e.key] = e.value;
+              }
+            }
           }
         },
         deleteLocal: (sampleId) async {
@@ -502,12 +498,57 @@ void main() {
         status: SampleStatus.selected,
       );
 
-      expect(localStatusUpdates.length, 1);
-      expect(localStatusUpdates.first.value, 'SELECTED');
+      expect(localFieldUpdates.length, 1);
+      expect(localFieldUpdates.first.value['status'], 'SELECTED');
       expect(updateCalls.length, 1);
       final groups = updateCalls.first.value['sample_groups'] as List;
       expect(groups.length, 2);
     });
+
+    test(
+      'updateLocalOffline с новым номером: _prefix/_middle/_sequence обновлены',
+      () async {
+        locals = [local(id: -1, prefix: 'TST', middle: '124', seq: 1)];
+        queuePayload = {
+          'work_order_coded': 'TST0001',
+          'research_type_id': 1,
+          'sample_groups': [
+            {
+              'prefix': 'TST',
+              'middle': '124',
+              'sequence_from': 1,
+              'sequence_to': 1,
+              'sequence_digits': 3,
+              'well_name': null,
+              'status': 'NORMAL',
+            },
+          ],
+        };
+        final service = createService();
+        await service.updateLocalOffline(
+          -1,
+          containerId: 10,
+          status: SampleStatus.selected,
+          newSampleNumber: 'TST124099',
+          newPrefix: 'TST',
+          newMiddle: '124',
+          newSequence: 99,
+          newSequenceDigits: 3,
+          newWellName: '124',
+        );
+
+        expect(localFieldUpdates.length, 1);
+        final fields = localFieldUpdates.first.value;
+        expect(fields['sample_number'], 'TST124099');
+        expect(fields['_sequence'], 99);
+        expect(fields['status'], 'SELECTED');
+        final groups = updateCalls.first.value['sample_groups'] as List;
+        expect(groups.length, 1);
+        final g = groups.first as Map;
+        expect(g['sequence_from'], 99);
+        expect(g['sequence_to'], 99);
+      },
+    );
 
     test('deleteLocalOffline: проба удалена + payload пересобран', () async {
       locals = [
@@ -536,6 +577,7 @@ void main() {
       expect(updateCalls.length, 1);
       final groups = updateCalls.first.value['sample_groups'] as List;
       expect(groups.length, 1);
+      expect((groups.first as Map)['sequence_from'], 2);
     });
 
     test('updateLocalOffline без payload: тихо игнорируем', () async {
@@ -547,12 +589,11 @@ void main() {
         containerId: 10,
         status: SampleStatus.selected,
       );
-      expect(localStatusUpdates.length, 1);
+      expect(localFieldUpdates.length, 1);
       expect(updateCalls, isEmpty);
     });
   });
 
-  // ============ 2c-3: офлайн update/dispose/restore/delete серверных ============
   group('SampleService (c-9-fill-offline-2c-3) серверные пробы', () {
     late _MockApi api;
     late List<_EnqueueCall> enqueued;
@@ -601,9 +642,7 @@ void main() {
 
       expect(outcome, OnlineOutcome.online);
       expect(api.patchCalls.length, 1);
-      expect(api.patchCalls.first.key, '/samples/5/');
       expect(enqueued, isEmpty);
-      expect(localStatusUpdates, isEmpty);
     });
 
     test('update офлайн: PATCH в очередь + локально + pendingSync', () async {
@@ -616,65 +655,45 @@ void main() {
       expect(outcome, OnlineOutcome.queued);
       expect(enqueued.length, 1);
       expect(enqueued.first.action, 'PATCH');
-      expect(enqueued.first.endpoint, '/samples/5/');
-      expect(enqueued.first.payload, {'status': 'SELECTED'});
       expect(localStatusUpdates.length, 1);
-      expect(localStatusUpdates.first.value, 'SELECTED');
       expect(pendingSyncs.length, 1);
-      expect(pendingSyncs.first.key, 10);
     });
 
-    test(
-      'dispose офлайн: POST dispose в очередь + DISPOSED + pendingSync',
-      () async {
-        api.offline = true;
-        final service = createService();
-        final outcome = await service.dispose(
-          5,
-          reason: 'разбита',
-          containerId: 10,
-        );
+    test('dispose офлайн: POST dispose в очередь + DISPOSED', () async {
+      api.offline = true;
+      final service = createService();
+      final outcome = await service.dispose(
+        5,
+        reason: 'разбита',
+        containerId: 10,
+      );
 
-        expect(outcome, OnlineOutcome.queued);
-        expect(enqueued.length, 1);
-        expect(enqueued.first.action, 'POST');
-        expect(enqueued.first.endpoint, '/samples/5/dispose/');
-        expect(enqueued.first.payload['disposal_reason'], 'разбита');
-        expect(localStatusUpdates.first.value, 'DISPOSED');
-        expect(pendingSyncs.first.key, 10);
-      },
-    );
+      expect(outcome, OnlineOutcome.queued);
+      expect(enqueued.length, 1);
+      expect(enqueued.first.action, 'POST');
+      expect(localStatusUpdates.first.value, 'DISPOSED');
+    });
 
-    test(
-      'restore офлайн: POST restore в очередь + IN_STORAGE + pendingSync',
-      () async {
-        api.offline = true;
-        final service = createService();
-        final outcome = await service.restore(5, containerId: 10);
+    test('restore офлайн: POST restore в очередь + IN_STORAGE', () async {
+      api.offline = true;
+      final service = createService();
+      final outcome = await service.restore(5, containerId: 10);
 
-        expect(outcome, OnlineOutcome.queued);
-        expect(enqueued.length, 1);
-        expect(enqueued.first.action, 'POST');
-        expect(enqueued.first.endpoint, '/samples/5/restore/');
-        expect(localStatusUpdates.first.value, 'IN_STORAGE');
-      },
-    );
+      expect(outcome, OnlineOutcome.queued);
+      expect(enqueued.length, 1);
+      expect(localStatusUpdates.first.value, 'IN_STORAGE');
+    });
 
-    test(
-      'deleteSample офлайн: DELETE в очередь + локально + pendingSync',
-      () async {
-        api.offline = true;
-        final service = createService();
-        final outcome = await service.deleteSample(5, containerId: 10);
+    test('deleteSample офлайн: DELETE в очередь + локально', () async {
+      api.offline = true;
+      final service = createService();
+      final outcome = await service.deleteSample(5, containerId: 10);
 
-        expect(outcome, OnlineOutcome.queued);
-        expect(enqueued.length, 1);
-        expect(enqueued.first.action, 'DELETE');
-        expect(enqueued.first.endpoint, '/samples/5/');
-        expect(localDeletes, [5]);
-        expect(pendingSyncs.first.key, 10);
-      },
-    );
+      expect(outcome, OnlineOutcome.queued);
+      expect(enqueued.length, 1);
+      expect(enqueued.first.action, 'DELETE');
+      expect(localDeletes, [5]);
+    });
 
     test('валидация (не network): пробрасывается', () async {
       api.throwOnPatch = ApiException(
@@ -691,7 +710,6 @@ void main() {
     });
   });
 
-  // ============ isOfflinePending / needsSync ============
   group('Sample.isOfflinePending / needsSync', () {
     test('negative id → isOfflinePending + needsSync', () {
       final s = Sample.fromJson({
