@@ -1,14 +1,5 @@
 /// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-samples-offline,
-/// c-9-fill-samples-offline-2a).
-///
-/// - `fetchByContainerId` — пробы тары (онлайн → API + кэш + cleanup negatives;
-///   офлайн → кэш, включая пустой).
-/// - `fillSamples` — заполнить тару (`POST .../fill-samples/`).
-///   Офлайн: локальные пробы (negative ID) + `sync_queue` → `FillOutcome.queued`.
-///   **2a:** `container_number` при `queued` пишется и в локальный Container.
-/// - `deleteSample` — удалить (`DELETE /samples/{id}/`). Для negative ID —
-///   локальное удаление, без сети.
-/// - `fetchById` / `update` / `dispose` / `restore` — одна проба.
+/// c-9-fill-samples-offline-2a, -2a-fix, -2b).
 library;
 
 import '../db/container_dao.dart';
@@ -18,7 +9,6 @@ import '../models/sample.dart';
 import '../utils/sample_range_parser.dart';
 import 'api_client.dart';
 
-/// Результат `fillSamples` (c-9-fill-samples-offline).
 enum FillOutcome { online, queued }
 
 typedef SaveSamples = Future<void> Function(List<Map<String, dynamic>> raw);
@@ -39,6 +29,8 @@ typedef Enqueue = Future<void> Function({
   required Map<String, dynamic> payload,
 });
 typedef UpdateContainerNumber = Future<void> Function(int id, String number);
+typedef UpdateContainerStatus = Future<void> Function(int id, String status);
+typedef SetPendingSync = Future<void> Function(int id, bool pending);
 
 class SampleService {
   SampleService(
@@ -49,13 +41,18 @@ class SampleService {
     CleanupOffline? cleanupOffline,
     Enqueue? enqueue,
     UpdateContainerNumber? updateContainerNumber,
+    UpdateContainerStatus? updateContainerStatus,
+    SetPendingSync? setPendingSync,
   }) : _saveSamples = saveSamples ?? SampleDao.saveAll,
        _getCached = getCached ?? SampleDao.getByContainerId,
        _saveLocalOffline = saveLocalOffline ?? _defaultSaveLocal,
        _cleanupOffline = cleanupOffline ?? SampleDao.cleanupAfterPull,
        _enqueue = enqueue ?? _defaultEnqueue,
        _updateContainerNumber =
-           updateContainerNumber ?? ContainerDao.updateNumberLocal;
+           updateContainerNumber ?? ContainerDao.updateNumberLocal,
+       _updateContainerStatus =
+           updateContainerStatus ?? ContainerDao.updateStatusLocal,
+       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync;
 
   final ApiClient _client;
   final SaveSamples _saveSamples;
@@ -64,6 +61,8 @@ class SampleService {
   final CleanupOffline _cleanupOffline;
   final Enqueue _enqueue;
   final UpdateContainerNumber _updateContainerNumber;
+  final UpdateContainerStatus _updateContainerStatus;
+  final SetPendingSync _setPendingSync;
 
   static Future<void> _defaultSaveLocal({
     required int containerId,
@@ -141,10 +140,6 @@ class SampleService {
   }
 
   /// POST /storage/containers/{id}/fill-samples/
-  ///
-  /// Офлайн: локальные пробы (negative ID) + `sync_queue` → `queued`.
-  /// **2a:** если `containerNumber` передан — `ContainerDao.updateNumberLocal`,
-  /// чтобы карточка сразу показывала номер, а не «Заготовка».
   Future<FillOutcome> fillSamples(
     int containerId, {
     String? containerNumber,
@@ -153,6 +148,8 @@ class SampleService {
     required int researchTypeId,
     int? siteId,
     required List<Map<String, dynamic>> sampleGroups,
+    String? researchTypeName,
+    String? siteName,
   }) async {
     final payload = <String, dynamic>{
       if (containerNumber != null) 'container_number': containerNumber,
@@ -179,16 +176,32 @@ class SampleService {
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
 
-      final localSamples = _expandGroups(sampleGroups);
+      final localSamples = _expandGroups(
+        sampleGroups,
+        researchTypeName: researchTypeName,
+        siteName: siteName,
+      );
       await _saveLocalOffline(containerId: containerId, samples: localSamples);
 
-      // c-9-fill-samples-offline-2a: сохранить номер локально.
       if (containerNumber != null && containerNumber.trim().isNotEmpty) {
         try {
           await _updateContainerNumber(containerId, containerNumber.trim());
         } catch (_) {
           // Кэш не критичен.
         }
+      }
+
+      try {
+        await _updateContainerStatus(containerId, 'PENDING_PLACEMENT');
+      } catch (_) {
+        // Кэш не критичен.
+      }
+
+      // 2b: пометить тару как несинхронизированную.
+      try {
+        await _setPendingSync(containerId, true);
+      } catch (_) {
+        // Кэш не критичен.
       }
 
       await _enqueue(
@@ -200,14 +213,11 @@ class SampleService {
     }
   }
 
-  /// c-9-fill-samples-offline-2a: `sample_groups` → плоский список проб.
-  ///
-  /// `status` в группе — `'NORMAL'` / `'SELECTED'` (внутренние имена,
-  /// не `Sample.status`). Маппим:
-  /// - `'SELECTED'` → `SampleStatus.selected` (`'SELECTED'`);
-  /// - иначе → `SampleStatus.pendingPlacement` (`'PENDING_PLACEMENT'`) —
-  ///   как сервер для `PENDING_FILLING`-контейнера.
-  List<Map<String, dynamic>> _expandGroups(List<Map<String, dynamic>> groups) {
+  List<Map<String, dynamic>> _expandGroups(
+    List<Map<String, dynamic>> groups, {
+    String? researchTypeName,
+    String? siteName,
+  }) {
     final result = <Map<String, dynamic>>[];
     for (final g in groups) {
       try {
@@ -229,6 +239,8 @@ class SampleService {
             'sample_number': num,
             'status': sampleStatus,
             'well_name': g['well_name'],
+            'research_type_name': researchTypeName ?? '',
+            'site_name': siteName ?? '',
           });
         }
       } catch (_) {
@@ -238,10 +250,6 @@ class SampleService {
     return result;
   }
 
-  /// DELETE /samples/{id}/
-  ///
-  /// c-9-fill-samples-offline: для negative ID — локальное удаление.
-  /// Для серверных — DELETE.
   Future<void> deleteSample(int sampleId) async {
     if (sampleId < 0) {
       await SampleDao.deleteById(sampleId);
@@ -250,7 +258,6 @@ class SampleService {
     await _client.delete<dynamic>('/samples/$sampleId/');
   }
 
-  /// PATCH /samples/{id}/
   Future<Sample> update(int id, Map<String, dynamic> payload) async {
     final response = await _client.patch<Map<String, dynamic>>(
       '/samples/$id/',
@@ -266,7 +273,6 @@ class SampleService {
     return Sample.fromJson(data);
   }
 
-  /// POST /samples/{id}/dispose/
   Future<Sample> dispose(int id, {String reason = ''}) async {
     final response = await _client.post<Map<String, dynamic>>(
       '/samples/$id/dispose/',
@@ -282,7 +288,6 @@ class SampleService {
     return Sample.fromJson(data);
   }
 
-  /// POST /samples/{id}/restore/
   Future<Sample> restore(int id) async {
     final response = await _client.post<Map<String, dynamic>>(
       '/samples/$id/restore/',

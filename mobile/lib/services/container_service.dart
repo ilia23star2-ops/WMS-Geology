@@ -1,13 +1,4 @@
-/// Сервис тары.
-///
-/// - `fetchById` — карточка тары (с офлайн-кэшем).
-/// - `fetchList` — реестр тары (c-9), офлайн — из `getAllCached`.
-/// - `bulkCreate` — создание N тар (`POST .../bulk-create/`), c-9.
-///   Офлайн не поддерживается: сервер генерирует ID.
-/// - `fetchHistory` — история (c-7e-2, с кэшем).
-/// - `update` — редактирование (PATCH), только онлайн.
-/// - `fetchLabelPdf` — PDF этикетки (c-7d).
-/// - `bulkPlace` — размещение (c-7c), offline через `sync_queue`.
+/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b).
 library;
 
 import '../db/container_dao.dart';
@@ -17,25 +8,19 @@ import '../models/container.dart';
 import '../models/container_history_entry.dart';
 import 'api_client.dart';
 
-/// Результат `bulkPlace` (c-7c).
 enum PlaceOutcome { online, queued }
 
-/// Страница реестра тар (c-9).
 class ContainersPage {
   const ContainersPage({required this.count, required this.items});
-
   final int count;
   final List<Container> items;
 }
 
-/// DI-хук для тестов. По умолчанию — `SyncQueueDao.enqueue`.
 typedef EnqueuePlace = Future<void> Function({
   required String action,
   required String endpoint,
   required Map<String, dynamic> payload,
 });
-
-/// DI-хук для тестов истории (c-7e-2).
 typedef SaveHistory = Future<void> Function(
   int containerId,
   List<Map<String, dynamic>> items,
@@ -43,9 +28,8 @@ typedef SaveHistory = Future<void> Function(
 typedef GetCachedHistory = Future<List<Map<String, dynamic>>> Function(
   int containerId,
 );
-
-/// DI-хук для `fetchList` офлайн (c-9).
 typedef GetAllCached = Future<List<Map<String, dynamic>>> Function();
+typedef SetPendingSync = Future<void> Function(int id, bool pending);
 
 class ContainerService {
   ContainerService(
@@ -54,17 +38,20 @@ class ContainerService {
     SaveHistory? saveHistory,
     GetCachedHistory? getCachedHistory,
     GetAllCached? getAllCached,
+    SetPendingSync? setPendingSync,
   }) : _enqueue = enqueue ?? _defaultEnqueue,
        _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
        _getCachedHistory =
            getCachedHistory ?? ContainerHistoryDao.getByContainerId,
-       _getAllCached = getAllCached ?? ContainerDao.getAll;
+       _getAllCached = getAllCached ?? ContainerDao.getAll,
+       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync;
 
   final ApiClient _client;
   final EnqueuePlace _enqueue;
   final SaveHistory _saveHistory;
   final GetCachedHistory _getCachedHistory;
   final GetAllCached _getAllCached;
+  final SetPendingSync _setPendingSync;
 
   static Future<void> _defaultEnqueue({
     required String action,
@@ -187,15 +174,6 @@ class ContainerService {
     }
   }
 
-  /// POST /storage/containers/bulk-create/ (c-9-container-create).
-  ///
-  /// Создаёт N тар-заготовок. Draft-поля (участок, ТИ, Н/З) сохраняются
-  /// на каждой таре. `container_number` не задаётся — присваивается при
-  /// заполнении пробами.
-  ///
-  /// Возвращает `total_containers`. Офлайн **не поддерживается**: сервер
-  /// генерирует ID. При `ApiException.isNetworkError` — пробрасываем, UI
-  /// показывает ошибку.
   Future<int> bulkCreate({
     required List<Map<String, dynamic>> containers,
     int? draftSiteId,
@@ -301,6 +279,14 @@ class ContainerService {
         endpoint: '/storage/containers/bulk-place/',
         payload: body,
       );
+      // 2b: пометить тары как несинхронизированные.
+      for (final id in containerIds) {
+        try {
+          await _setPendingSync(id, true);
+        } catch (_) {
+          // Кэш не критичен.
+        }
+      }
       return PlaceOutcome.queued;
     }
   }

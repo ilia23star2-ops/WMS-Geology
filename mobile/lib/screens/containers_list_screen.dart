@@ -1,16 +1,4 @@
-/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix + c-9-container-create + c-9-container-list-actions).
-///
-/// Аналог `ContainersPage.tsx` в вебе:
-/// - 4 фильтра (статус, тип, Н/З draft, ТИ draft), адаптив;
-/// - server-side пагинация по 50;
-/// - карточки: Н/З · ТИ (крупно) + иконки статуса и печати справа,
-///   затем Тип · номер (mono или chip «Заготовка»), локация, комментарий;
-/// - кнопка по статусу:
-///   `PENDING_FILLING` → «Заполнить» (карточка на вкладке «Редактирование»),
-///   `PENDING_PLACEMENT` → «Разместить» (PlaceContainerDialog),
-///   `ACTIVE` + ячейка → «Местоположение» (ContainerLocationDialog),
-///   `IN_TRANSIT` / `ISSUED` — без действия;
-/// - FAB «+ Создать тару» → CreateContainersDialog.
+/// Реестр тары (c-9-container-list + order + overflow-fix + container-create + list-actions + fill-offline-2b).
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт с Flutter-виджетом.
 library;
@@ -77,7 +65,7 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
         _researchTypes = results[1] as List<ResearchType>;
       });
     } catch (_) {
-      // Справочники не критичны для реестра.
+      // Справочники не критичны.
     }
   }
 
@@ -153,8 +141,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     _loadPage();
   }
 
-  /// c-9-container-list-actions: «Заполнить» — открывает карточку сразу
-  /// на вкладке «Редактирование» (индекс 1).
   Future<void> _openContainerEdit(Container c) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -442,11 +428,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
-  /// c-9-container-list-actions: кнопка по статусу.
-  /// `PENDING_FILLING` → «Заполнить» (вкладка «Редактирование»).
-  /// `PENDING_PLACEMENT` → «Разместить».
-  /// `ACTIVE` + ячейка → «Местоположение».
-  /// `IN_TRANSIT` / `ISSUED` — без действия.
   Widget _containerTile(ThemeData theme, Container c) {
     final numberText =
         (c.containerNumber != null && c.containerNumber!.isNotEmpty)
@@ -482,6 +463,18 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
                 _statusIcon(c.status),
                 const SizedBox(width: 4),
                 _printIcon(c.printBatchStatus),
+                // 2b: иконка «не синхронизировано».
+                if (c.pendingSync) ...[
+                  const SizedBox(width: 4),
+                  const Tooltip(
+                    message: 'Есть несинхронизированные изменения',
+                    child: Icon(
+                      Icons.cloud_off,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 4),
@@ -553,17 +546,8 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                // Кнопка действия по статусу.
                 ..._actionButtons(theme, c),
-                if (hasCell && c.status != ContainerStatus.active)
-                  // Тара ещё не ACTIVE, но ячейка уже есть (переходное
-                  // состояние после offline-place) — показать адрес.
-                  TextButton.icon(
-                    onPressed: () => _openLocation(c),
-                    icon: const Icon(Icons.place_outlined, size: 18),
-                    label: const Text('Местоположение'),
-                  ),
-                if (hasCell && c.status == ContainerStatus.active)
+                if (hasCell)
                   TextButton.icon(
                     onPressed: () => _openLocation(c),
                     icon: const Icon(Icons.place_outlined, size: 18),
@@ -582,7 +566,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
-  /// c-9-container-list-actions: действия по статусу.
   List<Widget> _actionButtons(ThemeData theme, Container c) {
     switch (c.status) {
       case ContainerStatus.pendingFilling:
@@ -602,9 +585,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
           ),
         ];
       case ContainerStatus.active:
-        // «Местоположение» добавляется отдельно (кнопка ниже),
-        // если есть cellId. Здесь — без действия.
-        return const [];
       case ContainerStatus.inTransit:
       case ContainerStatus.issued:
       case ContainerStatus.unknown:
