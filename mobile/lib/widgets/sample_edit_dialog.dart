@@ -1,17 +1,17 @@
-/// Диалог редактирования пробы (c-7g).
+/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2).
 ///
-/// Порт `web/src/components/SampleEditDialog.tsx`.
+/// Порт `web/src/components/SampleEditDialog.tsx` + офлайн-режим.
 ///
-/// Поля: `sample_number`, `research_type` (dropdown), `site` (dropdown),
-/// `status` (dropdown).
-/// Действия: «Утилизировать» (с причиной), «Вернуть из утилизации»,
-/// «Удалить пробу».
+/// Онлайн: `sample_number`, `research_type`, `site`, `status` — всё
+/// редактируется, `PATCH /samples/{id}/`.
+///
+/// Офлайн-проба (`initial.isOfflinePending`): номер и справочники read-only,
+/// правится только `status`. `dispose` / `restore` / `delete` — локально
+/// через `SampleService.updateLocalOffline` / `deleteLocalOffline`,
+/// `_rebuildFillPayload` обновит `sample_groups` в очереди.
 ///
 /// Возвращает `true` через `Navigator.pop(true)`, если что-то изменилось —
 /// родитель перезагружает список проб и историю.
-///
-/// ВАЖНО: `SampleService` и `CatalogService` берутся через
-/// `context.read` **до** первого `await` — иначе `use_build_context_synchronously`.
 library;
 
 import 'package:flutter/material.dart';
@@ -23,9 +23,14 @@ import '../services/catalog_service.dart';
 import '../services/sample_service.dart';
 
 class SampleEditDialog extends StatefulWidget {
-  const SampleEditDialog({super.key, required this.initial});
+  const SampleEditDialog({
+    super.key,
+    required this.initial,
+    required this.containerId,
+  });
 
   final Sample initial;
+  final int containerId;
 
   @override
   State<SampleEditDialog> createState() => _SampleEditDialogState();
@@ -42,6 +47,8 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   bool _catalogsLoading = true;
   String? _error;
   bool _busy = false;
+
+  bool get _isOffline => widget.initial.isOfflinePending;
 
   @override
   void initState() {
@@ -60,8 +67,6 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   }
 
   Future<void> _loadCatalogs() async {
-    // Берём `CatalogService` до первого `await` — не будет
-    // `use_build_context_synchronously`.
     final catalog = context.read<CatalogService>();
     try {
       final results = await Future.wait<dynamic>([
@@ -86,6 +91,31 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   bool get _isDisposed => widget.initial.status == SampleStatus.disposed;
 
   Future<void> _save() async {
+    final service = context.read<SampleService>();
+
+    if (_isOffline) {
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      try {
+        await service.updateLocalOffline(
+          widget.initial.id,
+          containerId: widget.containerId,
+          status: _status,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Не удалось сохранить локально: $e';
+          _busy = false;
+        });
+      }
+      return;
+    }
+
     final number = _numberCtrl.text.trim();
     if (number.isEmpty) {
       setState(() => _error = 'Номер пробы обязателен');
@@ -96,8 +126,6 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       return;
     }
 
-    // Сервис берём до `await`.
-    final service = context.read<SampleService>();
     setState(() {
       _busy = true;
       _error = null;
@@ -121,8 +149,32 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   }
 
   Future<void> _dispose() async {
-    // Сервис — до диалога (внутри `showDialog` будет `await`).
     final service = context.read<SampleService>();
+
+    // Офлайн: статус → DISPOSED, причина не пишется (у локальной её нет).
+    if (_isOffline) {
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      try {
+        await service.updateLocalOffline(
+          widget.initial.id,
+          containerId: widget.containerId,
+          status: SampleStatus.disposed,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Не удалось утилизировать локально: $e';
+          _busy = false;
+        });
+      }
+      return;
+    }
+
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) {
@@ -171,8 +223,32 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   }
 
   Future<void> _restore() async {
-    // Сервис — до `await`.
     final service = context.read<SampleService>();
+
+    if (_isOffline) {
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      try {
+        // Локальная проба ещё не размещена → возвращаем в PENDING_PLACEMENT.
+        await service.updateLocalOffline(
+          widget.initial.id,
+          containerId: widget.containerId,
+          status: SampleStatus.pendingPlacement,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Не удалось вернуть локально: $e';
+          _busy = false;
+        });
+      }
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
@@ -191,13 +267,15 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
   }
 
   Future<void> _delete() async {
-    // Сервис — до диалога.
     final service = context.read<SampleService>();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Удалить пробу?'),
-        content: Text('${widget.initial.sampleNumber}\n\nДействие необратимо.'),
+        content: Text(
+          '${widget.initial.sampleNumber}\n\n'
+          '${_isOffline ? 'Локальная проба будет удалена из очереди.' : 'Действие необратимо.'}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -218,7 +296,14 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       _error = null;
     });
     try {
-      await service.deleteSample(widget.initial.id);
+      if (_isOffline) {
+        await service.deleteLocalOffline(
+          widget.initial.id,
+          containerId: widget.containerId,
+        );
+      } else {
+        await service.deleteSample(widget.initial.id);
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -255,6 +340,38 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (_isOffline) ...[
+                const SizedBox(height: 12),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.cloud_off,
+                          size: 16,
+                          color: theme.colorScheme.onTertiaryContainer,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Офлайн-проба. Номер и справочники — read-only. '
+                            'Изменения уйдут на сервер при синхронизации.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onTertiaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               if (_error != null) ...[
                 Container(
@@ -272,7 +389,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
               ],
               TextField(
                 controller: _numberCtrl,
-                enabled: !disabled,
+                enabled: !disabled && !_isOffline,
                 style: const TextStyle(fontFamily: 'monospace'),
                 decoration: const InputDecoration(
                   labelText: 'Номер пробы',
@@ -286,9 +403,9 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               else ...[
-                _buildResearchTypeDropdown(disabled),
+                _buildResearchTypeDropdown(disabled || _isOffline),
                 const SizedBox(height: 12),
-                _buildSiteDropdown(disabled),
+                _buildSiteDropdown(disabled || _isOffline),
                 const SizedBox(height: 12),
                 _buildStatusDropdown(disabled),
               ],
@@ -354,6 +471,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     return DropdownButtonFormField<int>(
       key: ValueKey('rt_$_researchTypeId'),
       initialValue: hasCurrent ? _researchTypeId : null,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Тип исследования',
         border: OutlineInputBorder(),
@@ -362,10 +480,17 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
         if (_researchTypeId != null && !hasCurrent)
           DropdownMenuItem<int>(
             value: _researchTypeId,
-            child: Text('ID $_researchTypeId (не в справочнике)'),
+            child: Text(
+              'ID $_researchTypeId (не в справочнике)',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
           ),
         ...types.map(
-          (t) => DropdownMenuItem<int>(value: t.id, child: Text(t.label)),
+          (t) => DropdownMenuItem<int>(
+            value: t.id,
+            child: Text(t.label, overflow: TextOverflow.ellipsis, maxLines: 1),
+          ),
         ),
       ],
       onChanged: disabled ? null : (v) => setState(() => _researchTypeId = v),
@@ -377,14 +502,21 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     return DropdownButtonFormField<int?>(
       key: ValueKey('site_$_siteId'),
       initialValue: _siteId,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Участок',
         border: OutlineInputBorder(),
       ),
       items: [
-        const DropdownMenuItem<int?>(value: null, child: Text('— не указан —')),
+        const DropdownMenuItem<int?>(
+          value: null,
+          child: Text('— не указан —', overflow: TextOverflow.ellipsis),
+        ),
         ...sites.map(
-          (s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.label)),
+          (s) => DropdownMenuItem<int?>(
+            value: s.id,
+            child: Text(s.label, overflow: TextOverflow.ellipsis, maxLines: 1),
+          ),
         ),
       ],
       onChanged: disabled ? null : (v) => setState(() => _siteId = v),
@@ -395,6 +527,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     return DropdownButtonFormField<SampleStatus>(
       key: ValueKey('status_$_status'),
       initialValue: _status,
+      isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Статус',
         border: OutlineInputBorder(),
@@ -402,7 +535,11 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
       items: SampleStatus.values.map((s) {
         return DropdownMenuItem<SampleStatus>(
           value: s,
-          child: Text(sampleStatusLabels[s] ?? s.name),
+          child: Text(
+            sampleStatusLabels[s] ?? s.name,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
         );
       }).toList(),
       onChanged: disabled ? null : (v) => setState(() => _status = v!),

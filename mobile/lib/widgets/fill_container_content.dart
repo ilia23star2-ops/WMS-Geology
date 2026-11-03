@@ -1,21 +1,11 @@
 /// Управление пробами в таре — как `FillContainerContent.tsx`
-/// (c-7f + c-7g + c-9-fill-samples-offline + c-9-fill-offline-2a-fix).
+/// (c-7f + c-7g + c-9-fill-offline-2a-fix + 2c-2).
 ///
-/// Блоки:
-/// 1. **Добавить новые пробы** — поле диапазона + таблица добавленных.
-/// 2. **Пробы в таре** — существующие, с ✏ (SampleEditDialog) и удалением.
-/// 3. **Итого + [Отмена] [Сохранить]**.
-///
-/// c-7g: у каждой существующей пробы — цветной чип статуса
-/// (`SampleStatusChip`) и кнопка ✏ (открывает `SampleEditDialog`).
-///
-/// c-9-fill-samples-offline: после [Сохранить] офлайн — `fillSamples`
-/// возвращает `queued`, пробы создаются локально (negative ID), в списке
-/// помечаются «офлайн». ✏/🗑 для них запрещены до синхронизации.
-///
+/// c-7g: у каждой существующей пробы — цветной чип статуса и кнопка ✏.
 /// c-9-fill-offline-2a-fix: при вызове `fillSamples` передаются
-/// `researchTypeName` / `siteName` из тары — в просмотре офлайн-пробы
-/// ТИ и участок видны сразу.
+/// `researchTypeName` / `siteName` из тары.
+/// c-9-fill-offline-2c-2: ✏/🗑 у офлайн-проб **больше не дизейблятся** —
+/// редактирование/удаление работают через `SampleEditDialog` в офлайн-режиме.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -154,7 +144,7 @@ class _FillContainerContentState extends State<FillContainerContent> {
             .toList(growable: false);
       });
     } catch (_) {
-      // Не критично: парсер покажет ошибку префикса.
+      // Не критично.
     }
   }
 
@@ -280,13 +270,19 @@ class _FillContainerContentState extends State<FillContainerContent> {
     });
   }
 
+  /// c-9-fill-offline-2c-2: офлайн-пробы больше не дизейблятся — удаление
+  /// идёт через `SampleEditDialog` (у него в офлайн-режиме есть delete).
   Future<void> _handleDeleteExisting(Sample s) async {
     if (s.isOfflinePending) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Удаление доступно после синхронизации этой пробы.'),
-        ),
+      // Офлайн-пробу удаляем через диалог (там deleteLocalOffline + rebuild payload).
+      final changed = await showDialog<bool>(
+        context: context,
+        builder: (_) =>
+            SampleEditDialog(initial: s, containerId: widget.container.id),
       );
+      if (changed == true && mounted) {
+        await _loadSamples();
+      }
       return;
     }
     final ok = await showDialog<bool>(
@@ -312,19 +308,10 @@ class _FillContainerContentState extends State<FillContainerContent> {
   }
 
   Future<void> _openEditSample(Sample s) async {
-    if (s.isOfflinePending) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Редактирование доступно после синхронизации этой пробы.',
-          ),
-        ),
-      );
-      return;
-    }
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => SampleEditDialog(initial: s),
+      builder: (_) =>
+          SampleEditDialog(initial: s, containerId: widget.container.id),
     );
     if (changed == true && mounted) {
       await _loadSamples();
@@ -442,8 +429,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
           return;
         }
 
-        // c-9-fill-offline-2a-fix: передать researchTypeName / siteName,
-        // чтобы офлайн-пробы сразу показывали ТИ и участок.
         outcome = await sampleService.fillSamples(
           widget.container.id,
           containerNumber: widget.container.containerNumber == null
@@ -691,8 +676,9 @@ class _FillContainerContentState extends State<FillContainerContent> {
     );
   }
 
-  /// c-9-fill-samples-offline: для `isOfflinePending` — маркер «офлайн»
-  /// и запрет ✏/🗑 до синхронизации.
+  /// c-9-fill-offline-2c-2: ✏/🗑 у офлайн-проб **больше не дизейблятся**.
+  /// ✏ → офлайн-режим `SampleEditDialog` (правится только статус).
+  /// 🗑 → офлайн-режим `SampleEditDialog` (удаление через `deleteLocalOffline`).
   Widget _buildExistingRow(Sample s) {
     final theme = Theme.of(context);
     final offline = s.isOfflinePending;
@@ -756,15 +742,15 @@ class _FillContainerContentState extends State<FillContainerContent> {
           ),
           IconButton(
             tooltip: offline
-                ? 'Редактирование после синхронизации'
+                ? 'Редактировать (офлайн — только статус)'
                 : 'Редактировать',
             icon: const Icon(Icons.edit),
-            onPressed: offline ? null : () => _openEditSample(s),
+            onPressed: () => _openEditSample(s),
           ),
           IconButton(
-            tooltip: offline ? 'Удаление после синхронизации' : 'Удалить',
+            tooltip: offline ? 'Удалить (локально)' : 'Удалить',
             icon: Icon(Icons.delete, color: theme.colorScheme.error),
-            onPressed: offline ? null : () => _handleDeleteExisting(s),
+            onPressed: () => _handleDeleteExisting(s),
           ),
         ],
       ),
