@@ -1,5 +1,4 @@
-/// Тесты `ContainerService` (c-7c offline-place, c-7e-2 history cache,
-/// c-9-container-list fetchList).
+/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create).
 library;
 
 import 'package:dio/dio.dart';
@@ -11,6 +10,7 @@ import 'package:wms_geology_mobile/services/container_service.dart';
 class _MockApi extends Fake implements ApiClient {
   final List<MapEntry<String, Object?>> postCalls = [];
   Object? throwOnPost;
+  Object? postData;
 
   final List<String> getCalls = [];
   final List<Map<String, dynamic>?> getQueryParams = [];
@@ -22,7 +22,10 @@ class _MockApi extends Fake implements ApiClient {
     postCalls.add(MapEntry(path, data));
     final e = throwOnPost;
     if (e != null) throw e;
-    return Response<T>(requestOptions: RequestOptions(path: path));
+    return Response<T>(
+      requestOptions: RequestOptions(path: path),
+      data: postData as T?,
+    );
   }
 
   @override
@@ -327,5 +330,66 @@ void main() {
       expect(page.count, 0);
       expect(page.items, isEmpty);
     });
+  });
+
+  group('ContainerService.bulkCreate (c-9-container-create)', () {
+    late _MockApi client;
+
+    setUp(() {
+      client = _MockApi();
+    });
+
+    ContainerService createService() => ContainerService(client);
+
+    test('POST /storage/containers/bulk-create/, возвращает total', () async {
+      client.postData = {'total_containers': 3, 'created_containers': []};
+      final total = await createService().bulkCreate(
+        containers: [
+          {'container_type_id': 5},
+          {'container_type_id': 5},
+          {'container_type_id': 5},
+        ],
+        draftSiteId: 1,
+        draftResearchTypeId: 2,
+        draftWorkOrderCoded: 'TST0001',
+        draftWorkOrderIncoming: '02-Тест001',
+      );
+
+      expect(total, 3);
+      expect(client.postCalls.length, 1);
+      expect(client.postCalls.first.key, '/storage/containers/bulk-create/');
+      expect(client.postCalls.first.value, {
+        'containers': [
+          {'container_type_id': 5},
+          {'container_type_id': 5},
+          {'container_type_id': 5},
+        ],
+        'draft_site_id': 1,
+        'draft_research_type_id': 2,
+        'draft_work_order_coded': 'TST0001',
+        'draft_work_order_incoming': '02-Тест001',
+      });
+    });
+
+    test(
+      'без опциональных: draft_site_id и draft_research_type_id не шлём',
+      () async {
+        client.postData = {'total_containers': 1};
+        await createService().bulkCreate(
+          containers: [
+            {'container_type_id': 5},
+          ],
+          draftWorkOrderCoded: 'TST0001',
+        );
+
+        expect(client.postCalls.first.value, {
+          'containers': [
+            {'container_type_id': 5},
+          ],
+          'draft_work_order_coded': 'TST0001',
+          'draft_work_order_incoming': '',
+        });
+      },
+    );
   });
 }

@@ -1,21 +1,14 @@
-/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix).
+/// Реестр тары (c-9-container-list + c-9-container-list-order + c-9-overflow-fix + c-9-container-create).
 ///
-/// Аналог `ContainersPage.tsx` в вебе (упрощённый для мобилки):
-/// - 4 фильтра: статус, тип тары, Н/З draft, ТИ draft (адаптивно:
-///   в узком экране — столбиком, в широком — в ряд);
+/// Аналог `ContainersPage.tsx` в вебе:
+/// - 4 фильтра (статус, тип тары, Н/З draft, ТИ draft), адаптив;
 /// - server-side пагинация по 50;
 /// - карточки: Н/З · ТИ (крупно) + иконки статуса и печати справа,
 ///   затем Тип · номер (mono или chip «Заготовка»), локация, комментарий;
-/// - действия (кнопки): `Wrap`, чтобы «Местоположение» + «Разместить»
-///   переносились на новую строку в узком портрете;
-/// - тап по карточке → `ContainerDetailScreen`;
-/// - FAB «+ Создать тару» — пока заглушка «скоро».
+/// - действия (кнопки в Wrap);
+/// - FAB «+ Создать тару» → `CreateContainersDialog` (`c-9-container-create`).
 ///
-/// c-9-overflow-fix: убраны RenderFlex overflow (46 px / 212 px) —
-/// `isExpanded: true` у `DropdownButtonFormField`, `overflow: ellipsis`
-/// у текстов, `Wrap` для кнопок, адаптивные фильтры.
-///
-/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
+/// ВАЖНО: `hide Container` — иначе конфликт с Flutter-виджетом.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -26,6 +19,7 @@ import '../models/container.dart';
 import '../services/catalog_service.dart';
 import '../services/container_service.dart';
 import '../widgets/container_location_dialog.dart';
+import '../widgets/create_containers_dialog.dart';
 import '../widgets/place_container_dialog.dart';
 import 'container_detail_screen.dart';
 
@@ -136,6 +130,18 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     return ((c + _pageSize - 1) ~/ _pageSize);
   }
 
+  Future<void> _openCreate() async {
+    final total = await showDialog<int>(
+      context: context,
+      builder: (_) => const CreateContainersDialog(),
+    );
+    if (total == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Создано тар: $total. Заполните их пробами.')),
+    );
+    _loadPage();
+  }
+
   Future<void> _openContainer(Container c) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ContainerDetailScreen(container: c)),
@@ -188,9 +194,7 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Создание тары — скоро'))),
+        onPressed: _openCreate,
         icon: const Icon(Icons.add),
         label: const Text('Создать тару'),
       ),
@@ -205,9 +209,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
-  /// c-9-overflow-fix: адаптив. В узком экране (портрет на телефоне) —
-  /// каждый фильтр на своей строке. В широком (планшет / ландшафт) —
-  /// 2×2. `DropdownButtonFormField` — `isExpanded: true` + `ellipsis`.
   Widget _buildFilters(ThemeData theme) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -426,7 +427,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
     );
   }
 
-  /// c-9-overflow-fix: все тексты с `overflow: ellipsis`, кнопки в `Wrap`.
   Widget _containerTile(ThemeData theme, Container c) {
     final isPlaced = c.status == ContainerStatus.active;
     final hasCell = c.cellId != null;
@@ -447,7 +447,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Н/З · ТИ + иконки статуса и печати.
             Row(
               children: [
                 Expanded(
@@ -467,7 +466,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            // 2. Тип · номер (номер mono или chip «Заготовка»).
             Row(
               children: [
                 Flexible(
@@ -516,14 +514,12 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
               ],
             ),
             const SizedBox(height: 2),
-            // 3. Локация.
             Text(
               c.locationLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall,
             ),
-            // 4. Комментарий (если есть).
             if (c.commentTemplateText != null &&
                 c.commentTemplateText!.isNotEmpty)
               Text(
@@ -533,8 +529,6 @@ class _ContainersListScreenState extends State<ContainersListScreen> {
                 style: theme.textTheme.bodySmall,
               ),
             const SizedBox(height: 4),
-            // Действия — `Wrap`, чтобы «Местоположение» и «Разместить»
-            // переносились на новую строку в узком портрете.
             Wrap(
               spacing: 4,
               runSpacing: 4,
