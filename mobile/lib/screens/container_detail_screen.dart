@@ -1,7 +1,9 @@
-/// Карточка тары (c-7a + c-7b + c-7f + c-7g + c-7d + c-7c + overflow-fix-2 + list-actions + fill-offline-2b).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b + 2c-2).
 ///
-/// c-9-fill-offline-2b: если `_container.pendingSync` — в шапке строка
-/// «Синхронизация: Не синхронизировано» с иконкой `cloud_off`.
+/// c-9-fill-offline-2b: `pendingSync` тары → строка «Синхронизация:
+/// Не синхронизировано».
+/// c-9-fill-offline-2c-2: офлайн-проба (`isOfflinePending`) → иконка
+/// `cloud_off` в `_sampleTile`; `SampleEditDialog` получает `containerId`.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -193,7 +195,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   Future<void> _openEditSample(Sample s) async {
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => SampleEditDialog(initial: s),
+      builder: (_) => SampleEditDialog(initial: s, containerId: _container.id),
     );
     if (changed == true && mounted) {
       _loadSamples();
@@ -522,7 +524,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             _row(context, 'Номер', container.displayName, mono: true),
             _row(context, 'ID', '#${container.id}'),
             _row(context, 'Статус', container.statusLabel),
-            // 2b: строка «Синхронизация» для несинхронизированных тар.
             if (container.pendingSync)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -845,6 +846,7 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     );
   }
 
+  /// c-9-fill-offline-2c-2: у офлайн-пробы — `cloud_off` рядом со статусом.
   Widget _sampleTile(BuildContext context, Sample sample, int num) {
     final theme = Theme.of(context);
     final selected = _selectedIds.contains(sample.id);
@@ -880,6 +882,13 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
             ),
             const SizedBox(width: 8),
             SampleStatusChip(status: sample.status),
+            if (sample.isOfflinePending) ...[
+              const SizedBox(width: 4),
+              const Tooltip(
+                message: 'Не синхронизировано',
+                child: Icon(Icons.cloud_off, color: Colors.orange, size: 16),
+              ),
+            ],
             IconButton(
               tooltip: 'Редактировать',
               icon: const Icon(Icons.edit, size: 18),
