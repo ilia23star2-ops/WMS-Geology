@@ -1,12 +1,13 @@
 /// Сервис тары.
 ///
 /// - `fetchById` — карточка тары (с офлайн-кэшем).
-/// - `fetchList` — реестр тары (server-side pagination, фильтры), c-9.
-///   Офлайн — из `getAllCached` (`ContainerDao.getAll`), фильтры в памяти.
-/// - `fetchHistory` — история изменений, с офлайн-кэшем (c-7e-2).
+/// - `fetchList` — реестр тары (c-9), офлайн — из `getAllCached`.
+/// - `bulkCreate` — создание N тар (`POST .../bulk-create/`), c-9.
+///   Офлайн не поддерживается: сервер генерирует ID.
+/// - `fetchHistory` — история (c-7e-2, с кэшем).
 /// - `update` — редактирование (PATCH), только онлайн.
 /// - `fetchLabelPdf` — PDF этикетки (c-7d).
-/// - `bulkPlace` — размещение тары (c-7c), offline через `sync_queue`.
+/// - `bulkPlace` — размещение (c-7c), offline через `sync_queue`.
 library;
 
 import '../db/container_dao.dart';
@@ -43,7 +44,7 @@ typedef GetCachedHistory = Future<List<Map<String, dynamic>>> Function(
   int containerId,
 );
 
-/// DI-хук для `fetchList` офлайн (c-9-container-list).
+/// DI-хук для `fetchList` офлайн (c-9).
 typedef GetAllCached = Future<List<Map<String, dynamic>>> Function();
 
 class ContainerService {
@@ -106,16 +107,6 @@ class ContainerService {
     }
   }
 
-  /// GET /storage/containers/ (c-9: реестр тары).
-  ///
-  /// Server-side pagination, 4 фильтра (как в вебе):
-  /// - `status`;
-  /// - `containerTypeId`;
-  /// - `draftWorkOrderCoded` (icontains);
-  /// - `draftResearchTypeId`.
-  ///
-  /// Офлайн (`ApiException.isNetworkError`) — `getAllCached`, фильтрует
-  /// в памяти. Пагинация тоже в памяти.
   Future<ContainersPage> fetchList({
     int page = 1,
     int pageSize = 50,
@@ -196,7 +187,44 @@ class ContainerService {
     }
   }
 
-  /// GET /storage/containers/{id}/history/ (c-7e-2: с офлайн-кэшем).
+  /// POST /storage/containers/bulk-create/ (c-9-container-create).
+  ///
+  /// Создаёт N тар-заготовок. Draft-поля (участок, ТИ, Н/З) сохраняются
+  /// на каждой таре. `container_number` не задаётся — присваивается при
+  /// заполнении пробами.
+  ///
+  /// Возвращает `total_containers`. Офлайн **не поддерживается**: сервер
+  /// генерирует ID. При `ApiException.isNetworkError` — пробрасываем, UI
+  /// показывает ошибку.
+  Future<int> bulkCreate({
+    required List<Map<String, dynamic>> containers,
+    int? draftSiteId,
+    int? draftResearchTypeId,
+    required String draftWorkOrderCoded,
+    String draftWorkOrderIncoming = '',
+  }) async {
+    final body = <String, dynamic>{
+      'containers': containers,
+      if (draftSiteId != null) 'draft_site_id': draftSiteId,
+      if (draftResearchTypeId != null)
+        'draft_research_type_id': draftResearchTypeId,
+      'draft_work_order_coded': draftWorkOrderCoded,
+      'draft_work_order_incoming': draftWorkOrderIncoming,
+    };
+    final response = await _client.post<Map<String, dynamic>>(
+      '/storage/containers/bulk-create/',
+      data: body,
+    );
+    final data = response.data;
+    if (data == null) {
+      throw ApiException(
+        message: 'Пустой ответ от сервера при создании тары.',
+        statusCode: response.statusCode,
+      );
+    }
+    return (data['total_containers'] as int?) ?? 0;
+  }
+
   Future<List<ContainerHistoryEntry>> fetchHistory(int id) async {
     try {
       final response = await _client.get<List<dynamic>>(
@@ -246,7 +274,6 @@ class ContainerService {
     return Container.fromJson(data);
   }
 
-  /// POST /storage/containers/bulk-place/ (c-7c).
   Future<PlaceOutcome> bulkPlace({
     required List<int> containerIds,
     int? cellId,
@@ -278,7 +305,6 @@ class ContainerService {
     }
   }
 
-  /// GET /storage/containers/{id}/label.pdf/
   Future<List<int>> fetchLabelPdf(int id) {
     return _client.download('/storage/containers/$id/label.pdf/');
   }

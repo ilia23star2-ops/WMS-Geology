@@ -1,0 +1,330 @@
+/// Диалог создания тары-заготовок (c-9-container-create).
+///
+/// Аналог `CreateContainersDialog.tsx` в вебе. Создаёт N тар одним
+/// запросом `POST /storage/containers/bulk-create/`.
+///
+/// Поля:
+/// - `draft_site_id` (dropdown, опционально);
+/// - `draft_research_type_id` (dropdown, опционально);
+/// - `draft_work_order_coded` (text, required);
+/// - чекбокс «Есть входящий Н/З» → `draft_work_order_incoming` (text);
+/// - `container_type_id` (dropdown, required);
+/// - количество (1..100, required).
+///
+/// `container_number` не задаётся: присваивается при заполнении пробами.
+///
+/// Возвращает через `Navigator.pop`: `int` (total_containers) или
+/// `null` при отмене.
+///
+/// **Не входит:** «Предпросмотр до создания» (`LocalPreviewDialog`, 2f-15) —
+/// в мобилке его нет, отдельный заход. «Офлайн-создание» — отдельный
+/// заход (`c-8-catalog-create`-серия).
+library;
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/catalog.dart';
+import '../services/catalog_service.dart';
+import '../services/container_service.dart';
+
+class CreateContainersDialog extends StatefulWidget {
+  const CreateContainersDialog({super.key});
+
+  @override
+  State<CreateContainersDialog> createState() => _CreateContainersDialogState();
+}
+
+class _CreateContainersDialogState extends State<CreateContainersDialog> {
+  static const int _maxCount = 100;
+
+  int? _siteId;
+  int? _researchTypeId;
+  int? _containerTypeId;
+  final _woCtrl = TextEditingController();
+  final _woIncomingCtrl = TextEditingController();
+  final _countCtrl = TextEditingController(text: '1');
+  bool _hasIncoming = false;
+  bool _submitting = false;
+  String? _error;
+
+  List<Site> _sites = const [];
+  List<ResearchType> _researchTypes = const [];
+  List<ContainerType> _containerTypes = const [];
+  bool _loadingLookups = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLookups();
+  }
+
+  @override
+  void dispose() {
+    _woCtrl.dispose();
+    _woIncomingCtrl.dispose();
+    _countCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLookups() async {
+    final catalog = context.read<CatalogService>();
+    try {
+      final results = await Future.wait([
+        catalog.fetchSites(),
+        catalog.fetchResearchTypes(),
+        catalog.fetchContainerTypes(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _sites = results[0] as List<Site>;
+        _researchTypes = results[1] as List<ResearchType>;
+        _containerTypes = results[2] as List<ContainerType>;
+        _loadingLookups = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingLookups = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _error = null;
+      _submitting = true;
+    });
+
+    final containerTypeId = _containerTypeId;
+    if (containerTypeId == null) {
+      setState(() {
+        _submitting = false;
+        _error = 'Выберите тип тары.';
+      });
+      return;
+    }
+    final n = int.tryParse(_countCtrl.text.trim()) ?? 0;
+    if (n < 1 || n > _maxCount) {
+      setState(() {
+        _submitting = false;
+        _error = 'Количество тары — от 1 до $_maxCount.';
+      });
+      return;
+    }
+    final coded = _woCtrl.text.trim();
+    if (coded.isEmpty) {
+      setState(() {
+        _submitting = false;
+        _error = 'Укажите текущий Н/З.';
+      });
+      return;
+    }
+    final incoming = _hasIncoming ? _woIncomingCtrl.text.trim() : '';
+
+    final service = context.read<ContainerService>();
+    try {
+      final containers = List<Map<String, dynamic>>.generate(
+        n,
+        (_) => {'container_type_id': containerTypeId},
+      );
+      final total = await service.bulkCreate(
+        containers: containers,
+        draftSiteId: _siteId,
+        draftResearchTypeId: _researchTypeId,
+        draftWorkOrderCoded: coded,
+        draftWorkOrderIncoming: incoming,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(total);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = 'Не удалось создать тару: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Создать тару'),
+      scrollable: true,
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null) ...[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            _dropdown<int?>(
+              label: 'Участок',
+              value: _siteId,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('— не указан —', overflow: TextOverflow.ellipsis),
+                ),
+                ..._sites.map(
+                  (s) => DropdownMenuItem(
+                    value: s.id,
+                    child: Text(
+                      s.label,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _siteId = v),
+            ),
+            const SizedBox(height: 8),
+            _dropdown<int?>(
+              label: 'Тип исследования',
+              value: _researchTypeId,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('— не указан —', overflow: TextOverflow.ellipsis),
+                ),
+                ..._researchTypes.map(
+                  (rt) => DropdownMenuItem(
+                    value: rt.id,
+                    child: Text(
+                      rt.label,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _researchTypeId = v),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _woCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Н/З (текущий) *',
+                hintText: 'TST0001',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _hasIncoming,
+              onChanged: (v) => setState(() => _hasIncoming = v ?? false),
+              title: const Text('Есть входящий Н/З'),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+            ),
+            if (_hasIncoming) ...[
+              TextField(
+                controller: _woIncomingCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Н/З (входящий)',
+                  hintText: '02-Тест001',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            _dropdown<int?>(
+              label: 'Тип тары *',
+              value: _containerTypeId,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('— выберите —', overflow: TextOverflow.ellipsis),
+                ),
+                ..._containerTypes.map(
+                  (t) => DropdownMenuItem(
+                    value: t.id,
+                    child: Text(
+                      t.label,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (v) => setState(() => _containerTypeId = v),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _countCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Количество тары *',
+                hintText: '1',
+                helperText: 'От 1 до 100',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Тара создаётся без номера. Номера присваиваются на шаге '
+              'заполнения пробами.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _submitting || _loadingLookups ? null : _submit,
+          child: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Создать'),
+        ),
+      ],
+    );
+  }
+
+  Widget _dropdown<T>({
+    required String label,
+    required T? value,
+    required List<DropdownMenuItem<T?>> items,
+    required ValueChanged<T?>? onChanged,
+  }) {
+    return DropdownButtonFormField<T?>(
+      initialValue: value,
+      isExpanded: true,
+      isDense: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      items: items,
+      onChanged: onChanged,
+    );
+  }
+}
