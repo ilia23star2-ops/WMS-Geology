@@ -1,5 +1,4 @@
-/// Тесты `SampleService` (c-7e-1, c-9-fill-samples-offline,
-/// c-9-fill-samples-offline-2a, -2a-fix).
+/// Тесты `SampleService` (c-7e-1, c-9-fill-offline-2a, -2a-fix, -2b, -2c-1).
 library;
 
 import 'package:dio/dio.dart';
@@ -162,172 +161,237 @@ void main() {
     });
   });
 
-  group(
-    'SampleService.fillSamples (c-9-fill-samples-offline + 2a + 2a-fix)',
-    () {
-      late _MockApi api;
-      late List<Map<String, dynamic>> localSaved;
-      late List<_EnqueueCall> enqueued;
-      late List<MapEntry<int, String>> updatedNumbers;
-      late List<MapEntry<int, String>> updatedStatuses;
+  group('SampleService.fillSamples (c-9-fill-offline-2a + 2a-fix)', () {
+    late _MockApi api;
+    late List<Map<String, dynamic>> localSaved;
+    late List<_EnqueueCall> enqueued;
+    late List<MapEntry<int, String>> updatedNumbers;
+    late List<MapEntry<int, String>> updatedStatuses;
 
-      setUp(() {
-        api = _MockApi();
-        localSaved = [];
-        enqueued = [];
-        updatedNumbers = [];
-        updatedStatuses = [];
-      });
+    setUp(() {
+      api = _MockApi();
+      localSaved = [];
+      enqueued = [];
+      updatedNumbers = [];
+      updatedStatuses = [];
+    });
 
-      SampleService createService() {
-        return SampleService(
-          api,
-          saveLocalOffline: ({required containerId, required samples}) async {
-            localSaved.addAll(samples);
-          },
-          enqueue:
-              ({
-                required String action,
-                required String endpoint,
-                required Map<String, dynamic> payload,
-              }) async {
-                enqueued.add(_EnqueueCall(action, endpoint, payload));
-              },
-          updateContainerNumber: (id, number) async {
-            updatedNumbers.add(MapEntry(id, number));
-          },
-          updateContainerStatus: (id, status) async {
-            updatedStatuses.add(MapEntry(id, status));
-          },
-        );
-      }
+    SampleService createService() {
+      return SampleService(
+        api,
+        saveLocalOffline: ({required containerId, required samples}) async {
+          localSaved.addAll(samples);
+        },
+        enqueue:
+            ({
+              required String action,
+              required String endpoint,
+              required Map<String, dynamic> payload,
+            }) async {
+              enqueued.add(_EnqueueCall(action, endpoint, payload));
+            },
+        updateContainerNumber: (id, number) async {
+          updatedNumbers.add(MapEntry(id, number));
+        },
+        updateContainerStatus: (id, status) async {
+          updatedStatuses.add(MapEntry(id, status));
+        },
+        setPendingSync: (id, pending) async {},
+      );
+    }
 
-      test('онлайн: POST уходит, online, локально не сохраняет', () async {
-        api.postData = {'total_samples': 3};
+    test('онлайн: POST уходит, online, локально не сохраняет', () async {
+      api.postData = {'total_samples': 3};
+      final service = createService();
+      final outcome = await service.fillSamples(
+        10,
+        containerNumber: 'T-001',
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        siteId: 2,
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 3,
+            'sequence_digits': 3,
+            'well_name': '124',
+            'status': 'NORMAL',
+          },
+        ],
+      );
+
+      expect(outcome, FillOutcome.online);
+      expect(api.postCalls.length, 1);
+      expect(localSaved, isEmpty);
+      expect(enqueued, isEmpty);
+      expect(updatedNumbers, isEmpty);
+      expect(updatedStatuses, isEmpty);
+    });
+
+    test('офлайн: локальные пробы + enqueue, PENDING_PLACEMENT', () async {
+      api.offline = true;
+      final service = createService();
+      final outcome = await service.fillSamples(
+        10,
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 3,
+            'sequence_digits': 3,
+            'well_name': '124',
+            'status': 'NORMAL',
+          },
+        ],
+      );
+
+      expect(outcome, FillOutcome.queued);
+      expect(localSaved.length, 3);
+      expect(localSaved.first['status'], 'PENDING_PLACEMENT');
+      expect(localSaved.first['_prefix'], 'TST');
+      expect(localSaved.first['_middle'], '124');
+      expect(localSaved.first['_sequence'], 1);
+      expect(localSaved.first['_sequence_digits'], 3);
+      expect(localSaved.first['_well_name'], '124');
+      expect(enqueued.length, 1);
+    });
+
+    test('офлайн: SELECTED → SELECTED', () async {
+      api.offline = true;
+      final service = createService();
+      await service.fillSamples(
+        10,
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 5,
+            'sequence_to': 5,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'SELECTED',
+          },
+        ],
+      );
+      expect(localSaved.first['status'], 'SELECTED');
+    });
+
+    test('офлайн: ТИ/участок попадают в локальные пробы', () async {
+      api.offline = true;
+      final service = createService();
+      await service.fillSamples(
+        10,
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        siteId: 2,
+        researchTypeName: 'Шлифы',
+        siteName: 'Тестовый',
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 1,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'NORMAL',
+          },
+        ],
+      );
+      expect(localSaved.first['research_type_name'], 'Шлифы');
+      expect(localSaved.first['site_name'], 'Тестовый');
+    });
+
+    test('офлайн с container_number: updateContainerNumber вызван', () async {
+      api.offline = true;
+      final service = createService();
+      await service.fillSamples(
+        10,
+        containerNumber: 'T-001',
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 1,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'NORMAL',
+          },
+        ],
+      );
+      expect(updatedNumbers.length, 1);
+      expect(updatedNumbers.first.value, 'T-001');
+    });
+
+    test(
+      'офлайн без container_number: updateContainerNumber не вызван',
+      () async {
+        api.offline = true;
         final service = createService();
-        final outcome = await service.fillSamples(
+        await service.fillSamples(
           10,
-          containerNumber: 'T-001',
           workOrderCoded: 'TST0001',
           researchTypeId: 1,
-          siteId: 2,
           sampleGroups: [
             {
               'prefix': 'TST',
               'middle': '124',
               'sequence_from': 1,
-              'sequence_to': 3,
+              'sequence_to': 1,
               'sequence_digits': 3,
-              'well_name': '124',
+              'well_name': null,
               'status': 'NORMAL',
             },
           ],
         );
-
-        expect(outcome, FillOutcome.online);
-        expect(api.postCalls.length, 1);
-        expect(api.postCalls.first.key, '/storage/containers/10/fill-samples/');
-        expect(localSaved, isEmpty);
-        expect(enqueued, isEmpty);
         expect(updatedNumbers, isEmpty);
-        expect(updatedStatuses, isEmpty);
-      });
+      },
+    );
 
-      test('офлайн: локальные пробы + enqueue, PENDING_PLACEMENT', () async {
-        api.offline = true;
-        final service = createService();
-        final outcome = await service.fillSamples(
+    test('офлайн: PENDING_PLACEMENT в updatedStatuses', () async {
+      api.offline = true;
+      final service = createService();
+      await service.fillSamples(
+        10,
+        workOrderCoded: 'TST0001',
+        researchTypeId: 1,
+        sampleGroups: [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 1,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'NORMAL',
+          },
+        ],
+      );
+      expect(updatedStatuses.length, 1);
+      expect(updatedStatuses.first.key, 10);
+      expect(updatedStatuses.first.value, 'PENDING_PLACEMENT');
+    });
+
+    test('валидация (не network): пробрасывается', () async {
+      api.throwOnPost = ApiException(
+        message: 'research_type_id: invalid',
+        statusCode: 400,
+        isNetworkError: false,
+      );
+      final service = createService();
+      await expectLater(
+        service.fillSamples(
           10,
-          workOrderCoded: 'TST0001',
-          researchTypeId: 1,
-          sampleGroups: [
-            {
-              'prefix': 'TST',
-              'middle': '124',
-              'sequence_from': 1,
-              'sequence_to': 3,
-              'sequence_digits': 3,
-              'well_name': '124',
-              'status': 'NORMAL',
-            },
-          ],
-        );
-
-        expect(outcome, FillOutcome.queued);
-        expect(localSaved.length, 3);
-        expect(localSaved.map((s) => s['sample_number']).toList(), [
-          'TST124001',
-          'TST124002',
-          'TST124003',
-        ]);
-        expect(localSaved.first['status'], 'PENDING_PLACEMENT');
-        expect(localSaved.first['well_name'], '124');
-        expect(enqueued.length, 1);
-        expect(enqueued.first.action, 'POST');
-        expect(enqueued.first.endpoint, '/storage/containers/10/fill-samples/');
-        expect(enqueued.first.payload['work_order_coded'], 'TST0001');
-        // 2a-fix: контейнер → PENDING_PLACEMENT.
-        // MapEntry не реализует == по значению — сравниваем поля.
-        expect(updatedStatuses.length, 1);
-        expect(updatedStatuses.first.key, 10);
-        expect(updatedStatuses.first.value, 'PENDING_PLACEMENT');
-      });
-
-      test('офлайн: SELECTED → SELECTED', () async {
-        api.offline = true;
-        final service = createService();
-        await service.fillSamples(
-          10,
-          workOrderCoded: 'TST0001',
-          researchTypeId: 1,
-          sampleGroups: [
-            {
-              'prefix': 'TST',
-              'middle': '124',
-              'sequence_from': 5,
-              'sequence_to': 5,
-              'sequence_digits': 3,
-              'well_name': null,
-              'status': 'SELECTED',
-            },
-          ],
-        );
-        expect(localSaved.length, 1);
-        expect(localSaved.first['status'], 'SELECTED');
-      });
-
-      test('офлайн: ТИ/участок попадают в локальные пробы', () async {
-        api.offline = true;
-        final service = createService();
-        await service.fillSamples(
-          10,
-          workOrderCoded: 'TST0001',
-          researchTypeId: 1,
-          siteId: 2,
-          researchTypeName: 'Шлифы',
-          siteName: 'Тестовый',
-          sampleGroups: [
-            {
-              'prefix': 'TST',
-              'middle': '124',
-              'sequence_from': 1,
-              'sequence_to': 1,
-              'sequence_digits': 3,
-              'well_name': null,
-              'status': 'NORMAL',
-            },
-          ],
-        );
-        expect(localSaved.first['research_type_name'], 'Шлифы');
-        expect(localSaved.first['site_name'], 'Тестовый');
-      });
-
-      test('офлайн с container_number: updateContainerNumber вызван', () async {
-        api.offline = true;
-        final service = createService();
-        await service.fillSamples(
-          10,
-          containerNumber: 'T-001',
           workOrderCoded: 'TST0001',
           researchTypeId: 1,
           sampleGroups: [
@@ -341,116 +405,160 @@ void main() {
               'status': 'NORMAL',
             },
           ],
-        );
-        expect(updatedNumbers.length, 1);
-        expect(updatedNumbers.first.key, 10);
-        expect(updatedNumbers.first.value, 'T-001');
-      });
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(localSaved, isEmpty);
+      expect(enqueued, isEmpty);
+    });
+  });
 
-      test(
-        'офлайн без container_number: updateContainerNumber не вызван',
-        () async {
-          api.offline = true;
-          final service = createService();
-          await service.fillSamples(
-            10,
-            workOrderCoded: 'TST0001',
-            researchTypeId: 1,
-            sampleGroups: [
-              {
-                'prefix': 'TST',
-                'middle': '124',
-                'sequence_from': 1,
-                'sequence_to': 1,
-                'sequence_digits': 3,
-                'well_name': null,
-                'status': 'NORMAL',
-              },
-            ],
-          );
-          expect(updatedNumbers, isEmpty);
+  group('SampleService.updateLocalOffline / deleteLocalOffline (2c-1)', () {
+    late List<Map<String, dynamic>> locals;
+    late Map<String, dynamic>? queuePayload;
+    late List<MapEntry<String, Map<String, dynamic>>> updateCalls;
+    late List<MapEntry<int, String>> localStatusUpdates;
+    late List<int> localDeletes;
+
+    setUp(() {
+      locals = [];
+      queuePayload = null;
+      updateCalls = [];
+      localStatusUpdates = [];
+      localDeletes = [];
+    });
+
+    SampleService createService() {
+      return SampleService(
+        _MockApi(),
+        getLocalNegative: (_) async => locals,
+        updateLocalStatus: (sampleId, status) async {
+          localStatusUpdates.add(MapEntry(sampleId, status));
+          for (final l in locals) {
+            if (l['id'] == sampleId) l['status'] = status;
+          }
+        },
+        deleteLocal: (sampleId) async {
+          localDeletes.add(sampleId);
+          locals.removeWhere((l) => l['id'] == sampleId);
+        },
+        getQueuePayload: (_) async => queuePayload,
+        updateQueuePayload: (endpoint, payload) async {
+          updateCalls.add(MapEntry(endpoint, payload));
+          queuePayload = payload;
+          return true;
         },
       );
+    }
 
-      test(
-        'офлайн: несколько групп разворачиваются в плоский список',
-        () async {
-          api.offline = true;
-          final service = createService();
-          await service.fillSamples(
-            10,
-            workOrderCoded: 'TST0001',
-            researchTypeId: 1,
-            sampleGroups: [
-              {
-                'prefix': 'TST',
-                'middle': '124',
-                'sequence_from': 1,
-                'sequence_to': 2,
-                'sequence_digits': 3,
-                'well_name': null,
-                'status': 'NORMAL',
-              },
-              {
-                'prefix': 'TST',
-                'middle': '124',
-                'sequence_from': 5,
-                'sequence_to': 6,
-                'sequence_digits': 3,
-                'well_name': null,
-                'status': 'SELECTED',
-              },
-            ],
-          );
+    Map<String, dynamic> local({
+      required int id,
+      required String prefix,
+      required String middle,
+      required int seq,
+      int digits = 3,
+      String? well,
+      String status = 'PENDING_PLACEMENT',
+    }) {
+      return {
+        'id': id,
+        'status': status,
+        '_prefix': prefix,
+        '_middle': middle,
+        '_sequence': seq,
+        '_sequence_digits': digits,
+        '_well_name': well,
+      };
+    }
 
-          expect(localSaved.length, 4);
-          expect(localSaved.map((s) => s['sample_number']).toList(), [
-            'TST124001',
-            'TST124002',
-            'TST124005',
-            'TST124006',
-          ]);
-          expect(localSaved[0]['status'], 'PENDING_PLACEMENT');
-          expect(localSaved[2]['status'], 'SELECTED');
-        },
+    test('updateLocalOffline: status обновлён + payload пересобран', () async {
+      locals = [
+        local(id: -1, prefix: 'TST', middle: '124', seq: 1),
+        local(id: -2, prefix: 'TST', middle: '124', seq: 2),
+      ];
+      queuePayload = {
+        'work_order_coded': 'TST0001',
+        'research_type_id': 1,
+        'sample_groups': [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 2,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'NORMAL',
+          },
+        ],
+      };
+      final service = createService();
+      await service.updateLocalOffline(
+        -1,
+        containerId: 10,
+        status: SampleStatus.selected,
       );
 
-      test(
-        'валидация (не network): пробрасывается, локально не сохраняет',
-        () async {
-          api.throwOnPost = ApiException(
-            message: 'research_type_id: invalid',
-            statusCode: 400,
-            isNetworkError: false,
-          );
-          final service = createService();
-          await expectLater(
-            service.fillSamples(
-              10,
-              workOrderCoded: 'TST0001',
-              researchTypeId: 1,
-              sampleGroups: [
-                {
-                  'prefix': 'TST',
-                  'middle': '124',
-                  'sequence_from': 1,
-                  'sequence_to': 1,
-                  'sequence_digits': 3,
-                  'well_name': null,
-                  'status': 'NORMAL',
-                },
-              ],
-            ),
-            throwsA(isA<ApiException>()),
-          );
-          expect(localSaved, isEmpty);
-          expect(enqueued, isEmpty);
-          expect(updatedNumbers, isEmpty);
-          expect(updatedStatuses, isEmpty);
-        },
+      expect(localStatusUpdates.length, 1);
+      expect(localStatusUpdates.first.key, -1);
+      expect(localStatusUpdates.first.value, 'SELECTED');
+      expect(updateCalls.length, 1);
+      expect(updateCalls.first.key, '/storage/containers/10/fill-samples/');
+      final groups = updateCalls.first.value['sample_groups'] as List;
+      expect(groups.length, 2);
+      final selected = groups.firstWhere(
+        (g) => (g as Map)['status'] == 'SELECTED',
       );
-    },
-  );
+      expect(selected['sequence_from'], 1);
+      expect(selected['sequence_to'], 1);
+      final normal = groups.firstWhere((g) => (g as Map)['status'] == 'NORMAL');
+      expect(normal['sequence_from'], 2);
+      expect(normal['sequence_to'], 2);
+    });
+
+    test('deleteLocalOffline: проба удалена + payload пересобран', () async {
+      locals = [
+        local(id: -1, prefix: 'TST', middle: '124', seq: 1),
+        local(id: -2, prefix: 'TST', middle: '124', seq: 2),
+      ];
+      queuePayload = {
+        'work_order_coded': 'TST0001',
+        'research_type_id': 1,
+        'sample_groups': [
+          {
+            'prefix': 'TST',
+            'middle': '124',
+            'sequence_from': 1,
+            'sequence_to': 2,
+            'sequence_digits': 3,
+            'well_name': null,
+            'status': 'NORMAL',
+          },
+        ],
+      };
+      final service = createService();
+      await service.deleteLocalOffline(-1, containerId: 10);
+
+      expect(localDeletes, [-1]);
+      expect(updateCalls.length, 1);
+      final groups = updateCalls.first.value['sample_groups'] as List;
+      expect(groups.length, 1);
+      expect((groups.first as Map)['sequence_from'], 2);
+      expect((groups.first as Map)['sequence_to'], 2);
+    });
+
+    test('updateLocalOffline без payload в очереди: тихо игнорируем', () async {
+      locals = [local(id: -1, prefix: 'TST', middle: '124', seq: 1)];
+      queuePayload = null;
+      final service = createService();
+      await service.updateLocalOffline(
+        -1,
+        containerId: 10,
+        status: SampleStatus.selected,
+      );
+      expect(localStatusUpdates.length, 1);
+      expect(updateCalls, isEmpty);
+    });
+  });
 
   group('Sample.isOfflinePending', () {
     test('negative id → true', () {
