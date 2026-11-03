@@ -1,11 +1,8 @@
-/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2/2c-3).
+/// Диалог редактирования пробы (c-7g + c-9-fill-offline-2c-2/2c-3/2c-3-fix-3b).
 ///
-/// c-9-fill-offline-2c-3: для **серверных** проб при офлайн `update` /
-/// `dispose` / `restore` / `deleteSample` возвращают `OnlineOutcome.queued`.
-/// SnackBar «Сохранено. Отправится при синхронизации.», диалог закрывается.
-///
-/// Для офлайн-проб (`id < 0`) — локальные операции (`updateLocalOffline` /
-/// `deleteLocalOffline`).
+/// c-9-fill-offline-2c-3-fix-3b: после любой офлайн-операции (queued или
+/// локальная правка) — `SyncProvider.refresh()`, чтобы счётчик на кнопке
+/// «Синхронизация» обновился сразу.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../models/catalog.dart';
 import '../models/sample.dart';
+import '../providers/sync_provider.dart';
 import '../services/catalog_service.dart';
 import '../services/sample_service.dart';
 
@@ -60,6 +58,12 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
     super.dispose();
   }
 
+  /// c-9-fill-offline-2c-3-fix-3b: обновить счётчик после офлайн-операции.
+  void _refreshSync() {
+    if (!mounted) return;
+    context.read<SyncProvider>().refresh();
+  }
+
   Future<void> _loadCatalogs() async {
     final catalog = context.read<CatalogService>();
     try {
@@ -86,6 +90,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
 
   void _showQueuedAndPop() {
     if (!mounted) return;
+    _refreshSync();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Сохранено офлайн. Отправится при синхронизации.'),
@@ -109,6 +114,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
           status: _status,
         );
         if (!mounted) return;
+        _refreshSync();
         Navigator.of(context).pop(true);
       } catch (e) {
         if (!mounted) return;
@@ -171,6 +177,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
           status: SampleStatus.disposed,
         );
         if (!mounted) return;
+        _refreshSync();
         Navigator.of(context).pop(true);
       } catch (e) {
         if (!mounted) return;
@@ -252,6 +259,7 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
           status: SampleStatus.pendingPlacement,
         );
         if (!mounted) return;
+        _refreshSync();
         Navigator.of(context).pop(true);
       } catch (e) {
         if (!mounted) return;
@@ -322,15 +330,18 @@ class _SampleEditDialogState extends State<SampleEditDialog> {
           widget.initial.id,
           containerId: widget.containerId,
         );
-      } else {
-        final outcome = await service.deleteSample(
-          widget.initial.id,
-          containerId: widget.containerId,
-        );
-        if (outcome == OnlineOutcome.queued) {
-          _showQueuedAndPop();
-          return;
-        }
+        if (!mounted) return;
+        _refreshSync();
+        Navigator.of(context).pop(true);
+        return;
+      }
+      final outcome = await service.deleteSample(
+        widget.initial.id,
+        containerId: widget.containerId,
+      );
+      if (outcome == OnlineOutcome.queued) {
+        _showQueuedAndPop();
+        return;
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);

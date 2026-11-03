@@ -1,13 +1,7 @@
-/// Управление пробами в таре — как `FillContainerContent.tsx`
-/// (c-7f + c-7g + c-9-fill-offline-2a-fix + 2c-2).
+/// Управление пробами в таре (c-7f + c-7g + c-9-fill-offline-2a-fix + 2c-2 + 2c-3-fix-3b).
 ///
-/// c-7g: у каждой существующей пробы — цветной чип статуса и кнопка ✏.
-/// c-9-fill-offline-2a-fix: при вызове `fillSamples` передаются
-/// `researchTypeName` / `siteName` из тары.
-/// c-9-fill-offline-2c-2: ✏/🗑 у офлайн-проб **больше не дизейблятся** —
-/// редактирование/удаление работают через `SampleEditDialog` в офлайн-режиме.
-///
-/// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
+/// c-9-fill-offline-2c-3-fix-3b: после офлайн-филла — `SyncProvider.refresh()`,
+/// чтобы счётчик на кнопке «Синхронизация» обновился сразу.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -16,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../models/catalog.dart';
 import '../models/container.dart';
 import '../models/sample.dart';
+import '../providers/sync_provider.dart';
 import '../services/catalog_service.dart';
 import '../services/sample_service.dart';
 import '../utils/int_ranges.dart';
@@ -102,6 +97,11 @@ class _FillContainerContentState extends State<FillContainerContent> {
     _inputCtrl.dispose();
     _numberCtrl.dispose();
     super.dispose();
+  }
+
+  void _refreshSync() {
+    if (!mounted) return;
+    context.read<SyncProvider>().refresh();
   }
 
   Future<void> _loadSamples() async {
@@ -270,11 +270,8 @@ class _FillContainerContentState extends State<FillContainerContent> {
     });
   }
 
-  /// c-9-fill-offline-2c-2: офлайн-пробы больше не дизейблятся — удаление
-  /// идёт через `SampleEditDialog` (у него в офлайн-режиме есть delete).
   Future<void> _handleDeleteExisting(Sample s) async {
     if (s.isOfflinePending) {
-      // Офлайн-пробу удаляем через диалог (там deleteLocalOffline + rebuild payload).
       final changed = await showDialog<bool>(
         context: context,
         builder: (_) =>
@@ -451,6 +448,7 @@ class _FillContainerContentState extends State<FillContainerContent> {
       widget.onSuccess(widget.container.id, existingCount + totalToCreate);
 
       if (outcome == FillOutcome.queued) {
+        _refreshSync();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Сохранено офлайн. Отправится при синхронизации.'),
@@ -676,9 +674,6 @@ class _FillContainerContentState extends State<FillContainerContent> {
     );
   }
 
-  /// c-9-fill-offline-2c-2: ✏/🗑 у офлайн-проб **больше не дизейблятся**.
-  /// ✏ → офлайн-режим `SampleEditDialog` (правится только статус).
-  /// 🗑 → офлайн-режим `SampleEditDialog` (удаление через `deleteLocalOffline`).
   Widget _buildExistingRow(Sample s) {
     final theme = Theme.of(context);
     final offline = s.isOfflinePending;

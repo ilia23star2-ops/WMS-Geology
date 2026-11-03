@@ -1,8 +1,8 @@
-/// Экран синхронизации (c-4 + c-6h + c-9-fill-offline-2c-3-fix-2).
+/// Экран синхронизации (c-4 + c-6h + c-9-fill-offline-2c-3-fix-3b).
 ///
-/// c-9-fill-offline-2c-3-fix-2: после Push / SyncAll — SnackBar
-/// «Отправлено: N, ошибок: M» (разница `pendingCount` до и после) или
-/// ошибка, если `lastError != null`.
+/// c-9-fill-offline-2c-3-fix-3b: SnackBar по `PushResult` (реальный `sent`
+/// из `SyncPusher`), а не по разнице `pendingCount` (в офлайне он
+/// застревал на 0 → «Нечего отправлять» при непустой очереди).
 library;
 
 import 'package:flutter/material.dart';
@@ -10,32 +10,64 @@ import 'package:provider/provider.dart';
 
 import '../providers/network_status_provider.dart';
 import '../providers/sync_provider.dart';
+import '../services/sync_pusher.dart';
 
 class SyncScreen extends StatelessWidget {
   const SyncScreen({super.key});
 
-  Future<void> _runAction(
+  Future<void> _runPushAction(
     BuildContext context,
     SyncProvider sync,
-    Future<void> Function() action,
+    Future<PushResult?> Function() action,
   ) async {
-    final before = sync.pendingCount;
-    await action();
+    final result = await action();
     if (!context.mounted) return;
-    final err = sync.lastError;
     final messenger = ScaffoldMessenger.of(context);
+    final err = sync.lastError;
     if (err != null) {
       messenger.showSnackBar(SnackBar(content: Text(err)));
       return;
     }
-    final after = sync.pendingCount;
-    final sent = (before - after).clamp(0, before);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          sent > 0 ? 'Отправлено: $sent' : 'Нечего отправлять (очередь пуста)',
+    if (result == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Синхронизация не выполнена')),
+      );
+      return;
+    }
+    if (result.sent == 0 && result.failed == 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Нечего отправлять (очередь пуста)')),
+      );
+    } else if (result.failed == 0) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Отправлено: ${result.sent}')),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Отправлено: ${result.sent}, с ошибками: ${result.failed}',
+          ),
         ),
-      ),
+      );
+    }
+  }
+
+  Future<void> _runPullAction(
+    BuildContext context,
+    SyncProvider sync,
+    Future<void> Function() action,
+  ) async {
+    await action();
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final err = sync.lastError;
+    if (err != null) {
+      messenger.showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Данные загружены с сервера')),
     );
   }
 
@@ -58,9 +90,9 @@ class SyncScreen extends StatelessWidget {
               _ActionsCard(
                 sync: sync,
                 online: online,
-                onSyncAll: () => _runAction(context, sync, sync.syncAll),
-                onPull: () => _runAction(context, sync, sync.pull),
-                onPush: () => _runAction(context, sync, sync.push),
+                onSyncAll: () => _runPushAction(context, sync, sync.syncAll),
+                onPull: () => _runPullAction(context, sync, sync.pull),
+                onPush: () => _runPushAction(context, sync, sync.push),
               ),
               if (sync.lastError != null) ...[
                 const SizedBox(height: 16),

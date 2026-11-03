@@ -1,11 +1,17 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:flutter/foundation.dart';
+
 import '../db/sync_queue_dao.dart';
 import '../services/sync_service.dart';
 import '../services/sync_pusher.dart';
 
 /// Состояние синхронизации для UI (ChangeNotifier).
+///
+/// c-9-fill-offline-2c-3-fix-3b: `push()` / `syncAll()` возвращают
+/// `PushResult?` — UI показывает «Отправлено: N» по **реальному**
+/// счётчику из `SyncPusher`, а не по разнице `pendingCount`
+/// (который в офлайне застревал на 0).
 class SyncProvider extends ChangeNotifier {
   SyncProvider({
     required SyncService syncService,
@@ -14,7 +20,8 @@ class SyncProvider extends ChangeNotifier {
     Future<List<SyncQueueItem>> Function()? getPendingItems,
   }) : _syncService = syncService,
        _syncPusher = syncPusher,
-       _getPendingCount = getPendingCount ??
+       _getPendingCount =
+           getPendingCount ??
            (() async => (await SyncQueueDao.getPending()).length),
        _getPendingItems = getPendingItems ?? SyncQueueDao.getPending;
 
@@ -36,6 +43,8 @@ class SyncProvider extends ChangeNotifier {
   String? get lastError => _lastError;
 
   /// Обновить статистику очереди (без выполнения самой синхронизации).
+  /// Вызывать после любой офлайн-операции, чтобы счётчик на кнопке
+  /// синхронизации сразу отражал реальность.
   Future<void> refresh() async {
     try {
       _pendingCount = await _getPendingCount();
@@ -48,7 +57,7 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
-  /// Скачать данные с сервера (Pull).
+  /// Скачать данные с сервера (Pull). Результата не возвращает.
   Future<void> pull() async {
     if (_isSyncing) return;
     _isSyncing = true;
@@ -68,14 +77,18 @@ class SyncProvider extends ChangeNotifier {
   }
 
   /// Отправить локальные изменения на сервер (Push).
-  Future<void> push() async {
-    if (_isSyncing) return;
+  ///
+  /// Возвращает `PushResult` (или `null`, если синхронизация уже идёт
+  /// либо упала). UI показывает «Отправлено: N» по `result.sent`.
+  Future<PushResult?> push() async {
+    if (_isSyncing) return null;
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
 
+    PushResult? result;
     try {
-      await _syncPusher.pushAll();
+      result = await _syncPusher.pushAll();
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка отправки (Push): $e';
@@ -84,18 +97,22 @@ class SyncProvider extends ChangeNotifier {
       await refresh();
       notifyListeners();
     }
+    return result;
   }
 
   /// Полная синхронизация (Pull + Push).
-  Future<void> syncAll() async {
-    if (_isSyncing) return;
+  ///
+  /// Возвращает `PushResult` от `pushAll` (или `null`, если Pull упал).
+  Future<PushResult?> syncAll() async {
+    if (_isSyncing) return null;
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
 
+    PushResult? result;
     try {
       await _syncService.pullAll();
-      await _syncPusher.pushAll();
+      result = await _syncPusher.pushAll();
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка синхронизации: $e';
@@ -104,6 +121,7 @@ class SyncProvider extends ChangeNotifier {
       await refresh();
       notifyListeners();
     }
+    return result;
   }
 
   /// Сбросить ошибки в очереди и попробовать снова.
