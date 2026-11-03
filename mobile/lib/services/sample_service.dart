@@ -1,4 +1,4 @@
-/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-3, -2c-3-fix-1).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-4).
 library;
 
 import '../db/container_dao.dart';
@@ -38,6 +38,10 @@ typedef GetLocalNegative = Future<List<Map<String, dynamic>>> Function(
   int containerId,
 );
 typedef UpdateLocalStatus = Future<void> Function(int sampleId, String status);
+typedef UpdateLocalFields = Future<void> Function(
+  int sampleId,
+  Map<String, dynamic> fields,
+);
 typedef DeleteLocal = Future<void> Function(int sampleId);
 typedef GetQueuePayload = Future<Map<String, dynamic>?> Function(
   String endpoint,
@@ -62,6 +66,7 @@ class SampleService {
     SetPendingSyncLocal? setPendingSyncLocal,
     GetLocalNegative? getLocalNegative,
     UpdateLocalStatus? updateLocalStatus,
+    UpdateLocalFields? updateLocalFields,
     DeleteLocal? deleteLocal,
     GetQueuePayload? getQueuePayload,
     UpdateQueuePayload? updateQueuePayload,
@@ -82,6 +87,7 @@ class SampleService {
        _getLocalNegative =
            getLocalNegative ?? SampleDao.getLocalNegativeByContainer,
        _updateLocalStatus = updateLocalStatus ?? SampleDao.updateLocalStatus,
+       _updateLocalFields = updateLocalFields ?? SampleDao.updateLocalFields,
        _deleteLocal = deleteLocal ?? SampleDao.deleteById,
        _getQueuePayload = getQueuePayload ?? SyncQueueDao.getPayloadByEndpoint,
        _updateQueuePayload =
@@ -100,6 +106,7 @@ class SampleService {
   final SetPendingSyncLocal _setPendingSyncLocal;
   final GetLocalNegative _getLocalNegative;
   final UpdateLocalStatus _updateLocalStatus;
+  final UpdateLocalFields _updateLocalFields;
   final DeleteLocal _deleteLocal;
   final GetQueuePayload _getQueuePayload;
   final UpdateQueuePayload _updateQueuePayload;
@@ -126,12 +133,6 @@ class SampleService {
     );
   }
 
-  /// c-9-fill-offline-2c-3-fix-1: при онлайн-успехе, если в кэше есть pending —
-  /// вернуть **кэш** (pending + серверные). Иначе — серверные.
-  ///
-  /// Без этого UI показывал серверные данные (старые), хотя в кэше лежали
-  /// офлайн-правки. После возврата сети пользователь видел «изменения
-  /// пропали».
   Future<List<Sample>> fetchByContainerId(int containerId) async {
     try {
       final response = await _client.get<Map<String, dynamic>>(
@@ -389,12 +390,37 @@ class SampleService {
     }
   }
 
+  /// c-9-fill-offline-2c-4: обновить офлайн-пробу (negative ID).
+  ///
+  /// Помимо `status` можно передать новый `sample_number` и разбивку
+  /// (`newPrefix` / `newMiddle` / `newSequence` / `newSequenceDigits` /
+  /// `newWellName`) — они нужны `_rebuildFillPayload`, чтобы `sample_groups`
+  /// в очереди содержали новый номер.
+  ///
+  /// Вызывающий (`SampleEditDialog`) парсит `sample_number` через
+  /// `parseSampleInput`, чтобы получить эти поля.
   Future<void> updateLocalOffline(
     int sampleId, {
     required int containerId,
     required SampleStatus status,
+    String? newSampleNumber,
+    String? newPrefix,
+    String? newMiddle,
+    int? newSequence,
+    int? newSequenceDigits,
+    String? newWellName,
   }) async {
-    await _updateLocalStatus(sampleId, sampleStatusToApi(status));
+    final fields = <String, dynamic>{'status': sampleStatusToApi(status)};
+    if (newSampleNumber != null) fields['sample_number'] = newSampleNumber;
+    if (newPrefix != null) fields['_prefix'] = newPrefix;
+    if (newMiddle != null) fields['_middle'] = newMiddle;
+    if (newSequence != null) fields['_sequence'] = newSequence;
+    if (newSequenceDigits != null) {
+      fields['_sequence_digits'] = newSequenceDigits;
+    }
+    if (newWellName != null) fields['_well_name'] = newWellName;
+
+    await _updateLocalFields(sampleId, fields);
     await _rebuildFillPayload(containerId);
   }
 

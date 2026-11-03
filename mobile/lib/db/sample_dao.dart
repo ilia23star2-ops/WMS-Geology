@@ -1,4 +1,4 @@
-/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..-2c-3-fix-3a).
+/// DAO для работы с кэшем проб (c-1, c-9-fill-offline-2c-1..-2c-4).
 library;
 
 import 'dart:convert';
@@ -173,6 +173,37 @@ class SampleDao {
     );
   }
 
+  /// c-9-fill-offline-2c-4: обновить произвольные поля JSON пробы
+  /// (`sample_number`, `_prefix`, `_middle`, `_sequence`,
+  /// `_sequence_digits`, `_well_name`, `status`). `_pending_sync` не
+  /// трогаем — вызывающий решает. Для офлайн-проб (`id < 0`) `_pending_sync`
+  /// не нужен: они уже в очереди как часть fill-samples.
+  static Future<void> updateLocalFields(
+    int sampleId,
+    Map<String, dynamic> fields,
+  ) async {
+    if (fields.isEmpty) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'samples',
+      where: 'id = ?',
+      whereArgs: [sampleId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final json =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    for (final entry in fields.entries) {
+      json[entry.key] = entry.value;
+    }
+    await db.update(
+      'samples',
+      {'data': jsonEncode(json)},
+      where: 'id = ?',
+      whereArgs: [sampleId],
+    );
+  }
+
   static Future<void> setPendingSyncLocal(int sampleId, bool pending) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(
@@ -212,13 +243,6 @@ class SampleDao {
     await setPendingSyncLocal(sampleId, false);
   }
 
-  /// c-9-fill-offline-2c-3-fix-3a: reconcile.
-  ///
-  /// Для всех проб с `_pending_sync = true`, которых **нет** в
-  /// [keepSampleIds] (это id, для которых в `sync_queue` есть запись) —
-  /// сбрасываем флаг. Операция ушла или потеряна, доверяем серверу.
-  ///
-  /// Пробы из [keepSampleIds] не трогаем: их операция ждёт Push.
   static Future<int> reconcilePendingSamples(Set<int> keepSampleIds) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query('samples');
