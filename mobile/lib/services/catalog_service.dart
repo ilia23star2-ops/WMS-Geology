@@ -1,18 +1,13 @@
-/// Сервис справочников (c-7b-full, c-7f, c-7c, c-7-offline-catalog).
+/// Сервис справочников (c-7b-full, c-7f, c-7c, c-7-offline-catalog,
+/// c-8-catalog-create).
 ///
-/// Онлайн: запрос к API (с пагинацией), сохраняем страницы в кэш,
-/// возвращаем результат.
-/// Офлайн (`ApiException.isNetworkError == true`): читаем из кэша
-/// (`CatalogDao`), возвращаем.
+/// Онлайн: запрос к API (с пагинацией), сохраняем страницы в кэш.
+/// Офлайн (`isNetworkError`): читаем из кэша.
 ///
-/// `*Named` — topology (`Room`, `Rack`, `Section`, `Tier`, `Cell`) как
-/// `NamedCatalog {id, label}`.
-/// Типизированные (`Site`, `ResearchType`, `Laboratory`, `ContainerType`) —
-/// как раньше.
-///
-/// `parentId` (для `fetchRacks` / `fetchSections` / `fetchTiers` /
-/// `fetchCells`) — при онлайн-фетче сохраняем его явно, чтобы офлайн
-/// `getByParent` работал даже если в JSON сервер не вернул поле-родителя.
+/// c-8-catalog-create: `create(kind, payload)` — POST в справочник,
+/// сохраняет результат в кэш. Офлайн — SnackBar (в UI), сервис бросает
+/// `ApiException`. Полное офлайн-создание (маппинг local→server) —
+/// отдельный заход `c-8-catalog-create-offline`.
 library;
 
 import '../db/catalog_dao.dart';
@@ -29,6 +24,14 @@ typedef GetCatalogByParent = Future<List<Map<String, dynamic>>> Function(
   String kind,
   int parentId,
 );
+
+/// Результат `create`: серверный id и сырой JSON.
+class CreatedCatalogItem {
+  const CreatedCatalogItem({required this.id, required this.raw});
+
+  final int id;
+  final Map<String, dynamic> raw;
+}
 
 class CatalogService {
   CatalogService(
@@ -125,6 +128,61 @@ class CatalogService {
     );
   }
 
+  // ----- Создание справочника (c-8-catalog-create) -----
+
+  /// POST в справочник. Только онлайн.
+  ///
+  /// `kind` — `site` / `research_type` / `laboratory` / `container_type`
+  /// (для topology не поддерживаем — см. `c-8-catalog-create-topology`).
+  ///
+  /// После успешного POST результат сохраняется в кэш (`CatalogDao.saveAll`)
+  /// — следующий `fetch*` вернёт его и онлайн, и офлайн.
+  ///
+  /// Офлайн (`isNetworkError`) — пробрасывает `ApiException`, UI показывает
+  /// SnackBar «Требуется подключение к серверу».
+  Future<CreatedCatalogItem> create(
+    String kind,
+    Map<String, dynamic> payload,
+  ) async {
+    final (path, saveKind) = _kindToEndpoint(kind);
+    final response = await _client.post<Map<String, dynamic>>(
+      path,
+      data: payload,
+    );
+    final data = response.data;
+    if (data == null || data['id'] is! int) {
+      throw ApiException(
+        message: 'Пустой ответ при создании справочника.',
+        statusCode: response.statusCode,
+      );
+    }
+    try {
+      await _saveCatalog(saveKind, [data]);
+    } catch (_) {
+      // Кэш не критичен.
+    }
+    return CreatedCatalogItem(id: data['id'] as int, raw: data);
+  }
+
+  /// `kind` → `(POST endpoint, kind для CatalogDao.saveAll)`.
+  (String, String) _kindToEndpoint(String kind) {
+    switch (kind) {
+      case 'site':
+        return ('/sites/', 'site');
+      case 'research_type':
+        return ('/research-types/', 'research_type');
+      case 'laboratory':
+        return ('/laboratories/', 'laboratory');
+      case 'container_type':
+        return ('/storage/container-types/', 'container_type');
+      default:
+        throw ArgumentError(
+          'create: kind "$kind" не поддерживается (только site/research_type/'
+          'laboratory/container_type)',
+        );
+    }
+  }
+
   // ----- Внутреннее: онлайн + кэш + fallback -----
 
   Future<List<NamedCatalog>> _fetchNamedWithCache(
@@ -162,7 +220,6 @@ class CatalogService {
     }
   }
 
-  /// Все страницы по `?page=N`, пока `next != null`.
   Future<List<Map<String, dynamic>>> _fetchAllPages(
     String path,
     Map<String, dynamic>? query,

@@ -1,24 +1,8 @@
-/// Диалог создания тары-заготовок (c-9-container-create).
+/// Диалог создания тары-заготовок (c-9-container-create + c-8-catalog-create).
 ///
-/// Аналог `CreateContainersDialog.tsx` в вебе. Создаёт N тар одним
-/// запросом `POST /storage/containers/bulk-create/`.
-///
-/// Поля:
-/// - `draft_site_id` (dropdown, опционально);
-/// - `draft_research_type_id` (dropdown, опционально);
-/// - `draft_work_order_coded` (text, required);
-/// - чекбокс «Есть входящий Н/З» → `draft_work_order_incoming` (text);
-/// - `container_type_id` (dropdown, required);
-/// - количество (1..100, required).
-///
-/// `container_number` не задаётся: присваивается при заполнении пробами.
-///
-/// Возвращает через `Navigator.pop`: `int` (total_containers) или
-/// `null` при отмене.
-///
-/// **Не входит:** «Предпросмотр до создания» (`LocalPreviewDialog`, 2f-15) —
-/// в мобилке его нет, отдельный заход. «Офлайн-создание» — отдельный
-/// заход (`c-8-catalog-create`-серия).
+/// Рядом с dropdown'ами `site`, `research_type`, `container_type` — кнопка «+».
+/// Открывает `CatalogCreateDialog`, после успеха — перезагружает справочники
+/// и выбирает созданный элемент.
 library;
 
 import 'package:flutter/material.dart';
@@ -27,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../models/catalog.dart';
 import '../services/catalog_service.dart';
 import '../services/container_service.dart';
+import 'catalog_create_dialog.dart';
 
 class CreateContainersDialog extends StatefulWidget {
   const CreateContainersDialog({super.key});
@@ -85,6 +70,40 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingLookups = false);
+    }
+  }
+
+  /// Открыть `CatalogCreateDialog`, после успеха — перезагрузить справочники
+  /// и выбрать созданный элемент в dropdown.
+  Future<void> _onCreateCatalog(String kind) async {
+    final catalog = context.read<CatalogService>();
+    List<Laboratory> laboratories = const [];
+    if (kind == 'container_type') {
+      try {
+        laboratories = await catalog.fetchLaboratories();
+      } catch (_) {
+        laboratories = const [];
+      }
+    }
+    if (!mounted) return;
+    final created = await showDialog<CreatedCatalogItem>(
+      context: context,
+      builder: (_) =>
+          CatalogCreateDialog(kind: kind, laboratories: laboratories),
+    );
+    if (created == null || !mounted) return;
+    await _loadLookups();
+    if (!mounted) return;
+    switch (kind) {
+      case 'site':
+        setState(() => _siteId = created.id);
+        break;
+      case 'research_type':
+        setState(() => _researchTypeId = created.id);
+        break;
+      case 'container_type':
+        setState(() => _containerTypeId = created.id);
+        break;
     }
   }
 
@@ -172,7 +191,7 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
               ),
               const SizedBox(height: 12),
             ],
-            _dropdown<int?>(
+            _dropdownWithAdd<int?>(
               label: 'Участок',
               value: _siteId,
               items: [
@@ -192,9 +211,10 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
                 ),
               ],
               onChanged: (v) => setState(() => _siteId = v),
+              onAdd: () => _onCreateCatalog('site'),
             ),
             const SizedBox(height: 8),
-            _dropdown<int?>(
+            _dropdownWithAdd<int?>(
               label: 'Тип исследования',
               value: _researchTypeId,
               items: [
@@ -214,6 +234,7 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
                 ),
               ],
               onChanged: (v) => setState(() => _researchTypeId = v),
+              onAdd: () => _onCreateCatalog('research_type'),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -246,7 +267,7 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
               ),
               const SizedBox(height: 8),
             ],
-            _dropdown<int?>(
+            _dropdownWithAdd<int?>(
               label: 'Тип тары *',
               value: _containerTypeId,
               items: [
@@ -266,6 +287,7 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
                 ),
               ],
               onChanged: (v) => setState(() => _containerTypeId = v),
+              onAdd: () => _onCreateCatalog('container_type'),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -309,22 +331,34 @@ class _CreateContainersDialogState extends State<CreateContainersDialog> {
     );
   }
 
-  Widget _dropdown<T>({
+  Widget _dropdownWithAdd<T>({
     required String label,
     required T? value,
     required List<DropdownMenuItem<T?>> items,
     required ValueChanged<T?>? onChanged,
+    required VoidCallback onAdd,
   }) {
-    return DropdownButtonFormField<T?>(
-      initialValue: value,
-      isExpanded: true,
-      isDense: true,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      items: items,
-      onChanged: onChanged,
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<T?>(
+            initialValue: value,
+            isExpanded: true,
+            isDense: true,
+            decoration: InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+            ),
+            items: items,
+            onChanged: onChanged,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Добавить новый',
+          icon: const Icon(Icons.add_circle_outline),
+          onPressed: onAdd,
+        ),
+      ],
     );
   }
 }
