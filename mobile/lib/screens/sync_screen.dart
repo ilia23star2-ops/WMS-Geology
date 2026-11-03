@@ -1,8 +1,6 @@
-/// Экран синхронизации (c-4 + c-6h + c-9-fill-offline-2c-3-fix-3b).
+/// Экран синхронизации (c-4 + c-6h + c-9-fill-offline-2c-3-fix-3b + c-9-auto-sync).
 ///
-/// c-9-fill-offline-2c-3-fix-3b: SnackBar по `PushResult` (реальный `sent`
-/// из `SyncPusher`), а не по разнице `pendingCount` (в офлайне он
-/// застревал на 0 → «Нечего отправлять» при непустой очереди).
+/// c-9-auto-sync: `_runPullAction` — SnackBar «Загружено: N» по `PullStats`.
 library;
 
 import 'package:flutter/material.dart';
@@ -11,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../providers/network_status_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/sync_pusher.dart';
+import '../services/sync_service.dart';
 
 class SyncScreen extends StatelessWidget {
   const SyncScreen({super.key});
@@ -56,9 +55,9 @@ class SyncScreen extends StatelessWidget {
   Future<void> _runPullAction(
     BuildContext context,
     SyncProvider sync,
-    Future<void> Function() action,
+    Future<PullStats?> Function() action,
   ) async {
-    await action();
+    final stats = await action();
     if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final err = sync.lastError;
@@ -66,9 +65,16 @@ class SyncScreen extends StatelessWidget {
       messenger.showSnackBar(SnackBar(content: Text(err)));
       return;
     }
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Данные загружены с сервера')),
-    );
+    if (stats == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Загрузка не выполнена')),
+      );
+      return;
+    }
+    final text = stats.total > 0
+        ? 'Загружено: ${stats.total} (тар: ${stats.containers}, проб: ${stats.samples})'
+        : 'Данные уже актуальны';
+    messenger.showSnackBar(SnackBar(content: Text(text)));
   }
 
   @override

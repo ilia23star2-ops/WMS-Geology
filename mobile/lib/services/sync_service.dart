@@ -1,14 +1,7 @@
-/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a).
+/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync).
 ///
-/// c-9-fill-offline-2c-3-fix-3a: в конце `pullAll` — reconcile.
-/// Для каждой пробы/тары с `pending_sync = 1`, которой **нет** в
-/// `sync_queue`, сбрасываем флаг. Пробы/тары с записью в очереди
-/// не трогаем (ждём Push).
-///
-/// **fix-3a (regex):** `/samples/{id}/` матчит и PATCH/DELETE
-/// (`/samples/5/`), и dispose/restore (`/samples/5/dispose/`). Раньше
-/// пробы с PATCH/DELETE в очереди **теряли** флаг при Pull — данные
-/// «пропадали».
+/// c-9-auto-sync: `pullAll` возвращает `PullStats { containers, samples }`
+/// — для уведомления «Загружено с сервера: N».
 library;
 
 import '../db/catalog_dao.dart';
@@ -17,6 +10,19 @@ import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
+
+/// Результат Pull: сколько тар и проб пришло с сервера.
+class PullStats {
+  const PullStats({this.containers = 0, this.samples = 0});
+
+  final int containers;
+  final int samples;
+
+  int get total => containers + samples;
+
+  @override
+  String toString() => 'PullStats(containers: $containers, samples: $samples)';
+}
 
 class SyncService {
   SyncService(
@@ -56,9 +62,9 @@ class SyncService {
     return CatalogDao.saveAll(kind, items);
   }
 
-  Future<void> pullAll() async {
-    final containerIds = await _pullContainers();
-    await _pullSamples();
+  Future<PullStats> pullAll() async {
+    final pulled = await _pullContainers();
+    final samples = await _pullSamples();
     await _pullCatalog('/sites/', 'site');
     await _pullCatalog('/research-types/', 'research_type');
     await _pullCatalog('/laboratories/', 'laboratory');
@@ -68,14 +74,13 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
-    for (final id in containerIds) {
+    for (final id in pulled.ids) {
       await _pullHistoryFor(id);
     }
     await _reconcile();
+    return PullStats(containers: pulled.ids.length, samples: samples);
   }
 
-  /// c-9-fill-offline-2c-3-fix-3a: сбросить `pending_sync` у проб/тар,
-  /// для которых в очереди нет записи.
   Future<void> _reconcile() async {
     final queue = await _getQueueItems();
     final keepSampleIds = <int>{};
@@ -106,8 +111,10 @@ class SyncService {
     await _reconcileContainers(keepContainerIds);
   }
 
-  Future<List<int>> _pullContainers() async {
+  /// Возвращает ID всех тар (для pre-fetch истории) + общее число.
+  Future<({List<int> ids, int total})> _pullContainers() async {
     final ids = <int>[];
+    var total = 0;
     int page = 1;
     while (true) {
       final res = await _client.get<Map<String, dynamic>>(
@@ -124,14 +131,16 @@ class SyncService {
         final id = r['id'];
         if (id is int) ids.add(id);
       }
+      total += results.length;
       await _saveContainers(results);
       if (data['next'] == null) break;
       page++;
     }
-    return ids;
+    return (ids: ids, total: total);
   }
 
-  Future<void> _pullSamples() async {
+  Future<int> _pullSamples() async {
+    var total = 0;
     int page = 1;
     while (true) {
       final res = await _client.get<Map<String, dynamic>>(
@@ -144,10 +153,12 @@ class SyncService {
           (data['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
+      total += results.length;
       await _saveSamples(results);
       if (data['next'] == null) break;
       page++;
     }
+    return total;
   }
 
   Future<void> _pullCatalog(String endpoint, String kind) async {
@@ -181,7 +192,7 @@ class SyncService {
       );
       await _saveHistory(containerId, items);
     } catch (_) {
-      // см. doc-комментарий
+      // не критично
     }
   }
 }

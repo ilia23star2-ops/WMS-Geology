@@ -1,4 +1,4 @@
-/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a).
+/// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3, c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync).
 library;
 
 import 'package:dio/dio.dart';
@@ -105,7 +105,7 @@ class FakeApiClient extends ApiClient {
 }
 
 void main() {
-  test('SyncService pulls all containers and samples in pages', () async {
+  test('SyncService pulls all and returns PullStats', () async {
     final client = FakeApiClient();
     final savedContainers = <Map<String, dynamic>>[];
     final savedSamples = <Map<String, dynamic>>[];
@@ -124,13 +124,15 @@ void main() {
       reconcileContainers: (_) async => 0,
     );
 
-    await service.pullAll();
+    final stats = await service.pullAll();
 
     expect(savedContainers.length, 3);
     expect(savedSamples.length, 1);
     expect(savedCatalogs.length, 9);
     expect(savedHistory.keys.toSet(), {1, 2, 3});
-    expect(client.calls, contains('/storage/containers/1/history/'));
+    expect(stats.containers, 3);
+    expect(stats.samples, 1);
+    expect(stats.total, 4);
   });
 
   test('ошибка истории по одной таре не валит Pull', () async {

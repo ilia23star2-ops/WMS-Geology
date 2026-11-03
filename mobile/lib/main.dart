@@ -1,12 +1,18 @@
 /// Точка входа мобильного приложения.
 ///
-/// - `AppConfig.resolve()` — auto-detect сети (c-6c).
-/// - `NetworkStatusProvider` (c-6g) — heartbeat `/health/` 10 с.
-/// - `CatalogService` (c-7b-full) — справочники для формы редактирования.
-/// - `MultiProvider` — AuthProvider, NetworkStatusProvider, ContainerService,
-///   SampleService, CatalogService, SyncService, SyncPusher, SyncProvider.
-/// - `AuthGate` — спиннер / login / home.
+/// c-9-auto-sync: `AuthGate` подписан на `NetworkStatusProvider`.
+/// При возврате сети (`isOnline: false → true`):
+/// 1. **Push** — если в очереди есть pending/errors.
+/// 2. **Pull** — всегда (подтянуть серверное).
+///
+/// SnackBar (объединённый):
+/// - только Push: «Отправлено: N»;
+/// - только Pull: «Загружено: N»;
+/// - Push + Pull: «Отправлено: N, загружено: M»;
+/// - ошибка — текст ошибки.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +28,9 @@ import 'services/container_service.dart';
 import 'services/sample_service.dart';
 import 'services/sync_pusher.dart';
 import 'services/sync_service.dart';
+
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,6 +77,7 @@ class WmsGeologyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WMS Geology',
         debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: scaffoldMessengerKey,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF1E3A5F),
@@ -81,7 +91,6 @@ class WmsGeologyApp extends StatelessWidget {
   }
 }
 
-/// Переключатель экранов по состоянию аутентификации.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
@@ -91,6 +100,9 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   bool _wired = false;
+  bool _wasOnline = true;
+  bool _autoSyncInProgress = false;
+  NetworkStatusProvider? _net;
 
   @override
   void initState() {
@@ -100,11 +112,93 @@ class _AuthGateState extends State<AuthGate> {
       _wired = true;
       final auth = context.read<AuthProvider>();
       final net = context.read<NetworkStatusProvider>();
+      _net = net;
       net.onBaseUrlChanged = (url) {
         auth.service.apiClient.dio.options.baseUrl = url;
       };
+      _wasOnline = net.isOnline;
+      net.addListener(_onNetChanged);
       net.start();
     });
+  }
+
+  @override
+  void dispose() {
+    _net?.removeListener(_onNetChanged);
+    super.dispose();
+  }
+
+  void _onNetChanged() {
+    final net = _net;
+    if (net == null) return;
+    final cameOnline = !_wasOnline && net.isOnline;
+    _wasOnline = net.isOnline;
+    if (!cameOnline) return;
+    unawaited(_autoSync());
+  }
+
+  /// c-9-auto-sync: Push (если есть pending) + Pull (всегда).
+  /// Один объединённый SnackBar — Push + Pull + ошибка.
+  Future<void> _autoSync() async {
+    if (_autoSyncInProgress || !mounted) return;
+    final sync = context.read<SyncProvider>();
+    final auth = context.read<AuthProvider>();
+    if (auth.isPendingOffline) return;
+    if (sync.isSyncing) return;
+
+    await sync.refresh();
+    if (!mounted) return;
+
+    final hadPending = sync.pendingCount > 0 || sync.errorCount > 0;
+
+    _autoSyncInProgress = true;
+    try {
+      String? pushError;
+      PushResult? pushResult;
+      if (hadPending) {
+        pushResult = await sync.push();
+        if (!mounted) return;
+        pushError = sync.lastError;
+      }
+
+      String? pullError;
+      PullStats? pullStats;
+      // Pull — всегда при возврате сети, даже если Push упал.
+      if (pushError == null) {
+        pullStats = await sync.pull();
+        if (!mounted) return;
+        pullError = sync.lastError;
+      }
+
+      final messenger = scaffoldMessengerKey.currentState;
+      if (messenger == null) return;
+
+      if (pushError != null) {
+        messenger.showSnackBar(SnackBar(content: Text(pushError)));
+        return;
+      }
+      if (pullError != null) {
+        messenger.showSnackBar(SnackBar(content: Text(pullError)));
+        return;
+      }
+
+      final sent = pushResult?.sent ?? 0;
+      final loaded = pullStats?.total ?? 0;
+      final failed = pushResult?.failed ?? 0;
+
+      if (sent == 0 && loaded == 0 && failed == 0) return;
+
+      final parts = <String>[];
+      if (sent > 0) parts.add('отправлено: $sent');
+      if (failed > 0) parts.add('с ошибками: $failed');
+      if (loaded > 0) parts.add('загружено: $loaded');
+
+      messenger.showSnackBar(
+        SnackBar(content: Text('Синхронизировано — ${parts.join(', ')}')),
+      );
+    } finally {
+      _autoSyncInProgress = false;
+    }
   }
 
   @override

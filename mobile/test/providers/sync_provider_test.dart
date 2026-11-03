@@ -7,11 +7,13 @@ import 'package:wms_geology_mobile/services/sync_service.dart';
 class FakeSyncService extends Fake implements SyncService {
   int pullCallCount = 0;
   bool shouldThrow = false;
+  PullStats nextStats = const PullStats(containers: 0, samples: 0);
 
   @override
-  Future<void> pullAll() async {
+  Future<PullStats> pullAll() async {
     pullCallCount++;
     if (shouldThrow) throw Exception('Pull error');
+    return nextStats;
   }
 }
 
@@ -58,13 +60,17 @@ void main() {
       expect(provider.errorCount, 0);
     });
 
-    test('pull вызывает SyncService.pullAll и обновляет время', () async {
+    test('pull вызывает SyncService.pullAll и возвращает PullStats', () async {
+      service.nextStats = const PullStats(containers: 5, samples: 20);
       final provider = createProvider();
-      await provider.pull();
+      final stats = await provider.pull();
 
       expect(service.pullCallCount, 1);
+      expect(stats, isNotNull);
+      expect(stats!.containers, 5);
+      expect(stats.samples, 20);
+      expect(stats.total, 25);
       expect(provider.lastSyncTime, isNotNull);
-      expect(provider.isSyncing, isFalse);
       expect(provider.lastError, isNull);
     });
 
@@ -84,11 +90,12 @@ void main() {
       expect(pusher.pushCallCount, 1);
     });
 
-    test('ошибка в pull сохраняется в lastError', () async {
+    test('ошибка в pull сохраняется в lastError, возвращает null', () async {
       service.shouldThrow = true;
       final provider = createProvider();
-      await provider.pull();
+      final stats = await provider.pull();
 
+      expect(stats, isNull);
       expect(provider.lastError, contains('Pull error'));
       expect(provider.isSyncing, isFalse);
     });

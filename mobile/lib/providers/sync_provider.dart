@@ -9,9 +9,9 @@ import '../services/sync_pusher.dart';
 /// Состояние синхронизации для UI (ChangeNotifier).
 ///
 /// c-9-fill-offline-2c-3-fix-3b: `push()` / `syncAll()` возвращают
-/// `PushResult?` — UI показывает «Отправлено: N» по **реальному**
-/// счётчику из `SyncPusher`, а не по разнице `pendingCount`
-/// (который в офлайне застревал на 0).
+/// `PushResult?` (реальный счётчик отправленного).
+/// c-9-auto-sync: `pull()` возвращает `PullStats?` (сколько пришло
+/// с сервера — для уведомления «Загружено: N»).
 class SyncProvider extends ChangeNotifier {
   SyncProvider({
     required SyncService syncService,
@@ -42,9 +42,6 @@ class SyncProvider extends ChangeNotifier {
   int get errorCount => _errorCount;
   String? get lastError => _lastError;
 
-  /// Обновить статистику очереди (без выполнения самой синхронизации).
-  /// Вызывать после любой офлайн-операции, чтобы счётчик на кнопке
-  /// синхронизации сразу отражал реальность.
   Future<void> refresh() async {
     try {
       _pendingCount = await _getPendingCount();
@@ -57,15 +54,17 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
-  /// Скачать данные с сервера (Pull). Результата не возвращает.
-  Future<void> pull() async {
-    if (_isSyncing) return;
+  /// Скачать данные с сервера (Pull). Возвращает `PullStats`
+  /// (сколько тар и проб пришло) или `null`, если Pull упал.
+  Future<PullStats?> pull() async {
+    if (_isSyncing) return null;
     _isSyncing = true;
     _lastError = null;
     notifyListeners();
 
+    PullStats? stats;
     try {
-      await _syncService.pullAll();
+      stats = await _syncService.pullAll();
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка загрузки (Pull): $e';
@@ -74,12 +73,9 @@ class SyncProvider extends ChangeNotifier {
       await refresh();
       notifyListeners();
     }
+    return stats;
   }
 
-  /// Отправить локальные изменения на сервер (Push).
-  ///
-  /// Возвращает `PushResult` (или `null`, если синхронизация уже идёт
-  /// либо упала). UI показывает «Отправлено: N» по `result.sent`.
   Future<PushResult?> push() async {
     if (_isSyncing) return null;
     _isSyncing = true;
@@ -100,9 +96,6 @@ class SyncProvider extends ChangeNotifier {
     return result;
   }
 
-  /// Полная синхронизация (Pull + Push).
-  ///
-  /// Возвращает `PushResult` от `pushAll` (или `null`, если Pull упал).
   Future<PushResult?> syncAll() async {
     if (_isSyncing) return null;
     _isSyncing = true;
@@ -124,7 +117,6 @@ class SyncProvider extends ChangeNotifier {
     return result;
   }
 
-  /// Сбросить ошибки в очереди и попробовать снова.
   Future<void> retryErrors() async {
     await SyncQueueDao.resetErrors();
     await refresh();
