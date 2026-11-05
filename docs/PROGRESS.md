@@ -71,7 +71,7 @@
 - ✅ **`c-8b-fix-1`** (2026-11-05) — UI: `useSafeArea`, sticky «Сохранить» вне `ListView`.
 - ✅ **`c-8b-fix-2`** (2026-11-05) — `update` ловит **все не-4xx** (сеть/таймаут/5xx/unknown) → `sync_queue` (фикс «Не удалось сохранить: требуется подключение»); payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`) — `Container.fromJson` видит новые имена после офлайн-сохранения; убрано «(черновик)» из лейблов шапки и формы.
 - ✅ **`c-8b-fix-3`** (2026-11-05) — ТД-66: `ContainerEditForm` больше не блокирует сохранение при `_catalogsError != null` (5xx/DB-ошибки загрузки справочников). Dropdown'ы `container_type` / `draft_site` / `draft_research_type` — `disabled` + баннер «Справочники не загружены. Повторить», в payload не идут. Текстовые поля (`container_number`, `comment`, `position_on_pallet`, `draft_work_order_*`) — редактируются и сохраняются всегда. Бонус: `safeValue` для `draft_site` / `draft_research_type` — защита от `DropdownButton` assertion, если текущий ID не в справочнике. Репро вручную не воспроизведено (сетевые ошибки ловит `CatalogService` без исключения) — защитная правка.
-
+- ✅ **`c-8b-fix-4`** (2026-11-05) — окно редактирования шапки тары приподнято: высота `(screen − viewInsets.bottom) × 0.95` вместо `0.9 × (screen − safeBottom)`. Убран `Padding(bottom: insets) + SizedBox(0.95 * screen)` — при открытой клавиатуре давал overflow. Синтаксис `_openEditSheet` починен (незакрытая скобка). `c-9-overflow-fix-4` снят с плана — overflow 3.5 / 7.2 px не воспроизводится.
 ### Что закрыто (web, комментарий тары)
 
 - ✅ **`c-2f-comment-web`** (2026-11-05) — `ContainerDetailDialog.tsx`: в шапке `Комментарий` + `Шаблон`; `ContainersPage.tsx`: колонка «Комментарий» — `comment` с fallback на `comment_template_text`.

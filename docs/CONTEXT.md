@@ -50,13 +50,12 @@
 - `c-8b-fix-1` — UI: `useSafeArea`, sticky «Сохранить» вне `ListView` — ✅.
 - `c-8b-fix-2` — `update` ловит все не-4xx (сеть/таймаут/5xx/unknown) → `sync_queue`; payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`); лейблы без «черновик» — ✅.
 - `c-8b-fix-3` — `ContainerEditForm` не блокирует сохранение при `_catalogsError` (5xx/DB): dropdown'ы типа/участка/ТИ disabled + баннер «Повторить», в payload не идут; текстовые поля сохраняются всегда; `safeValue` для dropdown'ов — защита от assertion — ✅.
-
+- `c-8b-fix-4` — окно редактирования шапки выше: `(screen − insets) × 0.95` вместо `0.9 × (screen − safeBottom)`, `Padding+SizedBox` убран (overflow при клавиатуре) — ✅.
 **Web (комментарий тары, `c-2f-comment-web`):**
 - `c-2f-comment-web` — `ContainerDetailDialog.tsx`: в шапке `Комментарий` + `Шаблон`; `ContainersPage.tsx`: колонка «Комментарий» — `comment` с fallback на `comment_template_text` — ✅.
 
 **Следующие заходы:**
-- `c-8-catalog-create-offline` — офлайн-создание справочников через `sync_queue` + local→server маппинг (`CatalogService.create` пока только онлайн). ⬜ **следующий**
-- `c-9-overflow-fix-4` — 2 overflow (3.5 px, 7.2 px), `ТД-61`. ⬜
+- `c-8-catalog-create-offline` — офлайн-создание справочников через `sync_queue`. ⬜ 
 
 **Отложено:** `c-5` (sneakernet через флешку).
 
