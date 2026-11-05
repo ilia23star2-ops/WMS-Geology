@@ -336,6 +336,22 @@
 
 ---
 
+### 1.104. 2026-11-05 — Мобилка: офлайн-редактирование шапки — фикс классификации ошибок и `*_name` (c-8b-fix-2)
+
+**Решение:**
+1. **`ContainerService.update`** при `ApiException` с `statusCode` в 4xx — `rethrow` (валидация сервера, в очередь не кладём). При **всём остальном** (сеть, таймауты, 5xx, `statusCode == null`, `unknown`) и при любом другом исключении (`catch (_)`) — `_queueUpdateLocal` + `UpdateOutcome.queued`.
+2. **`ContainerEditForm` payload** обогащается `container_type_name` / `draft_site_name` / `draft_research_type_name` — из справочника или fallback из `initial`. `ContainerDao.updateFieldsLocal` их мержит. `Container.fromJson` читает имена из `*_name` → UI сразу видит новое имя. Сервер (`ContainerSerializer`) эти поля **read_only**, DRF игнорирует.
+3. **Лейблы шапки тары и формы** — без «(черновик)»: «Участок», «ТИ», «Н/З (тек.)», «Н/З (вх.)».
+
+**Причина:**
+- `api_client.dart` классифицирует `DioExceptionType.unknown` без `statusCode` как `isNetworkError = false`. Плюс возможны `transformTimeout` (будущие типы Dio). `update` раньше делал `if (!e.isNetworkError) rethrow` → ошибка офлайн → «Не удалось сохранить: требуется подключение к серверу». Теперь ловим всё, кроме явных 4xx.
+- `Container.fromJson` показывает `containerTypeName` / `draftSiteName` / `draftResearchTypeName`. Payload слал только ID → имена не обновлялись, показывались старые/пустые. `*_name` в payload решает **для локального кэша**; на сервер уходит только `*_id`.
+- «(черновик)» в лейблах — технический хвост от draft-полей. В UI лишний шум.
+
+**Где:** `mobile/lib/services/container_service.dart` (`update`, `_queueUpdateLocal`), `mobile/lib/widgets/container_edit_form.dart` (`_save`, `_containerTypeName`, `_siteName`, `_researchTypeName`, лейблы), `mobile/lib/screens/container_detail_screen.dart` (`_buildHeader` — лейблы).
+
+**Статус:** ✅ действует.
+
 ## 2. Что не делаем и почему
 
 - Не используем SampleParts — разделение вне WMS.
@@ -413,6 +429,9 @@
 - Не делаем `ContainerService.update` онлайн-только — офлайн через `sync_queue` (1.103).
 - Не держим кнопку «Сохранить» в `ListView` формы тары — sticky bottom (1.103).
 
+- Не полагаемся на `e.isNetworkError` в `update` — ловим `catch (_)` для всех не-4xx (1.104).
+- Не отображаем «(черновик)» в лейблах шапки тары и формы (1.104).
+
 ---
 
 ## 3. Глоссарий
@@ -449,6 +468,7 @@
 | `processedIds` | `Set<int>` в `SyncPusher.pushAll` — защита от повторной обработки после reload (1.102). |
 | `UpdateOutcome` | `online` / `queued` — результат `ContainerService.update` (1.103). |
 | `updateFieldsLocal` | `ContainerDao`: мерж полей в JSON `containers.data` + `updated_at` (1.103). |
+| `container_type_name` / `draft_site_name` / `draft_research_type_name` | Денормализованные имена в payload формы для локального кэша (1.104). |
 
 ### Процесс
 

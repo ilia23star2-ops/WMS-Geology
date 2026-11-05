@@ -186,6 +186,10 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 - `container_service_test.dart` (+3: `update` — онлайн PATCH, офлайн → `sync_queue` PATCH + `updateFieldsLocal` + `setPendingSync`, валидация-400 → rethrow).
 
+### Mobile, `c-8b-fix-2`
+
+- Юнит-тестов не добавилось: `update`-catch (`catch (_)`) — тест требует mock DioException без ApiException — выходит за рамки unit-теста. Покрыто device-check (офлайн-редактирование шапки).
+- `ContainerEditForm` — UI, не покрывается.
 ---
 
 ## Integration-тесты (приоритет 2)
@@ -287,3 +291,5 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - **ТД-66.** `c-8b-fix-2`: офлайн-редактирование шапки блокируется при пустом кэше справочников.
 - **ТД-67.** `ContainersPage.tsx` — `(row as any).comment` — временный обход типа.
 - Покрытие серии `3.x-offline` — по мере реализации (`c-8b-fix-2`, `c-8-catalog-create-offline`).
+- **ТД-68.** `api_client.dart` классифицирует `DioExceptionType.unknown` без `statusCode` как `isNetworkError = false`. `ContainerService.update` уже ловит `catch (_)`, но `fetchList` / `fetchHistory` / `fetchLabelPdf` — только `on ApiException if (!isNetworkError) rethrow`. Возможны ложные «не сетевые» ошибки офлайн. На device-check не воспроизвелось.
+- `ContainerService.update` — не покрыт unit-тестом на `catch (_)`.
