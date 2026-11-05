@@ -48,14 +48,14 @@
 **Mobile (офлайн-редактирование шапки тары, `c-8b`):**
 - `c-8b` — `ContainerService.update` при `isNetworkError` → `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`; `SyncPusher` PATCH `/storage/containers/{id}/` → `clearPendingSync` — ✅.
 - `c-8b-fix-1` — UI: `useSafeArea`, sticky «Сохранить» вне `ListView` — ✅.
-- `c-8b-fix-2` — `update` ловит все не-4xx (сеть/таймаут/5xx/unknown) → `sync_queue` (фикс «Не удалось сохранить: требуется подключение»); payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`) — `Container.fromJson` видит новые имена после офлайн-сохранения; убрано «(черновик)» из лейблов шапки и формы — ✅.
+- `c-8b-fix-2` — `update` ловит все не-4xx (сеть/таймаут/5xx/unknown) → `sync_queue`; payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`); лейблы без «черновик» — ✅.
+- `c-8b-fix-3` — `ContainerEditForm` не блокирует сохранение при `_catalogsError` (5xx/DB): dropdown'ы типа/участка/ТИ disabled + баннер «Повторить», в payload не идут; текстовые поля сохраняются всегда; `safeValue` для dropdown'ов — защита от assertion — ✅.
 
 **Web (комментарий тары, `c-2f-comment-web`):**
 - `c-2f-comment-web` — `ContainerDetailDialog.tsx`: в шапке `Комментарий` + `Шаблон`; `ContainersPage.tsx`: колонка «Комментарий» — `comment` с fallback на `comment_template_text` — ✅.
 
 **Следующие заходы:**
 - `c-8-catalog-create-offline` — офлайн-создание справочников через `sync_queue` + local→server маппинг (`CatalogService.create` пока только онлайн). ⬜ **следующий**
-- `c-8b-fix-3` — ТД-66: офлайн-редактирование шапки при пустом кэше справочников (`ContainerEditForm._catalogsError` блокирует сохранение). ⬜ **по желанию**
 - `c-9-overflow-fix-4` — 2 overflow (3.5 px, 7.2 px), `ТД-61`. ⬜
 
 **Отложено:** `c-5` (sneakernet через флешку).
@@ -83,7 +83,7 @@
 - Офлайн-создание тары (negative ID + `local_ref` + маппинг ID после `bulk-create`).
 - Офлайн-создание справочников.
 - **Полный офлайн-сценарий «создал → заполнил → разместил»**.
-- **Офлайн-редактирование шапки тары** (с именами типа/участка/ТИ, без «черновик» в лейблах).
+- **Офлайн-редактирование шапки тары** (с именами типа/участка/ТИ, без «черновик» в лейблах, не блокируется при пустых справочниках).
 
 **Сборка на рабочем ПК (прокси):**
 - `work-pc-setup/setup.ps1` — **обязателен после `git reset --hard`**.
@@ -97,7 +97,7 @@
 **Mobile:** 218 юнит-тестов.
 
 **Ближайшая работа:**
-- `c-8-catalog-create-offline` (офлайн-создание справочников через `sync_queue`) → `c-9-overflow-fix-4`. ТД-66 (`c-8b-fix-3`) — по желанию, не блокер.
+- `c-8-catalog-create-offline` (офлайн-создание справочников через `sync_queue`) → `c-9-overflow-fix-4`.
 
 ---
 
@@ -159,7 +159,7 @@
 | Главная | Приветствие + «Сканировать», «Синхронизация (N)», история тар. |
 | Drawer | Главная, Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники, Выход. |
 | Реестр тары | 4 фильтра, пагинация, офлайн-кэш, действия по статусу (Заполнить / Разместить / Местоположение), создание тары (online + offline). |
-| Карточка тары | 3 вкладки, адаптив, `ContainerEditForm` (safe area + sticky «Сохранить»), `FillContainerContent`, `SampleEditDialog` (online + offline), история. Лейблы без «(черновик)» — `c-8b-fix-2`. |
+| Карточка тары | 3 вкладки, адаптив, `ContainerEditForm` (safe area + sticky «Сохранить», не блокирует при пустых справочниках), `FillContainerContent`, `SampleEditDialog` (online + offline), история. Лейблы без «(черновик)» — `c-8b-fix-2`, `c-8b-fix-3`. |
 | Шапка тары (офлайн) | `ContainerService.update` → `sync_queue` PATCH + `ContainerDao.updateFieldsLocal` + `pending_sync`; `update` ловит все не-4xx (сеть/таймаут/5xx/unknown) → очередь; payload с `*_name` — `c-8b` + `c-8b-fix-2`. |
 | Пробы | Поиск, чекбоксы, bulk-статус, чипы, `SampleEditDialog`. Офлайн: создание, редактирование, dispose/restore/delete — все через `sync_queue`. |
 | История | Аудит тары (online + офлайн через `ContainerHistoryDao`). |
@@ -168,7 +168,7 @@
 | Офлайн-справочники | `CatalogDao`, `CatalogService` fallback, создание через `sync_queue` (`c-8-catalog-create`, только онлайн-`create`). `NamedCatalog.fullAddress`. |
 | Офлайн-создание тары | `bulkCreate` при `isNetworkError` → negative ID + `sync_queue` с `localRef`, `BulkCreateResult {count, queued}`. После Push `SyncPusher` перемапит negative → server. |
 | Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах | `fillSamples` при `containerId < 0` → очередь, `bulkPlace` при negatives → очередь атомарно, `SyncPusher` перезагружает очередь + `processedIds` — `c-2d-2c`. |
-| Офлайн-редактирование шапки тары | `UpdateOutcome {online / queued}`, `ContainerDao.updateFieldsLocal`, `SyncPusher` PATCH `/storage/containers/{id}/` → `clearPendingSync`, catch все не-4xx, `*_name` в payload — `c-8b`, `c-8b-fix-2`. |
+| Офлайн-редактирование шапки тары | `UpdateOutcome {online / queued}`, `ContainerDao.updateFieldsLocal`, `SyncPusher` PATCH `/storage/containers/{id}/` → `clearPendingSync`, catch все не-4xx, `*_name` в payload — `c-8b`, `c-8b-fix-2`. `ContainerEditForm` не блокирует при пустых справочниках — `c-8b-fix-3`. |
 | Синхронизация | Pull + Push + автосинхронизация. Incremental Pull `?updated_since=`. Natural sort проб. |
 
 ### Документация
@@ -238,9 +238,9 @@
 - **`ContainerService.update` офлайн:** `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`. `UpdateOutcome {online, queued}`. **Ловит все не-4xx (сеть/таймаут/5xx/unknown)** — `catch (_)` → очередь (1.103, 1.104).
 - **`SyncPusher` PATCH `/storage/containers/{id}/`** → `clearPendingSync(id)` (1.103).
 - **`ContainerEditForm`** — `Form(Column(Expanded(ListView), sticky bottomBar))`, `SafeArea(top: false)` у кнопки; payload содержит `*_name` для `container_type` / `draft_site` / `draft_research_type` (1.103, 1.104).
+- **`ContainerEditForm._catalogsError`** — при 5xx/DB-ошибках загрузки справочников форма **не блокирует** сохранение: текстовые поля сохраняются, dropdown'ы disabled (1.105).
 - **`_openEditSheet`** — `useSafeArea: true` + высота = экран − клавиатура − safe area (1.103).
 - **Лейблы шапки тары** — без «(черновик)» (1.104).
-- **`ContainerEditForm._catalogsError`** — если кэш справочников пуст (свежая установка без сети), форма **блокирует сохранение** (ТД-66, `c-8b-fix-3`). Обходится предварительным онлайн-открытием формы раз в сессии.
 
 ### Рабочий ПК (прокси)
 - **После `git reset --hard`**: `setup.ps1` → `export FLUTTER_STORAGE_BASE_URL` → `flutter run --android-skip-build-dependency-validation`.

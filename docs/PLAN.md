@@ -88,6 +88,7 @@
 | c-8b | Офлайн-редактирование шапки тары | `ContainerService.update` → `sync_queue` PATCH + `updateFieldsLocal` | ✅ |
 | c-8b-fix-1 | UI шапки тары | `useSafeArea`, sticky «Сохранить» вне `ListView` | ✅ |
 | c-8b-fix-2 | Офлайн-редактирование (фикс) | `update` ловит все не-4xx → `sync_queue`; payload с `*_name`; лейблы без «черновик» | ✅ |
+| c-8b-fix-3 | ТД-66: `ContainerEditForm` при `_catalogsError` | Dropdown'ы disabled, текстовые поля сохраняются | ✅ |
 | c-2f-comment-web | Веб: комментарий тары | `ContainerDetailDialog` (шапка) + `ContainersPage` (колонка) | ✅ |
 | c-8-catalog-create-offline | Офлайн-создание справочников | `CatalogService.create` → `sync_queue` + local→server маппинг | ⬜ |
 | c-9-overflow-fix-4 | 2 overflow (3.5 / 7.2 px) | Косметика, `ТД-61` | ⬜ |
@@ -162,7 +163,7 @@
 - [x] **Создание справочников офлайн** — `c-8-catalog-create`.
 - [x] **Офлайн-создание тары** — `c-2d-2a` + `c-2d-2a-fix-3`.
 - [x] **Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах** — `c-2d-2c` + fixes.
-- [x] **Офлайн-редактирование шапки тары** — `c-8b` + `c-8b-fix-1` + `c-8b-fix-2`.
+- [x] **Офлайн-редактирование шапки тары** — `c-8b` + `c-8b-fix-1` + `c-8b-fix-2` + `c-8b-fix-3`.
 - [x] **Веб: комментарий в карточке и реестре тары** — `c-2f-comment-web`.
 - [ ] **Офлайн-создание справочников через `sync_queue`** — `c-8-catalog-create-offline`.
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
@@ -219,7 +220,7 @@
 | ТД-63 | Mobile: `SampleDao.getByContainerId` сортирует после декодирования JSON (naturalCompare) | низкий | при жалобах на скорость |
 | ТД-64 | `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом (нет DI на `ContainerDao.saveAll`) | низкий | при первом баге офлайн-создания |
 | ТД-65 | `_defaultOnSuccess` `pending_sync` для `fill-samples` / `bulk-place` на negative-ID | ✅ | закрыто в `c-2d-2c` |
-| ТД-66 | **`c-8b-fix-3`:** `ContainerEditForm._catalogsError` блокирует сохранение шапки (даже `comment`, `container_number`, `position_on_pallet`), если кэш справочников пуст (свежая установка без сети). Обходится предварительным онлайн-открытием формы | средний | `c-8b-fix-3` |
+| ТД-66 | `c-8b-fix-3`: `ContainerEditForm._catalogsError` блокирует сохранение шапки | ✅ | закрыто в `c-8b-fix-3` |
 | ТД-67 | `ContainersPage.tsx` — `valueGetter: (row as any).comment` — временный обход типа. Добавить `comment: string` в `web/src/api/types.ts::Container` | низкий | при следующем web-заходе |
 | ТД-68 | `api_client.dart` классифицирует `DioExceptionType.unknown` без `statusCode` как `isNetworkError = false`. `ContainerService.update` ловит `catch (_)`, но `fetchList` / `fetchHistory` / `fetchLabelPdf` — только `on ApiException if (!isNetworkError) rethrow`. Возможны ложные «не сетевые» ошибки офлайн. На device-check не воспроизвелось | низкий | при первом баг-репорте офлайн-загрузки |
 

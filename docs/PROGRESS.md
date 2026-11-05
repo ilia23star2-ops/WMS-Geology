@@ -69,7 +69,8 @@
 
 - ✅ **`c-8b`** (2026-11-05) — `ContainerService.update` офлайн → `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`; `UpdateOutcome {online, queued}`; `SyncPusher` PATCH `/storage/containers/{id}/` → `clearPendingSync`; `_onSaveEdit` при `queued` перечитывает кэш + SnackBar.
 - ✅ **`c-8b-fix-1`** (2026-11-05) — UI: `useSafeArea`, sticky «Сохранить» вне `ListView`.
-- ✅ **`c-8b-fix-2`** (2026-11-05) — `update` ловит **все не-4xx** (сеть/таймаут/5xx/unknown) → `sync_queue` (фикс «Не удалось сохранить: требуется подключение»); payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`) — `Container.fromJson` видит новые имена после офлайн-сохранения; убрано «(черновик)» из лейблов шапки и формы. **ТД-66 не закрыт** (`c-8b-fix-3` — блокировка `ContainerEditForm._catalogsError` при пустом кэше справочников остаётся).
+- ✅ **`c-8b-fix-2`** (2026-11-05) — `update` ловит **все не-4xx** (сеть/таймаут/5xx/unknown) → `sync_queue` (фикс «Не удалось сохранить: требуется подключение»); payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`) — `Container.fromJson` видит новые имена после офлайн-сохранения; убрано «(черновик)» из лейблов шапки и формы.
+- ✅ **`c-8b-fix-3`** (2026-11-05) — ТД-66: `ContainerEditForm` больше не блокирует сохранение при `_catalogsError != null` (5xx/DB-ошибки загрузки справочников). Dropdown'ы `container_type` / `draft_site` / `draft_research_type` — `disabled` + баннер «Справочники не загружены. Повторить», в payload не идут. Текстовые поля (`container_number`, `comment`, `position_on_pallet`, `draft_work_order_*`) — редактируются и сохраняются всегда. Бонус: `safeValue` для `draft_site` / `draft_research_type` — защита от `DropdownButton` assertion, если текущий ID не в справочнике. Репро вручную не воспроизведено (сетевые ошибки ловит `CatalogService` без исключения) — защитная правка.
 
 ### Что закрыто (web, комментарий тары)
 
@@ -87,7 +88,6 @@
 ### Что осталось
 
 - ⬜ **`c-8-catalog-create-offline`** — офлайн-создание справочников через `sync_queue` (`CatalogService.create` пока только онлайн). **Следующий.**
-- ⬜ **`c-8b-fix-3`** (ТД-66) — офлайн-редактирование шапки при пустом кэше справочников (`ContainerEditForm._catalogsError` блокирует сохранение). По желанию.
 - ⬜ **`c-9-overflow-fix-4`** — 2 overflow (3.5 px, 7.2 px), `ТД-61`.
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
 - ✅ **`c-8a`**, **`c-8c`**, **`c-8d`**, **`c-8e`** — сняты с плана после аудита 2026-11-05.
