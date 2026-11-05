@@ -140,3 +140,4 @@ mobile/android/gradle/gradle-daemon-jvm.properties
 
 # машинные каталоги рабочего ПК (CONTEXT.md §Mobile)
 tools/
+*.bak
