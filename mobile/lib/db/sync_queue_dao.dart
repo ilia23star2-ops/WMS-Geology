@@ -1,4 +1,4 @@
-/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a, c-2d-2).
+/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a, c-2d-2a, c-2d-2c).
 library;
 
 import 'dart:convert';
@@ -148,9 +148,9 @@ class SyncQueueDao {
   /// c-2d-2: после успешного `bulk-create` перемапить negative ID
   /// во **всех** записях очереди (PENDING + ERROR).
   ///
-  /// Меняет `payload` (`container_id`, `container_ids[]`,
-  /// `containers[].id`) и `local_ref` (int-строка, JSON-массив).
-  /// Идемпотентно: ключей нет в [mapping] — не трогаем.
+  /// c-2d-2c: также маппит `endpoint` (`/containers/-1/fill-samples/`
+  /// → `/containers/42/fill-samples/`), чтобы `fill-samples` / `bulk-place`
+  /// на офлайн-тарах ушли на существующий URL.
   static Future<void> remapAllLocalRefs(Map<int, int> mapping) async {
     if (mapping.isEmpty) return;
     final db = await AppDatabase.instance.database;
@@ -159,14 +159,20 @@ class SyncQueueDao {
 
     final batch = db.batch();
     for (final row in rows) {
+      final rawEndpoint = row['endpoint'] as String;
       final payloadRaw = row['payload'] as String;
       final localRefRaw = row['local_ref'] as String?;
       final payload = jsonDecode(payloadRaw) as Map<String, dynamic>;
       remapInPlace(payload, mapping);
       final newLocalRef = remapLocalRef(localRefRaw, mapping);
+      final newEndpoint = remapEndpoint(rawEndpoint, mapping);
       batch.update(
         'sync_queue',
-        {'payload': jsonEncode(payload), 'local_ref': newLocalRef},
+        {
+          'endpoint': newEndpoint,
+          'payload': jsonEncode(payload),
+          'local_ref': newLocalRef,
+        },
         where: 'id = ?',
         whereArgs: [row['id']],
       );
@@ -234,5 +240,24 @@ class SyncQueueDao {
       // не JSON — оставляем как есть
     }
     return localRef;
+  }
+
+  /// c-2d-2c: заменить negative ID в endpoint.
+  ///
+  /// `/storage/containers/-1/fill-samples/` → `/storage/containers/42/fill-samples/`.
+  /// `/storage/containers/-1/` → `/storage/containers/42/`.
+  /// Endpoint без ID (`bulk-create`, `bulk-place`) — без изменений.
+  /// Positive ID — без изменений (идемпотентно).
+  @visibleForTesting
+  static String remapEndpoint(String endpoint, Map<int, int> mapping) {
+    if (mapping.isEmpty) return endpoint;
+    return endpoint.replaceAllMapped(RegExp(r'/containers/(-?\d+)(/|$)'), (m) {
+      final raw = m.group(1)!;
+      final id = int.tryParse(raw);
+      if (id == null || id >= 0) return m.group(0)!;
+      final mapped = mapping[id];
+      if (mapped == null) return m.group(0)!;
+      return '/containers/$mapped${m.group(2)}';
+    });
   }
 }

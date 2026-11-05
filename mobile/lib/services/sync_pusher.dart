@@ -1,9 +1,16 @@
-/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2).
+/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2a, c-2d-2c).
 ///
 /// c-2d-2:
 /// - Обрабатывает `local_ref` в очереди.
 /// - При успешном `bulk-create` маппит local IDs на server IDs.
 /// - Обновляет ID тар / проб в SQLite и `payload` очереди.
+///
+/// c-2d-2c:
+/// - После `bulk-create` перечитывает очередь, чтобы `fill-samples` /
+///   `bulk-place` ушли на обновлённый endpoint (`/containers/42/...`).
+/// - Защита от бесконечного цикла: уже обработанные `id` пропускаются
+///   после reload (иначе — если `markSynced` не удалил запись —
+///   `getPendingItems` вернёт её снова).
 library;
 
 import 'dart:convert';
@@ -18,10 +25,7 @@ import 'api_client.dart';
 class PushResult {
   const PushResult({required this.sent, required this.failed});
 
-  /// Сколько операций успешно ушло на сервер.
   final int sent;
-
-  /// Сколько упало (помечены ERROR).
   final int failed;
 
   @override
@@ -32,7 +36,7 @@ typedef OnSuccess = Future<void> Function(
   String endpoint,
   Map<String, dynamic> payload,
   String? localRef,
-  Map<String, dynamic>? responseData, // c-2d-2: ответ сервера
+  Map<String, dynamic>? responseData,
 );
 
 class SyncPusher {
@@ -56,16 +60,29 @@ class SyncPusher {
   final Future<void> Function() _resetErrors;
   final OnSuccess _onSuccess;
 
-  /// Отправить все накопленные изменения из очереди.
   Future<PushResult> pushAll() async {
     await _resetErrors();
-    final items = await _getPendingItems();
+    var items = await _getPendingItems();
     if (items.isEmpty) return const PushResult(sent: 0, failed: 0);
 
     var sent = 0;
     var failed = 0;
-    for (final item in items) {
+    var i = 0;
+    // c-2d-2c: защита от бесконечного цикла. После `bulk-create`
+    // перечитываем очередь; если `getPendingItems` вернёт уже
+    // обработанные записи (в тестах, при сбое `markSynced`),
+    // пропускаем их.
+    final processedIds = <int>{};
+
+    while (i < items.length) {
+      final item = items[i];
+      if (item.id != null && processedIds.contains(item.id)) {
+        i++;
+        continue;
+      }
+
       Map<String, dynamic>? responseData;
+      var needsReload = false;
       try {
         if (item.action == 'POST') {
           final resp = await _client.post<Map<String, dynamic>>(
@@ -87,7 +104,6 @@ class SyncPusher {
           await _markSynced(item.id!);
         }
 
-        // c-9-fill-offline-2c-3-fix-2 + c-2d-2: сбросить pending-флаги и маппинг.
         try {
           await _onSuccess(
             item.endpoint,
@@ -95,16 +111,27 @@ class SyncPusher {
             item.localRef,
             responseData,
           );
-        } catch (_) {
-          // Сброс флага не критичен — Pull потом перезапишет.
-        }
+        } catch (_) {}
 
         sent++;
+
+        if (item.endpoint == '/storage/containers/bulk-create/') {
+          needsReload = true;
+        }
       } catch (e) {
         if (item.id != null) {
           await _markError(item.id!, e.toString());
         }
         failed++;
+      }
+
+      if (item.id != null) processedIds.add(item.id!);
+
+      if (needsReload) {
+        items = await _getPendingItems();
+        i = 0;
+      } else {
+        i++;
       }
     }
     return PushResult(sent: sent, failed: failed);
@@ -118,7 +145,6 @@ class SyncPusher {
     String? localRef,
     Map<String, dynamic>? responseData,
   ) async {
-    // c-2d-2: bulk-create — маппинг negative ID → server ID.
     if (endpoint == '/storage/containers/bulk-create/' &&
         localRef != null &&
         responseData != null) {
@@ -156,13 +182,6 @@ class SyncPusher {
     }
   }
 
-  /// c-2d-2: разобрать ответ `bulk-create` и перемапить negative ID.
-  ///
-  /// См. `views.py::bulk_create` — возвращает
-  /// `created_containers: [{id, ...}]`, `total_containers: N`.
-  /// Порядок `created_containers` совпадает с порядком `containers` в
-  /// payload (см. `services.bulk_create_containers` — цикл `.create()`
-  /// в том же порядке).
   static Future<void> _remapBulkCreate(
     String localRef,
     Map<String, dynamic> responseData,
@@ -202,7 +221,6 @@ class SyncPusher {
     }
     if (mapping.isEmpty) return;
 
-    // 1) Локальный кэш: containers.id, samples.container_id.
     for (final entry in mapping.entries) {
       try {
         await ContainerDao.remapId(entry.key, entry.value);
@@ -220,18 +238,12 @@ class SyncPusher {
       }
     }
 
-    // 2) Очередь: payload + local_ref.
     await SyncQueueDao.remapAllLocalRefs(mapping);
 
-    // 3) Снять pending_sync: в 2a офлайн-тары создаются без проб и без
-    //    fill-samples/place в очереди. Если в 2c появятся такие операции —
-    //    здесь понадобится проверка «есть ли ещё queued-операции для тары».
     for (final entry in mapping.entries) {
       try {
         await ContainerDao.clearPendingSync(entry.value);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
     }
 
     debugPrint('[c-2d-2] bulk-create mapped: $mapping');

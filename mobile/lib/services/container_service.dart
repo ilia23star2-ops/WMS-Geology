@@ -1,4 +1,4 @@
-/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b, c-2d-2).
+/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b, c-2d-2a, c-2d-2c, c-2d-2c-fix-1).
 library;
 
 import 'dart:convert';
@@ -40,6 +40,14 @@ typedef GetCachedHistory = Future<List<Map<String, dynamic>>> Function(
 );
 typedef GetAllCached = Future<List<Map<String, dynamic>>> Function();
 typedef SetPendingSync = Future<void> Function(int id, bool pending);
+typedef UpdateLocationLocal = Future<void> Function(
+  int id, {
+  required String status,
+  int? cellId,
+  String? cellFullAddress,
+  int? floorRoomId,
+  String? floorRoomName,
+});
 
 class ContainerService {
   ContainerService(
@@ -49,12 +57,15 @@ class ContainerService {
     GetCachedHistory? getCachedHistory,
     GetAllCached? getAllCached,
     SetPendingSync? setPendingSync,
+    UpdateLocationLocal? updateLocationLocal,
   }) : _enqueue = enqueue ?? _defaultEnqueue,
        _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
        _getCachedHistory =
            getCachedHistory ?? ContainerHistoryDao.getByContainerId,
        _getAllCached = getAllCached ?? ContainerDao.getAll,
-       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync;
+       _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync,
+       _updateLocationLocal =
+           updateLocationLocal ?? ContainerDao.updateLocationLocal;
 
   final ApiClient _client;
   final EnqueuePlace _enqueue;
@@ -62,6 +73,7 @@ class ContainerService {
   final GetCachedHistory _getCachedHistory;
   final GetAllCached _getAllCached;
   final SetPendingSync _setPendingSync;
+  final UpdateLocationLocal _updateLocationLocal;
 
   static Future<void> _defaultEnqueue({
     required String action,
@@ -92,9 +104,7 @@ class ContainerService {
 
       try {
         await ContainerDao.saveAll([data]);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
       return Container.fromJson(data);
     } catch (e) {
@@ -145,9 +155,7 @@ class ContainerService {
 
       try {
         await ContainerDao.saveAll(results);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
       final items = results.map(Container.fromJson).toList(growable: false);
       final count = (data['count'] as int?) ?? items.length;
@@ -186,11 +194,6 @@ class ContainerService {
     }
   }
 
-  /// c-2d-2: офлайн-создание тары.
-  ///
-  /// Локальный JSON — **в серверном формате** (`container_type`,
-  /// `draft_site`, `draft_research_type`), иначе `Container.fromJson`
-  /// падает на `as int` из-за отсутствия полей.
   Future<BulkCreateResult> bulkCreate({
     required List<Map<String, dynamic>> containers,
     int? draftSiteId,
@@ -224,18 +227,15 @@ class ContainerService {
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
 
-      // Офлайн-режим: negative ID + локальный кэш + очередь.
       final now = DateTime.now().toUtc().millisecondsSinceEpoch;
       final localIds = <int>[];
       final localContainers = <Map<String, dynamic>>[];
       final createdAt = DateTime.now().toUtc().toIso8601String();
 
       for (var i = 0; i < containers.length; i++) {
-        final id = -(now + i); // Уникальный negative ID
+        final id = -(now + i);
         localIds.add(id);
 
-        // Берём `container_type_id` из входа, но пишем в серверное имя
-        // `container_type` — иначе `Container.fromJson` упадёт.
         final typeId = containers[i]['container_type_id'];
         final number = containers[i]['container_number'] as String?;
 
@@ -257,13 +257,10 @@ class ContainerService {
 
       await ContainerDao.saveAll(localContainers);
 
-      // pending_sync = 1 → иконка `cloud_off` до успешного Push.
       for (final id in localIds) {
         try {
           await _setPendingSync(id, true);
-        } catch (_) {
-          // Кэш не критичен.
-        }
+        } catch (_) {}
       }
 
       await _enqueue(
@@ -290,9 +287,7 @@ class ContainerService {
 
       try {
         await _saveHistory(id, rawList);
-      } catch (_) {
-        // Кэш не критичен.
-      }
+      } catch (_) {}
 
       return rawList
           .map(ContainerHistoryEntry.fromJson)
@@ -319,17 +314,25 @@ class ContainerService {
 
     try {
       await ContainerDao.saveAll([data]);
-    } catch (_) {
-      // Кэш не критичен.
-    }
+    } catch (_) {}
 
     return Container.fromJson(data);
   }
 
+  /// c-2d-2c: если среди `containerIds` есть negative (офлайн-тара),
+  /// операция целиком уходит в `sync_queue` — атомарно. `localRef` —
+  /// JSON-массив только negatives; при маппинге после `bulk-create`
+  /// они станут серверными, позитивные не тронутся.
+  ///
+  /// c-2d-2c-fix-1: при offline (negative или `isNetworkError`) —
+  /// локально обновить `containers` (`status = ACTIVE`, место),
+  /// чтобы пользователь сразу видел, куда разместил.
   Future<PlaceOutcome> bulkPlace({
     required List<int> containerIds,
     int? cellId,
     int? floorRoomId,
+    String? cellFullAddress,
+    String? floorRoomName,
   }) async {
     if ((cellId == null) == (floorRoomId == null)) {
       throw ArgumentError(
@@ -339,6 +342,24 @@ class ContainerService {
     final body = <String, dynamic>{'container_ids': containerIds};
     if (cellId != null) body['cell_id'] = cellId;
     if (floorRoomId != null) body['floor_room_id'] = floorRoomId;
+
+    final negatives = containerIds.where((id) => id < 0).toList();
+    if (negatives.isNotEmpty) {
+      await _enqueue(
+        action: 'POST',
+        endpoint: '/storage/containers/bulk-place/',
+        payload: body,
+        localRef: jsonEncode(negatives),
+      );
+      await _applyLocalPlace(
+        containerIds: containerIds,
+        cellId: cellId,
+        cellFullAddress: cellFullAddress,
+        floorRoomId: floorRoomId,
+        floorRoomName: floorRoomName,
+      );
+      return PlaceOutcome.queued;
+    }
 
     try {
       await _client.post<Map<String, dynamic>>(
@@ -353,15 +374,38 @@ class ContainerService {
         endpoint: '/storage/containers/bulk-place/',
         payload: body,
       );
-      // 2b: пометить тары как несинхронизированные.
-      for (final id in containerIds) {
-        try {
-          await _setPendingSync(id, true);
-        } catch (_) {
-          // Кэш не критичен.
-        }
-      }
+      await _applyLocalPlace(
+        containerIds: containerIds,
+        cellId: cellId,
+        cellFullAddress: cellFullAddress,
+        floorRoomId: floorRoomId,
+        floorRoomName: floorRoomName,
+      );
       return PlaceOutcome.queued;
+    }
+  }
+
+  Future<void> _applyLocalPlace({
+    required List<int> containerIds,
+    required int? cellId,
+    required String? cellFullAddress,
+    required int? floorRoomId,
+    required String? floorRoomName,
+  }) async {
+    for (final id in containerIds) {
+      try {
+        await _updateLocationLocal(
+          id,
+          status: 'ACTIVE',
+          cellId: cellId,
+          cellFullAddress: cellFullAddress,
+          floorRoomId: floorRoomId,
+          floorRoomName: floorRoomName,
+        );
+      } catch (_) {}
+      try {
+        await _setPendingSync(id, true);
+      } catch (_) {}
     }
   }
 

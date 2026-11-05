@@ -1,4 +1,4 @@
-/// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a, c-2d-2).
+/// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a, c-2d-2, c-2d-2c-fix-1).
 library;
 
 import 'dart:convert';
@@ -100,6 +100,44 @@ class ContainerDao {
     );
   }
 
+  /// c-2d-2c-fix-1: локальное обновление места при офлайн-размещении.
+  /// Поля — серверные (`cell_id`, `cell_full_address`, `floor_room`,
+  /// `floor_room_name`, `pallet`), чтобы `Container.fromJson` их увидел.
+  static Future<void> updateLocationLocal(
+    int id, {
+    required String status,
+    int? cellId,
+    String? cellFullAddress,
+    int? floorRoomId,
+    String? floorRoomName,
+  }) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'containers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final json =
+        jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+    json['status'] = status;
+    json['cell_id'] = cellId;
+    json['cell_full_address'] = cellFullAddress;
+    json['floor_room'] = floorRoomId;
+    json['floor_room_name'] = floorRoomName;
+    // Паллет создаётся на сервере при bulk-place; локально null,
+    // после Pull подтянется.
+    json['pallet'] = null;
+    json['updated_at'] = DateTime.now().toUtc().toIso8601String();
+    await db.update(
+      'containers',
+      {'data': jsonEncode(json)},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   static Future<void> setPendingSync(int id, bool pending) async {
     final db = await AppDatabase.instance.database;
     await db.update(
@@ -115,9 +153,6 @@ class ContainerDao {
   }
 
   /// c-9-fill-offline-2c-3-fix-3a: reconcile.
-  ///
-  /// Для всех тар с `pending_sync = 1`, которых **нет** в
-  /// [keepContainerIds] (есть запись в `sync_queue`) — сбрасываем флаг.
   static Future<int> reconcilePendingContainers(
     Set<int> keepContainerIds,
   ) async {
@@ -143,7 +178,6 @@ class ContainerDao {
 
   /// c-2d-2: перемапить PK тары `oldId → newId` после успешного
   /// `bulk-create`. Если записи с `oldId` нет — no-op.
-  /// Флаг `pending_sync` сохраняется.
   static Future<void> remapId(int oldId, int newId) async {
     if (oldId == newId) return;
     final db = await AppDatabase.instance.database;

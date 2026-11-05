@@ -1,10 +1,13 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3 + c-2d-2c-fix-1).
 ///
 /// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций (bulk-статус, place)
 /// — `SyncProvider.refresh()`, чтобы счётчик обновился.
 ///
 /// c-2d-2a-fix-3: `_loadHistory` не ходит на сервер при `id < 0` —
-/// у локальной тары истории нет (404 ожидаем, но не как ошибка).
+/// у локальной тары истории нет.
+///
+/// c-2d-2c-fix-1: при `PlaceOutcome.queued` — перечитать локальный
+/// кэш, `setState` — пользователь сразу видит новое место/статус.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -16,6 +19,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../db/container_dao.dart';
 import '../models/container.dart';
 import '../models/container_history_entry.dart';
 import '../models/label_data.dart';
@@ -108,7 +112,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
   }
 
   Future<void> _loadHistory() async {
-    // c-2d-2a-fix-3: у локальной тары истории нет — не ходим на сервер.
     if (_container.id < 0) {
       setState(() {
         _history = const [];
@@ -327,9 +330,18 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
 
     if (outcome == PlaceOutcome.queued) {
       _refreshSync();
+      // c-2d-2c-fix-1: перечитать локальный кэш — место/статус
+      // видны сразу, без Push.
+      try {
+        final cached = await ContainerDao.getById(_container.id);
+        if (cached != null && mounted) {
+          setState(() => _container = Container.fromJson(cached));
+        }
+      } catch (_) {}
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Размещение сохранено. Отправится при синхронизации.'),
+          content: Text('Размещено (офлайн). Отправится при синхронизации.'),
         ),
       );
       return;
@@ -981,7 +993,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
 
     final entries = _history ?? const <ContainerHistoryEntry>[];
     if (entries.isEmpty) {
-      // c-2d-2a-fix-3: для локальной тары истории нет — поясняем.
       final message = _container.id < 0
           ? 'История появится после синхронизации.'
           : 'История пуста.';

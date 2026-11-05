@@ -1,7 +1,5 @@
-/// Тесты `SyncQueueDao` (c-2d-2): `remapInPlace` / `remapLocalRef`.
-///
-/// Тестируются чистые функции. Полный round-trip через SQLite — в
-/// device-check (нет DI на `AppDatabase`).
+/// Тесты `SyncQueueDao` (c-2d-2, c-2d-2c): `remapInPlace` / `remapLocalRef` /
+/// `remapEndpoint`.
 library;
 
 import 'dart:convert';
@@ -89,6 +87,73 @@ void main() {
 
     test('пустой mapping — без изменений', () {
       expect(SyncQueueDao.remapLocalRef('[-1]', {}), '[-1]');
+    });
+  });
+
+  // c-2d-2c
+  group('SyncQueueDao.remapEndpoint', () {
+    test('negative fill-samples: маппится', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/-1/fill-samples/', {
+          -1: 42,
+        }),
+        '/storage/containers/42/fill-samples/',
+      );
+    });
+
+    test('negative delete-URL: маппится', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/-1/', {-1: 42}),
+        '/storage/containers/42/',
+      );
+    });
+
+    test('positive ID: не трогаем', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/42/fill-samples/', {
+          -1: 42,
+        }),
+        '/storage/containers/42/fill-samples/',
+      );
+    });
+
+    test('bulk-create (без ID): не трогаем', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/bulk-create/', {
+          -1: 42,
+        }),
+        '/storage/containers/bulk-create/',
+      );
+    });
+
+    test('bulk-place (без ID): не трогаем', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/bulk-place/', {-1: 42}),
+        '/storage/containers/bulk-place/',
+      );
+    });
+
+    test('samples endpoint: не трогаем', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/samples/-1/', {-1: 42}),
+        '/samples/-1/',
+      );
+    });
+
+    test('negative без mapping: не трогаем', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/-1/fill-samples/', {
+          -2: 43,
+        }),
+        '/storage/containers/-1/fill-samples/',
+      );
+    });
+
+    test('пустой mapping — no-op', () {
+      expect(
+        SyncQueueDao.remapEndpoint('/storage/containers/-1/fill-samples/', {}),
+        '/storage/containers/-1/fill-samples/',
+      );
     });
   });
 }

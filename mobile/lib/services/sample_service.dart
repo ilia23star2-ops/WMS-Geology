@@ -1,4 +1,4 @@
-/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-4, c-9-natural-sort).
+/// Сервис проб (c-1, c-7f, c-7g, c-7e-1, c-9-fill-offline-2a..2c-4, c-9-natural-sort, c-2d-2c).
 library;
 
 import '../db/container_dao.dart';
@@ -30,6 +30,7 @@ typedef Enqueue = Future<void> Function({
   required String action,
   required String endpoint,
   required Map<String, dynamic> payload,
+  String? localRef,
 });
 typedef UpdateContainerNumber = Future<void> Function(int id, String number);
 typedef UpdateContainerStatus = Future<void> Function(int id, String status);
@@ -126,11 +127,13 @@ class SampleService {
     required String action,
     required String endpoint,
     required Map<String, dynamic> payload,
+    String? localRef,
   }) {
     return SyncQueueDao.enqueue(
       action: action,
       endpoint: endpoint,
       payload: payload,
+      localRef: localRef,
     );
   }
 
@@ -192,6 +195,9 @@ class SampleService {
     return Sample.fromJson(data);
   }
 
+  /// c-2d-2c: офлайн-тара (`containerId < 0`) — сразу в очередь,
+  /// сервер её не знает (negative ID → 404). `localRef = containerId`
+  /// для маппинга после `bulk-create`.
   Future<FillOutcome> fillSamples(
     int containerId, {
     String? containerNumber,
@@ -212,6 +218,17 @@ class SampleService {
       'sample_groups': sampleGroups,
     };
 
+    if (containerId < 0) {
+      return _queueFillSamples(
+        containerId: containerId,
+        containerNumber: containerNumber,
+        payload: payload,
+        sampleGroups: sampleGroups,
+        researchTypeName: researchTypeName,
+        siteName: siteName,
+      );
+    }
+
     try {
       final response = await _client.post<Map<String, dynamic>>(
         '/storage/containers/$containerId/fill-samples/',
@@ -227,35 +244,56 @@ class SampleService {
       return FillOutcome.online;
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
-
-      final localSamples = _expandGroups(
-        sampleGroups,
+      return _queueFillSamples(
+        containerId: containerId,
+        containerNumber: containerNumber,
+        payload: payload,
+        sampleGroups: sampleGroups,
         researchTypeName: researchTypeName,
         siteName: siteName,
       );
-      await _saveLocalOffline(containerId: containerId, samples: localSamples);
-
-      if (containerNumber != null && containerNumber.trim().isNotEmpty) {
-        try {
-          await _updateContainerNumber(containerId, containerNumber.trim());
-        } catch (_) {}
-      }
-
-      try {
-        await _updateContainerStatus(containerId, 'PENDING_PLACEMENT');
-      } catch (_) {}
-
-      try {
-        await _setPendingSync(containerId, true);
-      } catch (_) {}
-
-      await _enqueue(
-        action: 'POST',
-        endpoint: '/storage/containers/$containerId/fill-samples/',
-        payload: payload,
-      );
-      return FillOutcome.queued;
     }
+  }
+
+  Future<FillOutcome> _queueFillSamples({
+    required int containerId,
+    required String? containerNumber,
+    required Map<String, dynamic> payload,
+    required List<Map<String, dynamic>> sampleGroups,
+    required String? researchTypeName,
+    required String? siteName,
+  }) async {
+    final localSamples = _expandGroups(
+      sampleGroups,
+      researchTypeName: researchTypeName,
+      siteName: siteName,
+    );
+    await _saveLocalOffline(containerId: containerId, samples: localSamples);
+
+    if (containerNumber != null && containerNumber.trim().isNotEmpty) {
+      try {
+        await _updateContainerNumber(containerId, containerNumber.trim());
+      } catch (_) {}
+    }
+
+    try {
+      await _updateContainerStatus(containerId, 'PENDING_PLACEMENT');
+    } catch (_) {}
+
+    try {
+      await _setPendingSync(containerId, true);
+    } catch (_) {}
+
+    await _enqueue(
+      action: 'POST',
+      endpoint: '/storage/containers/$containerId/fill-samples/',
+      payload: payload,
+      // c-2d-2c: localRef — только для negative-ID (локальная тара,
+      // которую надо маппить на bulk-create). Positive ID уже серверный,
+      // маппить нечего.
+      localRef: containerId < 0 ? '$containerId' : null,
+    );
+    return FillOutcome.queued;
   }
 
   Future<OnlineOutcome> update(

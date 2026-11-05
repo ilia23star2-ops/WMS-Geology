@@ -1,4 +1,4 @@
-/// Модели справочников (c-7b-full, c-7f, c-7c).
+/// Модели справочников (c-7b-full, c-7f, c-7c, c-2d-2c-fix-2).
 ///
 /// - `Site` — участки (`GET /sites/`). Поле `matchPatterns` — для парсера
 ///   диапазонов.
@@ -117,13 +117,19 @@ class Laboratory {
 /// `id` и человекочитаемая метка. Если завтра понадобится больше (cell_type,
 /// точный full_address и т.п.) — вынесем отдельный класс для Cell.
 ///
-/// Фолбэк полей: `name` (+`code` префикс) → `code` → `full_address` →
-/// `number` → `#id`.
+/// Фолбэк полей `label`: `name` (+`code` префикс) → `name` → `code` →
+/// `full_address` → `number` → `#id`.
+///
+/// c-2d-2c-fix-2: `fullAddress` — отдельное поле, **только** из
+/// `json['full_address']`. `label` не меняем (каскад дропдаунов должен
+/// показывать короткие коды). `PlaceContainerDialog` использует
+/// `fullAddress ?? label` для отображения полного пути.
 class NamedCatalog {
-  const NamedCatalog({required this.id, required this.label});
+  const NamedCatalog({required this.id, required this.label, this.fullAddress});
 
   final int id;
   final String label;
+  final String? fullAddress;
 
   factory NamedCatalog.fromJson(Map<String, dynamic> json) {
     final id = json['id'] as int;
@@ -146,7 +152,13 @@ class NamedCatalog {
     } else {
       label = '#$id';
     }
-    return NamedCatalog(id: id, label: label);
+    return NamedCatalog(
+      id: id,
+      label: label,
+      fullAddress: (fullAddress != null && fullAddress.isNotEmpty)
+          ? fullAddress
+          : null,
+    );
   }
 
   @override
@@ -156,5 +168,6 @@ class NamedCatalog {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() => 'NamedCatalog(id: $id, label: $label)';
+  String toString() =>
+      'NamedCatalog(id: $id, label: $label, fullAddress: $fullAddress)';
 }

@@ -1,20 +1,13 @@
-/// Диалог размещения тары (c-7c).
+/// Диалог размещения тары (c-7c, c-2d-2c-fix-1, c-2d-2c-fix-2).
 ///
 /// Каскад `Room → Rack → Section → Tier → Cell` для размещения в ячейку,
 /// либо одиночный `Room` для размещения на пол в комнате.
 ///
-/// Backend: `POST /storage/containers/bulk-place/`
-/// (`{"container_ids": [id], "cell_id": n}` или
-/// `{"container_ids": [id], "floor_room_id": n}`).
+/// c-2d-2c-fix-1: передаёт `cellFullAddress` / `floorRoomName` из
+/// справочника в `bulkPlace` — чтобы локальный кэш сразу обновился.
 ///
-/// Возвращает `PlaceOutcome?` через `Navigator.pop`:
-/// - `PlaceOutcome.online` — POST ушёл на сервер;
-/// - `PlaceOutcome.queued` — POST отложен в `sync_queue` (офлайн);
-/// - `null` — отмена.
-///
-/// Родитель (`ContainerDetailScreen._onPlace`) для `online` перезагружает
-/// карточку через `ContainerService.fetchById`, для `queued` — показывает
-/// SnackBar «Отправится при синхронизации».
+/// c-2d-2c-fix-2: `cellFullAddress` берётся из `NamedCatalog.fullAddress`
+/// (полный путь `В4/1/1/B/2`), а не из `label` (короткий код `2`).
 library;
 
 import 'package:flutter/material.dart';
@@ -34,8 +27,6 @@ class PlaceContainerDialog extends StatefulWidget {
   });
 
   final int containerId;
-
-  /// Текущее место (для отображения в шапке диалога). Опционально.
   final String? currentLocation;
 
   @override
@@ -216,6 +207,23 @@ class _PlaceContainerDialogState extends State<PlaceContainerDialog> {
     return _cellId != null;
   }
 
+  /// c-2d-2c-fix-2: полный адрес ячейки (`В4/1/1/B/2`), не короткий код.
+  String? get _selectedCellAddress {
+    if (_mode != _PlaceMode.cell || _cellId == null) return null;
+    for (final c in _cells) {
+      if (c.id == _cellId) return c.fullAddress ?? c.label;
+    }
+    return null;
+  }
+
+  String? get _selectedRoomName {
+    if (_mode != _PlaceMode.floor || _roomId == null) return null;
+    for (final r in _rooms) {
+      if (r.id == _roomId) return r.label;
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     if (!_canSubmit) return;
     setState(() => _submitting = true);
@@ -225,6 +233,8 @@ class _PlaceContainerDialogState extends State<PlaceContainerDialog> {
         containerIds: [widget.containerId],
         cellId: _mode == _PlaceMode.cell ? _cellId : null,
         floorRoomId: _mode == _PlaceMode.floor ? _roomId : null,
+        cellFullAddress: _selectedCellAddress,
+        floorRoomName: _selectedRoomName,
       );
       if (!mounted) return;
       Navigator.of(context).pop<PlaceOutcome>(outcome);
