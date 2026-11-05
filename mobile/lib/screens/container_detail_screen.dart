@@ -640,21 +640,13 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
                 container.draftWorkOrderCoded.isNotEmpty) ...[
               const Divider(height: 24),
               if (container.draftSiteName != null)
-                _row(context, 'Участок (черновик)', container.draftSiteName!),
+                _row(context, 'Участок', container.draftSiteName!),
               if (container.draftResearchTypeName != null)
-                _row(
-                  context,
-                  'ТИ (черновик)',
-                  container.draftResearchTypeName!,
-                ),
+                _row(context, 'ТИ', container.draftResearchTypeName!),
               if (container.draftWorkOrderCoded.isNotEmpty)
-                _row(context, 'Н/З (черновик)', container.draftWorkOrderCoded),
+                _row(context, 'Н/З', container.draftWorkOrderCoded),
               if (container.draftWorkOrderIncoming.isNotEmpty)
-                _row(
-                  context,
-                  'Н/З вх. (черновик)',
-                  container.draftWorkOrderIncoming,
-                ),
+                _row(context, 'Н/З вх.', container.draftWorkOrderIncoming),
             ],
             if (container.commentTemplateText != null &&
                 container.commentTemplateText!.isNotEmpty)

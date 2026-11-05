@@ -1,4 +1,4 @@
-/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1).
+/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1 + c-8b-fix-2).
 ///
 /// Поля:
 /// - `container_number` — текст;
@@ -10,8 +10,14 @@
 /// - `draft_work_order_coded` — текст;
 /// - `draft_work_order_incoming` — текст.
 ///
-/// c-8b-fix-1: кнопка «Сохранить» — sticky внизу (вне ListView),
-/// не уезжает под системный бар, видна без скролла.
+/// c-8b-fix-1: кнопка «Сохранить» — sticky внизу (вне ListView).
+///
+/// c-8b-fix-2:
+/// - payload обогащается `container_type_name` / `draft_site_name` /
+///   `draft_research_type_name` — чтобы после офлайн-`update`
+///   `Container.fromJson` показывал имена, а не старые (пустые).
+///   Сервер (ContainerSerializer) эти поля — `read_only`, игнорирует.
+/// - убрано «(черновик)» из лейблов.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -118,11 +124,37 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
     }
   }
 
+  /// c-8b-fix-2: имя типа тары по текущему ID. Fallback — из
+  /// `widget.initial`, если справочник пуст.
+  String? _containerTypeName() {
+    for (final t in _containerTypes ?? const <ContainerType>[]) {
+      if (t.id == _selectedContainerTypeId) return t.name;
+    }
+    return widget.initial.containerTypeName;
+  }
+
+  /// c-8b-fix-2: имя участка по текущему ID.
+  String? _siteName() {
+    if (_selectedSiteId == null) return null;
+    for (final s in _sites ?? const <Site>[]) {
+      if (s.id == _selectedSiteId) return s.name;
+    }
+    return widget.initial.draftSiteName;
+  }
+
+  /// c-8b-fix-2: имя ТИ по текущему ID.
+  String? _researchTypeName() {
+    if (_selectedResearchTypeId == null) return null;
+    for (final rt in _researchTypes ?? const <ResearchType>[]) {
+      if (rt.id == _selectedResearchTypeId) return rt.name;
+    }
+    return widget.initial.draftResearchTypeName;
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_catalogsLoading) return;
     if (_catalogsError != null) {
-      // c-8b-fix-1: не молчим — иначе кнопка «не нажимается».
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -137,13 +169,19 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
 
     final number = _numberCtrl.text.trim();
     final posText = _positionCtrl.text.trim();
+    // c-8b-fix-2: `*_name` — чтобы локальный кэш после офлайн-`update`
+    // показал новое имя (Container.fromJson читает *_name). Сервер
+    // эти поля игнорирует (read_only в ContainerSerializer).
     final payload = <String, dynamic>{
       'container_number': number.isEmpty ? null : number,
       'container_type': _selectedContainerTypeId,
+      'container_type_name': _containerTypeName(),
       'comment': _commentCtrl.text.trim(),
       'position_on_pallet': posText.isEmpty ? null : int.tryParse(posText),
       'draft_site': _selectedSiteId,
+      'draft_site_name': _siteName(),
       'draft_research_type': _selectedResearchTypeId,
+      'draft_research_type_name': _researchTypeName(),
       'draft_work_order_coded': _draftCodedCtrl.text.trim(),
       'draft_work_order_incoming': _draftIncomingCtrl.text.trim(),
     };
@@ -195,7 +233,6 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
     final researchTypes = _researchTypes ?? const <ResearchType>[];
     final containerTypes = _containerTypes ?? const <ContainerType>[];
 
-    // c-8b-fix-1: Column(Expanded(ListView), sticky bottomBar).
     return Form(
       key: _formKey,
       child: Column(
@@ -246,14 +283,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  'Черновик (заполняется при создании, обновляется здесь)',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 _buildSiteDropdown(sites, disabled),
                 const SizedBox(height: 16),
                 _buildResearchTypeDropdown(researchTypes, disabled),
@@ -263,7 +293,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                   enabled: !disabled,
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(
-                    labelText: 'Н/З (черновик, тек.)',
+                    labelText: 'Н/З (тек.)',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -273,14 +303,13 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                   enabled: !disabled,
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(
-                    labelText: 'Н/З (черновик, вх.)',
+                    labelText: 'Н/З (вх.)',
                     border: OutlineInputBorder(),
                   ),
                 ),
               ],
             ),
           ),
-          // Sticky bottom bar.
           SafeArea(
             top: false,
             child: Padding(
@@ -342,7 +371,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
       key: ValueKey('draft_site_$_selectedSiteId'),
       initialValue: _selectedSiteId,
       decoration: const InputDecoration(
-        labelText: 'Участок (черновик)',
+        labelText: 'Участок',
         border: OutlineInputBorder(),
       ),
       items: [
@@ -360,7 +389,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
       key: ValueKey('draft_research_type_$_selectedResearchTypeId'),
       initialValue: _selectedResearchTypeId,
       decoration: const InputDecoration(
-        labelText: 'Тип исследования (черновик)',
+        labelText: 'Тип исследования',
         border: OutlineInputBorder(),
       ),
       items: [

@@ -338,21 +338,38 @@ class ContainerService {
 
       return UpdateOutcome.online;
     } on ApiException catch (e) {
-      if (!e.isNetworkError) rethrow;
-
-      try {
-        await _updateFieldsLocal(id, payload);
-      } catch (_) {}
-      try {
-        await _setPendingSync(id, true);
-      } catch (_) {}
-      await _enqueue(
-        action: 'PATCH',
-        endpoint: '/storage/containers/$id/',
-        payload: payload,
-      );
+      // c-8b-fix-2: 4xx — реальная серверная валидация, в очередь
+      // не кладём (сервер её всё равно отвергнет). Всё остальное
+      // (сеть, таймауты, 5xx, unknown) — сохраняем локально + очередь.
+      // Это страховка от того, что `api_client.dart` может
+      // классифицировать `isNetworkError` как `false` для
+      // `DioExceptionType.connectionTimeout` / `receiveTimeout` /
+      // `unknown`.
+      final code = e.statusCode ?? 0;
+      if (code >= 400 && code < 500) rethrow;
+      await _queueUpdateLocal(id, payload);
+      return UpdateOutcome.queued;
+    } catch (_) {
+      // DioException / SocketException / TimeoutException / любое
+      // другое исключение клиента — не 4xx, значит офлайн/сервер
+      // недоступен. Сохраняем локально + очередь.
+      await _queueUpdateLocal(id, payload);
       return UpdateOutcome.queued;
     }
+  }
+
+  Future<void> _queueUpdateLocal(int id, Map<String, dynamic> payload) async {
+    try {
+      await _updateFieldsLocal(id, payload);
+    } catch (_) {}
+    try {
+      await _setPendingSync(id, true);
+    } catch (_) {}
+    await _enqueue(
+      action: 'PATCH',
+      endpoint: '/storage/containers/$id/',
+      payload: payload,
+    );
   }
 
   /// c-2d-2c: если среди `containerIds` есть negative (офлайн-тара),
