@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-11-02
+**Дата обновления:** 2026-11-03
 
 ---
 
@@ -78,11 +78,15 @@
 | c-9-auto-sync | Автосинхронизация | Push + Pull при возврате сети, SnackBar | ✅ |
 | c-9-natural-sort | Natural sort | `TST6701 < TST6710` | ✅ |
 | c-6b-updated-since-pull | `?updated_since=` в Pull | `_lastPullSince`, `PullStats` = изменённые | ✅ |
-| c-8-catalog-create | Создание справочников офлайн | UI + `CatalogService.create` | ⬜ |
+| c-8-catalog-create | Создание справочников офлайн | UI + `CatalogService.create` | ✅ |
+| c-2d-2a | Офлайн-создание тары | SQLite v8 (`local_ref`), negative ID + `sync_queue`, маппинг ID после `bulk-create` (`remapAllLocalRefs`, `ContainerDao.remapId`, `SampleDao.remapContainerId`) | ✅ |
+| c-2d-2a-fix-3 | Fix локального формата тары | `Container.fromJson` fallback на `*_id`, серверный формат JSON (`container_type` / `draft_site` / `draft_research_type`), история для negative-ID не зовёт сервер | ✅ |
+| c-2d-2b | Офлайн-создание тары (UI) | Покрыто в `c-2d-2a` (SnackBar «офлайн», `pending_sync`, реестр) | ✅ |
+| c-2d-2c | Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах | `local_ref` в queue, маппинг в payload | ⬜ |
 | c-8a | Backend: PATCH статусов | Эндпоинты для `sync_queue` | ⬜ |
 | c-8b | Mobile: Смена статуса тары | через `sync_queue` | ⬜ |
 | c-8c | Mobile: Смена статуса пробы | `IN_STORAGE` → `SELECTED` → `DISPOSED` | ⬜ |
-| c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) |
+| c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) | ✅ |
 | c-8e | Mobile: Auto-sync USB | Push → Pull, автотриггер | ⬜ |
 | c-5 | Файловая синхронизация | Sneakernet через флешку | ⏸ отложено |
 
@@ -145,8 +149,9 @@
 - [x] **Natural sort проб** — `c-9-natural-sort`.
 - [x] **Инкрементальный Pull** — `c-6b-updated-since-pull`.
 - [x] **Тап-пинг сети** — `c-6g-tap-ping`.
-- [ ] **Создание справочников офлайн** — `c-8-catalog-create`.
-- [ ] **Офлайн-создание тары** — `c-2d-2` (bulk-create + negative ID).
+- [x] **Создание справочников офлайн** — `c-8-catalog-create`.
+- [x] **Офлайн-создание тары** — `c-2d-2a` + `c-2d-2a-fix-3`.
+- [ ] **Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах** — `c-2d-2c` (`local_ref` в queue, маппинг в payload).
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
 - [ ] **Роли и права** детализированные.
 - [ ] **Дашборд с виджетами** под каждую роль.
@@ -199,6 +204,8 @@
 | ТД-61 | UI-проверка overflow после `c-9-overflow-fix-4` (3.5 px, 7.2 px) — не воспроизвелось; следить при новых экранах | низкий | при следующем overflow |
 | ТД-62 | `SyncProvider._lastPullSince` в памяти. При перезапуске приложения — полный Pull. Персистить (`shared_preferences`) | низкий | при жалобах на «первый Pull долго» |
 | ТД-63 | Mobile: `SampleDao.getByContainerId` сортирует после декодирования JSON (naturalCompare). Для больших тар — natural sort в SQL | низкий | при жалобах на скорость |
+| ТД-64 | `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом: `ContainerDao.saveAll` уходит в `AppDatabase.instance` (нет DI). Нужен `saveContainers` в конструктор | низкий | при первом баге офлайн-создания |
+| ТД-65 | `_defaultOnSuccess` не снимает `pending_sync` для `fill-samples` / `bulk-place` на negative-ID до `c-2d-2c` (там будет `local_ref`) | низкий | закрывается в `c-2d-2c` |
 
 ---
 

@@ -278,12 +278,12 @@
 3. **История кэшируется** через **pre-fetch в Pull** (не lazy).
 4. **Создание/редактирование справочника офлайн** — через `sync_queue`.
 
-**Реализовано:** `c-7-offline-catalog` (правила 1–2), `c-7e-1`/`c-7e-2`/`c-7e-3` (правило 3). Правило 4 — `c-8-catalog-create` (не сделано).
+**Реализовано:** `c-7-offline-catalog` (правила 1–2), `c-7e-1`/`c-7e-2`/`c-7e-3` (правило 3), `c-8-catalog-create` (правило 4).
 
 **Причина:** требование «мобилка офлайн как веб». `c-7c` показал разрыв (каскад размещения онлайн-only). Pre-fetch истории — чтобы офлайн была история любой тары.
 
-**Где:** `SyncService.pullAll`, `CatalogService` (fallback), `CatalogDao`, `ContainerHistoryDao`, `database.dart` (v6 — `catalog` + `container_history`).
-**Статус:** 🟡 **правила 1–3 закрыты**, правило 4 — `c-8-catalog-create` (следующий).
+**Где:** `SyncService.pullAll`, `CatalogService` (fallback), `CatalogDao`, `ContainerHistoryDao`, `database.dart` (v6 — `catalog` + `container_history`; v8 — `local_ref` в `sync_queue`).
+**Статус:** ✅ действует (правила 1–4 закрыты).
 
 ### 1.94. 2026-11-02 — Мобилка: офлайн-редактирование серверных проб (c-9-fill-offline-2c-3)
 
@@ -395,6 +395,27 @@
 **Где:** `mobile/lib/widgets/network_badge.dart`, `mobile/lib/providers/network_status_provider.dart`.
 **Статус:** ✅ действует.
 
+### 1.101. 2026-11-03 — Мобилка: офлайн-создание тары (c-2d-2a)
+
+**Решение:**
+1. **`bulkCreate` при `isNetworkError`** создаёт тару локально с negative ID, кладёт в `sync_queue` с `localRef` (JSON-массив ID), возвращает `BulkCreateResult {count, queued}`. `pending_sync = true` → `cloud_off`.
+2. **`SyncPusher` после успешного `bulk-create`** строит маппинг `localId → serverId` **по индексу** `created_containers[i].id` (порядок гарантирован `services.bulk_create_containers` — цикл `.create()` в том же порядке, что и вход).
+3. **`remapAllLocalRefs`** (идемпотентно) перемапливает `payload` (`container_id`, `container_ids[]`, `containers[].id`) и `local_ref` (int-строка, JSON-массив) во **всех** записях `sync_queue` (PENDING + ERROR).
+4. **`ContainerDao.remapId`** меняет PK в `containers` (`pending_sync` сохраняется). **`SampleDao.remapContainerId`** меняет колонку `container_id` и JSON `container` в `samples`.
+5. **Локальный JSON тары — в серверном формате** (`container_type`, `draft_site`, `draft_research_type`), не `*_id`. Иначе `Container.fromJson` падает на `as int`.
+6. **`Container.fromJson`** имеет fallback на `*_id` — страховка от старых записей.
+7. **История для negative-ID** не зовётся на сервер (`_loadHistory` guard в `ContainerDetailScreen`) — истории ещё нет.
+8. **Проверка длины:** `created_containers.length != payload.containers.length` → маппинг пропускается, `debugPrint`.
+
+**Причина:**
+- Без маппинга `fill-samples` / `bulk-place` на офлайн-тару уйдут с `container_id = -1` → 404.
+- Без серверного формата JSON `Container.fromJson` падает на локальной таре → карточка не открывается (было в `c-2d-2a` до fix-3).
+- Индексный маппинг — потому что сервер (`ContainerSerializer`) не знает про `local_ref`. Порядок гарантирован кодом сервиса. Если порядок сломается — проверка длины + лог покажут сразу; полное решение (`local_ref` на сервере) — `c-8a`.
+
+**Где:** `mobile/lib/db/database.dart` (v8), `sync_queue_dao.dart` (`remapAllLocalRefs`, `remapInPlace`, `remapLocalRef`), `container_dao.dart` (`remapId`), `sample_dao.dart` (`remapContainerId`), `services/sync_pusher.dart` (`_remapBulkCreate`), `services/container_service.dart` (`BulkCreateResult`, офлайн-ветка), `models/container.dart` (`fromJson` fallback), `screens/container_detail_screen.dart` (`_loadHistory` guard), `widgets/create_containers_dialog.dart` (SnackBar по `queued`).
+
+**Статус:** ✅ действует.
+
 ---
 
 ## 2. Что не делаем и почему
@@ -464,6 +485,9 @@
 - Не делаем Pull с `updated_since` для справочников — там нет `updated_since` (1.98).
 - Не сортируем пробы по `id` — только по `sample_number` natural (1.99).
 - Не вызываем `pingNow` из прод-кода без снятия `@visibleForTesting` (1.100).
+- Не маппим ID по `local_ref` с сервера — порядок `created_containers` гарантирован циклом `.create()` (1.101).
+- Не пишем локальный JSON тары в `*_id` формате — только серверный (`container_type`, `draft_site`, `draft_research_type`) (1.101).
+- Не ходим в историю тары при negative-ID (1.101).
 
 ---
 
@@ -494,6 +518,9 @@
 | AuditLog | Журнал значимых действий. log_audit() (1.70). |
 | print_batch_status | Статус последней не-CANCELLED партии печати (1.71). |
 | Health-эндпоинт | GET /health/ — 200 без авторизации (1.78). |
+| `local_ref` | Локальный ID (negative) в `sync_queue` для маппинга в `bulk-create` (1.101). |
+| `BulkCreateResult` | `{count, queued}` — результат `bulkCreate` (1.101). |
+| `remapAllLocalRefs` | Идемпотентная замена negative → server ID в payload + `local_ref` всех записей очереди (1.101). |
 
 ### Процесс
 
@@ -544,6 +571,8 @@
 | PullStats | Результат `pullAll`: `containers`, `samples`, `total` (1.98). |
 | `_lastPullSince` | Время последнего Pull, для `?updated_since=` (1.98). |
 | naturalCompare | Естественная сортировка с числами (1.99). |
+| `remapId` | `ContainerDao`: PK тары negative → server (1.101). |
+| `remapContainerId` | `SampleDao`: `container_id` пробы negative → server, колонка + JSON (1.101). |
 
 ### Инфраструктура
 
@@ -617,3 +646,6 @@
 - «85 загружено» — не «85 изменений», а «85 тар в ответе сервера». После `updated_since` — реальные изменения (1.98).
 - «natural sort» — не сортировка по `id`, а по `sample_number` (числа числами) (1.99).
 - «pingNow» — не «перезапуск heartbeat», а один цикл `_ping()` (1.100).
+- «local_ref» — не «серверное поле». Только локальное, для маппинга на `bulk-create` (1.101).
+- «Маппинг по индексу» — не «по `local_ref` с сервера». Порядок гарантирован циклом `.create()` (1.101).
+- «`container_type_id` в локальном JSON» — не формат. В кэше — `container_type` (серверный), fallback на `_id` только для старых записей (1.101).

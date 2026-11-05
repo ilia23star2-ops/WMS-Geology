@@ -91,18 +91,27 @@
 - ✅ **`c-9-natural-sort`** (2026-11-02) — `naturalCompare` для `sample_number` (`TST6701 < TST6710`) в `SampleDao.getByContainerId`, `SampleService.fetchByContainerId`, `LabelData.fromContainer`. +8 тестов.
 - ✅ **`c-6b-updated-since-pull`** (2026-11-02) — `SyncProvider._lastPullSince` → `pullAll(updatedSince:)` → `?updated_since=<ISO UTC>` в `/storage/containers/` и `/samples/`. `PullStats` = только изменённые (85 больше не показывается при пустом Pull). +4 теста.
 
+### Что закрыто (mobile, офлайн-справочники, c-8-catalog-create)
+
+- ✅ **`c-8-catalog-create`** (2026-11-03) — офлайн-создание справочников: `CatalogCreateDialog` (UI), `CatalogService.create` через `sync_queue`, интеграция в `CreateContainersDialog` (кнопка «+» у каждого dropdown). Merge `fix/3.x-catalog-create` → `fix/2.x-mobile-bundle-c-2`.
+
+### Что закрыто (mobile, офлайн-создание тары, c-2d-2a)
+
+- ✅ **`c-2d-2a`** (2026-11-03) — SQLite v8 (`local_ref` в `sync_queue`, `ALTER TABLE` без потери данных), маппинг negative→server после `bulk-create` по индексу `created_containers[i].id` (`SyncQueueDao.remapAllLocalRefs` — payload + `local_ref`; `ContainerDao.remapId`; `SampleDao.remapContainerId`), `SyncPusher.onSuccess` (4 параметра: `endpoint`, `payload`, `localRef`, `responseData`). Офлайн-создание тары: negative ID, `BulkCreateResult {count, queued}`, `pending_sync = true` → иконка `cloud_off`. Проверка длины `created_containers` + `debugPrint` при расхождении. +18 тестов (`sync_queue_dao_test` × 13, `sync_pusher_test` 4-param × 4, `sync_pusher_test` +1).
+- ✅ **`c-2d-2a-fix-3`** (2026-11-03) — `Container.fromJson` fallback на `container_type_id` / `draft_site_id` / `draft_research_type_id` (страховка от старых записей + падения `as int`); `bulkCreate` офлайн пишет JSON **в серверном формате** (`container_type` / `draft_site` / `draft_research_type`); `ContainerDetailScreen._loadHistory` не ходит на сервер при `id < 0` (для локальной тары — «История появится после синхронизации»); `create_containers_dialog.dart` — SnackBar по `BulkCreateResult.queued` («офлайн, синхронизация при наличии связи»). +6 тестов (`container_from_json_test`).
+
 ### Инфраструктура (рабочий ПК, прокси)
 
 - **`setup.ps1` обязателен после `git reset --hard`** — восстанавливает сертификаты, `maven-local`, `local.properties`, `~/.gradle/gradle.properties`, aapt2, NDK.
-- **`checkRevocation=false`** + `aapt2FromMavenOverride` + `kotlin.incremental=false` + `kotlin.compiler.execution.strategy=in-process` + `org.gradle.parallel=false` + `org.gradle.workers.max=2`.
+- **`checkRevocation=false`** + **`aapt2FromMavenOverride`** + **`kotlin.incremental=false`** + **`kotlin.compiler.execution.strategy=in-process`** + **`org.gradle.parallel=false`** + **`org.gradle.workers.max=2`**.
+- **`android.aapt2FromMavenOverride=D:/Dev/android-sdk/build-tools/36.0.0/aapt2.exe`** — в `mobile/android/gradle.properties` (машинное, не коммитить).
 - **NDK `source.properties`** — `setup.ps1` без BOM.
 - **`flutter run --android-skip-build-dependency-validation`** — обязателен.
 - **`export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — в каждом окне Git Bash.
 
 ### Что осталось
 
-- ⬜ **`c-8-catalog-create`** — создание справочников офлайн (`CatalogService.create` через `sync_queue`, UI). **Следующий по 1.93.**
-- ⬜ **`c-2d-2`** — офлайн-создание тары (`bulkCreate` + negative ID + `local_ref` маппинг). Большой заход (6–8 файлов).
+- ⬜ **`c-2d-2c`** — офлайн-`fill-samples` / `bulk-place` на офлайн-тарах (`local_ref` в queue, маппинг в payload). **Следующий.**
 - ⬜ **`c-8a`..`c-8e`** — PATCH статусов тары/пробы через `sync_queue`, auto-sync USB.
 - ⬜ **`c-9-overflow-fix-4`** — 2 overflow (3.5 px, 7.2 px) из лога; `file:line` не получен, `ТД-61`.
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
@@ -112,7 +121,7 @@
 
 - **Backend: 842 теста** (без изменений).
 - **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 174 юнит-теста** (было 32 в `2.x-mobile`; +142 за `3.x-offline`).
+- **Mobile: 196 юнит-тестов** (было 32 в `2.x-mobile`; +164 за `3.x-offline`).
 
 ---
 

@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-11-02
+**Дата обновления:** 2026-11-03
 
 ---
 
@@ -35,9 +35,13 @@
 - `c-9-natural-sort` — сортировка проб по `sample_number` — ✅.
 - `c-6b-updated-since-pull` — `?updated_since=` в Pull, `PullStats` = изменённые — ✅.
 
+**Mobile (офлайн-создание тары и справочников, `c-2d-2a`, `c-8-catalog-create`):**
+- `c-8-catalog-create` — офлайн-создание справочников (`CatalogCreateDialog`, `CatalogService.create` через `sync_queue`, интеграция в `CreateContainersDialog`) — ✅.
+- `c-2d-2a` — SQLite v8 (`local_ref` в `sync_queue`), офлайн-создание тары (negative ID + очередь), маппинг ID после `bulk-create` (`created_containers[i].id` → `remapAllLocalRefs` → `ContainerDao.remapId` / `SampleDao.remapContainerId`) — ✅.
+- `c-2d-2a-fix-3` — `Container.fromJson` fallback на `*_id`, локальный JSON в серверном формате (`container_type` / `draft_site` / `draft_research_type`), история для negative-ID не зовёт сервер — ✅.
+
 **Следующие заходы:**
-- `c-8-catalog-create` — создание справочников офлайн (`CatalogService.create` через `sync_queue`). ⬜ **следующий по 1.93**
-- `c-2d-2` — офлайн-создание тары (negative ID + `local_ref`). ⬜
+- `c-2d-2c` — офлайн-`fill-samples` / `bulk-place` на офлайн-тарах (negative ID): `local_ref` в queue, маппинг в payload на `bulk-create`-маппинге. ⬜ **следующий**
 - `c-8a`..`c-8e` — PATCH статусов тары/пробы, auto-sync USB. ⬜
 - `c-9-overflow-fix-4` — 2 overflow (3.5 px, 7.2 px), `ТД-61`. ⬜
 
@@ -61,19 +65,22 @@
 - Автосинхронизация Push + Pull при возврате сети — `c-9-auto-sync`.
 - Natural sort проб — `c-9-natural-sort`.
 - Инкрементальный Pull `?updated_since=` — `c-6b-updated-since-pull`.
+- Офлайн-создание тары (negative ID + `local_ref` + маппинг ID после `bulk-create`) — `c-2d-2a` + `c-2d-2a-fix-3`.
+- Офлайн-создание справочников — `c-8-catalog-create`.
 
 **Сборка на рабочем ПК (прокси):**
 - `work-pc-setup/setup.ps1` — **обязателен после `git reset --hard`**.
 - `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` — в каждом окне.
 - `flutter run --android-skip-build-dependency-validation`.
 - `adb reverse tcp:8000 tcp:8000` — вручную.
+- `android.aapt2FromMavenOverride=D:/Dev/android-sdk/build-tools/36.0.0/aapt2.exe` в `mobile/android/gradle.properties` (машинное, не коммитить).
 
 **Backend:** 842 теста.
 **Web:** 24 юнит-теста.
-**Mobile:** 174 юнит-теста.
+**Mobile:** 196 юнит-тестов.
 
 **Ближайшая работа:**
-- Docs закрыты. Дальше — `c-8-catalog-create` (создание справочников офлайн) → `c-2d-2` (офлайн-создание тары) → `c-8a`..`c-8e` (статусы через `sync_queue`, auto-sync USB).
+- Docs закрыты. Дальше — `c-2d-2c` (офлайн-`fill-samples` / `bulk-place` на офлайн-тарах: `local_ref` в queue, маппинг в payload) → `c-8a`..`c-8e` (PATCH статусов через `sync_queue`, auto-sync USB).
 
 ---
 
@@ -126,7 +133,7 @@
 | Карточка тары | `ContainerDetailDialog` (3 вкладки + Предпросмотр / Разместить / Местоположение). |
 | Коды доступа | `AccessTokensPage` — создание, QR, отзыв. |
 
-### Mobile (Flutter, 174 юнит-теста)
+### Mobile (Flutter, 196 юнит-тестов)
 | Раздел | Что внутри |
 |---|---|
 | Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage`. |
@@ -134,17 +141,18 @@
 | Сеть | `NetworkProbe` + `AppConfig.resolve`. `NetworkStatusProvider` (heartbeat 10 с, тап → `pingNow`). `NetworkBadge`. |
 | Главная | Приветствие + «Сканировать», «Синхронизация (N)», история тар. |
 | Drawer | Главная, Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники, Выход. |
-| Реестр тары | 4 фильтра, пагинация, офлайн-кэш, действия по статусу (Заполнить / Разместить / Местоположение), создание тары. |
+| Реестр тары | 4 фильтра, пагинация, офлайн-кэш, действия по статусу (Заполнить / Разместить / Местоположение), создание тары (online + offline). |
 | Карточка тары | 3 вкладки, адаптив, `ContainerEditForm`, `FillContainerContent`, `SampleEditDialog` (online + offline), история. |
 | Пробы | Поиск, чекбоксы, bulk-статус, чипы, `SampleEditDialog`. Офлайн: создание (negative ID), редактирование статуса/номера, dispose/restore/delete — все через `sync_queue`. `cloud_off` при `pendingSync`/`isOfflinePending`. |
 | История | Аудит тары (online + офлайн через `ContainerHistoryDao`). |
 | PDF | Online (`ApiClient.download` + `open_filex`) + offline на Dart. |
 | Размещение | `PlaceContainerDialog` (online + offline через `sync_queue`). |
-| Офлайн-справочники | `CatalogDao` (SQLite v5), `CatalogService` fallback. |
+| Офлайн-справочники | `CatalogDao` (SQLite v5), `CatalogService` fallback, создание через `sync_queue` (`c-8-catalog-create`). |
+| Офлайн-создание тары | `bulkCreate` при `isNetworkError` → negative ID + `sync_queue` с `localRef`, `BulkCreateResult {count, queued}`. После Push `SyncPusher` перемапит negative → server (`remapAllLocalRefs`, `ContainerDao.remapId`, `SampleDao.remapContainerId`). |
 | Синхронизация | Pull + Push + автосинхронизация при возврате сети (SnackBar «Отправлено: N, загружено: M»). Incremental Pull `?updated_since=`. Natural sort проб. |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS` (100), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS` (101), `DATABASE` (v7), `API`, `SCENARIOS`, `UI` (v2), `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
 
 ---
 
@@ -189,8 +197,8 @@
 - **`context.read` после `await`** → сервис брать до первого `await`.
 - **Перед `git add` — `git status --short | grep "mobile/lib"`** (1.90).
 - **Перед выдачей кода — то же, должно быть пусто** (1.91).
-- **`mobile/android/*` и `tools/`** — машинные, не коммитить.
-- **SQLite v7 (c-9-fill-offline-2b):** таблицы `containers` (+`pending_sync`), `samples`, `sync_queue`, `catalog`, `container_history`. `onUpgrade v6→v7` — только `ALTER TABLE`, без `DROP` (иначе теряются офлайн-пробы).
+- **`mobile/android/*` и `tools/`** — машинные, не коммитить. `tools/` в `.gitignore`.
+- **SQLite v8 (c-2d-2a):** таблицы `containers` (+`pending_sync`), `samples`, `sync_queue` (+`local_ref`), `catalog`, `container_history`. `onUpgrade v7→v8` — только `ALTER TABLE sync_queue ADD COLUMN local_ref TEXT`.
 - **`SampleDao.saveAll`** не перезаписывает пробы с `_pending_sync = 1`.
 - **`fetchByContainerId`** возвращает кэш при `hasPendingForContainer`.
 - **Reconcile при Pull** сбрасывает `_pending_sync`, если записи в `sync_queue` нет.
@@ -199,6 +207,9 @@
 - **Natural sort** — `naturalCompare` в `SampleDao.getByContainerId`, `SampleService.fetchByContainerId`, `LabelData.fromContainer`.
 - **`NetworkBadge`** — `IconButton`, тап → `pingNow`, спиннер во время ping.
 - **`scaffoldMessengerKey`** — глобальный, для SnackBar из `AuthGate`.
+- **`bulk-create` маппинг ID:** по индексу `created_containers[i].id` (порядок гарантирован циклом `.create()` в `bulk_create_containers`), проверка длины + `debugPrint` при ошибке (1.101).
+- **Локальный JSON тары — в серверном формате** (`container_type`, `draft_site`, `draft_research_type`), не `*_id`. `Container.fromJson` имеет fallback на `*_id` (1.101).
+- **История для negative-ID** — не зовём сервер (`_loadHistory` guard в `ContainerDetailScreen`) (1.101).
 
 ### Рабочий ПК (прокси)
 - **После `git reset --hard`**: `setup.ps1` → `export FLUTTER_STORAGE_BASE_URL` → `flutter run --android-skip-build-dependency-validation`.

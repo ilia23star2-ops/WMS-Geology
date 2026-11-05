@@ -55,7 +55,7 @@ GitHub Actions: `.github/workflows/ci.yml`.
 
 **Backend: 842 теста.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
-**Mobile: 174 юнит-теста.**
+**Mobile: 196 юнит-тестов.**
 
 ### Backend — покрытие по приложениям
 
@@ -84,7 +84,7 @@ GitHub Actions: `.github/workflows/ci.yml`.
 - `TokenStorage`, `ApiClient` (Dio, JWT).
 - Модели `Container`, `Sample`, `ScanHistoryEntry`, `ContainerHistoryEntry`.
 - `SyncService` (Pull, pre-fetch истории, `?updated_since=`, reconcile, `PullStats`).
-- `SyncPusher` (PushResult, onSuccess, сброс `_pending_sync`).
+- `SyncPusher` (PushResult, onSuccess, сброс `_pending_sync`, маппинг `bulk-create`).
 - `SyncProvider` (`PullStats`, `PushResult`, `_lastPullSince`).
 - `NetworkProbe`, `NetworkStatusProvider` (включая `pingNow`).
 - `scan_window` (портрет + ландшафт).
@@ -92,9 +92,12 @@ GitHub Actions: `.github/workflows/ci.yml`.
 - `catalog` (модели), `container`, `container_history_entry`.
 - `label_pdf_generator` (offline-рендер PDF на Dart).
 - `catalog_service` (кэш справочников, fallback, `catalogParentId`).
-- `container_service` (`bulkPlace` online/offline, `fetchHistory` online/cache, `fetchList`, `bulkCreate`).
+- `container_service` (`bulkPlace` online/offline, `fetchHistory` online/cache, `fetchList`, `bulkCreate` online/offline + `BulkCreateResult`, `Container.fromJson` fallback).
 - `sample_service` (`fetchByContainerId` online/cache + natural sort, `fillSamples` online/offline, `update`/`dispose`/`restore`/`deleteSample` online/offline, `updateLocalOffline`/`deleteLocalOffline` + `_rebuildFillPayload`).
 - `natural_sort` (`naturalCompare`, `naturalCompareSampleNumber`).
+- `sync_queue_dao` (13: `remapInPlace` — container_id / container_ids / containers[].id / no-op; `remapLocalRef` — int-строка / JSON-массив / null / невалидный).
+- `container_from_json` (6: серверный формат, локальный `*_id` fallback, пустые поля → 0/null, `_pending_sync`).
+- `sync_pusher` (5: +1 на передачу `localRef` + `responseData`).
 - `user`, `widget_test`.
 
 UI (экраны, сканер, диалоги) — device-check на планшете.
@@ -165,6 +168,13 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 - `natural_sort_test.dart` (8 тестов).
 
+### Mobile, `c-2d-2a` + `c-2d-2a-fix-3`
+
+- `sync_queue_dao_test.dart` (13 тестов: `remapInPlace` для `container_id` / `container_ids[]` / `containers[].id` / no-op; `remapLocalRef` для int-строки / JSON-массива / null / невалидного JSON).
+- `container_from_json_test.dart` (6 тестов: серверный формат, локальный `*_id` fallback, пустые поля → `0`/`null`, `_pending_sync`).
+- `sync_pusher_test.dart` (+1 тест: `onSuccess` получает `localRef` + `responseData` для `bulk-create`).
+- `container_service_test.dart` (`bulkCreate` возвращает `BulkCreateResult {count, queued}`).
+
 ---
 
 ## Integration-тесты (приоритет 2)
@@ -208,6 +218,8 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - **`updatedSince` в Pull:** `DateTime.utc(...)` → `.toUtc().toIso8601String()`. Тест `pullAll(updatedSince:)` проверяет наличие `updated_since` в `queryParameters`.
 - **`naturalCompare`:** тесты на `TST6701 < TST6710`, ведущие нули, разные префиксы, пустую строку.
 - **`NetworkStatusProvider.pingNow`** — без `@visibleForTesting`, чтобы вызывать из `NetworkBadge`.
+- **`SyncQueueDao.remapInPlace` / `remapLocalRef`** — `@visibleForTesting`, тесты на все ветки (map / list / вложенный / no-op; int / JSON / null / invalid).
+- **`Container.fromJson`** — тесты на серверный формат, локальный `*_id` fallback и пустые поля (не должно быть краша).
 
 ---
 
@@ -224,7 +236,7 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 **Сделано:**
 - Три уровня тестов (unit/integration/contract).
-- **842 backend** + 24 web + **174 mobile** = **1040 тестов**.
+- **842 backend** + 24 web + **196 mobile** = **1062 теста**.
 - Contract-тесты OpenAPI.
 - Все stale-тесты после серии 2f починены.
 - Аудит тары — 8 тестов.
@@ -243,6 +255,7 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - `PullStats` + `updated_since` — 5 тестов.
 - Natural sort — 8 тестов.
 - `pingNow` — покрыт `network_probe_test` / `network_status_provider_test` (device-check).
+- Маппинг ID после `bulk-create` — 13 (`sync_queue_dao_test`) + 6 (`container_from_json_test`) + 1 (`sync_pusher_test`).
 
 **Осталось:**
 - **ТД-34.** `console.error` в catch-блоках web — низкий.
@@ -255,4 +268,6 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - **ТД-61.** UI overflow 3.5 / 7.2 px — не воспроизвелось, следить.
 - **ТД-62.** `_lastPullSince` не персистится — Pull раз в сессию полный.
 - **ТД-63.** `SampleDao.getByContainerId` natural sort в памяти — для больших тар оптимизировать в SQL.
-- Покрытие серии `3.x-offline` — по мере реализации (`c-8-*`, `c-2d-2`).
+- **ТД-64.** `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом (нет DI на `ContainerDao.saveAll`).
+- **ТД-65.** `_defaultOnSuccess` не снимает `pending_sync` для `fill-samples` / `bulk-place` на negative-ID — закрывается в `c-2d-2c`.
+- Покрытие серии `3.x-offline` — по мере реализации (`c-2d-2c`, `c-8-*`).
