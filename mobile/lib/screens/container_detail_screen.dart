@@ -188,14 +188,15 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) {
+      builder: (context) {
         final insets = MediaQuery.of(context).viewInsets.bottom;
-        final safeBottom = MediaQuery.of(context).padding.bottom;
-        // c-8b-fix-1: высота = экран − клавиатура − safe area снизу.
-        final maxHeight =
-            MediaQuery.of(context).size.height - insets - safeBottom;
+        final screenHeight = MediaQuery.of(context).size.height;
+        // c-8b-fix-4: 0.95 от доступной высоты (экран − клавиатура).
+        // Раньше было 0.9 × (height − safeBottom) — окно выходило ниже,
+        // а Padding+SizedBox при клавиатуре давал overflow.
+        // `useSafeArea: true` уже учитывает системный бар снизу.
         return SizedBox(
-          height: maxHeight * 0.9,
+          height: (screenHeight - insets) * 0.95,
           child: Column(
             children: [
               Padding(
