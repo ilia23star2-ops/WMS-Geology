@@ -1,9 +1,9 @@
 /**
- * Единое окно тары (2f-17c).
+ * Единое окно тары (2f-17c + c-2f-comment-web).
  *
  * Вкладки: Пробы / Редактирование / История.
- * Шапка: номер, Н/З, ТИ, участок, статус + кнопки
- * [Предпросмотр] [Разместить / Местоположение] [Закрыть].
+ * Шапка: номер, Н/З, ТИ, участок, статус (+ комментарий и шаблон, если заданы)
+ * + кнопки [Предпросмотр] [Разместить / Местоположение] [Закрыть].
  *
  * Предпросмотр (этикетка / QR) — отдельная модалка ContainerPreviewDialog,
  * открывается по кнопке из шапки.
@@ -192,6 +192,23 @@ export default function ContainerDetailDialog({
                                 <span><b>Участок:</b> {container.draft_site_name || "—"}</span>
                                 <span><b>Статус:</b> {CONTAINER_STATUS_LABELS[container.status] ?? container.status}</span>
                             </Stack>
+                            {(container.comment || container.comment_template_text) && (
+                                <Box sx={{ mt: 1, typography: "body2" }}>
+                                    {container.comment_template_text && (
+                                        <Box>
+                                            <b>Шаблон:</b>{" "}
+                                            <span style={{ color: "text.secondary" }}>
+                                                {container.comment_template_text}
+                                            </span>
+                                        </Box>
+                                    )}
+                                    {container.comment && (
+                                        <Box sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
+                                            <b>Комментарий:</b> {container.comment}
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
                         </Box>
                         <Stack direction="row" spacing={1}>
                             <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => setPreviewOpen(true)}>

@@ -66,7 +66,6 @@ const STATUS_ICONS: Record<ContainerStatus, React.ReactElement> = {
     ISSUED: <OutputIcon fontSize="small" color="disabled" />,
 };
 
-// 2f-17c: иконка печати по статусу последней не-CANCELLED партии.
 function renderPrintIcon(status: PrintBatchStatus | null) {
     if (status === "PRINTED") {
         return (
@@ -272,16 +271,20 @@ export default function ContainersPage() {
             renderCell: (params) => renderPrintIcon(params.row.print_batch_status),
         },
         {
-            field: "comment_template_text",
+            // c-2f-comment-web: свободный комментарий, с fallback на шаблон.
+            field: "comment",
             headerName: "Комментарий",
             flex: 1,
             minWidth: 120,
+            valueGetter: (_value, row) =>
+                (row as any).comment || row.comment_template_text || "",
             renderCell: (params) => {
-                if (!params.value) return "—";
+                const v = (params.value as string) || "";
+                if (!v) return "—";
                 return (
-                    <Tooltip title={params.value}>
+                    <Tooltip title={v}>
                         <Typography variant="body2" noWrap sx={{ width: "100%" }}>
-                            {params.value}
+                            {v}
                         </Typography>
                     </Tooltip>
                 );
