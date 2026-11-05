@@ -1,4 +1,4 @@
-/// Форма редактирования тары (c-7b + c-7b-full).
+/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1).
 ///
 /// Поля:
 /// - `container_number` — текст;
@@ -10,8 +10,8 @@
 /// - `draft_work_order_coded` — текст;
 /// - `draft_work_order_incoming` — текст.
 ///
-/// Работает только онлайн: PATCH через `ContainerService.update`.
-/// Офлайн-изменения — в `c-8`.
+/// c-8b-fix-1: кнопка «Сохранить» — sticky внизу (вне ListView),
+/// не уезжает под системный бар, видна без скролла.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -48,7 +48,6 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   int? _selectedSiteId;
   int? _selectedResearchTypeId;
 
-  // Справочники
   List<Site>? _sites;
   List<ResearchType>? _researchTypes;
   List<ContainerType>? _containerTypes;
@@ -121,7 +120,19 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_catalogsLoading || _catalogsError != null) return;
+    if (_catalogsLoading) return;
+    if (_catalogsError != null) {
+      // c-8b-fix-1: не молчим — иначе кнопка «не нажимается».
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Справочники не загружены. Проверьте сеть и откройте форму '
+            'раз в онлайне.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _saving = true);
 
     final number = _numberCtrl.text.trim();
@@ -184,94 +195,111 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
     final researchTypes = _researchTypes ?? const <ResearchType>[];
     final containerTypes = _containerTypes ?? const <ContainerType>[];
 
+    // c-8b-fix-1: Column(Expanded(ListView), sticky bottomBar).
     return Form(
       key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+      child: Column(
         children: [
-          TextFormField(
-            controller: _numberCtrl,
-            enabled: !disabled,
-            style: const TextStyle(fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              labelText: 'Номер тары',
-              helperText: 'Пусто = заготовка без номера',
-              border: OutlineInputBorder(),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextFormField(
+                  controller: _numberCtrl,
+                  enabled: !disabled,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                  decoration: const InputDecoration(
+                    labelText: 'Номер тары',
+                    helperText: 'Пусто = заготовка без номера',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildContainerTypeDropdown(containerTypes, disabled),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _commentCtrl,
+                  enabled: !disabled,
+                  maxLines: 3,
+                  minLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Комментарий',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _positionCtrl,
+                  enabled: !disabled,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Позиция на поддоне',
+                    helperText: 'Пусто = не указана',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    final n = int.tryParse(v.trim());
+                    if (n == null) return 'Введите целое число';
+                    if (n < 0) return 'Число должно быть >= 0';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Черновик (заполняется при создании, обновляется здесь)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildSiteDropdown(sites, disabled),
+                const SizedBox(height: 16),
+                _buildResearchTypeDropdown(researchTypes, disabled),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _draftCodedCtrl,
+                  enabled: !disabled,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                  decoration: const InputDecoration(
+                    labelText: 'Н/З (черновик, тек.)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _draftIncomingCtrl,
+                  enabled: !disabled,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                  decoration: const InputDecoration(
+                    labelText: 'Н/З (черновик, вх.)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          _buildContainerTypeDropdown(containerTypes, disabled),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _commentCtrl,
-            enabled: !disabled,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Комментарий',
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
+          // Sticky bottom bar.
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: disabled ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(_saving ? 'Сохранение...' : 'Сохранить'),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _positionCtrl,
-            enabled: !disabled,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Позиция на поддоне',
-              helperText: 'Пусто = не указана',
-              border: OutlineInputBorder(),
-            ),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return null;
-              final n = int.tryParse(v.trim());
-              if (n == null) return 'Введите целое число';
-              if (n < 0) return 'Число должно быть >= 0';
-              return null;
-            },
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Черновик (заполняется при создании, обновляется здесь)',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildSiteDropdown(sites, disabled),
-          const SizedBox(height: 16),
-          _buildResearchTypeDropdown(researchTypes, disabled),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _draftCodedCtrl,
-            enabled: !disabled,
-            style: const TextStyle(fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              labelText: 'Н/З (черновик, тек.)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            controller: _draftIncomingCtrl,
-            enabled: !disabled,
-            style: const TextStyle(fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              labelText: 'Н/З (черновик, вх.)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: disabled ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save),
-            label: Text(_saving ? 'Сохранение...' : 'Сохранить'),
           ),
         ],
       ),
@@ -279,7 +307,6 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   }
 
   Widget _buildContainerTypeDropdown(List<ContainerType> types, bool disabled) {
-    // Если текущий тип отсутствует в справочнике — добавляем как fallback.
     final hasCurrent = types.any((t) => t.id == _selectedContainerTypeId);
     final items = <DropdownMenuItem<int>>[
       if (!hasCurrent)

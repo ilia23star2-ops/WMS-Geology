@@ -1,4 +1,4 @@
-/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create, c-2d-2, c-2d-2c, c-2d-2c-fix-1).
+/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create, c-2d-2, c-2d-2c, c-2d-2c-fix-1, c-8b).
 library;
 
 import 'package:dio/dio.dart';
@@ -11,6 +11,10 @@ class _MockApi extends Fake implements ApiClient {
   final List<MapEntry<String, Object?>> postCalls = [];
   Object? throwOnPost;
   Object? postData;
+
+  final List<MapEntry<String, Object?>> patchCalls = [];
+  Object? throwOnPatch;
+  Object? patchData;
 
   final List<String> getCalls = [];
   final List<Map<String, dynamic>?> getQueryParams = [];
@@ -25,6 +29,17 @@ class _MockApi extends Fake implements ApiClient {
     return Response<T>(
       requestOptions: RequestOptions(path: path),
       data: postData as T?,
+    );
+  }
+
+  @override
+  Future<Response<T>> patch<T>(String path, {Object? data}) async {
+    patchCalls.add(MapEntry(path, data));
+    final e = throwOnPatch;
+    if (e != null) throw e;
+    return Response<T>(
+      requestOptions: RequestOptions(path: path),
+      data: patchData as T?,
     );
   }
 
@@ -125,7 +140,7 @@ void main() {
       expect(client.postCalls.length, 1);
       expect(client.postCalls.first.key, '/storage/containers/bulk-place/');
       expect(enqueued, isEmpty);
-      expect(locations, isEmpty); // онлайн — локально не трогаем
+      expect(locations, isEmpty);
     });
 
     test('онлайн (на пол): body с floor_room_id', () async {
@@ -155,7 +170,7 @@ void main() {
       expect(outcome, PlaceOutcome.queued);
       expect(enqueued.length, 1);
       expect(enqueued.first.endpoint, '/storage/containers/bulk-place/');
-      expect(enqueued.first.localRef, isNull); // positives — без localRef
+      expect(enqueued.first.localRef, isNull);
     });
 
     test('офлайн: локальный кэш обновлён (status ACTIVE, место)', () async {
@@ -243,7 +258,6 @@ void main() {
       expect(enqueued.length, 1);
       expect(enqueued.first.localRef, '[-12345]');
 
-      // c-2d-2c-fix-1: локально тоже обновлено
       expect(locations.length, 1);
       expect(locations.first.id, -12345);
       expect(locations.first.status, 'ACTIVE');
@@ -264,12 +278,113 @@ void main() {
         expect(client.postCalls, isEmpty);
         expect(enqueued.length, 1);
         expect(enqueued.first.localRef, '[-1,-2]');
-        // Локально обновлены оба ID
         expect(locations.length, 3);
         expect(locations.map((l) => l.id), [-1, 5, -2]);
         expect(locations.every((l) => l.status == 'ACTIVE'), true);
       },
     );
+  });
+
+  // c-8b: офлайн-редактирование шапки тары.
+  group('ContainerService.update (c-8b)', () {
+    late _MockApi client;
+    late List<_EnqueueCall> enqueued;
+    late List<MapEntry<int, Map<String, dynamic>>> localFieldUpdates;
+    late List<MapEntry<int, bool>> pendingSyncs;
+
+    setUp(() {
+      client = _MockApi();
+      enqueued = [];
+      localFieldUpdates = [];
+      pendingSyncs = [];
+    });
+
+    ContainerService createService() {
+      return ContainerService(
+        client,
+        enqueue:
+            ({
+              required String action,
+              required String endpoint,
+              required Map<String, dynamic> payload,
+              String? localRef,
+            }) async {
+              enqueued.add(_EnqueueCall(action, endpoint, payload, localRef));
+            },
+        setPendingSync: (id, pending) async {
+          pendingSyncs.add(MapEntry(id, pending));
+        },
+        updateFieldsLocal: (id, fields) async {
+          localFieldUpdates.add(MapEntry(id, fields));
+        },
+      );
+    }
+
+    test('онлайн: PATCH уходит, online, очередь пуста', () async {
+      client.patchData = {
+        'id': 10,
+        'container_number': 'T-NEW',
+        'container_type': 5,
+        'status': 'PENDING_FILLING',
+      };
+      final payload = <String, dynamic>{
+        'container_number': 'T-NEW',
+        'container_type': 5,
+        'comment': '',
+      };
+      final outcome = await createService().update(10, payload);
+
+      expect(outcome, UpdateOutcome.online);
+      expect(client.patchCalls.length, 1);
+      expect(client.patchCalls.first.key, '/storage/containers/10/');
+      expect(client.patchCalls.first.value, payload);
+      expect(enqueued, isEmpty);
+      expect(localFieldUpdates, isEmpty);
+      expect(pendingSyncs, isEmpty);
+    });
+
+    test('офлайн: PATCH в очередь + локально + pendingSync', () async {
+      client.throwOnPatch = ApiException(
+        message: 'timeout',
+        isNetworkError: true,
+      );
+      final payload = <String, dynamic>{
+        'container_number': 'T-OFF',
+        'comment': 'заметка',
+        'container_type': 5,
+      };
+      final outcome = await createService().update(10, payload);
+
+      expect(outcome, UpdateOutcome.queued);
+      expect(enqueued.length, 1);
+      expect(enqueued.first.action, 'PATCH');
+      expect(enqueued.first.endpoint, '/storage/containers/10/');
+      expect(enqueued.first.payload, payload);
+
+      expect(localFieldUpdates.length, 1);
+      expect(localFieldUpdates.first.key, 10);
+      expect(localFieldUpdates.first.value, payload);
+
+      expect(pendingSyncs.length, 1);
+      expect(pendingSyncs.first.key, 10);
+      expect(pendingSyncs.first.value, true);
+    });
+
+    test('валидация (не network): пробрасывается, очередь пуста', () async {
+      client.throwOnPatch = ApiException(
+        message: 'container_number: invalid',
+        statusCode: 400,
+        isNetworkError: false,
+      );
+      final service = createService();
+      await expectLater(
+        service.update(10, {'container_number': ''}),
+        throwsA(isA<ApiException>()),
+      );
+      expect(enqueued, isEmpty);
+      expect(localFieldUpdates, isEmpty);
+      expect(pendingSyncs, isEmpty);
+    });
   });
 
   group('ContainerService.fetchHistory (c-7e-2)', () {

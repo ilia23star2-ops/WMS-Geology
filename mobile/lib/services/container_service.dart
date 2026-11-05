@@ -1,4 +1,4 @@
-/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b, c-2d-2a, c-2d-2c, c-2d-2c-fix-1).
+/// Сервис тары (c-7c, c-7d, c-7e-2, c-9, c-9-fill-offline-2b, c-2d-2a, c-2d-2c, c-2d-2c-fix-1, c-8b).
 library;
 
 import 'dart:convert';
@@ -11,6 +11,9 @@ import '../models/container_history_entry.dart';
 import 'api_client.dart';
 
 enum PlaceOutcome { online, queued }
+
+/// c-8b: результат `update`.
+enum UpdateOutcome { online, queued }
 
 /// c-2d-2: результат `bulkCreate`.
 class BulkCreateResult {
@@ -48,6 +51,10 @@ typedef UpdateLocationLocal = Future<void> Function(
   int? floorRoomId,
   String? floorRoomName,
 });
+typedef UpdateFieldsLocal = Future<void> Function(
+  int id,
+  Map<String, dynamic> fields,
+);
 
 class ContainerService {
   ContainerService(
@@ -58,6 +65,7 @@ class ContainerService {
     GetAllCached? getAllCached,
     SetPendingSync? setPendingSync,
     UpdateLocationLocal? updateLocationLocal,
+    UpdateFieldsLocal? updateFieldsLocal,
   }) : _enqueue = enqueue ?? _defaultEnqueue,
        _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
        _getCachedHistory =
@@ -65,7 +73,8 @@ class ContainerService {
        _getAllCached = getAllCached ?? ContainerDao.getAll,
        _setPendingSync = setPendingSync ?? ContainerDao.setPendingSync,
        _updateLocationLocal =
-           updateLocationLocal ?? ContainerDao.updateLocationLocal;
+           updateLocationLocal ?? ContainerDao.updateLocationLocal,
+       _updateFieldsLocal = updateFieldsLocal ?? ContainerDao.updateFieldsLocal;
 
   final ApiClient _client;
   final EnqueuePlace _enqueue;
@@ -74,6 +83,7 @@ class ContainerService {
   final GetAllCached _getAllCached;
   final SetPendingSync _setPendingSync;
   final UpdateLocationLocal _updateLocationLocal;
+  final UpdateFieldsLocal _updateFieldsLocal;
 
   static Future<void> _defaultEnqueue({
     required String action,
@@ -299,34 +309,57 @@ class ContainerService {
     }
   }
 
-  Future<Container> update(int id, Map<String, dynamic> payload) async {
-    final response = await _client.patch<Map<String, dynamic>>(
-      '/storage/containers/$id/',
-      data: payload,
-    );
-    final data = response.data;
-    if (data == null) {
-      throw ApiException(
-        message: 'Пустой ответ от сервера при обновлении тары #$id.',
-        statusCode: response.statusCode,
-      );
-    }
-
+  /// c-8b: офлайн-редактирование шапки тары.
+  ///
+  /// Онлайн — `PATCH /storage/containers/{id}/`, `UpdateOutcome.online`.
+  /// Офлайн — `sync_queue` (PATCH) + `ContainerDao.updateFieldsLocal` +
+  /// `pending_sync = 1`, `UpdateOutcome.queued`.
+  ///
+  /// `payload` — серверные поля (`container_number`, `container_type`,
+  /// `comment`, `position_on_pallet`, `draft_site`, `draft_research_type`,
+  /// `draft_work_order_coded`, `draft_work_order_incoming`).
+  Future<UpdateOutcome> update(int id, Map<String, dynamic> payload) async {
     try {
-      await ContainerDao.saveAll([data]);
-    } catch (_) {}
+      final response = await _client.patch<Map<String, dynamic>>(
+        '/storage/containers/$id/',
+        data: payload,
+      );
+      final data = response.data;
+      if (data == null) {
+        throw ApiException(
+          message: 'Пустой ответ от сервера при обновлении тары #$id.',
+          statusCode: response.statusCode,
+        );
+      }
 
-    return Container.fromJson(data);
+      try {
+        await ContainerDao.saveAll([data]);
+      } catch (_) {}
+
+      return UpdateOutcome.online;
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+
+      try {
+        await _updateFieldsLocal(id, payload);
+      } catch (_) {}
+      try {
+        await _setPendingSync(id, true);
+      } catch (_) {}
+      await _enqueue(
+        action: 'PATCH',
+        endpoint: '/storage/containers/$id/',
+        payload: payload,
+      );
+      return UpdateOutcome.queued;
+    }
   }
 
   /// c-2d-2c: если среди `containerIds` есть negative (офлайн-тара),
-  /// операция целиком уходит в `sync_queue` — атомарно. `localRef` —
-  /// JSON-массив только negatives; при маппинге после `bulk-create`
-  /// они станут серверными, позитивные не тронутся.
+  /// операция целиком уходит в `sync_queue` — атомарно.
   ///
-  /// c-2d-2c-fix-1: при offline (negative или `isNetworkError`) —
-  /// локально обновить `containers` (`status = ACTIVE`, место),
-  /// чтобы пользователь сразу видел, куда разместил.
+  /// c-2d-2c-fix-1: при offline — локально обновить `containers`
+  /// (`status = ACTIVE`, место).
   Future<PlaceOutcome> bulkPlace({
     required List<int> containerIds,
     int? cellId,

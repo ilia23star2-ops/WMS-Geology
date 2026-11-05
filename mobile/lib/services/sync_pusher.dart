@@ -1,16 +1,8 @@
-/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2a, c-2d-2c).
+/// Сервис Push-синхронизации (c-3, c-9-fill-offline-2c-3-fix-2, c-2d-2a, c-2d-2c, c-8b).
 ///
-/// c-2d-2:
-/// - Обрабатывает `local_ref` в очереди.
-/// - При успешном `bulk-create` маппит local IDs на server IDs.
-/// - Обновляет ID тар / проб в SQLite и `payload` очереди.
-///
-/// c-2d-2c:
-/// - После `bulk-create` перечитывает очередь, чтобы `fill-samples` /
-///   `bulk-place` ушли на обновлённый endpoint (`/containers/42/...`).
-/// - Защита от бесконечного цикла: уже обработанные `id` пропускаются
-///   после reload (иначе — если `markSynced` не удалил запись —
-///   `getPendingItems` вернёт её снова).
+/// c-2d-2: маппинг `local_ref` после `bulk-create`.
+/// c-2d-2c: перечитывание очереди после `bulk-create` + `processedIds`.
+/// c-8b: PATCH `/storage/containers/{id}/` → `clearPendingSync(id)`.
 library;
 
 import 'dart:convert';
@@ -68,10 +60,6 @@ class SyncPusher {
     var sent = 0;
     var failed = 0;
     var i = 0;
-    // c-2d-2c: защита от бесконечного цикла. После `bulk-create`
-    // перечитываем очередь; если `getPendingItems` вернёт уже
-    // обработанные записи (в тестах, при сбое `markSynced`),
-    // пропускаем их.
     final processedIds = <int>{};
 
     while (i < items.length) {
@@ -138,7 +126,6 @@ class SyncPusher {
   }
 
   /// Дефолтный `onSuccess`: парсит endpoint и сбрасывает pending-флаги.
-  /// c-2d-2: маппинг local IDs -> server IDs для bulk-create.
   static Future<void> _defaultOnSuccess(
     String endpoint,
     Map<String, dynamic> payload,
@@ -167,6 +154,14 @@ class SyncPusher {
     final fm = fillRe.firstMatch(endpoint);
     if (fm != null) {
       await ContainerDao.clearPendingSync(int.parse(fm.group(1)!));
+      return;
+    }
+
+    // c-8b: PATCH /storage/containers/{id}/ (шапка тары офлайн).
+    final patchContainerRe = RegExp(r'^/storage/containers/(\d+)/$');
+    final pm = patchContainerRe.firstMatch(endpoint);
+    if (pm != null) {
+      await ContainerDao.clearPendingSync(int.parse(pm.group(1)!));
       return;
     }
 

@@ -1,13 +1,9 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3 + c-2d-2c-fix-1).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3 + c-2d-2c-fix-1 + c-8b).
 ///
-/// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций (bulk-статус, place)
-/// — `SyncProvider.refresh()`, чтобы счётчик обновился.
-///
-/// c-2d-2a-fix-3: `_loadHistory` не ходит на сервер при `id < 0` —
-/// у локальной тары истории нет.
-///
-/// c-2d-2c-fix-1: при `PlaceOutcome.queued` — перечитать локальный
-/// кэш, `setState` — пользователь сразу видит новое место/статус.
+/// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций — `SyncProvider.refresh()`.
+/// c-2d-2a-fix-3: `_loadHistory` не ходит на сервер при `id < 0`.
+/// c-2d-2c-fix-1: при `PlaceOutcome.queued` — перечитать локальный кэш.
+/// c-8b: при `UpdateOutcome.queued` — перечитать локальный кэш + SnackBar «офлайн».
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -146,17 +142,39 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     await Future.wait([_loadSamples(), _loadHistory()]);
   }
 
+  /// c-8b: online → PATCH + перечитать с сервера.
+  /// offline → `sync_queue` + локальный кэш + SnackBar «офлайн».
   Future<void> _onSaveEdit(Map<String, dynamic> payload) async {
+    final service = context.read<ContainerService>();
     try {
-      final updated = await context.read<ContainerService>().update(
-        _container.id,
-        payload,
-      );
+      final outcome = await service.update(_container.id, payload);
       if (!mounted) return;
-      setState(() => _container = updated);
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Тара сохранена')));
+
+      if (outcome == UpdateOutcome.queued) {
+        _refreshSync();
+        try {
+          final cached = await ContainerDao.getById(_container.id);
+          if (cached != null && mounted) {
+            setState(() => _container = Container.fromJson(cached));
+          }
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Сохранено офлайн. Отправится при синхронизации.'),
+          ),
+        );
+      } else {
+        try {
+          final updated = await service.fetchById(_container.id);
+          if (!mounted) return;
+          setState(() => _container = updated);
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Тара сохранена')));
+      }
       _loadHistory();
     } catch (e) {
       if (!mounted) return;
@@ -169,12 +187,15 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.85,
+      useSafeArea: true,
+      builder: (_) {
+        final insets = MediaQuery.of(context).viewInsets.bottom;
+        final safeBottom = MediaQuery.of(context).padding.bottom;
+        // c-8b-fix-1: высота = экран − клавиатура − safe area снизу.
+        final maxHeight =
+            MediaQuery.of(context).size.height - insets - safeBottom;
+        return SizedBox(
+          height: maxHeight * 0.9,
           child: Column(
             children: [
               Padding(
@@ -206,8 +227,8 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -330,8 +351,6 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
 
     if (outcome == PlaceOutcome.queued) {
       _refreshSync();
-      // c-2d-2c-fix-1: перечитать локальный кэш — место/статус
-      // видны сразу, без Push.
       try {
         final cached = await ContainerDao.getById(_container.id);
         if (cached != null && mounted) {
