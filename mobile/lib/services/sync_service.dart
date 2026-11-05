@@ -1,11 +1,7 @@
-/// Сервис синхронизации (Pull) (c-2, c-7-offline-catalog, c-7e-3,
-/// c-9-fill-offline-2c-3-fix-3a, c-9-auto-sync, c-6b-updated-since).
-///
-/// c-9-auto-sync: `pullAll` возвращает `PullStats { containers, samples }`.
-/// c-6b-updated-since: `pullAll(updatedSince: ...)` → в `/storage/containers/`
-/// и `/samples/` передаётся `?updated_since=<ISO 8601 UTC>`. Сервер вернёт
-/// только изменённые. Справочники и история — полный Pull (мало данных).
+/// Сервис синхронизации (Pull) (c-2, ..., c-8-catalog-create-offline).
 library;
+
+import 'dart:convert';
 
 import '../db/catalog_dao.dart';
 import '../db/container_dao.dart';
@@ -14,15 +10,11 @@ import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
 
-/// Результат Pull: сколько **изменённых** тар и проб пришло с сервера.
 class PullStats {
   const PullStats({this.containers = 0, this.samples = 0});
-
   final int containers;
   final int samples;
-
   int get total => containers + samples;
-
   @override
   String toString() => 'PullStats(containers: $containers, samples: $samples)';
 }
@@ -65,12 +57,6 @@ class SyncService {
     return CatalogDao.saveAll(kind, items);
   }
 
-  /// Скачать с сервера.
-  ///
-  /// [updatedSince] — если задан, в `/storage/containers/` и `/samples/`
-  /// уйдёт `?updated_since=<ISO 8601 UTC>`, сервер вернёт только изменённые
-  /// (c-6b). Если `null` — полный Pull. Справочники и история — всегда
-  /// полный Pull (мало данных, `updated_since` там не поддерживается).
   Future<PullStats> pullAll({DateTime? updatedSince}) async {
     final isoSince = updatedSince?.toUtc().toIso8601String();
     final pulled = await _pullContainers(updatedSince: isoSince);
@@ -84,7 +70,6 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
-    // История — pre-fetch только для изменённых тар (если updatedSince задан).
     for (final id in pulled.ids) {
       await _pullHistoryFor(id);
     }
@@ -92,6 +77,15 @@ class SyncService {
     return PullStats(containers: pulled.ids.length, samples: samples);
   }
 
+  /// c-9-fill-offline-2c-3-fix-3a + c-8-catalog-create-offline.
+  ///
+  /// Собираем «живые» ID из очереди (PENDING + ERROR):
+  /// - `/samples/{id}/...` → keepSampleIds
+  /// - `/storage/containers/{id}/fill-samples/` → keepContainerIds
+  /// - `/storage/containers/bulk-place/` → keepContainerIds (из payload)
+  /// - `/storage/containers/bulk-create/` → keepContainerIds (negative
+  ///   из `localRef`, чтобы не сбросить `pending_sync` у офлайн-тар,
+  ///   ещё не ушедших на сервер)
   Future<void> _reconcile() async {
     final queue = await _getQueueItems();
     final keepSampleIds = <int>{};
@@ -116,6 +110,22 @@ class SyncService {
             if (raw is int) keepContainerIds.add(raw);
           }
         }
+        continue;
+      }
+      // c-8-catalog-create-offline: keep negatives from bulk-create.
+      if (item.endpoint == '/storage/containers/bulk-create/') {
+        final localRef = item.localRef;
+        if (localRef != null) {
+          try {
+            final ids = jsonDecode(localRef);
+            if (ids is List) {
+              for (final raw in ids) {
+                if (raw is int && raw < 0) keepContainerIds.add(raw);
+              }
+            }
+          } catch (_) {}
+        }
+        continue;
       }
     }
     await _reconcileSamples(keepSampleIds);
@@ -207,8 +217,6 @@ class SyncService {
         growable: false,
       );
       await _saveHistory(containerId, items);
-    } catch (_) {
-      // не критично
-    }
+    } catch (_) {}
   }
 }

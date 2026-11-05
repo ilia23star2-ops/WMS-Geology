@@ -1,4 +1,4 @@
-/// Диалог создания справочника (c-8-catalog-create).
+/// Диалог создания справочника (c-8-catalog-create, c-8-catalog-create-offline).
 ///
 /// Поля — по `kind`:
 /// - `site` → `code`, `name`, `match_patterns` (через запятую);
@@ -7,9 +7,10 @@
 /// - `container_type` → `name`, `size_class`, `max_on_standard_pallet`,
 ///   `is_core`, `laboratory`.
 ///
-/// Только онлайн. Офлайн → SnackBar «Требуется подключение к серверу».
-///
-/// Возвращает `CreatedCatalogItem?` через `Navigator.pop`.
+/// c-8-catalog-create-offline: при офлайне создаётся локально (negative ID),
+/// SnackBar «Создано офлайн. Отправится при синхронизации.».
+/// В `sync_queue` уходит POST с `localRef = negativeId`; `SyncPusher`
+/// во втором заходе маппит ID и обновляет зависимые операции.
 library;
 
 import 'package:flutter/material.dart';
@@ -141,14 +142,24 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
     try {
       final created = await service.create(widget.kind, payload);
       if (!mounted) return;
+
+      // c-8-catalog-create-offline: SnackBar по результату.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            created.queued
+                ? 'Создано офлайн. Отправится при синхронизации.'
+                : 'Создано: ${created.raw['name'] ?? created.id}',
+          ),
+        ),
+      );
+
       Navigator.of(context).pop(created);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _error = e.isNetworkError
-            ? 'Требуется подключение к серверу'
-            : e.message;
+        _error = e.message;
       });
     } catch (e) {
       if (!mounted) return;

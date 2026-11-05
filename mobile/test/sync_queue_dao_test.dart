@@ -1,5 +1,4 @@
-/// Тесты `SyncQueueDao` (c-2d-2, c-2d-2c): `remapInPlace` / `remapLocalRef` /
-/// `remapEndpoint`.
+/// Тесты `SyncQueueDao` (c-2d-2, c-2d-2c, c-8-catalog-create-offline).
 library;
 
 import 'dart:convert';
@@ -56,6 +55,70 @@ void main() {
       SyncQueueDao.remapInPlace(p, {});
       expect(p['container_id'], -1);
     });
+
+    // c-8-catalog-create-offline
+    test('draft_site_id: маппится', () {
+      final p = <String, dynamic>{'draft_site_id': -1000};
+      SyncQueueDao.remapInPlace(p, {-1000: 100});
+      expect(p['draft_site_id'], 100);
+    });
+
+    test('draft_site: маппится', () {
+      final p = <String, dynamic>{'draft_site': -1000};
+      SyncQueueDao.remapInPlace(p, {-1000: 100});
+      expect(p['draft_site'], 100);
+    });
+
+    test('draft_research_type_id: маппится', () {
+      final p = <String, dynamic>{'draft_research_type_id': -2000};
+      SyncQueueDao.remapInPlace(p, {-2000: 200});
+      expect(p['draft_research_type_id'], 200);
+    });
+
+    test('draft_research_type: маппится', () {
+      final p = <String, dynamic>{'draft_research_type': -2000};
+      SyncQueueDao.remapInPlace(p, {-2000: 200});
+      expect(p['draft_research_type'], 200);
+    });
+
+    test('container_type_id: маппится', () {
+      final p = <String, dynamic>{'container_type_id': -500};
+      SyncQueueDao.remapInPlace(p, {-500: 500});
+      expect(p['container_type_id'], 500);
+    });
+
+    test('container_type: маппится', () {
+      final p = <String, dynamic>{'container_type': -500};
+      SyncQueueDao.remapInPlace(p, {-500: 500});
+      expect(p['container_type'], 500);
+    });
+
+    test('containers[].container_type_id: маппится', () {
+      final p = <String, dynamic>{
+        'containers': [
+          {'container_type_id': -500},
+          {'container_type_id': 5},
+        ],
+      };
+      SyncQueueDao.remapInPlace(p, {-500: 500});
+      final list = p['containers'] as List;
+      expect((list[0] as Map)['container_type_id'], 500);
+      expect((list[1] as Map)['container_type_id'], 5);
+    });
+
+    test('bulk-create payload: все draft-поля разом', () {
+      final p = <String, dynamic>{
+        'containers': [
+          {'container_type_id': -500},
+        ],
+        'draft_site_id': -1000,
+        'draft_research_type_id': -2000,
+      };
+      SyncQueueDao.remapInPlace(p, {-1000: 100, -2000: 200, -500: 500});
+      expect(p['draft_site_id'], 100);
+      expect(p['draft_research_type_id'], 200);
+      expect(((p['containers'] as List)[0] as Map)['container_type_id'], 500);
+    });
   });
 
   group('SyncQueueDao.remapLocalRef', () {
@@ -90,7 +153,6 @@ void main() {
     });
   });
 
-  // c-2d-2c
   group('SyncQueueDao.remapEndpoint', () {
     test('negative fill-samples: маппится', () {
       expect(

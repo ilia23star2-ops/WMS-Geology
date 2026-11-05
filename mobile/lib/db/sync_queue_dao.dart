@@ -1,4 +1,4 @@
-/// DAO очереди синхронизации (c-3, c-9-fill-offline-2c-1, -2c-3, -2c-3-fix-2, -fix-3a, c-2d-2a, c-2d-2c).
+/// DAO очереди синхронизации (c-3, ..., c-2d-2c, c-8-catalog-create-offline).
 library;
 
 import 'dart:convert';
@@ -15,7 +15,7 @@ class SyncQueueItem {
   final String status;
   final String? errorMessage;
   final String createdAt;
-  final String? localRef; // c-2d-2: локальные ID для маппинга
+  final String? localRef;
 
   SyncQueueItem({
     this.id,
@@ -60,7 +60,7 @@ class SyncQueueDao {
     required String action,
     required String endpoint,
     required Map<String, dynamic> payload,
-    String? localRef, // c-2d-2
+    String? localRef,
   }) async {
     final db = await AppDatabase.instance.database;
     final item = SyncQueueItem(
@@ -84,7 +84,6 @@ class SyncQueueDao {
     return maps.map((map) => SyncQueueItem.fromMap(map)).toList();
   }
 
-  /// c-9-fill-offline-2c-3-fix-3a: **все** записи (PENDING + ERROR).
   static Future<List<SyncQueueItem>> getAll() async {
     final db = await AppDatabase.instance.database;
     final maps = await db.query('sync_queue', orderBy: 'created_at ASC');
@@ -145,12 +144,13 @@ class SyncQueueDao {
     return count > 0;
   }
 
-  /// c-2d-2: после успешного `bulk-create` перемапить negative ID
-  /// во **всех** записях очереди (PENDING + ERROR).
+  /// Перемапить negative → server во всех записях очереди (PENDING + ERROR).
   ///
-  /// c-2d-2c: также маппит `endpoint` (`/containers/-1/fill-samples/`
-  /// → `/containers/42/fill-samples/`), чтобы `fill-samples` / `bulk-place`
-  /// на офлайн-тарах ушли на существующий URL.
+  /// c-2d-2: `container_id`, `container_ids[]`, `containers[].id`.
+  /// c-2d-2c: `endpoint` (`/containers/-N/...` → `/containers/M/...`).
+  /// c-8-catalog-create-offline: `draft_site`, `draft_site_id`,
+  /// `draft_research_type`, `draft_research_type_id`, `container_type`,
+  /// `container_type_id`, `containers[].container_type_id`.
   static Future<void> remapAllLocalRefs(Map<int, int> mapping) async {
     if (mapping.isEmpty) return;
     final db = await AppDatabase.instance.database;
@@ -180,18 +180,18 @@ class SyncQueueDao {
     await batch.commit(noResult: true);
   }
 
-  /// c-2d-2: перемапить ключи в payload in-place.
-  /// Обрабатывает `container_id`, `container_ids[]`, `containers[].id`.
   @visibleForTesting
   static void remapInPlace(
     Map<String, dynamic> payload,
     Map<int, int> mapping,
   ) {
+    // c-2d-2: container_id
     final cid = payload['container_id'];
     if (cid is int && mapping.containsKey(cid)) {
       payload['container_id'] = mapping[cid];
     }
 
+    // c-2d-2: container_ids[]
     final cids = payload['container_ids'];
     if (cids is List) {
       payload['container_ids'] = cids
@@ -199,6 +199,7 @@ class SyncQueueDao {
           .toList();
     }
 
+    // c-2d-2 + c-8-catalog-create-offline: containers[].id + .container_type_id
     final containers = payload['containers'];
     if (containers is List) {
       for (final c in containers) {
@@ -207,27 +208,39 @@ class SyncQueueDao {
           if (id is int && mapping.containsKey(id)) {
             c['id'] = mapping[id];
           }
+          final ctid = c['container_type_id'];
+          if (ctid is int && mapping.containsKey(ctid)) {
+            c['container_type_id'] = mapping[ctid];
+          }
         }
+      }
+    }
+
+    // c-8-catalog-create-offline: draft-поля и container_type на верхнем
+    // уровне payload.
+    const keys = [
+      'draft_site',
+      'draft_site_id',
+      'draft_research_type',
+      'draft_research_type_id',
+      'container_type',
+      'container_type_id',
+    ];
+    for (final key in keys) {
+      final v = payload[key];
+      if (v is int && mapping.containsKey(v)) {
+        payload[key] = mapping[v];
       }
     }
   }
 
-  /// c-2d-2: перемапить `local_ref`.
-  ///
-  /// Поддерживает:
-  /// - int-строку (`"-1"` → `"42"`);
-  /// - JSON-массив int (`"[-1,-2]"` → `"[42,43]"`).
-  ///
-  /// Прочее (null, невалидный JSON, нет ключей) — без изменений.
   @visibleForTesting
   static String? remapLocalRef(String? localRef, Map<int, int> mapping) {
     if (localRef == null || mapping.isEmpty) return localRef;
-
     final asInt = int.tryParse(localRef);
     if (asInt != null) {
       return mapping.containsKey(asInt) ? mapping[asInt].toString() : localRef;
     }
-
     try {
       final parsed = jsonDecode(localRef);
       if (parsed is List) {
@@ -236,18 +249,10 @@ class SyncQueueDao {
             .toList();
         return jsonEncode(mapped);
       }
-    } catch (_) {
-      // не JSON — оставляем как есть
-    }
+    } catch (_) {}
     return localRef;
   }
 
-  /// c-2d-2c: заменить negative ID в endpoint.
-  ///
-  /// `/storage/containers/-1/fill-samples/` → `/storage/containers/42/fill-samples/`.
-  /// `/storage/containers/-1/` → `/storage/containers/42/`.
-  /// Endpoint без ID (`bulk-create`, `bulk-place`) — без изменений.
-  /// Positive ID — без изменений (идемпотентно).
   @visibleForTesting
   static String remapEndpoint(String endpoint, Map<int, int> mapping) {
     if (mapping.isEmpty) return endpoint;

@@ -1,16 +1,18 @@
 /// Сервис справочников (c-7b-full, c-7f, c-7c, c-7-offline-catalog,
-/// c-8-catalog-create).
+/// c-8-catalog-create, c-8-catalog-create-offline).
 ///
 /// Онлайн: запрос к API (с пагинацией), сохраняем страницы в кэш.
 /// Офлайн (`isNetworkError`): читаем из кэша.
 ///
-/// c-8-catalog-create: `create(kind, payload)` — POST в справочник,
-/// сохраняет результат в кэш. Офлайн — SnackBar (в UI), сервис бросает
-/// `ApiException`. Полное офлайн-создание (маппинг local→server) —
-/// отдельный заход `c-8-catalog-create-offline`.
+/// c-8-catalog-create-offline: `create` при `isNetworkError` создаёт
+/// локально (negative ID) + `sync_queue` + возвращает
+/// `CreatedCatalogItem(queued: true)`. `SyncPusher` во втором заходе
+/// (`c-8-catalog-create-offline-b`) перемапит negative → server и
+/// обновит зависимые операции.
 library;
 
 import '../db/catalog_dao.dart';
+import '../db/sync_queue_dao.dart';
 import '../models/catalog.dart';
 import 'api_client.dart';
 
@@ -24,13 +26,31 @@ typedef GetCatalogByParent = Future<List<Map<String, dynamic>>> Function(
   String kind,
   int parentId,
 );
+typedef SaveLocalOffline = Future<int> Function(
+  String kind,
+  Map<String, dynamic> payload,
+);
+typedef Enqueue = Future<void> Function({
+  required String action,
+  required String endpoint,
+  required Map<String, dynamic> payload,
+  String? localRef,
+});
 
-/// Результат `create`: серверный id и сырой JSON.
+/// Результат `create`.
+///
+/// `queued = false` — серверный ID, `raw` — ответ сервера.
+/// `queued = true` — negative ID, `raw` — локальный payload + `id`.
 class CreatedCatalogItem {
-  const CreatedCatalogItem({required this.id, required this.raw});
+  const CreatedCatalogItem({
+    required this.id,
+    required this.raw,
+    this.queued = false,
+  });
 
   final int id;
   final Map<String, dynamic> raw;
+  final bool queued;
 }
 
 class CatalogService {
@@ -39,14 +59,20 @@ class CatalogService {
     SaveCatalog? saveCatalog,
     GetCatalog? getCatalog,
     GetCatalogByParent? getCatalogByParent,
+    SaveLocalOffline? saveLocalOffline,
+    Enqueue? enqueue,
   }) : _saveCatalog = saveCatalog ?? _defaultSave,
        _getCatalog = getCatalog ?? CatalogDao.getAll,
-       _getByParent = getCatalogByParent ?? CatalogDao.getByParent;
+       _getByParent = getCatalogByParent ?? CatalogDao.getByParent,
+       _saveLocalOffline = saveLocalOffline ?? CatalogDao.saveLocalOffline,
+       _enqueue = enqueue ?? _defaultEnqueue;
 
   final ApiClient _client;
   final SaveCatalog _saveCatalog;
   final GetCatalog _getCatalog;
   final GetCatalogByParent _getByParent;
+  final SaveLocalOffline _saveLocalOffline;
+  final Enqueue _enqueue;
 
   static Future<void> _defaultSave(
     String kind,
@@ -54,6 +80,20 @@ class CatalogService {
     int? parentId,
   }) {
     return CatalogDao.saveAll(kind, items, parentId: parentId);
+  }
+
+  static Future<void> _defaultEnqueue({
+    required String action,
+    required String endpoint,
+    required Map<String, dynamic> payload,
+    String? localRef,
+  }) {
+    return SyncQueueDao.enqueue(
+      action: action,
+      endpoint: endpoint,
+      payload: payload,
+      localRef: localRef,
+    );
   }
 
   // ----- Типизированные справочники -----
@@ -128,40 +168,66 @@ class CatalogService {
     );
   }
 
-  // ----- Создание справочника (c-8-catalog-create) -----
+  // ----- Создание справочника (c-8-catalog-create + offline) -----
 
-  /// POST в справочник. Только онлайн.
+  /// POST в справочник.
   ///
   /// `kind` — `site` / `research_type` / `laboratory` / `container_type`
-  /// (для topology не поддерживаем — см. `c-8-catalog-create-topology`).
+  /// (топология — отдельный заход).
   ///
-  /// После успешного POST результат сохраняется в кэш (`CatalogDao.saveAll`)
-  /// — следующий `fetch*` вернёт его и онлайн, и офлайн.
-  ///
-  /// Офлайн (`isNetworkError`) — пробрасывает `ApiException`, UI показывает
-  /// SnackBar «Требуется подключение к серверу».
+  /// Онлайн — POST, сохраняем ответ в кэш, `CreatedCatalogItem(queued: false)`.
+  /// Офлайн (`isNetworkError`) — `CatalogDao.saveLocalOffline` (negative ID)
+  /// + `sync_queue` (POST, `localRef: negativeId`),
+  /// `CreatedCatalogItem(queued: true)`.
   Future<CreatedCatalogItem> create(
     String kind,
     Map<String, dynamic> payload,
   ) async {
     final (path, saveKind) = _kindToEndpoint(kind);
-    final response = await _client.post<Map<String, dynamic>>(
-      path,
-      data: payload,
-    );
-    final data = response.data;
-    if (data == null || data['id'] is! int) {
-      throw ApiException(
-        message: 'Пустой ответ при создании справочника.',
-        statusCode: response.statusCode,
-      );
-    }
     try {
-      await _saveCatalog(saveKind, [data]);
+      final response = await _client.post<Map<String, dynamic>>(
+        path,
+        data: payload,
+      );
+      final data = response.data;
+      if (data == null || data['id'] is! int) {
+        throw ApiException(
+          message: 'Пустой ответ при создании справочника.',
+          statusCode: response.statusCode,
+        );
+      }
+      try {
+        await _saveCatalog(saveKind, [data]);
+      } catch (_) {
+        // Кэш не критичен.
+      }
+      return CreatedCatalogItem(id: data['id'] as int, raw: data);
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      return _createOffline(path, saveKind, payload);
     } catch (_) {
-      // Кэш не критичен.
+      // DioException/Timeout — всё, что не ApiException, считаем сетью.
+      return _createOffline(path, saveKind, payload);
     }
-    return CreatedCatalogItem(id: data['id'] as int, raw: data);
+  }
+
+  Future<CreatedCatalogItem> _createOffline(
+    String path,
+    String saveKind,
+    Map<String, dynamic> payload,
+  ) async {
+    final negativeId = await _saveLocalOffline(saveKind, payload);
+    await _enqueue(
+      action: 'POST',
+      endpoint: path,
+      payload: payload,
+      localRef: '$negativeId',
+    );
+    return CreatedCatalogItem(
+      id: negativeId,
+      raw: {...payload, 'id': negativeId, '_pending_sync': true},
+      queued: true,
+    );
   }
 
   /// `kind` → `(POST endpoint, kind для CatalogDao.saveAll)`.
