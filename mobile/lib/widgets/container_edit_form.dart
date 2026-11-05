@@ -1,4 +1,4 @@
-/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1 + c-8b-fix-2).
+/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1 + c-8b-fix-2 + c-8b-fix-3).
 ///
 /// Поля:
 /// - `container_number` — текст;
@@ -12,12 +12,15 @@
 ///
 /// c-8b-fix-1: кнопка «Сохранить» — sticky внизу (вне ListView).
 ///
-/// c-8b-fix-2:
-/// - payload обогащается `container_type_name` / `draft_site_name` /
-///   `draft_research_type_name` — чтобы после офлайн-`update`
-///   `Container.fromJson` показывал имена, а не старые (пустые).
-///   Сервер (ContainerSerializer) эти поля — `read_only`, игнорирует.
-/// - убрано «(черновик)» из лейблов.
+/// c-8b-fix-2: payload с `*_name` для локального кэша; лейблы без
+/// «(черновик)».
+///
+/// c-8b-fix-3 (ТД-66): если справочники не загружены (`_catalogsError !=
+/// null`) — форма **не блокирует** сохранение. Dropdown'ы
+/// `container_type` / `draft_site` / `draft_research_type` — `disabled`
+/// (нельзя изменить без справочника), в payload не идут. Текстовые
+/// поля редактируются и отправляются. Баннер с «Повторить» для
+/// перезагрузки справочников.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -154,37 +157,33 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_catalogsLoading) return;
-    if (_catalogsError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Справочники не загружены. Проверьте сеть и откройте форму '
-            'раз в онлайне.',
-          ),
-        ),
-      );
-      return;
-    }
+    // c-8b-fix-3 (ТД-66): если справочники не загружены, не блокируем —
+    // сохраняем текстовые поля, dropdown'ы не трогаем.
     setState(() => _saving = true);
 
     final number = _numberCtrl.text.trim();
     final posText = _positionCtrl.text.trim();
-    // c-8b-fix-2: `*_name` — чтобы локальный кэш после офлайн-`update`
-    // показал новое имя (Container.fromJson читает *_name). Сервер
-    // эти поля игнорирует (read_only в ContainerSerializer).
+    // Текстовые поля — всегда.
     final payload = <String, dynamic>{
       'container_number': number.isEmpty ? null : number,
-      'container_type': _selectedContainerTypeId,
-      'container_type_name': _containerTypeName(),
       'comment': _commentCtrl.text.trim(),
       'position_on_pallet': posText.isEmpty ? null : int.tryParse(posText),
-      'draft_site': _selectedSiteId,
-      'draft_site_name': _siteName(),
-      'draft_research_type': _selectedResearchTypeId,
-      'draft_research_type_name': _researchTypeName(),
       'draft_work_order_coded': _draftCodedCtrl.text.trim(),
       'draft_work_order_incoming': _draftIncomingCtrl.text.trim(),
     };
+
+    // c-8b-fix-3: dropdown-поля — только если справочники загружены.
+    // Иначе они disabled и не должны уйти в payload (иначе перезапишем
+    // старые ID на сервере — не то, что пользователь хотел, или null).
+    // c-8b-fix-2: `*_name` — для локального кэша.
+    if (_catalogsError == null) {
+      payload['container_type'] = _selectedContainerTypeId;
+      payload['container_type_name'] = _containerTypeName();
+      payload['draft_site'] = _selectedSiteId;
+      payload['draft_site_name'] = _siteName();
+      payload['draft_research_type'] = _selectedResearchTypeId;
+      payload['draft_research_type_name'] = _researchTypeName();
+    }
 
     try {
       await widget.onSubmit(payload);
@@ -201,34 +200,13 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_catalogsError != null) {
-      return ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Text(
-                    _catalogsError!,
-                    style: TextStyle(color: theme.colorScheme.error),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _loadCatalogs,
-                    child: const Text('Повторить'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
+    // c-8b-fix-3: при `_catalogsError` форму **не скрываем**. Баннер
+    // сверху + dropdown'ы disabled.
+    final catalogsBroken = _catalogsError != null;
+    final textDisabled = _saving;
+    final dropdownDisabled = _saving || catalogsBroken;
+    final saveDisabled = _saving || _catalogsLoading;
 
-    final disabled = _saving;
     final sites = _sites ?? const <Site>[];
     final researchTypes = _researchTypes ?? const <ResearchType>[];
     final containerTypes = _containerTypes ?? const <ContainerType>[];
@@ -241,9 +219,42 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (catalogsBroken) ...[
+                  Material(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber,
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Справочники не загружены. Тип тары, участок и '
+                              'ТИ изменить нельзя — остальные поля доступны.',
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _loadCatalogs,
+                            child: const Text('Повторить'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 TextFormField(
                   controller: _numberCtrl,
-                  enabled: !disabled,
+                  enabled: !textDisabled,
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(
                     labelText: 'Номер тары',
@@ -252,11 +263,11 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildContainerTypeDropdown(containerTypes, disabled),
+                _buildContainerTypeDropdown(containerTypes, dropdownDisabled),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _commentCtrl,
-                  enabled: !disabled,
+                  enabled: !textDisabled,
                   maxLines: 3,
                   minLines: 2,
                   decoration: const InputDecoration(
@@ -268,7 +279,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _positionCtrl,
-                  enabled: !disabled,
+                  enabled: !textDisabled,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Позиция на поддоне',
@@ -284,13 +295,13 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                   },
                 ),
                 const SizedBox(height: 16),
-                _buildSiteDropdown(sites, disabled),
+                _buildSiteDropdown(sites, dropdownDisabled),
                 const SizedBox(height: 16),
-                _buildResearchTypeDropdown(researchTypes, disabled),
+                _buildResearchTypeDropdown(researchTypes, dropdownDisabled),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _draftCodedCtrl,
-                  enabled: !disabled,
+                  enabled: !textDisabled,
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(
                     labelText: 'Н/З (тек.)',
@@ -300,7 +311,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _draftIncomingCtrl,
-                  enabled: !disabled,
+                  enabled: !textDisabled,
                   style: const TextStyle(fontFamily: 'monospace'),
                   decoration: const InputDecoration(
                     labelText: 'Н/З (вх.)',
@@ -317,7 +328,7 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: disabled ? null : _save,
+                  onPressed: saveDisabled ? null : _save,
                   icon: _saving
                       ? const SizedBox(
                           height: 18,
@@ -367,9 +378,15 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   }
 
   Widget _buildSiteDropdown(List<Site> sites, bool disabled) {
+    // c-8b-fix-3: если текущий ID не в справочнике — показываем `null`,
+    // иначе `DropdownButton` упадёт с assertion.
+    final safeValue = sites.any((s) => s.id == _selectedSiteId)
+        ? _selectedSiteId
+        : null;
+
     return DropdownButtonFormField<int?>(
-      key: ValueKey('draft_site_$_selectedSiteId'),
-      initialValue: _selectedSiteId,
+      key: ValueKey('draft_site_$safeValue'),
+      initialValue: safeValue,
       decoration: const InputDecoration(
         labelText: 'Участок',
         border: OutlineInputBorder(),
@@ -385,9 +402,14 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   }
 
   Widget _buildResearchTypeDropdown(List<ResearchType> types, bool disabled) {
+    // c-8b-fix-3: то же — защита от assertion.
+    final safeValue = types.any((t) => t.id == _selectedResearchTypeId)
+        ? _selectedResearchTypeId
+        : null;
+
     return DropdownButtonFormField<int?>(
-      key: ValueKey('draft_research_type_$_selectedResearchTypeId'),
-      initialValue: _selectedResearchTypeId,
+      key: ValueKey('draft_research_type_$safeValue'),
+      initialValue: safeValue,
       decoration: const InputDecoration(
         labelText: 'Тип исследования',
         border: OutlineInputBorder(),
