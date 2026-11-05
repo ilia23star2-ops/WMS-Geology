@@ -55,7 +55,7 @@ GitHub Actions: `.github/workflows/ci.yml`.
 
 **Backend: 842 теста.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
-**Mobile: 196 юнит-тестов.**
+**Mobile: 218 юнит-тестов.**
 
 ### Backend — покрытие по приложениям
 
@@ -84,20 +84,20 @@ GitHub Actions: `.github/workflows/ci.yml`.
 - `TokenStorage`, `ApiClient` (Dio, JWT).
 - Модели `Container`, `Sample`, `ScanHistoryEntry`, `ContainerHistoryEntry`.
 - `SyncService` (Pull, pre-fetch истории, `?updated_since=`, reconcile, `PullStats`).
-- `SyncPusher` (PushResult, onSuccess, сброс `_pending_sync`, маппинг `bulk-create`).
+- `SyncPusher` (PushResult, onSuccess, сброс `_pending_sync`, маппинг `bulk-create`, `processedIds`).
 - `SyncProvider` (`PullStats`, `PushResult`, `_lastPullSince`).
 - `NetworkProbe`, `NetworkStatusProvider` (включая `pingNow`).
 - `scan_window` (портрет + ландшафт).
 - `sample_range_parser`, `int_ranges`.
-- `catalog` (модели), `container`, `container_history_entry`.
+- `catalog` (модели), `container`, `container_history_entry`, `named_catalog`.
 - `label_pdf_generator` (offline-рендер PDF на Dart).
 - `catalog_service` (кэш справочников, fallback, `catalogParentId`).
-- `container_service` (`bulkPlace` online/offline, `fetchHistory` online/cache, `fetchList`, `bulkCreate` online/offline + `BulkCreateResult`, `Container.fromJson` fallback).
-- `sample_service` (`fetchByContainerId` online/cache + natural sort, `fillSamples` online/offline, `update`/`dispose`/`restore`/`deleteSample` online/offline, `updateLocalOffline`/`deleteLocalOffline` + `_rebuildFillPayload`).
+- `container_service` (`bulkPlace` online/offline + локальное обновление, `fetchHistory` online/cache, `fetchList`, `bulkCreate` online/offline + `BulkCreateResult`, `update` online/offline + `UpdateOutcome`, `Container.fromJson` fallback).
+- `sample_service` (`fetchByContainerId` online/cache + natural sort, `fillSamples` online/offline + negative-ID, `update`/`dispose`/`restore`/`deleteSample` online/offline, `updateLocalOffline`/`deleteLocalOffline` + `_rebuildFillPayload`).
 - `natural_sort` (`naturalCompare`, `naturalCompareSampleNumber`).
-- `sync_queue_dao` (13: `remapInPlace` — container_id / container_ids / containers[].id / no-op; `remapLocalRef` — int-строка / JSON-массив / null / невалидный).
-- `container_from_json` (6: серверный формат, локальный `*_id` fallback, пустые поля → 0/null, `_pending_sync`).
-- `sync_pusher` (5: +1 на передачу `localRef` + `responseData`).
+- `sync_queue_dao` (21: `remapInPlace`, `remapLocalRef`, `remapEndpoint`).
+- `container_from_json` (6).
+- `sync_pusher` (5: bulk-create + localRef + responseData + reload; PATCH containers — надо проверить актуальную версию).
 - `user`, `widget_test`.
 
 UI (экраны, сканер, диалоги) — device-check на планшете.
@@ -170,10 +170,21 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 ### Mobile, `c-2d-2a` + `c-2d-2a-fix-3`
 
-- `sync_queue_dao_test.dart` (13 тестов: `remapInPlace` для `container_id` / `container_ids[]` / `containers[].id` / no-op; `remapLocalRef` для int-строки / JSON-массива / null / невалидного JSON).
-- `container_from_json_test.dart` (6 тестов: серверный формат, локальный `*_id` fallback, пустые поля → `0`/`null`, `_pending_sync`).
-- `sync_pusher_test.dart` (+1 тест: `onSuccess` получает `localRef` + `responseData` для `bulk-create`).
+- `sync_queue_dao_test.dart` (13: `remapInPlace`, `remapLocalRef`).
+- `container_from_json_test.dart` (6: серверный формат, локальный `*_id` fallback).
+- `sync_pusher_test.dart` (+1: `onSuccess` получает `localRef` + `responseData` для `bulk-create`).
 - `container_service_test.dart` (`bulkCreate` возвращает `BulkCreateResult {count, queued}`).
+
+### Mobile, `c-2d-2c` + fixes
+
+- `sync_queue_dao_test.dart` (+8: `remapEndpoint` — negative fill-samples / negative delete / positive no-op / bulk-create no-op / bulk-place no-op / samples endpoint no-op / negative без mapping / пустой mapping).
+- `sample_service_test.dart` (+3: `fillSamples` при negative-ID — POST не уходит, локальные + очередь с `localRef`, `containerNumber` обновляется, статус `PENDING_PLACEMENT`).
+- `container_service_test.dart` (+3: `bulkPlace` negative-ID — POST не уходит, очередь с `localRef = "[-N]"`, `updateLocationLocal` вызван; смешанные negatives+positives — очередь атомарно, `localRef = "[-1,-2]"`; офлайн-локально — `status=ACTIVE`).
+- `named_catalog_test.dart` (5: `fullAddress` из `json['full_address']`, `label` приоритеты, пустой `full_address` → null).
+
+### Mobile, `c-8b`
+
+- `container_service_test.dart` (+3: `update` — онлайн PATCH, офлайн → `sync_queue` PATCH + `updateFieldsLocal` + `setPendingSync`, валидация-400 → rethrow).
 
 ---
 
@@ -210,16 +221,17 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - **stale-тесты** — копятся при прогоне только `apps/<app>/`. Перед закрытием — `pytest -q` целиком.
 - **`tail` буферизует** — для прогресса без пайпа.
 - **Prefetch с `to_attr`:** `getattr(obj, "active_items", None)`.
-- **SQLite (mobile):** тесты через DI (`saveContainers`, `saveSamples`, `saveCatalog`, `saveHistory`, `saveSamples`, `getCached`, `getLocalNegative`, `updateLocalStatus`, `updateLocalFields`, `deleteLocal`, `getQueuePayload`, `updateQueuePayload`, `setPendingSyncLocal`, `hasPendingForContainer`, `getAllCached`). Иначе `databaseFactory not initialized`.
+- **SQLite (mobile):** тесты через DI (`saveContainers`, `saveSamples`, `saveCatalog`, `saveHistory`, `saveSamples`, `getCached`, `getLocalNegative`, `updateLocalStatus`, `updateLocalFields`, `deleteLocal`, `getQueuePayload`, `updateQueuePayload`, `setPendingSyncLocal`, `hasPendingForContainer`, `getAllCached`, `updateLocationLocal`, `updateFieldsLocal`). Иначе `databaseFactory not initialized`.
 - **Fake ApiClient (mobile):** `Fake implements ApiClient` с переопределением `get`/`post`/`patch`/`delete`.
-- **`ArgumentError` vs `ApiException`:** `bulkPlace` / `updateLocalOffline` с невалидными аргументами → `ArgumentError`, не `ApiException`. Это контракт.
+- **`ArgumentError` vs `ApiException`:** `bulkPlace` / `updateLocalOffline` / `update` с невалидными аргументами → `ArgumentError`, не `ApiException`. Это контракт.
 - **`MapEntry` не реализует `==` по значению** — не сравнивать коллекции `MapEntry` через `expect`, использовать `.length` + `.key` + `.value`.
 - **`[...list]..sort(...)`** — если список может быть unmodifiable (`cast`, `const`), делать копию перед сортировкой.
 - **`updatedSince` в Pull:** `DateTime.utc(...)` → `.toUtc().toIso8601String()`. Тест `pullAll(updatedSince:)` проверяет наличие `updated_since` в `queryParameters`.
 - **`naturalCompare`:** тесты на `TST6701 < TST6710`, ведущие нули, разные префиксы, пустую строку.
 - **`NetworkStatusProvider.pingNow`** — без `@visibleForTesting`, чтобы вызывать из `NetworkBadge`.
-- **`SyncQueueDao.remapInPlace` / `remapLocalRef`** — `@visibleForTesting`, тесты на все ветки (map / list / вложенный / no-op; int / JSON / null / invalid).
-- **`Container.fromJson`** — тесты на серверный формат, локальный `*_id` fallback и пустые поля (не должно быть краша).
+- **`SyncQueueDao.remapInPlace` / `remapLocalRef` / `remapEndpoint`** — `@visibleForTesting`, тесты на все ветки.
+- **`Container.fromJson`** — тесты на серверный формат, локальный `*_id` fallback, пустые поля.
+- **`NamedCatalog.fromJson`** — тесты на `fullAddress` (из `json['full_address']`), `label` приоритеты.
 
 ---
 
@@ -236,7 +248,7 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 **Сделано:**
 - Три уровня тестов (unit/integration/contract).
-- **842 backend** + 24 web + **196 mobile** = **1062 теста**.
+- **842 backend** + 24 web + **218 mobile** = **1084 теста**.
 - Contract-тесты OpenAPI.
 - Все stale-тесты после серии 2f починены.
 - Аудит тары — 8 тестов.
@@ -256,6 +268,8 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - Natural sort — 8 тестов.
 - `pingNow` — покрыт `network_probe_test` / `network_status_provider_test` (device-check).
 - Маппинг ID после `bulk-create` — 13 (`sync_queue_dao_test`) + 6 (`container_from_json_test`) + 1 (`sync_pusher_test`).
+- Офлайн на офлайн-тарах (`c-2d-2c`) — 8 (`remapEndpoint`) + 3 (`fillSamples` negative) + 3 (`bulkPlace` negative) + 5 (`named_catalog`).
+- Офлайн-редактирование шапки (`c-8b`) — 3 (`update`).
 
 **Осталось:**
 - **ТД-34.** `console.error` в catch-блоках web — низкий.
@@ -266,8 +280,10 @@ UI (экраны, сканер, диалоги) — device-check на планш
 - **ТД-59.** Pull истории = N запросов. Backend batch-эндпоинт.
 - **ТД-60.** `catalogParentId` — проверить на реальных данных.
 - **ТД-61.** UI overflow 3.5 / 7.2 px — не воспроизвелось, следить.
-- **ТД-62.** `_lastPullSince` не персистится — Pull раз в сессию полный.
-- **ТД-63.** `SampleDao.getByContainerId` natural sort в памяти — для больших тар оптимизировать в SQL.
-- **ТД-64.** `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом (нет DI на `ContainerDao.saveAll`).
-- **ТД-65.** `_defaultOnSuccess` не снимает `pending_sync` для `fill-samples` / `bulk-place` на negative-ID — закрывается в `c-2d-2c`.
-- Покрытие серии `3.x-offline` — по мере реализации (`c-2d-2c`, `c-8-*`).
+- **ТД-62.** `_lastPullSince` не персистится.
+- **ТД-63.** `SampleDao.getByContainerId` natural sort в памяти.
+- **ТД-64.** `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом.
+- **ТД-65.** `_defaultOnSuccess` `pending_sync` для `fill-samples` / `bulk-place` на negative-ID — ✅ закрыто в `c-2d-2c`.
+- **ТД-66.** `c-8b-fix-2`: офлайн-редактирование шапки блокируется при пустом кэше справочников.
+- **ТД-67.** `ContainersPage.tsx` — `(row as any).comment` — временный обход типа.
+- Покрытие серии `3.x-offline` — по мере реализации (`c-8b-fix-2`, `c-8-catalog-create-offline`).

@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-11-03
+**Дата обновления:** 2026-11-05
 
 ---
 
@@ -79,16 +79,26 @@
 | c-9-natural-sort | Natural sort | `TST6701 < TST6710` | ✅ |
 | c-6b-updated-since-pull | `?updated_since=` в Pull | `_lastPullSince`, `PullStats` = изменённые | ✅ |
 | c-8-catalog-create | Создание справочников офлайн | UI + `CatalogService.create` | ✅ |
-| c-2d-2a | Офлайн-создание тары | SQLite v8 (`local_ref`), negative ID + `sync_queue`, маппинг ID после `bulk-create` (`remapAllLocalRefs`, `ContainerDao.remapId`, `SampleDao.remapContainerId`) | ✅ |
-| c-2d-2a-fix-3 | Fix локального формата тары | `Container.fromJson` fallback на `*_id`, серверный формат JSON (`container_type` / `draft_site` / `draft_research_type`), история для negative-ID не зовёт сервер | ✅ |
+| c-2d-2a | Офлайн-создание тары | SQLite v8 (`local_ref`), negative ID + `sync_queue`, маппинг ID после `bulk-create` | ✅ |
+| c-2d-2a-fix-3 | Fix локального формата тары | `Container.fromJson` fallback на `*_id`, серверный формат JSON, история для negative-ID | ✅ |
 | c-2d-2b | Офлайн-создание тары (UI) | Покрыто в `c-2d-2a` (SnackBar «офлайн», `pending_sync`, реестр) | ✅ |
-| c-2d-2c | Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах | `local_ref` в queue, маппинг в payload | ⬜ |
-| c-8a | Backend: PATCH статусов | Эндпоинты для `sync_queue` | ⬜ |
-| c-8b | Mobile: Смена статуса тары | через `sync_queue` | ⬜ |
-| c-8c | Mobile: Смена статуса пробы | `IN_STORAGE` → `SELECTED` → `DISPOSED` | ⬜ |
+| c-2d-2c | Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах | `localRef` в queue, `remapEndpoint`, `processedIds` в `SyncPusher` | ✅ |
+| c-2d-2c-fix-1 | Локальное размещение в UI | `updateLocationLocal` (`ACTIVE`, адрес) при offline | ✅ |
+| c-2d-2c-fix-2 | Полный путь локации | `NamedCatalog.fullAddress`, `PlaceContainerDialog` → `fullAddress ?? label` | ✅ |
+| c-8b | Офлайн-редактирование шапки тары | `ContainerService.update` → `sync_queue` PATCH + `updateFieldsLocal` | ✅ |
+| c-8b-fix-1 | UI шапки тары | `useSafeArea`, sticky «Сохранить» вне `ListView` | ✅ |
+| c-2f-comment-web | Веб: комментарий тары | `ContainerDetailDialog` (шапка) + `ContainersPage` (колонка) | ✅ |
+| c-8b-fix-2 | Офлайн-редактирование без справочников | Диагностика + разрешить сохранение полей без справочников | ⬜ |
+| c-8-catalog-create-offline | Офлайн-создание справочников | `CatalogService.create` → `sync_queue` + local→server маппинг | ⬜ |
+| c-9-overflow-fix-4 | 2 overflow (3.5 / 7.2 px) | Косметика, `ТД-61` | ⬜ |
 | c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) | ✅ |
-| c-8e | Mobile: Auto-sync USB | Push → Pull, автотриггер | ⬜ |
 | c-5 | Файловая синхронизация | Sneakernet через флешку | ⏸ отложено |
+
+**Снятые с плана после аудита (2026-11-05):**
+- **`c-8a`** (Backend: PATCH статусов) — все эндпоинты уже есть: `PATCH /storage/containers/{id}/`, `PATCH /samples/{id}/`, `POST /samples/{id}/dispose/`, `restore/`, `bulk-place`, `fill-samples`.
+- **`c-8c`** (Mobile: смена статуса пробы) — `SampleService.update`/`dispose`/`restore`/`deleteSample` с `sync_queue` в `c-9-fill-offline-2c-3`.
+- **`c-8d`** (Mobile: размещение тары) — `bulkPlace` с `sync_queue` в `c-7c`.
+- **`c-8e`** (Mobile: Auto-sync USB) — `NetworkStatusProvider` реагирует на `isOnline: false → true`; USB-реконнект через `AppConfig.apiHost` уже триггерит.
 
 **Сборка на рабочем ПК:** `work-pc-setup/setup.ps1` (обязателен после `git reset --hard`), `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`, `flutter run --android-skip-build-dependency-validation`, `adb reverse` вручную.
 
@@ -151,7 +161,10 @@
 - [x] **Тап-пинг сети** — `c-6g-tap-ping`.
 - [x] **Создание справочников офлайн** — `c-8-catalog-create`.
 - [x] **Офлайн-создание тары** — `c-2d-2a` + `c-2d-2a-fix-3`.
-- [ ] **Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах** — `c-2d-2c` (`local_ref` в queue, маппинг в payload).
+- [x] **Офлайн-`fill-samples` / `bulk-place` на офлайн-тарах** — `c-2d-2c` + fixes.
+- [x] **Офлайн-редактирование шапки тары** — `c-8b` + `c-8b-fix-1`.
+- [x] **Веб: комментарий в карточке и реестре тары** — `c-2f-comment-web`.
+- [ ] **Офлайн-создание справочников через `sync_queue`** — `c-8-catalog-create-offline`.
 - [ ] **OCR старых этикеток** через `google_ml_kit`.
 - [ ] **Роли и права** детализированные.
 - [ ] **Дашборд с виджетами** под каждую роль.
@@ -205,7 +218,9 @@
 | ТД-62 | `SyncProvider._lastPullSince` в памяти. При перезапуске приложения — полный Pull. Персистить (`shared_preferences`) | низкий | при жалобах на «первый Pull долго» |
 | ТД-63 | Mobile: `SampleDao.getByContainerId` сортирует после декодирования JSON (naturalCompare). Для больших тар — natural sort в SQL | низкий | при жалобах на скорость |
 | ТД-64 | `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом: `ContainerDao.saveAll` уходит в `AppDatabase.instance` (нет DI). Нужен `saveContainers` в конструктор | низкий | при первом баге офлайн-создания |
-| ТД-65 | `_defaultOnSuccess` не снимает `pending_sync` для `fill-samples` / `bulk-place` на negative-ID до `c-2d-2c` (там будет `local_ref`) | низкий | закрывается в `c-2d-2c` |
+| ТД-65 | `_defaultOnSuccess` не снимает `pending_sync` для `fill-samples` / `bulk-place` на negative-ID до `c-2d-2c` (там будет `local_ref`) | ✅ | закрыто в `c-2d-2c` |
+| ТД-66 | `c-8b-fix-2`: офлайн-редактирование шапки блокируется, если кэш справочников пуст (`ContainerEditForm._catalogsError`). Разрешить сохранение `comment`, `position_on_pallet`, `container_number` без справочников | средний | `c-8b-fix-2` |
+| ТД-67 | `ContainersPage.tsx` — `valueGetter: (row as any).comment` — временный обход типа. Добавить `comment: string` в `web/src/api/types.ts::Container` | низкий | при следующем web-заходе |
 
 ---
 

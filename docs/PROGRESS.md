@@ -13,10 +13,7 @@
 
 ### Что закрыто (backend)
 
-- ✅ **`c-6a-pre`** (2026-10-30) — починка pre-existing:
-  - `log_audit(old_value=..., new_value=...)` — восстановлен параметр `old_value`.
-  - `UserProfile.__str__` — fallback `"без роли"`.
-  - `test_access_tokens.py` — 3 stale-теста.
+- ✅ **`c-6a-pre`** (2026-10-30) — починка pre-existing: `log_audit(old_value=..., new_value=...)` — восстановлен параметр `old_value`; `UserProfile.__str__` — fallback `"без роли"`; `test_access_tokens.py` — 3 stale-теста.
 - ✅ **`c-6a`** (2026-10-30) — `GET /health/` + денормализация `ContainerSerializer` + `select_related`.
 - ✅ **`c-6b`** (2026-10-30) — `?updated_since=<ISO 8601>` на `/storage/containers/` и `/samples/`.
 
@@ -32,96 +29,74 @@
 - ✅ **`c-6d-fix`** — scanWindow 220×220.
 - ✅ **`c-6d-fix-3`** — landscape-фикс.
 - ✅ **`c-6g`** — `NetworkStatusProvider` (heartbeat 10 с) + `NetworkBadge`.
-- ✅ **`c-6g-tap-ping`** (2026-11-02) — тап на иконке `NetworkBadge` → `pingNow()` (быстрый реконект без 10-сек). `pingNow` публичный (снят `@visibleForTesting`). Спиннер во время пинга.
+- ✅ **`c-6g-tap-ping`** (2026-11-02) — тап на иконке → `pingNow()`, публичный, спиннер.
 - ✅ **`c-6h`** — синхронизация disabled при офлайне.
 - ✅ **`c-6g-login`** — иконка на `LoginScreen`.
 
 ### Что закрыто (mobile, карточка тары)
 
 - ✅ **`c-7a`** — шапка + 3 вкладки + адаптив.
-- ✅ **`c-7b`** + **`c-7b-fix`** — `ContainerEditForm` в bottom sheet + `CatalogService`.
+- ✅ **`c-7b`** + **`c-7b-fix`** — `ContainerEditForm` + `CatalogService`.
 - ✅ **`c-7f`** + **`c-7f-fix`** — `FillContainerContent`.
-- ✅ **`c-7g`** — вкладка «Пробы» (поиск, bulk, `SampleEditDialog`).
-- ✅ **`c-7h`** + **`c-7h-fix`** + **`c-7h-fix-2`** — история сканов `Н/З · ТИ · номер`.
+- ✅ **`c-7g`** — вкладка «Пробы».
+- ✅ **`c-7h`** + **`c-7h-fix`** + **`c-7h-fix-2`** — история сканов.
 
-### Что закрыто (mobile, PDF-серия)
+### Что закрыто (mobile, PDF, размещение, офлайн-справочники)
 
-- ✅ **`c-7d`** — PDF предпросмотр (online).
-- ✅ **`c-7f-1`** — ассеты + `LabelData`.
-- ✅ **`c-7f-2`** — offline-рендер PDF на Dart.
+- ✅ **`c-7d`**, **`c-7f-1`**, **`c-7f-2`** — PDF online + offline.
+- ✅ **`c-7c`** — Разместить / Местоположение (`PlaceContainerDialog` offline через `sync_queue`).
+- ✅ **`c-7-offline-catalog`** — SQLite v5, `CatalogDao`, `CatalogService` fallback.
+- ✅ **`c-7e-1`**, **`c-7e-2`**, **`c-7e-3`** — офлайн-кэш истории + pre-fetch.
 
-### Что закрыто (mobile, размещение, c-7c)
+### Что закрыто (mobile, Drawer, реестр, офлайн-пробы, `c-9`)
 
-- ✅ **`c-7c`** — Разместить / Местоположение (`PlaceContainerDialog`, offline через `sync_queue`, `ContainerLocationDialog`).
+- ✅ **`c-9-drawer`**, **`c-9-container-list`**, **`c-9-container-list-order`**, **`c-9-overflow-fix`**, **`c-9-overflow-fix-2`**, **`c-9-container-create`**, **`c-9-container-list-actions`** (2026-11-02).
+- ✅ **`c-9-fill-offline-2a`**, **`2a-fix`**, **`2b`**, **`2c-1`**, **`2c-2`**, **`2c-3`**, **`2c-3-fix-1/2/3a/3b`**, **`2c-4`** — офлайн-редактирование проб.
+- ✅ **`c-9-auto-sync`**, **`c-9-natural-sort`**, **`c-6b-updated-since-pull`** (2026-11-02).
 
-### Что закрыто (mobile, офлайн-справочники и история, c-7-offline-catalog + c-7e)
+### Что закрыто (mobile, офлайн-создание тары и справочников, `c-8-catalog-create` + `c-2d-2a`)
 
-- ✅ **`c-7-offline-catalog`** — SQLite v5 (`catalog`), `CatalogDao`, `CatalogService` fallback, +9 эндпоинтов в Pull.
-- ✅ **`c-7e-1`** — `SampleService` офлайн возвращает кэш, включая пустой.
-- ✅ **`c-7e-2`** — SQLite v6 (`container_history`), `ContainerHistoryDao`, `fetchHistory` fallback.
-- ✅ **`c-7e-3`** — pre-fetch истории в `pullAll`.
+- ✅ **`c-8-catalog-create`** (2026-11-03) — офлайн-создание справочников: `CatalogCreateDialog`, `CatalogService.create` через `sync_queue`, интеграция в `CreateContainersDialog`.
+- ✅ **`c-2d-2a`** (2026-11-03) — SQLite v8 (`local_ref`), маппинг negative→server после `bulk-create` (`remapAllLocalRefs`, `ContainerDao.remapId`, `SampleDao.remapContainerId`), офлайн-создание тары (`BulkCreateResult`).
+- ✅ **`c-2d-2a-fix-3`** (2026-11-03) — `Container.fromJson` fallback на `*_id`, серверный формат JSON (`container_type` / `draft_site` / `draft_research_type`), история для negative-ID не зовёт сервер, SnackBar по `BulkCreateResult.queued`.
 
-### Что закрыто (mobile, Drawer и реестр тары, c-9)
+### Что закрыто (mobile, офлайн-операции на офлайн-тарах, `c-2d-2c`)
 
-- ✅ **`c-9-drawer`** (2026-11-02) — `Drawer` (гамбургер) с разделами как в вебе. Рабочие: Главная, Тара. Заглушки: Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники. Выход.
-- ✅ **`c-9-container-list`** (2026-11-02) — реестр тары: 4 фильтра (статус, тип, Н/З, ТИ), server-side пагинация, офлайн-кэш (фильтры в памяти), карточки с иконками статуса/печати.
-- ✅ **`c-9-container-list-order`** (2026-11-02) — порядок: `Н/З · ТИ` крупно + иконки, затем `Тип · номер`.
-- ✅ **`c-9-overflow-fix`** (2026-11-02) — overflow в фильтрах: `isExpanded`, `Wrap`, адаптив портрет/ландшафт.
-- ✅ **`c-9-overflow-fix-2`** (2026-11-02) — overflow в bulk-статусе: `isExpanded`, отдельная строка, ellipsis.
-- ✅ **`c-9-container-create`** (2026-11-02) — создание тары (`CreateContainersDialog`, `bulk-create`), FAB в реестре. +2 теста.
-- ✅ **`c-9-container-list-actions`** (2026-11-02) — кнопка по статусу: `PENDING_FILLING` → «Заполнить» (вкладка «Редактирование»), `PENDING_PLACEMENT` → «Разместить», `ACTIVE` → «Местоположение», `IN_TRANSIT`/`ISSUED` — без действия. `initialTabIndex` в `ContainerDetailScreen`.
+- ✅ **`c-2d-2c`** (2026-11-05) — офлайн-`fill-samples` / `bulk-place` на офлайн-тарах: `fillSamples` при `containerId < 0` → сразу очередь (`localRef = containerId`), `bulkPlace` при negatives → очередь атомарно (`localRef = JSON negatives`), `remapEndpoint` (fill-samples URL `/containers/-N/...` → `/containers/M/...`), `SyncPusher.pushAll` перезагружает очередь после `bulk-create` + `processedIds` (защита от зацикливания).
+- ✅ **`c-2d-2c-fix-1`** (2026-11-05) — при офлайн-`bulkPlace` локально обновлять `containers` (`ContainerDao.updateLocationLocal`: `status=ACTIVE`, `cell_id`, `cell_full_address`, `floor_room`, `floor_room_name`, `pallet=null`, `updated_at`) → UI сразу видит новое место.
+- ✅ **`c-2d-2c-fix-2`** (2026-11-05) — `NamedCatalog.fullAddress` (из `json['full_address']`), `PlaceContainerDialog._selectedCellAddress` → `fullAddress ?? label` (полный путь `В4/1/1/B/2` вместо короткого кода `2`).
 
-### Что закрыто (mobile, офлайн-редактирование проб, c-9-fill-offline)
+### Что закрыто (mobile, офлайн-редактирование шапки тары, `c-8b`)
 
-- ✅ **`c-9-fill-offline-2a`** (2026-11-02) — офлайн-создание проб: `fillSamples` при `isNetworkError` → локальные пробы (negative ID) + `sync_queue` (`FillOutcome.queued`).
-- ✅ **`c-9-fill-offline-2a-fix`** (2026-11-02) — `container_number` (updateNumberLocal) + статусы (`PENDING_PLACEMENT`/`SELECTED` вместо `NORMAL`/unknown) + `updateStatusLocal` (`PENDING_FILLING → PENDING_PLACEMENT`). ТИ/участок в локальных пробах.
-- ✅ **`c-9-fill-offline-2b`** (2026-11-02) — SQLite v7 (`pending_sync` ALTER без DROP), `ContainerDao.setPendingSync`, `Container.pendingSync`, `cloud_off` в реестре и шапке.
-- ✅ **`c-9-fill-offline-2c-1`** (2026-11-02) — инфраструктура офлайн-редактирования: `SyncQueueDao.getPayloadByEndpoint`/`updatePayloadByEndpoint`, `SampleDao.getLocalNegativeByContainer`/`updateLocalStatus` + разбивка в `saveLocalOffline`, `SampleService.updateLocalOffline`/`deleteLocalOffline`/`_rebuildFillPayload`. +3 теста.
-- ✅ **`c-9-fill-offline-2c-2`** (2026-11-02) — `SampleEditDialog` офлайн-режим: номер/справочники read-only, статус/dispose/restore/delete локально, `cloud_off` в `_sampleTile` и `_buildExistingRow`.
-- ✅ **`c-9-fill-offline-2c-3`** (2026-11-02) — офлайн-редактирование **серверных** проб: `update`/`dispose`/`restore`/`deleteSample` через `sync_queue`, `_pending_sync`, `needsSync` в UI. Regex fix `/samples/{id}/(dispose|restore)?`.
-- ✅ **`c-9-fill-offline-2c-3-fix-1`** (2026-11-02) — `fetchByContainerId` отдаёт кэш при `hasPendingForContainer` (иначе Pull перетирал pending серверными).
-- ✅ **`c-9-fill-offline-2c-3-fix-2`** (2026-11-02) — `PushResult` в `SyncPusher`, `onSuccess` (сброс `_pending_sync`/`pending_sync` по endpoint), SnackBar «Отправлено: N» в `SyncScreen`. +4 теста.
-- ✅ **`c-9-fill-offline-2c-3-fix-3a`** (2026-11-02) — reconcile при Pull: сброс `_pending_sync`, если записи в `sync_queue` нет. Regex fix `/samples/{id}/(dispose|restore)` — PATCH/DELETE теперь матчится.
-- ✅ **`c-9-fill-offline-2c-3-fix-3b`** (2026-11-02) — счётчик на кнопке синхронизации: `refresh()` после офлайн-операций, `PushResult` в `SyncProvider`, SnackBar «Отправлено: N» / «Загружено: M» / «Синхронизировано — отправлено: N, загружено: M». `HomeScreen` в офлайне «Синхронизация (N, нет связи)». +1 тест.
-- ✅ **`c-9-fill-offline-2c-4`** (2026-11-02) — редактирование `sample_number` у офлайн-проб (`parseSampleInput`, пересборка `_prefix`/`_middle`/`_sequence`/`_wellName`, `_rebuildFillPayload`). +1 тест.
+- ✅ **`c-8b`** (2026-11-05) — офлайн-редактирование шапки тары: `ContainerService.update` при `isNetworkError` → `sync_queue` (PATCH) + `ContainerDao.updateFieldsLocal` + `pending_sync`; `UpdateOutcome {online, queued}`; `SyncPusher._defaultOnSuccess` regex `^/storage/containers/(\d+)/$` → `clearPendingSync`; `_onSaveEdit` при `queued` перечитывает кэш + SnackBar «Сохранено офлайн».
+- ✅ **`c-8b-fix-1`** (2026-11-05) — UI: `useSafeArea: true` в bottom sheet, sticky кнопка «Сохранить» вне `ListView` (не уезжает под системный бар Android), высота = экран − клавиатура − safe area.
 
-### Что закрыто (mobile, автосинхронизация и счётчики, c-9)
+### Что закрыто (web, комментарий тары, `c-2f-comment-web`)
 
-- ✅ **`c-9-auto-sync`** (2026-11-02) — двусторонняя автосинхронизация при возврате сети: Push (если pending) + Pull (всегда), SnackBar через `scaffoldMessengerKey` (виден на любом экране). `PullStats` (containers/samples/total), `SyncScreen._runPullAction` «Загружено: N».
-- ✅ **`c-9-natural-sort`** (2026-11-02) — `naturalCompare` для `sample_number` (`TST6701 < TST6710`) в `SampleDao.getByContainerId`, `SampleService.fetchByContainerId`, `LabelData.fromContainer`. +8 тестов.
-- ✅ **`c-6b-updated-since-pull`** (2026-11-02) — `SyncProvider._lastPullSince` → `pullAll(updatedSince:)` → `?updated_since=<ISO UTC>` в `/storage/containers/` и `/samples/`. `PullStats` = только изменённые (85 больше не показывается при пустом Pull). +4 теста.
-
-### Что закрыто (mobile, офлайн-справочники, c-8-catalog-create)
-
-- ✅ **`c-8-catalog-create`** (2026-11-03) — офлайн-создание справочников: `CatalogCreateDialog` (UI), `CatalogService.create` через `sync_queue`, интеграция в `CreateContainersDialog` (кнопка «+» у каждого dropdown). Merge `fix/3.x-catalog-create` → `fix/2.x-mobile-bundle-c-2`.
-
-### Что закрыто (mobile, офлайн-создание тары, c-2d-2a)
-
-- ✅ **`c-2d-2a`** (2026-11-03) — SQLite v8 (`local_ref` в `sync_queue`, `ALTER TABLE` без потери данных), маппинг negative→server после `bulk-create` по индексу `created_containers[i].id` (`SyncQueueDao.remapAllLocalRefs` — payload + `local_ref`; `ContainerDao.remapId`; `SampleDao.remapContainerId`), `SyncPusher.onSuccess` (4 параметра: `endpoint`, `payload`, `localRef`, `responseData`). Офлайн-создание тары: negative ID, `BulkCreateResult {count, queued}`, `pending_sync = true` → иконка `cloud_off`. Проверка длины `created_containers` + `debugPrint` при расхождении. +18 тестов (`sync_queue_dao_test` × 13, `sync_pusher_test` 4-param × 4, `sync_pusher_test` +1).
-- ✅ **`c-2d-2a-fix-3`** (2026-11-03) — `Container.fromJson` fallback на `container_type_id` / `draft_site_id` / `draft_research_type_id` (страховка от старых записей + падения `as int`); `bulkCreate` офлайн пишет JSON **в серверном формате** (`container_type` / `draft_site` / `draft_research_type`); `ContainerDetailScreen._loadHistory` не ходит на сервер при `id < 0` (для локальной тары — «История появится после синхронизации»); `create_containers_dialog.dart` — SnackBar по `BulkCreateResult.queued` («офлайн, синхронизация при наличии связи»). +6 тестов (`container_from_json_test`).
+- ✅ **`c-2f-comment-web`** (2026-11-05) — `ContainerDetailDialog.tsx`: в шапке блок `Комментарий` (свободный `comment`) + `Шаблон` (`comment_template_text`), если заданы; `ContainersPage.tsx`: колонка «Комментарий» — `valueGetter` читает `comment` с fallback на `comment_template_text` (раньше показывала только шаблон, у большинства тар пустой).
 
 ### Инфраструктура (рабочий ПК, прокси)
 
-- **`setup.ps1` обязателен после `git reset --hard`** — восстанавливает сертификаты, `maven-local`, `local.properties`, `~/.gradle/gradle.properties`, aapt2, NDK.
+- **`setup.ps1` обязателен после `git reset --hard`**.
 - **`checkRevocation=false`** + **`aapt2FromMavenOverride`** + **`kotlin.incremental=false`** + **`kotlin.compiler.execution.strategy=in-process`** + **`org.gradle.parallel=false`** + **`org.gradle.workers.max=2`**.
-- **`android.aapt2FromMavenOverride=D:/Dev/android-sdk/build-tools/36.0.0/aapt2.exe`** — в `mobile/android/gradle.properties` (машинное, не коммитить).
+- **`android.aapt2FromMavenOverride=D:/Dev/android-sdk/build-tools/36.0.0/aapt2.exe`** — в `mobile/android/gradle.properties` + `~/.gradle/gradle.properties` (дубль — чтобы `git checkout` не сбивал).
 - **NDK `source.properties`** — `setup.ps1` без BOM.
 - **`flutter run --android-skip-build-dependency-validation`** — обязателен.
 - **`export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`** — в каждом окне Git Bash.
 
 ### Что осталось
 
-- ⬜ **`c-2d-2c`** — офлайн-`fill-samples` / `bulk-place` на офлайн-тарах (`local_ref` в queue, маппинг в payload). **Следующий.**
-- ⬜ **`c-8a`..`c-8e`** — PATCH статусов тары/пробы через `sync_queue`, auto-sync USB.
-- ⬜ **`c-9-overflow-fix-4`** — 2 overflow (3.5 px, 7.2 px) из лога; `file:line` не получен, `ТД-61`.
+- ⬜ **`c-8b-fix-2`** — офлайн-редактирование «требует соединение»: разрешить сохранение полей без справочников. **Следующий.**
+- ⬜ **`c-8-catalog-create-offline`** — офлайн-создание справочников через `sync_queue` (`CatalogService.create` сейчас только онлайн).
+- ⬜ **`c-9-overflow-fix-4`** — 2 overflow (3.5 px, 7.2 px), `ТД-61`.
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
-- ✅ **`c-8d`** — размещение через `sync_queue` — закрыто в `c-7c`.
+- ✅ **`c-8a`**, **`c-8c`**, **`c-8d`**, **`c-8e`** — сняты с плана после аудита 2026-11-05 (все эндпоинты уже есть, functional gaps закрыты в `c-7c` / `c-9-fill-offline-2c-3` / `NetworkStatusProvider`).
 
 ### Метрики
 
 - **Backend: 842 теста** (без изменений).
 - **Web: 24 юнит-теста** (без изменений).
-- **Mobile: 196 юнит-тестов** (было 32 в `2.x-mobile`; +164 за `3.x-offline`).
+- **Mobile: 218 юнит-тестов** (было 32 в `2.x-mobile`; +186 за `3.x-offline`).
 
 ---
 

@@ -36,8 +36,6 @@
 
 ### 1.51–1.74 (сводка)
 
-Полные формулировки — в истории git. Кратко:
-
 - **1.51** — ручной ввод доступен всегда.
 - **1.52** — портал лабораторий.
 - **1.53** — циклические импорты через строковые ссылки.
@@ -80,8 +78,6 @@
 
 **Решение:** Mobile Pull поддерживает `?updated_since=`, отдаём только изменённые записи.
 
-**Требует:** `Container.updated_at` (уже был в v9 моделей, пачка `3.x-offline-sync-b-1a`).
-
 **Причина:** полный Pull 10k проб долго и много трафика.
 
 **Где:** `backend/apps/storage/filters.py::apply_updated_since`, `views.py::ContainerViewSet` и `SampleViewSet`.
@@ -101,7 +97,7 @@
 **Решение:** healthcheck на `/health/`, вне `/api/v1/`, без JWT. Отдаёт `{status, service, time}` (200).
 
 **Причина:**
-- Mobile (c-6c) пингует перед выбором `apiBaseUrl` — JWT ещё нет, нельзя требовать авторизацию.
+- Mobile (`c-6c`) пингует перед выбором `apiBaseUrl` — JWT ещё нет, нельзя требовать авторизацию.
 - Не обращается к БД — отвечает, пока процесс Django жив.
 - Простая проверка связи, не бизнес-эндпоинт.
 
@@ -110,64 +106,34 @@
 
 ### 1.79. 2026-11-02 — `?updated_since=` только с таймзоной, naive → 400
 
-**Решение:** `?updated_since=<ISO 8601>` на `/storage/containers/` и `/samples/`. С таймзоной (UTC, суффикс Z или +00:00). Naive datetime → 400. Невалидный ISO → 400. Пусто → без фильтра (полный Pull).
+**Решение:** `?updated_since=<ISO 8601>` на `/storage/containers/` и `/samples/`. С таймзоной (UTC, суффикс Z или +00:00). Naive datetime → 400. Невалидный ISO → 400. Пусто → без фильтра.
 
-**Причина:**
-- Mobile всегда шлёт UTC; naive-время даст неоднозначность.
-- Явная ошибка лучше молчаливого сдвига.
+**Причина:** явная ошибка лучше молчаливого сдвига.
 
 **Где:** `backend/apps/storage/filters.py`, `views.py` (`ContainerViewSet`, `SampleViewSet`).
 **Статус:** ✅ действует (реализовано в `c-6b`).
 
 ### 1.80. 2026-11-02 — Auto-detect сети: probe /health/ → первый живой
 
-**Решение:** при старте приложение параллельно пингует `GET /health/` (2 с таймаут) на трёх адресах:
-1. `127.0.0.1` (USB, `adb reverse`).
-2. `192.168.0.77` (WiFi, домашний ПК).
-3. `10.0.2.2` (Android-эмулятор).
-
-Первый живой — в `apiBaseUrl`. Если `--dart-define=API_HOST=...` задан — probe не запускается. Все мертвы → fallback `192.168.0.77`.
-
-**Причина:**
-- Не надо пересобирать APK при смене сети.
-- `--dart-define` сохраняет детерминизм на рабочем ПК.
-- Fallback сохраняет старое поведение.
-
-**Цена:** 2 с задержки на старте.
+**Решение:** при старте приложение параллельно пингует `GET /health/` на трёх адресах: `127.0.0.1` (USB), `192.168.0.77` (WiFi), `10.0.2.2` (эмулятор). Первый живой — в `apiBaseUrl`. `--dart-define=API_HOST` отменяет probe. Все мертвы → fallback `192.168.0.77`.
 
 **Где:** `mobile/lib/services/network_probe.dart`, `mobile/lib/config.dart::AppConfig.resolve`, `mobile/lib/main.dart`.
 **Статус:** ✅ действует (реализовано в `c-6c`).
 
 ### 1.81. 2026-11-02 — ScanWindow: `_pickBarcodeInScanWindow` + landscape swap
 
-**Решение:** два механизма фильтрации области сканирования:
-1. `scanWindow` в `MobileScanner` — native-ограничение (если работает).
-2. `_pickBarcodeInScanWindow` в `_onDetect` — ручной фильтр по центру `corners` → `BoxFit.cover`.
+**Решение:** два механизма фильтрации области сканирования: native `scanWindow` + `_pickBarcodeInScanWindow` (по центру `corners`). Landscape-fix — swap effectiveSize в `mapImageToWidgetFrame`.
 
-**Проблема:**
-- Native `scanWindow` в `mobile_scanner 7.4.2` на Android не ограничивает область (issue #633).
-- `BarcodeCapture.rotation` в 7.4.2 не существует.
-- `Barcode.scaleCorners` не учитывает landscape.
-
-**Landscape-фикс (`c-6d-fix-3`):** `capture.size` остаётся портретным, `corners` — rotated. `mapImageToWidgetFrame` swap effectiveSize.
-
-**DetectionSpeed:** `normal` (не `noDuplicates`). Дублирующую обработку блокирует флаг `_handled`.
+**Причина:** native `scanWindow` в `mobile_scanner 7.4.2` на Android не ограничивает область; `BarcodeCapture.rotation` не существует; `Barcode.scaleCorners` не учитывает landscape.
 
 **Где:** `mobile/lib/utils/scan_window.dart`, `mobile/lib/screens/scanner_screen.dart`.
-**Статус:** ✅ действует (реализовано в `c-6d-fix` + `c-6d-fix-3`).
+**Статус:** ✅ действует (`c-6d-fix` + `c-6d-fix-3`).
 
 ### 1.82. 2026-11-02 — `NetworkStatusProvider` (heartbeat `/health/` 10 с)
 
-**Решение:** упрощённый `NetworkStatusProvider` (вместо откаченного `NetworkMonitor`):
-- `Timer.periodic(interval=10s)` → `GET /health/` текущего `AppConfig.apiHost` (2 с таймаут).
-- При неудаче — `NetworkProbe.resolve()`.
-- При смене хоста — `onBaseUrlChanged(url)` → `ApiClient.dio.options.baseUrl = url`.
-- При `--dart-define=API_HOST` — только статус, без swap.
+**Решение:** `Timer.periodic(10s)` → `GET /health/` текущего `AppConfig.apiHost`. При неудаче — `NetworkProbe.resolve()`. При смене хоста — `onBaseUrlChanged`.
 
-**Причина:**
-- `WidgetsBindingObserver` в `NetworkMonitor` давал регресс.
-- Heartbeat 10 с — компромисс между «свежестью» и батареей.
-- `NetworkBadge` читает `isOnline` через `context.select`.
+**Причина:** `WidgetsBindingObserver` в `NetworkMonitor` давал регресс. Heartbeat 10 с — компромисс.
 
 **Где:** `mobile/lib/providers/network_status_provider.dart`, `mobile/lib/widgets/network_badge.dart`, `mobile/lib/main.dart`.
 **Статус:** ✅ действует.
@@ -176,40 +142,29 @@
 
 **Решение:** кнопка «Синхронизация» на `HomeScreen` и все действия на `SyncScreen` `disabled`, если `!isOnline` или `isPendingOffline`.
 
-**Причина:**
-- `AuthProvider.isOffline` стареет; `NetworkStatusProvider.isOnline` — свежий (heartbeat 10 с).
-- Pending-offline — синхронизация невозможна до подтверждения JWT.
-
 **Где:** `mobile/lib/screens/home_screen.dart`, `mobile/lib/screens/sync_screen.dart`.
 **Статус:** ✅ действует.
 
 ### 1.84. 2026-11-02 — Иконка сети на `LoginScreen`
 
-**Решение:** `NetworkBadge` в `AppBar.actions` `LoginScreen`. `AppBar` прозрачный, карточка логина не сдвигается.
-
-**Причина:** до ввода пароля пользователь должен знать, есть ли связь с сервером.
+**Решение:** `NetworkBadge` в `AppBar.actions` `LoginScreen`. `AppBar` прозрачный.
 
 **Где:** `mobile/lib/screens/login_screen.dart`, `mobile/test/widget_test.dart`.
 **Статус:** ✅ действует.
 
 ### 1.85. 2026-11-02 — Адаптив карточки тары (портрет / ландшафт)
 
-**Решение:** `LayoutBuilder` и два layout'а:
-- **Портрет:** `AppBar` + `TabBar.bottom`, шапка в `SliverToBoxAdapter`.
-- **Ландшафт:** `Row`, слева панель ~40% ширины, справа `TabBar` + `TabBarView`.
-- Кнопки — в `bottomNavigationBar` + `SafeArea`.
+**Решение:** `LayoutBuilder` + два layout'а (портрет — `AppBar` + `TabBar.bottom`; ландшафт — `Row` с левой панелью ~40%). Кнопки — в `bottomNavigationBar` + `SafeArea`.
 
 **Где:** `mobile/lib/screens/container_detail_screen.dart`.
 **Статус:** ✅ действует.
 
 ### 1.86. 2026-11-02 — Форма шапки тары в bottom sheet
 
-**Решение:** ✏ в `AppBar.actions` открывает `showModalBottomSheet` с `ContainerEditForm`.
-
-**Поля:** `container_number`, `container_type`, `comment`, `position_on_pallet`, `draft_*`. Справочники — `CatalogService`.
+**Решение:** ✏ в `AppBar.actions` открывает `showModalBottomSheet` с `ContainerEditForm`. Поля — `container_number`, `container_type`, `comment`, `position_on_pallet`, `draft_*`.
 
 **Где:** `mobile/lib/widgets/container_edit_form.dart`, `mobile/lib/screens/container_detail_screen.dart`.
-**Статус:** ✅ действует.
+**Статус:** ✅ действует (модифицировано в `c-8b-fix-1` — см. 1.103).
 
 ### 1.87. 2026-11-02 — `FillContainerContent` на mobile (Dart-порт веба)
 
@@ -232,188 +187,151 @@
 **Где:** `mobile/lib/models/scan_history_entry.dart`, `mobile/lib/services/scan_history_service.dart`.
 **Статус:** ✅ действует.
 
-### 1.90. 2026-11-02 — Правило: перед `git add` — `git status --short`
+### 1.90. 2026-11-02 — Правило: перед `git add` — `git status --short | grep "mobile/lib"`
 
-**Решение:** перед `git add` выполнять `git status --short | grep "mobile/lib"`. Все `M`/`??` из `mobile/lib/*` включать в `git add` явными именами.
+**Решение:** перед `git add` проверять `git status --short | grep "mobile/lib"`, включать `M`/`??` явными именами.
 
 **Причина:** дважды за сессию (`c-7b`, `c-7h`) файлы остались uncommitted.
 
-**Где:** чек-лист перед закрытием захода; `CONTEXT.md` §«Mobile».
 **Статус:** ✅ действует.
 
 ### 1.91. 2026-11-02 — Не выдавать код следующего захода, пока текущий не закоммичен
 
-**Решение:** перед выдачей кода следующего захода — `git status --short | grep "mobile/lib"` должно быть пусто.
+**Решение:** перед выдачей кода нового захода — `git status --short | grep "mobile/lib"` должно быть пусто.
 
-**Причина:** три случая (`c-7b`, `c-7d`, `c-7h`) смешавшихся или не закоммиченных файлов. `flutter analyze`/`flutter test` проходят, но `git clone` с нуля ломается.
+**Причина:** три случая (`c-7b`, `c-7d`, `c-7h`) смешавшихся файлов. `flutter analyze`/`flutter test` проходят, но `git clone` с нуля ломается.
 
-**Отличается от 1.90:** 1.90 — перед `git add`; 1.91 — перед выдачей кода нового захода.
-
-**Где:** чек-лист перед каждым заходом.
 **Статус:** ✅ действует.
 
 ### 1.92. 2026-11-02 — Offline-place через `sync_queue` (c-7c)
 
-**Решение:** `POST /storage/containers/bulk-place/` на мобилке — онлайн и офлайн через `ContainerService.bulkPlace`:
-- **Онлайн:** сразу на сервер → `PlaceOutcome.online`.
-- **Офлайн:** `isNetworkError` → `sync_queue.enqueue` → `PlaceOutcome.queued`. `SyncPusher` отправляет при следующем `pushAll`.
+**Решение:** `POST /storage/containers/bulk-place/` — онлайн + офлайн через `sync_queue`. `PlaceOutcome {online, queued}`.
 
-**Кнопки в карточке тары — раздельные, как в вебе:**
+**Кнопки в карточке тары — раздельные:**
 - `[Предпросмотр]` — всегда.
 - `[Разместить]` — `canPlace = PENDING_FILLING || PENDING_PLACEMENT`.
-- `[Местоположение]` — `hasCell = cellId != null`; в мобилке — `ContainerLocationDialog` с адресом.
-
-**Причина:** требование «мобилка работает офлайн как веб». `sync_queue` уже поддерживает `POST` без изменений — `c-8d` закрыт в `c-7c`.
+- `[Местоположение]` — `hasCell = cellId != null`.
 
 **Где:** `mobile/lib/services/container_service.dart`, `mobile/lib/widgets/place_container_dialog.dart`, `mobile/lib/widgets/container_location_dialog.dart`, `mobile/lib/screens/container_detail_screen.dart`.
 **Статус:** ✅ действует.
 
 ### 1.93. 2026-11-02 — Мобилка = полное двустороннее зеркало сервера
 
-**Решение:** мобилка обязана **в офлайне видеть всё, что есть на сервере**, и **уметь создавать/менять данные локально**, чтобы при синхронизации они уходили на сервер.
+**Решение:** мобилка в офлайне видит всё, что на сервере; умеет создавать/менять локально с синхронизацией.
 
 **Правила:**
 1. **Pull тянет ВСЁ**: топология, справочники, `containers`, `samples`, **история всех тар**.
-2. **Каждый справочник кэшируется** в SQLite с fallback: онлайн → API + save; офлайн → кэш.
-3. **История кэшируется** через **pre-fetch в Pull** (не lazy).
+2. **Каждый справочник кэшируется** в SQLite с fallback.
+3. **История кэшируется** через **pre-fetch в Pull**.
 4. **Создание/редактирование справочника офлайн** — через `sync_queue`.
 
-**Реализовано:** `c-7-offline-catalog` (правила 1–2), `c-7e-1`/`c-7e-2`/`c-7e-3` (правило 3), `c-8-catalog-create` (правило 4).
+**Реализовано:** `c-7-offline-catalog` (1–2), `c-7e-1`/`c-7e-2`/`c-7e-3` (3), `c-8-catalog-create` (4, но `create` пока только онлайн — полное офлайн-создание = `c-8-catalog-create-offline`).
 
-**Причина:** требование «мобилка офлайн как веб». `c-7c` показал разрыв (каскад размещения онлайн-only). Pre-fetch истории — чтобы офлайн была история любой тары.
+**Где:** `SyncService.pullAll`, `CatalogService`, `CatalogDao`, `ContainerHistoryDao`, `database.dart` (v8).
+**Статус:** 🟡 правила 1–3 закрыты, 4 частично (`c-8-catalog-create` — online; `c-8-catalog-create-offline` — TODO).
 
-**Где:** `SyncService.pullAll`, `CatalogService` (fallback), `CatalogDao`, `ContainerHistoryDao`, `database.dart` (v6 — `catalog` + `container_history`; v8 — `local_ref` в `sync_queue`).
-**Статус:** ✅ действует (правила 1–4 закрыты).
+### 1.94. 2026-11-02 — Мобилка: офлайн-редактирование серверных проб
 
-### 1.94. 2026-11-02 — Мобилка: офлайн-редактирование серверных проб (c-9-fill-offline-2c-3)
-
-**Решение:** `SampleService.update` / `dispose` / `restore` / `deleteSample` для **серверных** проб при `isNetworkError` → `sync_queue`:
-- Локально обновить кэш (`updateLocalStatus` / `deleteById`).
+**Решение:** `SampleService.update`/`dispose`/`restore`/`deleteSample` при `isNetworkError` → `sync_queue`:
+- Локально обновить кэш (`updateLocalStatus`/`deleteById`).
 - `sync_queue.enqueue(PATCH/POST/DELETE, endpoint, payload)`.
 - `setPendingSyncLocal(id, true)` + `setPendingSync(containerId, true)`.
-- `Sample.pendingSync` — флаг в модели, `Sample.needsSync` — для UI (`cloud_off`).
+- `Sample.pendingSync` — флаг, `Sample.needsSync` — для UI.
 
-**`SampleDao.saveAll` не перезаписывает** пробы с `_pending_sync = 1` — Pull не теряет офлайн-правки.
+**`SampleDao.saveAll` не перезаписывает** пробы с `_pending_sync = 1`. `fetchByContainerId` возвращает кэш при `hasPendingForContainer`. `_pending_sync` сбрасывается после Push или Pull (reconcile).
 
-**`fetchByContainerId` возвращает кэш**, если `hasPendingForContainer` — UI видит новые статусы, а не серверные.
-
-**`sync_queue` regex fix:** `/samples/(\d+)/(?:dispose/|restore/)?$` — PATCH/DELETE `(/samples/5/)` и dispose/restore `(/samples/5/dispose/)`. Раньше PATCH/DELETE **не матчились** → `_pending_sync` не сбрасывался после Push, и reconcile не сохранял флаги проб с PATCH в очереди.
-
-**`_pending_sync` сбрасывается**:
-- После успешного Push (`SyncPusher.onSuccess`).
-- При Pull, если в `sync_queue` **нет** записи для пробы (`SyncService._reconcile`).
-
-**Причина:** требование «все функции редактирования доступны офлайн», «как в вебе».
-
-**Где:** `mobile/lib/models/sample.dart`, `mobile/lib/db/sample_dao.dart`, `mobile/lib/services/sample_service.dart`, `mobile/lib/widgets/sample_edit_dialog.dart`, `mobile/lib/screens/container_detail_screen.dart`.
+**Где:** `mobile/lib/models/sample.dart`, `sample_dao.dart`, `sample_service.dart`, `sample_edit_dialog.dart`, `container_detail_screen.dart`.
 **Статус:** ✅ действует.
 
-### 1.95. 2026-11-02 — Мобилка: офлайн-редактирование `sample_number` (c-9-fill-offline-2c-4)
+### 1.95. 2026-11-02 — Мобилка: офлайн-редактирование `sample_number` (офлайн-проб)
 
-**Решение:** для офлайн-пробы (`id < 0`) поле `sample_number` **редактируется** в `SampleEditDialog`. При сохранении — `parseSampleInput` (валидация + разбор). Диапазон — ошибка. Передаётся в `SampleService.updateLocalOffline`:
-- `newSampleNumber`, `newPrefix`, `newMiddle`, `newSequence`, `newSequenceDigits`, `newWellName`.
-- `SampleDao.updateLocalFields` обновляет JSON.
-- `_rebuildFillPayload` пересобирает `sample_groups` в очереди — сервер создаст пробу с новым номером.
+**Решение:** у офлайн-пробы (`id < 0`) `sample_number` редактируется. `SampleService.updateLocalOffline` + `SampleDao.updateLocalFields` + `_rebuildFillPayload`.
 
-**`SampleEditDialog._loadCatalogs`** дополнительно грузит `laboratories` (для `prefixes` парсера), `sites` (для `matchPatterns`).
-
-**Справочники (ТИ, участок) read-only** у офлайн-проб — они на контейнере, сервер возьмёт из контейнера.
-
-**Причина:** без редактирования номера офлайн-филл не гибкий. Пользователь ошибся в диапазоне — должен исправить, не пересоздавая.
-
-**Где:** `mobile/lib/widgets/sample_edit_dialog.dart`, `mobile/lib/services/sample_service.dart`, `mobile/lib/db/sample_dao.dart`.
+**Где:** `sample_edit_dialog.dart`, `sample_service.dart`, `sample_dao.dart`.
 **Статус:** ✅ действует.
 
-### 1.96. 2026-11-02 — Мобилка: счётчик на кнопке синхронизации (c-9-fill-offline-2c-3-fix-3b)
+### 1.96. 2026-11-02 — Мобилка: счётчик на кнопке синхронизации
 
-**Решение:** `SyncProvider.refresh()` вызывается **после каждой офлайн-операции** (`SampleEditDialog`, `_applyBulkStatus`, `_onPlace`, `FillContainerContent._handleSubmit`) → `pendingCount` сразу отражает реальность.
+**Решение:** `SyncProvider.refresh()` после каждой офлайн-операции → `pendingCount` сразу отражает реальность. `SyncProvider.push()` / `syncAll()` → `PushResult?` → SnackBar «Отправлено: N» по реальному `sent`.
 
-**`HomeScreen` в офлайне** показывает `total` в скобках: `«Синхронизация (3, нет связи)»` (было без числа).
-
-**`SyncProvider.push()` / `syncAll()`** возвращают `PushResult?` → `SyncScreen._runPushAction` показывает `«Отправлено: N»` по реальному `sent`, а не по разнице `pendingCount` (в офлайне застревал на 0 → «Нечего отправлять» при непустой очереди).
-
-**Причина:** пользователь не видел, сколько накопилось, и думал, что данные не уходят.
-
-**Где:** `mobile/lib/providers/sync_provider.dart`, `mobile/lib/screens/sync_screen.dart`, `mobile/lib/screens/home_screen.dart`, `mobile/lib/widgets/sample_edit_dialog.dart`, `mobile/lib/screens/container_detail_screen.dart`, `mobile/lib/widgets/fill_container_content.dart`.
+**Где:** `sync_provider.dart`, `sync_screen.dart`, `home_screen.dart`, `sample_edit_dialog.dart`, `container_detail_screen.dart`, `fill_container_content.dart`.
 **Статус:** ✅ действует.
 
-### 1.97. 2026-11-02 — Мобилка: автосинхронизация при возврате сети (c-9-auto-sync)
+### 1.97. 2026-11-02 — Мобилка: автосинхронизация при возврате сети
 
-**Решение:** `AuthGate` подписан на `NetworkStatusProvider`. При переходе `isOnline: false → true`:
-1. **Push** — если `pendingCount + errorCount > 0` (`SyncProvider.push()`).
-2. **Pull** — **всегда** (`SyncProvider.pull()`).
-3. **Один объединённый SnackBar** через `scaffoldMessengerKey` (виден на любом экране):
-   - только Push: «Отправлено: N»;
-   - только Pull: «Загружено: N»;
-   - Push + Pull: «Синхронизировано — отправлено: N, загружено: M»;
-   - ошибка — текст ошибки.
+**Решение:** `AuthGate` при `isOnline: false → true`:
+1. **Push** — если `pendingCount + errorCount > 0`.
+2. **Pull** — всегда.
+3. **Один объединённый SnackBar** через `scaffoldMessengerKey`.
 
-**`PullStats`** — счётчик: `containers` + `samples`, total.
-
-**`SyncScreen._runPullAction`** — SnackBar «Загружено: N (тар: X, проб: Y)» / «Данные уже актуальны».
-
-**Причина:** требование «уведомление, что синхронизация прошла, чтобы лишний раз не нажимать кнопку». Push и Pull — оба направления, оба информативны.
-
-**Где:** `mobile/lib/main.dart` (`scaffoldMessengerKey`, `AuthGate._autoSync`), `mobile/lib/services/sync_service.dart` (`PullStats`), `mobile/lib/providers/sync_provider.dart`, `mobile/lib/screens/sync_screen.dart`.
+**Где:** `mobile/lib/main.dart` (`AuthGate._autoSync`), `sync_service.dart` (`PullStats`), `sync_provider.dart`, `sync_screen.dart`.
 **Статус:** ✅ действует.
 
-### 1.98. 2026-11-02 — Мобилка: инкрементальный Pull с `?updated_since=` (c-6b-updated-since-pull)
+### 1.98. 2026-11-02 — Мобилка: инкрементальный Pull с `?updated_since=`
 
-**Решение:** `SyncProvider._lastPullSince` запоминает время последнего **успешного** Pull. При следующем Pull передаётся в `SyncService.pullAll(updatedSince: ...)` → `?updated_since=<ISO 8601 UTC>` в `/storage/containers/` и `/samples/` (бэкенд `c-6b` возвращает только изменённые). `PullStats` = реальные изменения.
+**Решение:** `SyncProvider._lastPullSince` — время последнего **успешного** Pull. При следующем Pull — `?updated_since=` в `/storage/containers/` и `/samples/`. `PullStats` = реальные изменения. `_lastPullSince` — в памяти (персистить — `ТД-62`).
 
-**История pre-fetch** теперь только для **изменённых** тар (N запросов → M запросов, M = изменённые).
-
-**Справочники** — полный Pull (мало данных, `updated_since` там не поддерживается).
-
-**`_lastPullSince` — в памяти.** При перезапуске приложения — снова полный Pull. Персистить (`shared_preferences`) — `ТД-62`.
-
-**Причина:** пользователь видел «Загружено 85» при каждом Pull, даже если ничего не менялось (`PullStats` считал **пришедшее**, а не **изменённое**). Теперь: первый Pull — 85, второй — 0, третий — только изменённые.
-
-**Где:** `mobile/lib/services/sync_service.dart` (`pullAll(updatedSince:)`), `mobile/lib/providers/sync_provider.dart` (`_lastPullSince`).
+**Где:** `sync_service.dart`, `sync_provider.dart`.
 **Статус:** ✅ действует.
 
-### 1.99. 2026-11-02 — Мобилка: natural sort проб (c-9-natural-sort)
+### 1.99. 2026-11-02 — Мобилка: natural sort проб
 
-**Решение:** `naturalCompare(a, b)` — разбивает строку на куски `цифры | не-цифры`, цифровые — числами, не-цифровые — лексикографически. Применяется:
-- `SampleDao.getByContainerId` (офлайн-ветка);
-- `SampleService.fetchByContainerId` (онлайн-ветка, `[...list]..sort`);
-- `LabelData.fromContainer` (PDF-предпросмотр).
+**Решение:** `naturalCompare(a, b)` — разбивает строку на куски `цифры | не-цифры`, цифры числами. Применяется в `SampleDao.getByContainerId`, `SampleService.fetchByContainerId`, `LabelData.fromContainer`.
 
-**Пример:** `TST6701 < TST6702 < … < TST6710` (а не `TST6701 < TST6710 < TST6702`). `TAA-A34076001-001 < TAA-A34076001-002 < … < TAA-A34076001-031`.
-
-**Причина:** порядок проб по `id` — не по номеру. При `SELECTED` в конце списка `TST6702` оказывалась после `TST6710`.
-
-**Где:** `mobile/lib/utils/natural_sort.dart` (новый), `mobile/lib/db/sample_dao.dart`, `mobile/lib/services/sample_service.dart`, `mobile/lib/models/label_data.dart`.
+**Где:** `mobile/lib/utils/natural_sort.dart`, `sample_dao.dart`, `sample_service.dart`, `label_data.dart`.
 **Статус:** ✅ действует.
 
-### 1.100. 2026-11-02 — Мобилка: тап на иконке сети → `pingNow()` (c-6g-tap-ping)
+### 1.100. 2026-11-02 — Мобилка: тап на иконке сети → `pingNow()`
 
-**Решение:** `NetworkBadge` — `IconButton` с `onPressed: () => pingNow()`. Пока пинг идёт — спиннер (1–2 сек). SnackBar не показываем — иконка сама меняет цвет. `NetworkStatusProvider.pingNow()` — публичный (снят `@visibleForTesting`).
+**Решение:** `NetworkBadge` — `IconButton` с `onPressed: () => pingNow()`. Спиннер во время пинга. `NetworkStatusProvider.pingNow()` — публичный.
 
-**Причина:** heartbeat 10 сек — долго. Пользователь должен иметь возможность «пнуть» связь при подозрении.
-
-**Где:** `mobile/lib/widgets/network_badge.dart`, `mobile/lib/providers/network_status_provider.dart`.
+**Где:** `network_badge.dart`, `network_status_provider.dart`.
 **Статус:** ✅ действует.
 
 ### 1.101. 2026-11-03 — Мобилка: офлайн-создание тары (c-2d-2a)
 
 **Решение:**
-1. **`bulkCreate` при `isNetworkError`** создаёт тару локально с negative ID, кладёт в `sync_queue` с `localRef` (JSON-массив ID), возвращает `BulkCreateResult {count, queued}`. `pending_sync = true` → `cloud_off`.
-2. **`SyncPusher` после успешного `bulk-create`** строит маппинг `localId → serverId` **по индексу** `created_containers[i].id` (порядок гарантирован `services.bulk_create_containers` — цикл `.create()` в том же порядке, что и вход).
-3. **`remapAllLocalRefs`** (идемпотентно) перемапливает `payload` (`container_id`, `container_ids[]`, `containers[].id`) и `local_ref` (int-строка, JSON-массив) во **всех** записях `sync_queue` (PENDING + ERROR).
-4. **`ContainerDao.remapId`** меняет PK в `containers` (`pending_sync` сохраняется). **`SampleDao.remapContainerId`** меняет колонку `container_id` и JSON `container` в `samples`.
-5. **Локальный JSON тары — в серверном формате** (`container_type`, `draft_site`, `draft_research_type`), не `*_id`. Иначе `Container.fromJson` падает на `as int`.
-6. **`Container.fromJson`** имеет fallback на `*_id` — страховка от старых записей.
-7. **История для negative-ID** не зовётся на сервер (`_loadHistory` guard в `ContainerDetailScreen`) — истории ещё нет.
+1. **`bulkCreate` при `isNetworkError`** создаёт тару локально с negative ID, кладёт в `sync_queue` с `localRef` (JSON-массив), возвращает `BulkCreateResult {count, queued}`. `pending_sync = true` → `cloud_off`.
+2. **`SyncPusher` после `bulk-create`** строит маппинг `localId → serverId` **по индексу** `created_containers[i].id` (порядок гарантирован циклом `.create()`).
+3. **`remapAllLocalRefs`** (идемпотентно) перемапливает `payload` (`container_id`, `container_ids[]`, `containers[].id`) и `local_ref` (int-строка, JSON-массив) в **PENDING + ERROR**.
+4. **`ContainerDao.remapId`** — PK в `containers`. **`SampleDao.remapContainerId`** — колонка `container_id` + JSON `container` в `samples`.
+5. **Локальный JSON тары — в серверном формате** (`container_type`, `draft_site`, `draft_research_type`), не `*_id`.
+6. **`Container.fromJson`** — fallback на `*_id` (страховка от старых записей).
+7. **История для negative-ID** не зовётся на сервер (`_loadHistory` guard).
 8. **Проверка длины:** `created_containers.length != payload.containers.length` → маппинг пропускается, `debugPrint`.
 
-**Причина:**
-- Без маппинга `fill-samples` / `bulk-place` на офлайн-тару уйдут с `container_id = -1` → 404.
-- Без серверного формата JSON `Container.fromJson` падает на локальной таре → карточка не открывается (было в `c-2d-2a` до fix-3).
-- Индексный маппинг — потому что сервер (`ContainerSerializer`) не знает про `local_ref`. Порядок гарантирован кодом сервиса. Если порядок сломается — проверка длины + лог покажут сразу; полное решение (`local_ref` на сервере) — `c-8a`.
+**Причина:** без маппинга `fill-samples` / `bulk-place` на офлайн-тару уйдут с `container_id = -1` → 404. Индексный маппинг — потому что сервер не знает про `local_ref`. Полное решение (`local_ref` на сервере) — отложено.
 
-**Где:** `mobile/lib/db/database.dart` (v8), `sync_queue_dao.dart` (`remapAllLocalRefs`, `remapInPlace`, `remapLocalRef`), `container_dao.dart` (`remapId`), `sample_dao.dart` (`remapContainerId`), `services/sync_pusher.dart` (`_remapBulkCreate`), `services/container_service.dart` (`BulkCreateResult`, офлайн-ветка), `models/container.dart` (`fromJson` fallback), `screens/container_detail_screen.dart` (`_loadHistory` guard), `widgets/create_containers_dialog.dart` (SnackBar по `queued`).
+**Где:** `mobile/lib/db/database.dart` (v8), `sync_queue_dao.dart` (`remapAllLocalRefs`), `container_dao.dart` (`remapId`), `sample_dao.dart` (`remapContainerId`), `services/sync_pusher.dart` (`_remapBulkCreate`), `services/container_service.dart` (`BulkCreateResult`), `models/container.dart` (`fromJson`), `screens/container_detail_screen.dart` (`_loadHistory`), `widgets/create_containers_dialog.dart`.
+**Статус:** ✅ действует.
 
+### 1.102. 2026-11-05 — Мобилка: офлайн-`fill-samples` / `bulk-place` на офлайн-тарах (c-2d-2c)
+
+**Решение:**
+1. **`SampleService.fillSamples`** при `containerId < 0` — сразу `sync_queue` (POST `/containers/{id}/fill-samples/`), `localRef = '$containerId'`. Сервер с negative ID не зовём (404 не `isNetworkError`).
+2. **`ContainerService.bulkPlace`** при negatives в `containerIds` — всегда `sync_queue`, атомарно (все или ничего). `localRef = jsonEncode(negatives)` — только negatives, positives не трогаются.
+3. **`remapEndpoint`** — после маппинга negative→server заменяет URL (`/containers/-N/fill-samples/` → `/containers/M/fill-samples/`). Regex `/containers/(-?\d+)(/|$)`, positive ID не трогает.
+4. **`SyncPusher.pushAll` после `bulk-create`** перечитывает очередь (`items = await _getPendingItems()`), чтобы дочерние операции ушли с серверными URL. `processedIds` — защита от зацикливания, если `markSynced` не удалил запись.
+5. **`ContainerDao.updateLocationLocal`** при офлайн-`bulkPlace` — локально обновить `containers` (`status=ACTIVE`, `cell_id`, `cell_full_address`, `floor_room`, `floor_room_name`, `pallet=null`, `updated_at`) → UI сразу видит место. `_onPlace` при `queued` перечитывает кэш через `ContainerDao.getById`.
+6. **`NamedCatalog.fullAddress`** — отдельное поле из `json['full_address']`. `label` не меняется (короткий код). `PlaceContainerDialog._selectedCellAddress` → `fullAddress ?? label` (полный путь `В4/1/1/B/2` вместо `2`).
+7. **`PlaceContainerDialog`** передаёт `cellFullAddress` / `floorRoomName` из справочника в `bulkPlace`.
+
+**Причина:** без `localRef` и `remapEndpoint` — сервер получит URL `/containers/-N/fill-samples/` → 404. Без `updateLocationLocal` — пользователь не видит, куда разместил, до Push. Без `fullAddress` — в шапке показывался только код ячейки (`2`), а не полный путь.
+
+**Где:** `mobile/lib/services/sample_service.dart` (`fillSamples` negative-ветка, `_queueFillSamples`), `container_service.dart` (`bulkPlace`, `_applyLocalPlace`), `db/sync_queue_dao.dart` (`remapEndpoint`), `services/sync_pusher.dart` (`pushAll` reload + `processedIds`), `db/container_dao.dart` (`updateLocationLocal`), `models/catalog.dart` (`NamedCatalog.fullAddress`), `widgets/place_container_dialog.dart`, `screens/container_detail_screen.dart` (`_onPlace`).
+**Статус:** ✅ действует.
+
+### 1.103. 2026-11-05 — Мобилка: офлайн-редактирование шапки тары (c-8b)
+
+**Решение:**
+1. **`ContainerService.update`** при `isNetworkError` → `sync_queue` (PATCH `/containers/{id}/`), `ContainerDao.updateFieldsLocal` (мержит поля в JSON `containers.data`), `setPendingSync(id, true)`. Возвращает `UpdateOutcome {online, queued}`.
+2. **`SyncPusher._defaultOnSuccess`** — regex `^/storage/containers/(\d+)/$` (PATCH контейнера) → `ContainerDao.clearPendingSync(id)`.
+3. **`_onSaveEdit`** при `queued` — перечитать кэш через `ContainerDao.getById`, `setState`, SnackBar «Сохранено офлайн. Отправится при синхронизации.».
+4. **UI (`c-8b-fix-1`):** `_openEditSheet` — `useSafeArea: true`, высота = `MediaQuery.size.height − viewInsets.bottom − padding.bottom`, × 0.9. `ContainerEditForm` — `Form(Column(Expanded(ListView), sticky bottomBar))`, кнопка «Сохранить» в `SafeArea(top: false)` вне `ListView` — не уезжает под системный бар Android.
+
+**Причина:** без `sync_queue` офлайн-редактирование шапки падало «Не удалось сохранить». Без `clearPendingSync` иконка `cloud_off` не пропадала после Push. UI-фикс — кнопка «Сохранить» уезжала под navigation bar при скролле.
+
+**Где:** `mobile/lib/services/container_service.dart` (`update`, `UpdateOutcome`), `db/container_dao.dart` (`updateFieldsLocal`), `services/sync_pusher.dart` (`_defaultOnSuccess`, regex PATCH containers), `screens/container_detail_screen.dart` (`_onSaveEdit`, `_openEditSheet`), `widgets/container_edit_form.dart` (sticky bottom bar).
 **Статус:** ✅ действует.
 
 ---
@@ -488,6 +406,12 @@
 - Не маппим ID по `local_ref` с сервера — порядок `created_containers` гарантирован циклом `.create()` (1.101).
 - Не пишем локальный JSON тары в `*_id` формате — только серверный (`container_type`, `draft_site`, `draft_research_type`) (1.101).
 - Не ходим в историю тары при negative-ID (1.101).
+- Не зовём сервер `fill-samples` / `bulk-place` с negative-ID — сервер их не знает (1.102).
+- Не делаем `bulkPlace` смешанных списков (negatives + positives) онлайн-только — атомарно в очередь (1.102).
+- Не перечитываем `sync_queue` после каждой операции в `pushAll` — только после `bulk-create` + `processedIds` (1.102).
+- Не отображаем короткий код ячейки в шапке — только полный `full_address` при наличии (1.102).
+- Не делаем `ContainerService.update` онлайн-только — офлайн через `sync_queue` (1.103).
+- Не держим кнопку «Сохранить» в `ListView` формы тары — sticky bottom (1.103).
 
 ---
 
@@ -520,7 +444,11 @@
 | Health-эндпоинт | GET /health/ — 200 без авторизации (1.78). |
 | `local_ref` | Локальный ID (negative) в `sync_queue` для маппинга в `bulk-create` (1.101). |
 | `BulkCreateResult` | `{count, queued}` — результат `bulkCreate` (1.101). |
-| `remapAllLocalRefs` | Идемпотентная замена negative → server ID в payload + `local_ref` всех записей очереди (1.101). |
+| `remapAllLocalRefs` | Идемпотентная замена negative → server ID в payload + `local_ref` + endpoint всех записей очереди (1.101, 1.102). |
+| `remapEndpoint` | Замена `/containers/-N/...` → `/containers/M/...` в endpoint (1.102). |
+| `processedIds` | `Set<int>` в `SyncPusher.pushAll` — защита от повторной обработки после reload (1.102). |
+| `UpdateOutcome` | `online` / `queued` — результат `ContainerService.update` (1.103). |
+| `updateFieldsLocal` | `ContainerDao`: мерж полей в JSON `containers.data` + `updated_at` (1.103). |
 
 ### Процесс
 
@@ -551,14 +479,14 @@
 | Incremental Pull | ?updated_since= (1.79, 1.98). |
 | NetworkStatusProvider | Heartbeat /health/ 10 с, isOnline, auto-switch (1.82). |
 | NetworkBadge | Иконка cloud_done / cloud_off / vpn_key в AppBar (1.82, 1.100). |
-| ContainerEditForm | Форма шапки тары в bottom sheet (1.86). |
+| ContainerEditForm | Форма шапки тары в bottom sheet (1.86, 1.103). |
 | FillContainerContent (mobile) | Вкладка «Редактирование» (1.87). |
 | ScanHistoryEntry | Снимок истории сканов Н/З · ТИ · номер (1.89). |
 | SampleEditDialog (mobile) | Диалог редактирования пробы (1.88). |
 | SampleStatusChip | Цветной чип статуса пробы (1.88). |
 | LabelData (offline) | Модель для offline-рендера PDF (1.77). |
 | label_pdf_generator | Offline-рендер PDF на Dart (1.77). |
-| NamedCatalog | Универсальный `{id, label}` для каскада (1.92). |
+| NamedCatalog | Универсальный `{id, label, fullAddress?}` для каскада (1.92, 1.102). |
 | PlaceOutcome | Результат `bulkPlace`: `online` / `queued` (1.92). |
 | ContainerLocationDialog | Диалог «где тара» — адрес (1.92). |
 | CatalogDao | DAO кэша справочников (1.93). |
@@ -573,6 +501,7 @@
 | naturalCompare | Естественная сортировка с числами (1.99). |
 | `remapId` | `ContainerDao`: PK тары negative → server (1.101). |
 | `remapContainerId` | `SampleDao`: `container_id` пробы negative → server, колонка + JSON (1.101). |
+| `updateLocationLocal` | `ContainerDao`: локально обновить место + `status=ACTIVE` при офлайн-`bulkPlace` (1.102). |
 
 ### Инфраструктура
 
@@ -641,7 +570,7 @@
 - «PlaceOutcome.queued» — не ошибка, а отложенная операция в `sync_queue` (1.92).
 - «Pull» — не только containers/samples. Справочники + история всех тар (1.93).
 - «Кэш истории» — не lazy. Pre-fetch в Pull (1.93).
-- «_pending_sync = 1» — не «есть правка», а «есть правка, **ещё не ушедшая** на сервер». Сбрасывается после Push или Pull (1.94).
+- «_pending_sync = 1» — не «есть правка», а «есть правка, ещё не ушедшая на сервер». Сбрасывается после Push или Pull (1.94).
 - «pendingCount» — не «число правок», а «число записей в `sync_queue` со статусом PENDING» (1.96).
 - «85 загружено» — не «85 изменений», а «85 тар в ответе сервера». После `updated_since` — реальные изменения (1.98).
 - «natural sort» — не сортировка по `id`, а по `sample_number` (числа числами) (1.99).
@@ -649,3 +578,7 @@
 - «local_ref» — не «серверное поле». Только локальное, для маппинга на `bulk-create` (1.101).
 - «Маппинг по индексу» — не «по `local_ref` с сервера». Порядок гарантирован циклом `.create()` (1.101).
 - «`container_type_id` в локальном JSON» — не формат. В кэше — `container_type` (серверный), fallback на `_id` только для старых записей (1.101).
+- «remapEndpoint» — не «переименование поля», а замена ID в URL (1.102).
+- «processedIds» — не «все обработанные», а «обработанные с последнего reload» (1.102).
+- «`fullAddress` в NamedCatalog» — не «полный адрес всегда». Только если сервер отдаёт `full_address` в JSON (1.102).
+- «UpdateOutcome.queued» — не ошибка, а отложенная операция PATCH в `sync_queue` (1.103).
