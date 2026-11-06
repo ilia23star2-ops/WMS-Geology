@@ -70,6 +70,10 @@
 
 ### Что закрыто (mobile, офлайн-редактирование шапки тары)
 
+- ✅ **`c-8b-status`** (2026-11-06) — ручная смена статуса тары: `status` dropdown в `ContainerEditForm` (5 значений), `containerStatusToApi`, отправка через `update` (офлайн -> `sync_queue`). Тесты: 227 passed.
+
+### Что закрыто (mobile, офлайн-редактирование шапки тары)
+
 - ✅ **`c-8b`** (2026-11-05) — `ContainerService.update` офлайн → `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`; `UpdateOutcome {online, queued}`; `SyncPusher` PATCH `/storage/containers/{id}/` → `clearPendingSync`; `_onSaveEdit` при `queued` перечитывает кэш + SnackBar.
 - ✅ **`c-8b-fix-1`** (2026-11-05) — UI: `useSafeArea`, sticky «Сохранить» вне `ListView`.
 - ✅ **`c-8b-fix-2`** (2026-11-05) — `update` ловит **все не-4xx** (сеть/таймаут/5xx/unknown) → `sync_queue` (фикс «Не удалось сохранить: требуется подключение»); payload с `*_name` (`container_type_name` / `draft_site_name` / `draft_research_type_name`) — `Container.fromJson` видит новые имена после офлайн-сохранения; убрано «(черновик)» из лейблов шапки и формы.

@@ -90,6 +90,7 @@
 | c-8b-fix-2 | Офлайн-редактирование (фикс) | `update` ловит все не-4xx → `sync_queue`; payload с `*_name`; лейблы без «черновик» | ✅ |
 | c-8b-fix-3 | ТД-66: `ContainerEditForm` при `_catalogsError` | Dropdown'ы disabled, текстовые поля сохраняются | ✅ |
 | c-8b-fix-4 | Окно редактирования шапки выше | `(screen − insets) × 0.95`, без Padding+SizedBox | ✅ |
+| c-8b-status | Ручная смена статуса тары | Dropdown в `ContainerEditForm` (5 значений), офлайн через `sync_queue` | ✅ |
 | c-2f-comment-web | Веб: комментарий тары | `ContainerDetailDialog` (шапка) + `ContainersPage` (колонка) | ✅ |
 | c-8-catalog-create-offline | Офлайн-создание справочников | `CatalogService.create` → `sync_queue` + local→server маппинг | ⬜ |
 | c-9-overflow-fix-4 | 2 overflow (3.5 / 7.2 px) | Косметика, `ТД-61` | ⬜ |

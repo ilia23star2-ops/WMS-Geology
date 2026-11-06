@@ -616,3 +616,16 @@
 **Статус:** ✅ действует.
 
 ---
+
+### 1.105. 2026-11-06 — Мобилка: ручная смена статуса тары в шапке (c-8b-status)
+
+**Решение:**
+1. В `ContainerEditForm` добавлен dropdown `status` — 5 значений (`PENDING_FILLING`, `PENDING_PLACEMENT`, `ACTIVE`, `IN_TRANSIT`, `ISSUED`). Служебный `unknown` скрыт.
+2. Отправка через `ContainerService.update` (PATCH `/storage/containers/{id}/`). Офлайн-ветка (`isNetworkError`) уже существует с `c-8b-fix-2` — кладет в `sync_queue`, обновляет `ContainerDao.updateFieldsLocal`.
+3. В `Container.fromJson` добавлена обратная функция `containerStatusToApi` (enum -> строка).
+
+**Причина:** пользователь должен иметь возможность ручного перевода (например, `ACTIVE` -> `ISSUED` при выдаче). До этого статусы менялись только автоматически (`fill-samples`, `bulk-place`).
+
+**Где:** `mobile/lib/models/container.dart`, `mobile/lib/widgets/container_edit_form.dart`, `mobile/test/services/container_service_test.dart`.
+**Статус:** ✅ действует.
+

@@ -55,7 +55,7 @@ GitHub Actions: `.github/workflows/ci.yml`.
 
 **Backend: 842 теста.**
 **Web: 24 юнит-теста** (`tokenStorage`, `authStore`, `parseSampleInput`).
-**Mobile: 218 юнит-тестов.**
+**Mobile: 227 юнит-тестов.**
 
 ### Backend — покрытие по приложениям
 
@@ -184,6 +184,10 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 ### Mobile, `c-8b`
 
+### Mobile, `c-8b-status`
+
+- `container_service_test.dart` (+2: `update` со `status` online + offline, +3: `containerStatusToApi`).
+
 - `container_service_test.dart` (+3: `update` — онлайн PATCH, офлайн → `sync_queue` PATCH + `updateFieldsLocal` + `setPendingSync`, валидация-400 → rethrow).
 
 ### Mobile, `c-8b-fix-2`
@@ -252,7 +256,7 @@ UI (экраны, сканер, диалоги) — device-check на планш
 
 **Сделано:**
 - Три уровня тестов (unit/integration/contract).
-- **842 backend** + 24 web + **218 mobile** = **1084 теста**.
+- **842 backend** + 24 web + **227 mobile** = **1093 теста**.
 - Contract-тесты OpenAPI.
 - Все stale-тесты после серии 2f починены.
 - Аудит тары — 8 тестов.
