@@ -116,7 +116,6 @@
 **Контекст:** Web: приёмка, ручной ввод тары, полный CRUD, полировка. Backend на старте — 552 теста.
 
 ### Что закрыто (backend)
-- ✅ **`c-2.x-smart-input-bundle-1`** (2026-11-06) — контекстные подсказки для создания тары и заполнения пробами. `SmartInputSuggestionsView` (эндпоинт `GET /storage/suggestions/`), MUI `Autocomplete` + `SmartAutocomplete`, фильтрация Н/З по участку и ТИ. 3 backend-теста.
 
 
 - ✅ **`bundle-1`**, **`bundle-2`**, **`bundle-5`**, **`bundle-6a`**, **`bundle-6b`**, **`bundle-7a-1`**, **`bundle-7a-2`**, **`bundle-7a-2b`**.

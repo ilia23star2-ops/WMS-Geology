@@ -639,3 +639,13 @@
 **Где:** `mobile/lib/screens/container_detail_screen.dart` (`_openEditSheet`).
 **Статус:** ✅ действует.
 
+
+### 1.107. 2026-11-06 — Контекстные подсказки (c-2.x-smart-input-bundle-1)
+
+**Решение:** эндпоинт `GET /storage/suggestions/?site=&work_order=&research_type=` возвращает уникальные `work_orders`, `research_types`, `samples`, `wells` по контексту. На фронте — `SmartAutocomplete` (MUI Autocomplete + freeSolo) для полей Н/З, ТИ, диапазон проб.
+
+**Причина:** пользователь не должен вводить одно и то же (Н/З, префикс, скважину) при заполнении 3-5 тар одного Н/З.
+
+**Где:** `backend/apps/storage/views.py::SmartInputSuggestionsView`, `web/src/components/SmartAutocomplete.tsx`, `CreateContainersDialog.tsx`, `FillContainerContent.tsx`.
+**Статус:** ✅ действует.
+
