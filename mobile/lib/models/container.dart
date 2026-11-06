@@ -172,3 +172,33 @@ class Container {
       'Container(id: $id, number: $containerNumber, status: $status, '
       'pendingSync: $pendingSync)';
 }
+
+// c-8b-status: обратное преобразование ContainerStatus -> API-строка.
+//
+// unknown -> null (не отправляем как валидный статус на сервер).
+String? containerStatusToApi(ContainerStatus s) {
+  switch (s) {
+    case ContainerStatus.pendingFilling:
+      return 'PENDING_FILLING';
+    case ContainerStatus.pendingPlacement:
+      return 'PENDING_PLACEMENT';
+    case ContainerStatus.active:
+      return 'ACTIVE';
+    case ContainerStatus.inTransit:
+      return 'IN_TRANSIT';
+    case ContainerStatus.issued:
+      return 'ISSUED';
+    case ContainerStatus.unknown:
+      return null;
+  }
+}
+
+// Статусы, доступные для ручного выбора в UI (c-8b-status).
+// Без unknown — это служебное значение для парсинга.
+const List<ContainerStatus> editableContainerStatuses = [
+  ContainerStatus.pendingFilling,
+  ContainerStatus.pendingPlacement,
+  ContainerStatus.active,
+  ContainerStatus.inTransit,
+  ContainerStatus.issued,
+];

@@ -1,8 +1,11 @@
-/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1 + c-8b-fix-2 + c-8b-fix-3).
+/// Форма редактирования тары (c-7b + c-7b-full + c-8b-fix-1 + c-8b-fix-2
+/// + c-8b-fix-3 + c-8b-status).
 ///
 /// Поля:
 /// - `container_number` — текст;
 /// - `container_type` — dropdown (справочник);
+/// - `status` — dropdown (c-8b-status): 5 значений из
+///   `editableContainerStatuses`, ручная смена статуса тары;
 /// - `comment` — текст;
 /// - `position_on_pallet` — число;
 /// - `draft_site` — dropdown (справочник, nullable);
@@ -21,6 +24,11 @@
 /// (нельзя изменить без справочника), в payload не идут. Текстовые
 /// поля редактируются и отправляются. Баннер с «Повторить» для
 /// перезагрузки справочников.
+///
+/// c-8b-status: dropdown `status` — всегда доступен (это не справочник,
+/// а enum модели). Отправляется через `ContainerService.update` —
+/// офлайн уходит в `sync_queue` (PATCH), локальный кэш обновляется
+/// через `updateFieldsLocal`.
 library;
 
 import 'package:flutter/material.dart' hide Container;
@@ -57,6 +65,13 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
   int? _selectedSiteId;
   int? _selectedResearchTypeId;
 
+  /// c-8b-status: текущий выбранный статус.
+  ///
+  /// `null` — если исходный статус `unknown` (повреждённые данные).
+  /// В этом случае пользователь должен выбрать вручную, а если не
+  /// трогает — `status` в payload не уходит (no-op).
+  ContainerStatus? _selectedStatus;
+
   List<Site>? _sites;
   List<ResearchType>? _researchTypes;
   List<ContainerType>? _containerTypes;
@@ -85,6 +100,11 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
     _selectedContainerTypeId = widget.initial.containerType;
     _selectedSiteId = widget.initial.draftSiteId;
     _selectedResearchTypeId = widget.initial.draftResearchTypeId;
+
+    // c-8b-status: `unknown` — служебное значение, не для UI.
+    _selectedStatus = widget.initial.status == ContainerStatus.unknown
+        ? null
+        : widget.initial.status;
 
     _loadCatalogs();
   }
@@ -171,6 +191,16 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
       'draft_work_order_coded': _draftCodedCtrl.text.trim(),
       'draft_work_order_incoming': _draftIncomingCtrl.text.trim(),
     };
+
+    // c-8b-status: status — не справочник, отправляется всегда, если
+    // пользователь выбрал/подтвердил значение. `null` — не уходит
+    // (status остался `unknown` или пользователь не трогал).
+    if (_selectedStatus != null) {
+      final statusApi = containerStatusToApi(_selectedStatus!);
+      if (statusApi != null) {
+        payload['status'] = statusApi;
+      }
+    }
 
     // c-8b-fix-3: dropdown-поля — только если справочники загружены.
     // Иначе они disabled и не должны уйти в payload (иначе перезапишем
@@ -264,6 +294,10 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                 ),
                 const SizedBox(height: 16),
                 _buildContainerTypeDropdown(containerTypes, dropdownDisabled),
+                const SizedBox(height: 16),
+                // c-8b-status: всегда доступен — это не справочник,
+                // а enum модели.
+                _buildStatusDropdown(_saving),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _commentCtrl,
@@ -374,6 +408,35 @@ class _ContainerEditFormState extends State<ContainerEditForm> {
                 setState(() => _selectedContainerTypeId = v);
               }
             },
+    );
+  }
+
+  /// c-8b-status: ручная смена статуса тары.
+  ///
+  /// 5 значений из [editableContainerStatuses]. В payload уходит
+  /// API-строка (`PENDING_FILLING` … `ISSUED`). Офлайн — через
+  /// `ContainerService.update` → `sync_queue`.
+  ///
+  /// `initialValue: null` — только если исходный статус `unknown`
+  /// (повреждённые данные). Тогда пользователь должен выбрать явно.
+  Widget _buildStatusDropdown(bool disabled) {
+    return DropdownButtonFormField<ContainerStatus>(
+      key: ValueKey('status_$_selectedStatus'),
+      initialValue: _selectedStatus,
+      decoration: const InputDecoration(
+        labelText: 'Статус',
+        helperText: 'Ручное изменение (офлайн — через синхронизацию)',
+        border: OutlineInputBorder(),
+      ),
+      items: editableContainerStatuses
+          .map(
+            (s) => DropdownMenuItem<ContainerStatus>(
+              value: s,
+              child: Text(containerStatusLabels[s] ?? s.name),
+            ),
+          )
+          .toList(),
+      onChanged: disabled ? null : (v) => setState(() => _selectedStatus = v),
     );
   }
 

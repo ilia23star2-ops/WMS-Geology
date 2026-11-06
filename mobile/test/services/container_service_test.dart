@@ -1,4 +1,4 @@
-/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create, c-2d-2, c-2d-2c, c-2d-2c-fix-1, c-8b).
+/// Тесты `ContainerService` (c-7c, c-7e-2, c-9-container-list, c-9-container-create, c-2d-2, c-2d-2c, c-2d-2c-fix-1, c-8b, c-8b-status).
 library;
 
 import 'package:dio/dio.dart';
@@ -385,6 +385,47 @@ void main() {
       expect(localFieldUpdates, isEmpty);
       expect(pendingSyncs, isEmpty);
     });
+
+    // c-8b-status: смена статуса.
+    test('онлайн: payload со status → PATCH тело содержит status', () async {
+      client.patchData = {'id': 10, 'status': 'ACTIVE'};
+      final payload = <String, dynamic>{
+        'container_number': 'T-001',
+        'status': 'ACTIVE',
+      };
+      final outcome = await createService().update(10, payload);
+
+      expect(outcome, UpdateOutcome.online);
+      final sent = client.patchCalls.first.value as Map<String, dynamic>;
+      expect(sent['status'], 'ACTIVE');
+      expect(enqueued, isEmpty);
+    });
+
+    test(
+      'офлайн: payload со status → очередь + localFieldUpdates получают status',
+      () async {
+        client.throwOnPatch = ApiException(
+          message: 'timeout',
+          isNetworkError: true,
+        );
+        final payload = <String, dynamic>{
+          'container_number': 'T-001',
+          'status': 'PENDING_PLACEMENT',
+        };
+        final outcome = await createService().update(10, payload);
+
+        expect(outcome, UpdateOutcome.queued);
+        expect(
+          (enqueued.first.payload)['status'],
+          'PENDING_PLACEMENT',
+        );
+        expect(
+          (localFieldUpdates.first.value)['status'],
+          'PENDING_PLACEMENT',
+        );
+        expect(pendingSyncs.first.value, true);
+      },
+    );
   });
 
   group('ContainerService.fetchHistory (c-7e-2)', () {
@@ -586,5 +627,34 @@ void main() {
         });
       },
     );
+  });
+
+  // c-8b-status: обратное преобразование статуса (модель → API).
+  group('containerStatusToApi + editableContainerStatuses (c-8b-status)', () {
+    test('все 5 статусов → API-строки', () {
+      expect(
+        containerStatusToApi(ContainerStatus.pendingFilling),
+        'PENDING_FILLING',
+      );
+      expect(
+        containerStatusToApi(ContainerStatus.pendingPlacement),
+        'PENDING_PLACEMENT',
+      );
+      expect(containerStatusToApi(ContainerStatus.active), 'ACTIVE');
+      expect(containerStatusToApi(ContainerStatus.inTransit), 'IN_TRANSIT');
+      expect(containerStatusToApi(ContainerStatus.issued), 'ISSUED');
+    });
+
+    test('unknown → null (не отправляем)', () {
+      expect(containerStatusToApi(ContainerStatus.unknown), isNull);
+    });
+
+    test('editableContainerStatuses: 5 значений, без unknown', () {
+      expect(editableContainerStatuses.length, 5);
+      expect(
+        editableContainerStatuses.contains(ContainerStatus.unknown),
+        isFalse,
+      );
+    });
   });
 }
