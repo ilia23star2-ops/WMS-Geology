@@ -12,6 +12,8 @@
 **Контекст:** Офлайн-режим мобильного приложения. SQLite + SyncQueue + Deferred Offline Login + USB + auto-detect + scanWindow + инкрементальный Pull. Backend на старте серии — 779 тестов.
 
 ### Что закрыто (backend)
+- ✅ **`c-2.x-smart-input-bundle-2`** (2026-11-06) — подсказки в «Диапазон проб»: база (`TST1209`) вместо полного номера, `appendOnSelect=-` (клик → `TST1209-`), исключение полностью использованных баз из списка.
+
 - ✅ **`c-2.x-smart-input-bundle-1`** (2026-11-06) — контекстные подсказки для создания тары и заполнения пробами. `SmartInputSuggestionsView` (эндпоинт `GET /storage/suggestions/`), MUI `Autocomplete` + `SmartAutocomplete`, фильтрация Н/З по участку и ТИ. 3 backend-теста.
 
 
