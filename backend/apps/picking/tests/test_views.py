@@ -202,7 +202,7 @@ def test_shipment_create_sets_sent_by(auth_client, db):
     assert response.status_code == 201
     assert response.data["sent_by"] is not None
     assert response.data["direction"] == "OUTBOUND"
-    assert response.data["status"] == "SENT"
+    assert response.data["status"] == "DRAFT"
 
 
 def test_shipment_create_inbound(auth_client, laboratory, site):

@@ -545,6 +545,30 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 ---
 
 ## Формат ошибок
+## Отправка (Shipments, c-2.x-shipments-1)
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| `GET` | `/shipments` | Список рейсов (фильтры: direction, status, laboratory_id, site_id) |
+| `GET` | `/shipments/{id}` | Один рейс с `container_items` |
+| `POST` | `/shipments` | Создать рейс (DRAFT) |
+| `PATCH` | `/shipments/{id}` | Обновить (`name`, `shipment_date`, `laboratory`…) |
+| `DELETE` | `/shipments/{id}` | Удалить рейс |
+| `POST` | `/shipments/{id}/add-containers/` | Добавить тары (OUTBOUND, DRAFT/ASSEMBLED) |
+| `POST` | `/shipments/{id}/remove-container/` | Убрать тару (OUTBOUND, DRAFT/ASSEMBLED) |
+| `POST` | `/shipments/{id}/add-from-pick-list/` | Добавить пробы из выборки (пробы, не тары) |
+| `POST` | `/shipments/{id}/assemble/` | DRAFT → ASSEMBLED |
+| `POST` | `/shipments/{id}/send/` | DRAFT/ASSEMBLED → SENT (тары и пробы → IN_TRANSIT) |
+| `POST` | `/shipments/{id}/cancel/` | Отмена (до RECEIVED) |
+
+**Статусы:** `DRAFT` / `ASSEMBLED` / `SENT` / `RECEIVED` / `PARTIALLY_RECEIVED` / `RETURNED` / `CANCELLED` / `LOST`.
+
+**Направления:** `OUTBOUND` (мы → лаборатория), `INBOUND` (лаборатория → мы).
+
+**Модель:** `Shipment` содержит `name` (опционально), `container_items` (список тар через `ShipmentContainerItem` — только для OUTBOUND).
+
+**Поведение `send`:** для каждой тары в рейсе: `Container.status = IN_TRANSIT`; все пробы внутри синхронизируются (`Sample.status = IN_TRANSIT`, см. решение 1.110).
+
 
 Единый для всех 4xx/5xx:
 

@@ -144,7 +144,7 @@ def test_shipment_create_minimal(db, user):
     assert s.pk is not None
     assert s.sent_by == user
     assert s.direction == "OUTBOUND"
-    assert s.status == "SENT"
+    assert s.status == "DRAFT"
 
 
 def test_shipment_number_unique(db):
@@ -159,7 +159,7 @@ def test_shipment_str(db):
     )
     text = str(s)
     assert "ОТ-003" in text
-    assert "Отправлен" in text
+    assert "Черновик" in text
 
 
 # ============================================================
