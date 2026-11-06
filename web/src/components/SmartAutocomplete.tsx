@@ -3,6 +3,10 @@
  *
  * MUI v9: у `AutocompleteRenderInputParams` нет `InputProps`/`inputProps`.
  * Loading indicator вынесен под поле, чтобы не лезть в пропсы TextField.
+ *
+ * c-2.x-smart-input-bundle-2: `appendOnSelect` — при выборе подсказки
+ * автоматически дописывается символ (например, "-"), чтобы пользователь
+ * сразу ввёл диапазон (TAA-A34076001-031). При ручном вводе не добавляется.
  */
 import { Autocomplete, TextField, Typography } from "@mui/material";
 import React from "react";
@@ -19,6 +23,7 @@ interface SmartAutocompleteProps {
     error?: boolean;
     helperText?: React.ReactNode;
     onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+    appendOnSelect?: string;
 }
 
 export default function SmartAutocomplete({
@@ -33,6 +38,7 @@ export default function SmartAutocomplete({
     error,
     helperText,
     onKeyDown,
+    appendOnSelect,
 }: SmartAutocompleteProps) {
     return (
         <>
@@ -43,9 +49,19 @@ export default function SmartAutocomplete({
                 disabled={disabled}
                 value={value}
                 onChange={(_, newValue) => {
-                    onChange(newValue || "");
+                    // onChange вызывается только при выборе подсказки (клик/Enter на опции).
+                    if (
+                        typeof newValue === "string" &&
+                        appendOnSelect &&
+                        !newValue.endsWith(appendOnSelect)
+                    ) {
+                        onChange(newValue + appendOnSelect);
+                    } else {
+                        onChange(newValue || "");
+                    }
                 }}
                 onInputChange={(_, newInputValue) => {
+                    // Свободный ввод — без appendOnSelect.
                     onChange(newInputValue);
                 }}
                 filterOptions={(opts, { inputValue }) => {

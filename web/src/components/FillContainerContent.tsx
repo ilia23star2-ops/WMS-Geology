@@ -1,22 +1,8 @@
 /**
  * Содержимое формы управления пробами в таре (2f-17a).
  *
- * Вынесено из FillContainerDialog, чтобы использовать один и тот же
- * компонент:
- * - как тело диалога (`FillContainerDialog`);
- * - как вкладку «Редактирование» в `ContainerDetailDialog` (2f-17c).
- *
- * Без <Dialog>/<DialogContent>/<DialogActions> — кнопки в <Box> в конце.
- * Все внутренние модалки (RangeEditDialog, SampleEditDialog)
- * рендерятся как есть — MUI stacking через portal.
- *
- * 2f-17c: порядок блоков — сначала строка добавления диапазонов
- * (и таблица добавленных), потом список существующих проб.
- * 2f-17c-fix: убрана кнопка «Предпросмотр» внизу — она теперь
- * только в шапке ContainerDetailDialog (этикетка/QR).
- *
- * c-2.x-smart-input: поле ввода диапазона заменено на SmartAutocomplete
- * для подсказок на основе истории проб.
+ * c-2.x-smart-input-bundle-2: подсказки — префикс + скважина (TST1209).
+ * Исключаем базы, у которых ВСЕ пробы уже добавлены.
  */
 import { useMemo, useState } from "react";
 import {
@@ -178,7 +164,6 @@ export default function FillContainerContent({
     const sites = useSites();
     const fillMutation = useFillSamples(container.id);
 
-    // Подсказки для диапазона на основе контекста тары
     const suggestions = useSuggestions({
         site: container.draft_site ?? undefined,
         work_order: container.draft_work_order_coded ?? undefined,
@@ -212,6 +197,28 @@ export default function FillContainerContent({
     const sitePatterns = useMemo(() => (sites.data ?? []).flatMap((s) => s.match_patterns ?? []), [sites.data]);
 
     const hasIncoming = Boolean(container.draft_work_order_incoming);
+
+    // c-2.x-smart-input-bundle-2: подсказки — префикс + скважина (TST1209).
+    // Исключаем базы, у которых ВСЕ пробы уже добавлены.
+    const baseSampleOptions = useMemo(() => {
+        const samples = suggestions.data?.samples ?? [];
+        const groups = new Map<string, string[]>();
+        for (const sampleNumber of samples) {
+            const base = sampleNumber.slice(0, -2);
+            const arr = groups.get(base);
+            if (arr) {
+                arr.push(sampleNumber);
+            } else {
+                groups.set(base, [sampleNumber]);
+            }
+        }
+        const result: string[] = [];
+        for (const [base, sampleNumbers] of groups) {
+            const hasUnused = sampleNumbers.some((n) => !existingNumbers.has(n));
+            if (hasUnused) result.push(base);
+        }
+        return result.sort();
+    }, [suggestions.data, existingNumbers]);
 
     function reset() {
         setContainerNumber("");
@@ -418,7 +425,6 @@ export default function FillContainerContent({
                 />
             )}
 
-            {/* ── Блок «Добавить новые пробы» — вверху (2f-17c) ── */}
             <Typography variant="subtitle1" sx={{ mb: 1 }}>Добавить новые пробы</Typography>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", mb: 1 }}>
@@ -427,7 +433,8 @@ export default function FillContainerContent({
                         label="Диапазон проб"
                         value={input}
                         onChange={(v) => { setInput(v); setInputError(null); }}
-                        options={suggestions.data?.samples ?? []}
+                        options={baseSampleOptions}
+                        appendOnSelect="-"
                         loading={suggestions.isLoading}
                         error={Boolean(inputError)}
                         helperText={inputError ?? "Например: TAA-A34076001-031 или TST124001-005"}
@@ -489,7 +496,6 @@ export default function FillContainerContent({
 
             <Divider sx={{ my: 2 }} />
 
-            {/* ── Существующие пробы — ниже ── */}
             {samplesQuery.isLoading && <Typography>Загрузка проб...</Typography>}
 
             {existingSamples.length > 0 && (
@@ -533,7 +539,6 @@ export default function FillContainerContent({
                 </Box>
             )}
 
-            {/* ── Итого + кнопки ── */}
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
                 <Typography variant="body2" color="text.secondary">Итого проб: <b>{totalSamples}</b></Typography>
                 <Stack direction="row" spacing={1}>
