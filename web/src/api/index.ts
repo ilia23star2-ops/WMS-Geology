@@ -98,7 +98,7 @@ export type {
     Site,
 } from "./catalogs";
 
-// Топология склада (2f-4a + 2f-4b + 2f-4c-2 + 2f-11c).
+// Топология склада.
 export {
     CELL_TYPE_LABELS,
     PALLET_STATUS_LABELS,
@@ -188,15 +188,21 @@ export type {
 export {
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
+    assembleShipment,
     cancelShipment,
     createShipment,
     deleteShipment,
     fetchShipment,
     fetchShipments,
+    sendShipment,
     updateShipment,
+    useAddShipmentContainers,
+    useAssembleShipment,
     useCancelShipment,
     useCreateShipment,
     useDeleteShipment,
+    useRemoveShipmentContainer,
+    useSendShipment,
     useShipment,
     useShipments,
     useUpdateShipment,
@@ -280,7 +286,7 @@ export type {
     ResolveQuestionsResponse,
 } from "./importSessions";
 
-// Наряд-заказы (WorkOrder).
+// Наряд-заказы.
 export {
     WORK_ORDER_STATUS_LABELS,
     WORK_ORDER_TYPE_LABELS,
@@ -303,7 +309,7 @@ export type {
     WorkOrderType,
 } from "./workOrders";
 
-// Токены доступа (3.x-offline-auth-b).
+// Токены доступа.
 export {
     codeLogin,
     createAccessToken,
@@ -322,7 +328,7 @@ export type {
     OfflineLoginRequest,
 } from "./accessTokens";
 
-// Офлайн-импорт (3.x-offline-sync-d-1).
+// Офлайн-импорт.
 export {
     offlineImport,
     useOfflineImport,
@@ -335,7 +341,7 @@ export type {
     OfflineOperationType,
 } from "./offlineImports";
 
-// Задачи на актуализацию (3.x-offline-sync-d-2).
+// Задачи на актуализацию.
 export {
     ACTUALIZATION_RESOLUTION_LABELS,
     ACTUALIZATION_TASK_TYPE_LABELS,

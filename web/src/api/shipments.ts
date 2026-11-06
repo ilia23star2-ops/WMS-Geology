@@ -4,8 +4,14 @@
  * Фильтры по direction / status / laboratory_id / site_id.
  * Список — DRF-пагинация (50 на страницу).
  *
- * Пачка 2f-6a: добавлены update / delete / cancel.
- * Пачка c-2.x-shipments-1b: name в Shipment, createShipment, useCreateShipment.
+ * Пачка 2f-6a: update / delete / cancel.
+ * Пачка c-2.x-shipments-1b: name, createShipment, useCreateShipment.
+ * Пачка c-2.x-shipments-2: useAddShipmentContainers / useRemoveShipmentContainer /
+ *   useSendShipment / useAssembleShipment.
+ *
+ * Внутренние функции addContainersToShipment / removeContainerFromShipment
+ * НЕ экспортируются — чтобы не пересекаться с printBatches (там свои
+ * addContainers/removeContainer).
  */
 import {
     keepPreviousData,
@@ -45,7 +51,6 @@ export const SHIPMENT_STATUS_LABELS: Record<ShipmentStatus, string> = {
     LOST: "Утерян",
 };
 
-/** c-2.x-shipments-1b: одна тара в рейсе (OUTBOUND). */
 export interface ShipmentContainerItem {
     id: number;
     shipment: number;
@@ -61,7 +66,6 @@ export interface ShipmentContainerItem {
 export interface Shipment {
     id: number;
     shipment_number: string;
-    /** c-2.x-shipments-1b: человекочитаемое название (опционально). */
     name: string;
     direction: ShipmentDirection;
     destination: string;
@@ -84,7 +88,6 @@ export interface Shipment {
     cancel_reason: string;
     items_count: number;
     containers_count: number;
-    /** c-2.x-shipments-1b: тары в рейсе (только для OUTBOUND). */
     container_items: ShipmentContainerItem[];
     note: string;
     updated_at: string;
@@ -148,7 +151,7 @@ export function useShipment(id: number | null) {
 }
 
 // ============================================================
-// Create (c-2.x-shipments-1b)
+// Create
 // ============================================================
 
 export interface CreateShipmentPayload {
@@ -185,7 +188,7 @@ export function useCreateShipment() {
 }
 
 // ============================================================
-// Update / delete / cancel (2f-6a)
+// Update / delete / cancel
 // ============================================================
 
 export interface UpdateShipmentPayload {
@@ -270,6 +273,108 @@ export function useCancelShipment() {
         onSuccess: (data) => {
             queryClient.setQueryData(["shipment", data.id], data);
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+// ============================================================
+// OUTBOUND: тары в рейсе
+// ============================================================
+
+interface AddContainersResponse {
+    shipment: Shipment;
+    added_count: number;
+}
+
+async function addContainersToShipment(
+    shipmentId: number,
+    containerIds: number[],
+): Promise<AddContainersResponse> {
+    const { data } = await apiClient.post<AddContainersResponse>(
+        `/shipments/${shipmentId}/add-containers/`,
+        { container_ids: containerIds },
+    );
+    return data;
+}
+
+export function useAddShipmentContainers(shipmentId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (containerIds: number[]) =>
+            addContainersToShipment(shipmentId, containerIds),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", shipmentId], data.shipment);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+interface RemoveContainerResponse {
+    shipment: Shipment;
+    removed: boolean;
+}
+
+async function removeContainerFromShipment(
+    shipmentId: number,
+    containerId: number,
+): Promise<RemoveContainerResponse> {
+    const { data } = await apiClient.post<RemoveContainerResponse>(
+        `/shipments/${shipmentId}/remove-container/`,
+        { container_id: containerId },
+    );
+    return data;
+}
+
+export function useRemoveShipmentContainer(shipmentId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (containerId: number) =>
+            removeContainerFromShipment(shipmentId, containerId),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", shipmentId], data.shipment);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+// ============================================================
+// Send / assemble
+// ============================================================
+
+export async function assembleShipment(shipmentId: number): Promise<Shipment> {
+    const { data } = await apiClient.post<Shipment>(
+        `/shipments/${shipmentId}/assemble/`,
+    );
+    return data;
+}
+
+export function useAssembleShipment(shipmentId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () => assembleShipment(shipmentId),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", shipmentId], data);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+export async function sendShipment(shipmentId: number): Promise<Shipment> {
+    const { data } = await apiClient.post<Shipment>(
+        `/shipments/${shipmentId}/send/`,
+    );
+    return data;
+}
+
+export function useSendShipment(shipmentId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () => sendShipment(shipmentId),
+        onSuccess: (data) => {
+            queryClient.setQueryData(["shipment", shipmentId], data);
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({ queryKey: ["samples"] });
         },
     });
 }
