@@ -4,7 +4,10 @@
  * INBOUND: партия приёмки + ReceiptItem + сверка.
  * OUTBOUND: тары в рейсе + добавить/убрать + Собрать/Отправить.
  *
- * c-2.x-shipments-2.
+ * c-2.x-shipments-2, c-2.x-shipments-2-fix:
+ * - «Откуда» / «Куда» для OUTBOUND (origin_laboratory / laboratory).
+ * - «Участок» скрыт для OUTBOUND.
+ * - Автообновление (staleTime 0 + invalidate в хуках).
  */
 import { useState } from "react";
 import {
@@ -692,13 +695,22 @@ export default function ShipmentDetailPage() {
                                     data.direction}
                             </b>
                         </Typography>
+                        {isOutbound && (
+                            <Typography variant="body1">
+                                Откуда:{" "}
+                                <b>
+                                    {data.origin_laboratory_name ?? "—"}
+                                </b>
+                            </Typography>
+                        )}
                         <Typography variant="body1">
-                            Лаборатория:{" "}
-                            <b>{data.laboratory_name ?? "—"}</b>
+                            Куда: <b>{data.laboratory_name ?? "—"}</b>
                         </Typography>
-                        <Typography variant="body1">
-                            Участок: <b>{data.site_name ?? "—"}</b>
-                        </Typography>
+                        {!isOutbound && (
+                            <Typography variant="body1">
+                                Участок: <b>{data.site_name ?? "—"}</b>
+                            </Typography>
+                        )}
                         <Typography variant="body1">
                             Дата рейса: <b>{formatDate(data.shipment_date)}</b>
                         </Typography>

@@ -1,17 +1,11 @@
 /**
  * API рейсов (`Shipment`).
  *
- * Фильтры по direction / status / laboratory_id / site_id.
- * Список — DRF-пагинация (50 на страницу).
- *
  * Пачка 2f-6a: update / delete / cancel.
- * Пачка c-2.x-shipments-1b: name, createShipment, useCreateShipment.
- * Пачка c-2.x-shipments-2: useAddShipmentContainers / useRemoveShipmentContainer /
- *   useSendShipment / useAssembleShipment.
- *
- * Внутренние функции addContainersToShipment / removeContainerFromShipment
- * НЕ экспортируются — чтобы не пересекаться с printBatches (там свои
- * addContainers/removeContainer).
+ * Пачка c-2.x-shipments-1b: name, createShipment.
+ * Пачка c-2.x-shipments-2: add/remove containers, send, assemble.
+ * Пачка c-2.x-shipments-2-fix: origin_laboratory (откуда), staleTime 0,
+ *   invalidate вместо setQueryData (автообновление).
  */
 import {
     keepPreviousData,
@@ -69,8 +63,12 @@ export interface Shipment {
     name: string;
     direction: ShipmentDirection;
     destination: string;
+    /** Куда едет (FK → Laboratory). */
     laboratory: number | null;
     laboratory_name: string | null;
+    /** c-2.x-shipments-2-fix: откуда едет (FK → Laboratory). */
+    origin_laboratory: number | null;
+    origin_laboratory_name: string | null;
     site: number | null;
     site_name: string | null;
     shipment_date: string | null;
@@ -130,7 +128,7 @@ export function useShipments(params: ShipmentsListParams) {
         queryKey: ["shipments", params],
         queryFn: () => fetchShipments(params),
         placeholderData: keepPreviousData,
-        staleTime: 30_000,
+        staleTime: 10_000,
     });
 }
 
@@ -141,12 +139,16 @@ export async function fetchShipment(id: number): Promise<Shipment> {
     return data;
 }
 
+/**
+ * Детали рейса. staleTime: 0 — всегда рефетч при монтировании и
+ * после инвалидации (автообновление после add/remove/send).
+ */
 export function useShipment(id: number | null) {
     return useQuery({
         queryKey: ["shipment", id],
         queryFn: () => fetchShipment(id as number),
         enabled: typeof id === "number" && !Number.isNaN(id),
-        staleTime: 10_000,
+        staleTime: 0,
     });
 }
 
@@ -160,6 +162,7 @@ export interface CreateShipmentPayload {
     shipment_number?: string;
     destination?: string;
     laboratory?: number | null;
+    origin_laboratory?: number | null;
     site?: number | null;
     shipment_date?: string | null;
     driver_name?: string;
@@ -197,6 +200,7 @@ export interface UpdateShipmentPayload {
     direction?: ShipmentDirection;
     destination?: string;
     laboratory?: number | null;
+    origin_laboratory?: number | null;
     site?: number | null;
     shipment_date?: string | null;
     driver_name?: string;
@@ -225,8 +229,8 @@ export function useUpdateShipment() {
             id: number;
             payload: UpdateShipmentPayload;
         }) => updateShipment(id, payload),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", data.id], data);
+        onSuccess: (_data, { id }) => {
+            void queryClient.invalidateQueries({ queryKey: ["shipment", id] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
         },
     });
@@ -270,8 +274,8 @@ export function useCancelShipment() {
             id: number;
             reason?: string;
         }) => cancelShipment(id, reason),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", data.id], data);
+        onSuccess: (_data, { id }) => {
+            void queryClient.invalidateQueries({ queryKey: ["shipment", id] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
         },
     });
@@ -302,9 +306,12 @@ export function useAddShipmentContainers(shipmentId: number) {
     return useMutation({
         mutationFn: (containerIds: number[]) =>
             addContainersToShipment(shipmentId, containerIds),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", shipmentId], data.shipment);
+        onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["shipment", shipmentId],
+            });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
         },
     });
 }
@@ -330,9 +337,12 @@ export function useRemoveShipmentContainer(shipmentId: number) {
     return useMutation({
         mutationFn: (containerId: number) =>
             removeContainerFromShipment(shipmentId, containerId),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", shipmentId], data.shipment);
+        onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["shipment", shipmentId],
+            });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
         },
     });
 }
@@ -352,8 +362,10 @@ export function useAssembleShipment(shipmentId: number) {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: () => assembleShipment(shipmentId),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", shipmentId], data);
+        onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["shipment", shipmentId],
+            });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
         },
     });
@@ -370,8 +382,10 @@ export function useSendShipment(shipmentId: number) {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: () => sendShipment(shipmentId),
-        onSuccess: (data) => {
-            queryClient.setQueryData(["shipment", shipmentId], data);
+        onSuccess: () => {
+            void queryClient.invalidateQueries({
+                queryKey: ["shipment", shipmentId],
+            });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
             void queryClient.invalidateQueries({ queryKey: ["containers"] });
             void queryClient.invalidateQueries({ queryKey: ["samples"] });

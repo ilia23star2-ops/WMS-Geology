@@ -128,6 +128,9 @@ class ShipmentSerializer(serializers.ModelSerializer):
     laboratory_name = serializers.CharField(
         source="laboratory.name", read_only=True, default=None,
     )
+    origin_laboratory_name = serializers.CharField(
+        source="origin_laboratory.name", read_only=True, default=None,
+    )
     site_name = serializers.CharField(
         source="site.name", read_only=True, default=None,
     )
@@ -152,6 +155,8 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "destination",
             "laboratory",
             "laboratory_name",
+            "origin_laboratory",
+            "origin_laboratory_name",
             "site",
             "site_name",
             "shipment_date",

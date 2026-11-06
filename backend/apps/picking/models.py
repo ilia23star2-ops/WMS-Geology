@@ -177,6 +177,15 @@ class Shipment(models.Model):
         blank=True,
         related_name="shipments",
     )
+    # c-2.x-shipments-2-fix: откуда едет (для OUTBOUND). Для INBOUND
+    # чаще всего null (у лаборатории свой склад, но может быть указан).
+    origin_laboratory = models.ForeignKey(
+        "samples.Laboratory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="origin_shipments",
+    )
     site = models.ForeignKey(
         "samples.Site",
         on_delete=models.SET_NULL,

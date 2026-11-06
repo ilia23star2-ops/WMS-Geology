@@ -101,6 +101,13 @@ export default function ShipmentsPage() {
                 valueGetter: (value) => value || "—",
             },
             {
+                field: "origin_laboratory_name",
+                headerName: "Откуда",
+                flex: 1,
+                minWidth: 160,
+                valueGetter: (value) => value ?? "—",
+            },
+            {
                 field: "laboratory_name",
                 headerName: "Куда",
                 flex: 1,

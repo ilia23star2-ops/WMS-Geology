@@ -1,10 +1,11 @@
 /**
  * Диалог выбора тар для добавления в рейс (OUTBOUND).
  *
- * Загружает список тар (ACTIVE), исключает уже добавленные,
- * даёт выбрать чекбоксами, поиск по номеру/Н/З, фильтры.
+ * Загружает тары в статусах ACTIVE + PENDING_PLACEMENT (обе можно
+ * отправлять — пробы есть, физически тара на складе).
+ * Исключает уже добавленные в рейс.
  *
- * c-2.x-shipments-2.
+ * c-2.x-shipments-2, c-2.x-shipments-2-fix-2.
  */
 import { useMemo, useState } from "react";
 import {
@@ -65,12 +66,27 @@ export default function AddContainersToShipmentDialog({
         useState<GridRowSelectionModel>(emptySelection());
     const [error, setError] = useState<string | null>(null);
 
-    const { data, isLoading } = useContainers({
+    // Две выборки: ACTIVE (размещённые) + PENDING_PLACEMENT (пробы есть,
+    // но не размещены — тоже можно отправить).
+    const activeQuery = useContainers({
         page: 1,
         filters: { status: "ACTIVE" as ContainerStatus },
     });
+    const pendingQuery = useContainers({
+        page: 1,
+        filters: { status: "PENDING_PLACEMENT" as ContainerStatus },
+    });
+    const isLoading = activeQuery.isLoading || pendingQuery.isLoading;
+
     const researchTypes = useResearchTypes();
     const addMutation = useAddShipmentContainers(shipmentId);
+
+    const allContainers = useMemo(() => {
+        const map = new Map<number, Container>();
+        for (const c of activeQuery.data?.results ?? []) map.set(c.id, c);
+        for (const c of pendingQuery.data?.results ?? []) map.set(c.id, c);
+        return Array.from(map.values());
+    }, [activeQuery.data, pendingQuery.data]);
 
     const excluded = useMemo(
         () => new Set(excludedContainerIds),
@@ -78,8 +94,7 @@ export default function AddContainersToShipmentDialog({
     );
 
     const rows = useMemo(() => {
-        const all = data?.results ?? [];
-        const filtered = all.filter((c) => !excluded.has(c.id));
+        const filtered = allContainers.filter((c) => !excluded.has(c.id));
         const q = search.trim().toLowerCase();
         const wo = workOrderFilter.trim().toLowerCase();
         const rtName =
@@ -108,7 +123,7 @@ export default function AddContainersToShipmentDialog({
             return true;
         });
     }, [
-        data,
+        allContainers,
         excluded,
         search,
         workOrderFilter,
@@ -186,14 +201,20 @@ export default function AddContainersToShipmentDialog({
         {
             field: "status",
             headerName: "Статус",
-            width: 150,
+            width: 170,
             renderCell: (params) => {
                 const status = params.value as ContainerStatus;
+                const color =
+                    status === "ACTIVE"
+                        ? "success"
+                        : status === "PENDING_PLACEMENT"
+                            ? "warning"
+                            : "default";
                 return (
                     <Chip
                         label={CONTAINER_STATUS_LABELS[status] ?? status}
                         size="small"
-                        color={status === "ACTIVE" ? "success" : "default"}
+                        color={color}
                     />
                 );
             },
