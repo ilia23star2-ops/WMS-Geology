@@ -702,3 +702,19 @@
 **Где:** `backend/apps/storage/models.py` (`Container.origin_laboratory_id`), `backend/apps/storage/serializers.py`, `web/src/api/containers.ts`, `mobile/lib/models/container.dart`.
 **Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
 
+
+### 1.112. 2026-11-06 — ShipmentContainerItem: тары в рейсе (c-2.x-shipments-1)
+
+**Решение:** для OUTBOUND-рейсов тары хранятся в новой таблице `ShipmentContainerItem` (`shipment` + `container` + `position`). Старая `ShipmentItem` (пробы) остаётся для INBOUND и смешанных случаев. `Shipment.containers_count` для OUTBOUND считается из `container_items`, для INBOUND — из `receipts`.
+
+**Также:**
+- `Shipment.name` — человекочитаемое название (опционально).
+- `Shipment.sent_at` — переделан с `auto_now_add=True` на `null=True` (баг: ставился при создании, а не при отправке).
+- `shipment_number` — генерируется на бэкенде: `ОТ-YYYY-NNN` (OUTBOUND), `ПР-YYYY-NNN` (INBOUND).
+- Custom actions: `add-containers`, `remove-container`, `send`. При `send` все тары → `IN_TRANSIT`, пробы синхронизируются.
+
+**Причина:** в OUTBOUND тара едет целиком с пробами (не перекладываются). Хранить тару удобнее чем перечислять 30 проб. INBOUND остаётся через Receipt (там уже работает).
+
+**Где:** `backend/apps/picking/models.py`, `serializers.py`, `views.py`, миграция `picking/0004_...`.
+**Статус:** ✅ действует.
+

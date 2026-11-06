@@ -111,6 +111,26 @@
 
 ---
 
+## Серия `feature/2.x-shipments`
+
+**Дата:** 2026-11-06 — активна.
+**Ветка:** `feature/2.x-shipments`.
+**Контекст:** Рейсы (OUTBOUND «Отправка»). Раздельная UI для OUTBOUND и INBOUND. Модель `ShipmentContainerItem` (тары в рейсе, не пробы).
+
+### Что закрыто
+
+- ✅ **`c-2.x-shipments-1`** (2026-11-06) — модель `ShipmentContainerItem`, `Shipment.name`, `sent_at` переделан с `auto_now_add` на `null=True` (баг: ставился при создании). Endpoints `add-containers` / `remove-container` / `send`. Тесты: 855 passed (+13 в picking).
+- ✅ **`c-2.x-shipments-1a`** (2026-11-06) — автогенерация `shipment_number` (ОТ-YYYY-NNN для OUTBOUND, ПР-YYYY-NNN для INBOUND). Поле `shipment_number` в сериализаторе теперь `required=False`. Тесты: 858 passed (+3).
+- ✅ **`c-2.x-shipments-1b`** (2026-11-06) — страница «Отправка» (`ShipmentsPage` + `CreateShipmentDialog`), роут `/shipments`, пункт в sidebar. UI: создание рейса с автогенерацией, редирект на детали. Тесты: 24 passed web.
+
+### Метрики
+
+- **Backend: 858 тестов.**
+- **Web: 24 юнит-теста.**
+
+---
+
+
 ## Серия `feature/2.x-web-v2`
 
 **Дата:** 2026-10-12 — 2026-10-27.
