@@ -5,6 +5,7 @@
  * Список — DRF-пагинация (50 на страницу).
  *
  * Пачка 2f-6a: добавлены update / delete / cancel.
+ * Пачка c-2.x-shipments-1b: name в Shipment, createShipment, useCreateShipment.
  */
 import {
     keepPreviousData,
@@ -44,9 +45,24 @@ export const SHIPMENT_STATUS_LABELS: Record<ShipmentStatus, string> = {
     LOST: "Утерян",
 };
 
+/** c-2.x-shipments-1b: одна тара в рейсе (OUTBOUND). */
+export interface ShipmentContainerItem {
+    id: number;
+    shipment: number;
+    container: number;
+    position: number;
+    container_number: string | null;
+    container_status: string;
+    container_type_name: string | null;
+    draft_work_order_coded: string;
+    draft_research_type_name: string | null;
+}
+
 export interface Shipment {
     id: number;
     shipment_number: string;
+    /** c-2.x-shipments-1b: человекочитаемое название (опционально). */
+    name: string;
     direction: ShipmentDirection;
     destination: string;
     laboratory: number | null;
@@ -59,7 +75,7 @@ export interface Shipment {
     status: ShipmentStatus;
     sent_by: number | null;
     sent_by_username: string | null;
-    sent_at: string;
+    sent_at: string | null;
     assembled_at: string | null;
     received_at: string | null;
     cancelled_at: string | null;
@@ -68,7 +84,10 @@ export interface Shipment {
     cancel_reason: string;
     items_count: number;
     containers_count: number;
+    /** c-2.x-shipments-1b: тары в рейсе (только для OUTBOUND). */
+    container_items: ShipmentContainerItem[];
     note: string;
+    updated_at: string;
 }
 
 export interface ShipmentFilters {
@@ -129,16 +148,49 @@ export function useShipment(id: number | null) {
 }
 
 // ============================================================
-// Мутации (2f-6a)
+// Create (c-2.x-shipments-1b)
 // ============================================================
 
-/**
- * Поля, доступные для правки рейса.
- * `status` — намеренно не здесь: меняется через `cancel` action.
- * `sent_by`, `sent_at`, `cancelled_*` — read-only.
- */
+export interface CreateShipmentPayload {
+    name?: string;
+    direction: ShipmentDirection;
+    shipment_number?: string;
+    destination?: string;
+    laboratory?: number | null;
+    site?: number | null;
+    shipment_date?: string | null;
+    driver_name?: string;
+    vehicle_number?: string;
+    note?: string;
+}
+
+export async function createShipment(
+    payload: CreateShipmentPayload,
+): Promise<Shipment> {
+    const { data } = await apiClient.post<Shipment>(
+        "/shipments/",
+        payload,
+    );
+    return data;
+}
+
+export function useCreateShipment() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: createShipment,
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+// ============================================================
+// Update / delete / cancel (2f-6a)
+// ============================================================
+
 export interface UpdateShipmentPayload {
     shipment_number?: string;
+    name?: string;
     direction?: ShipmentDirection;
     destination?: string;
     laboratory?: number | null;
@@ -188,17 +240,11 @@ export function useDeleteShipment() {
         onSuccess: (_void, id) => {
             queryClient.removeQueries({ queryKey: ["shipment", id] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
-            // Связанные Receipt теряют shipment (SET_NULL на backend).
             void queryClient.invalidateQueries({ queryKey: ["receipts"] });
         },
     });
 }
 
-/**
- * Отмена рейса: `POST /shipments/{id}/cancel/`.
- * Backend вернёт 400, если статус — RECEIVED / PARTIALLY_RECEIVED /
- * CANCELLED. `reason` опционален.
- */
 export async function cancelShipment(
     id: number,
     reason?: string,
