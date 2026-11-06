@@ -12,6 +12,8 @@
 **Контекст:** Офлайн-режим мобильного приложения. SQLite + SyncQueue + Deferred Offline Login + USB + auto-detect + scanWindow + инкрементальный Pull. Backend на старте серии — 779 тестов.
 
 ### Что закрыто (backend)
+- ✅ **`c-2.x-smart-input-bundle-1`** (2026-11-06) — контекстные подсказки для создания тары и заполнения пробами. `SmartInputSuggestionsView` (эндпоинт `GET /storage/suggestions/`), MUI `Autocomplete` + `SmartAutocomplete`, фильтрация Н/З по участку и ТИ. 3 backend-теста.
+
 
 - ✅ **`c-6a-pre`** (2026-10-30) — починка pre-existing.
 - ✅ **`c-6a`** (2026-10-30) — `GET /health/` + денормализация `ContainerSerializer` + `select_related`.
@@ -114,6 +116,8 @@
 **Контекст:** Web: приёмка, ручной ввод тары, полный CRUD, полировка. Backend на старте — 552 теста.
 
 ### Что закрыто (backend)
+- ✅ **`c-2.x-smart-input-bundle-1`** (2026-11-06) — контекстные подсказки для создания тары и заполнения пробами. `SmartInputSuggestionsView` (эндпоинт `GET /storage/suggestions/`), MUI `Autocomplete` + `SmartAutocomplete`, фильтрация Н/З по участку и ТИ. 3 backend-теста.
+
 
 - ✅ **`bundle-1`**, **`bundle-2`**, **`bundle-5`**, **`bundle-6a`**, **`bundle-6b`**, **`bundle-7a-1`**, **`bundle-7a-2`**, **`bundle-7a-2b`**.
 - ✅ **`receiving-1a`..`receiving-3d-3-fix-2`** — парсер Excel, `apply_shipment_import`, `conflicts`, `resolve-conflicts`, `check`, `complete`, `act`, `import-shipment`.
