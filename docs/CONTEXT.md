@@ -36,7 +36,7 @@
 - `c-6b-updated-since-pull` — `?updated_since=` в Pull, `PullStats` = изменённые — ✅.
 
 **Mobile (офлайн-создание тары и справочников, `c-2d-2a`, `c-8-catalog-create`):**
-- `c-8-catalog-create` — офлайн-создание справочников — ✅.
+- `c-8-catalog-create-offline` — офлайн-создание справочников и защита от перезаписи при Pull — ✅.
 - `c-2d-2a` — SQLite v8 (`local_ref`), офлайн-создание тары, маппинг ID после `bulk-create` — ✅.
 - `c-2d-2a-fix-3` — `Container.fromJson` fallback на `*_id`, серверный формат JSON, история для negative-ID не зовёт сервер — ✅.
 

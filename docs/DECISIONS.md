@@ -602,3 +602,17 @@
 - «processedIds» — не «все обработанные», а «обработанные с последнего reload» (1.102).
 - «`fullAddress` в NamedCatalog» — не «полный адрес всегда». Только если сервер отдаёт `full_address` в JSON (1.102).
 - «UpdateOutcome.queued» — не ошибка, а отложенная операция PATCH в `sync_queue` (1.103).
+### 1.102. 2026-11-06 — Мобилка: офлайн-создание справочников и защита от перезаписи (c-8-catalog-create-offline)
+
+**Решение:**
+1. CatalogService.create при isNetworkError создает локальный справочник (negative ID) и кладет POST в sync_queue с localRef.
+2. SyncPusher._defaultOnSuccess ловит успешный POST к /sites/ и др. Берет responseData id, вызывает CatalogDao.remapId и SyncQueueDao.remapAllLocalRefs.
+3. ContainerDao.saveAll больше не перезаписывает тару, если у нее pending_sync = 1.
+4. SyncService._reconcile не сбрасывает pending_sync, если в очереди есть незавершенный bulk-create.
+
+**Причина:** без маппинга ID тара уходила на сервер с отрицательным draft_site_id и падала с 400. Без защиты saveAll Pull затирал внесенные офлайн изменения.
+
+**Где:** catalog_service.dart, sync_pusher.dart, sync_queue_dao.dart, sync_service.dart, container_dao.dart.
+**Статус:** ✅ действует.
+
+---

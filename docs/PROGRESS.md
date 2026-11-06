@@ -55,6 +55,9 @@
 
 ### Что закрыто (mobile, офлайн-создание тары и справочников)
 
+- ✅ **`c-8-catalog-create-offline`** (2026-11-06) — офлайн-создание справочников через `sync_queue`. `SyncPusher` маппит ID (local → server) после POST, а также обновляет `payload` и `endpoint` зависимых операций (например, создание тары). Исправлен баг `ContainerDao.saveAll`, который затирал локальные изменения (`pending_sync`) при Pull.
+
+
 - ✅ **`c-8-catalog-create`** (2026-11-03) — офлайн-создание справочников.
 - ✅ **`c-2d-2a`** (2026-11-03) — SQLite v8, маппинг negative→server после `bulk-create`, офлайн-создание тары.
 - ✅ **`c-2d-2a-fix-3`** (2026-11-03) — `Container.fromJson` fallback на `*_id`, серверный формат JSON, история для negative-ID.
@@ -309,3 +312,4 @@
 ### Метрики
 
 - Заходов: 1.
+- ✅ **c-8-catalog-create-offline** (2026-11-06) — офлайн-создание справочников через sync_queue. SyncPusher маппит ID (local -> server) после POST, обновляет payload и endpoint зависимых операций. Исправлен баг ContainerDao.saveAll, затиравший локальные изменения при Pull.
