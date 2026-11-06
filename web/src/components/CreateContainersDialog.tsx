@@ -10,6 +10,9 @@
  *
  * 2f-15: кнопка «Предпросмотр» — макет этикетки до создания
  * (LocalPreviewDialog с previewData, QR — плейсхолдер).
+ *
+ * c-2.x-smart-input: автокомплит для полей Н/З (текущий) и Н/З (входящий)
+ * на основе истории проб этого участка.
  */
 import { useState } from "react";
 import {
@@ -35,7 +38,9 @@ import {
     useResearchTypes,
     useSites,
 } from "../api";
+import { useSuggestions } from "../api/suggestions";
 import LocalPreviewDialog from "./LocalPreviewDialog";
+import SmartAutocomplete from "./SmartAutocomplete";
 
 interface CreateContainersDialogProps {
     open: boolean;
@@ -66,6 +71,16 @@ export default function CreateContainersDialog({
     const researchTypes = useResearchTypes();
     const containerTypes = useContainerTypes();
     const createMutation = useBulkCreateContainers();
+
+    // Подсказки для Н/З, зависящие от выбранного участка и ТИ
+    const selectedRtCode = researchTypes.data?.find((rt) => String(rt.id) === researchTypeId)?.code;
+    const suggestions = useSuggestions(
+        { 
+            site: siteId !== "" ? Number(siteId) : undefined,
+            research_type: selectedRtCode
+        },
+        siteId !== ""
+    );
 
     function reset() {
         setSiteId("");
@@ -195,15 +210,13 @@ export default function CreateContainersDialog({
                         </Grid>
 
                         <Grid size={{ xs: 12 }}>
-                            <TextField
+                            <SmartAutocomplete
                                 label="Н/З (текущий)"
-                                size="small"
-                                fullWidth
                                 required
                                 value={workOrderCoded}
-                                onChange={(e) =>
-                                    setWorkOrderCoded(e.target.value)
-                                }
+                                onChange={setWorkOrderCoded}
+                                options={suggestions.data?.work_orders ?? []}
+                                loading={suggestions.isLoading}
                                 helperText="Например: TST0001"
                             />
                         </Grid>
@@ -221,15 +234,12 @@ export default function CreateContainersDialog({
                                 label="Есть входящий Н/З"
                             />
                             {hasIncoming && (
-                                <TextField
+                                <SmartAutocomplete
                                     label="Н/З (входящий)"
-                                    size="small"
-                                    fullWidth
-                                    sx={{ mt: 1 }}
                                     value={workOrderIncoming}
-                                    onChange={(e) =>
-                                        setWorkOrderIncoming(e.target.value)
-                                    }
+                                    onChange={setWorkOrderIncoming}
+                                    options={suggestions.data?.work_orders ?? []}
+                                    loading={suggestions.isLoading}
                                     helperText="Например: 02-Тест001"
                                 />
                             )}

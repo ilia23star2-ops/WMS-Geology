@@ -14,6 +14,9 @@
  * (и таблица добавленных), потом список существующих проб.
  * 2f-17c-fix: убрана кнопка «Предпросмотр» внизу — она теперь
  * только в шапке ContainerDetailDialog (этикетка/QR).
+ *
+ * c-2.x-smart-input: поле ввода диапазона заменено на SmartAutocomplete
+ * для подсказок на основе истории проб.
  */
 import { useMemo, useState } from "react";
 import {
@@ -50,12 +53,14 @@ import {
     type FillSamplesGroup,
     type SampleStatus,
 } from "../api";
+import { useSuggestions } from "../api/suggestions";
 import {
     buildSampleNumbers,
     parseSampleInput,
 } from "../utils/parseSampleInput";
 import RangeEditDialog from "./RangeEditDialog";
 import SampleEditDialog from "./SampleEditDialog";
+import SmartAutocomplete from "./SmartAutocomplete";
 
 interface FillContainerContentProps {
     container: Container;
@@ -172,6 +177,13 @@ export default function FillContainerContent({
     const laboratories = useLaboratories();
     const sites = useSites();
     const fillMutation = useFillSamples(container.id);
+
+    // Подсказки для диапазона на основе контекста тары
+    const suggestions = useSuggestions({
+        site: container.draft_site ?? undefined,
+        work_order: container.draft_work_order_coded ?? undefined,
+        research_type: container.draft_research_type_name ?? undefined,
+    });
 
     const samplesQuery = useSamples({
         page: 1,
@@ -410,16 +422,23 @@ export default function FillContainerContent({
             <Typography variant="subtitle1" sx={{ mb: 1 }}>Добавить новые пробы</Typography>
 
             <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", mb: 1 }}>
-                <TextField
-                    label="Диапазон проб"
-                    size="small"
-                    fullWidth
-                    value={input}
-                    onChange={(e) => { setInput(e.target.value); setInputError(null); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddRange(); } }}
-                    error={Boolean(inputError)}
-                    helperText={inputError ?? "Например: TAA-A34076001-031 или TST124001-005"}
-                />
+                <Box sx={{ flexGrow: 1 }}>
+                    <SmartAutocomplete
+                        label="Диапазон проб"
+                        value={input}
+                        onChange={(v) => { setInput(v); setInputError(null); }}
+                        options={suggestions.data?.samples ?? []}
+                        loading={suggestions.isLoading}
+                        error={Boolean(inputError)}
+                        helperText={inputError ?? "Например: TAA-A34076001-031 или TST124001-005"}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddRange();
+                            }
+                        }}
+                    />
+                </Box>
                 <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddRange} sx={{ whiteSpace: "nowrap", height: 40 }}>
                     Добавить
                 </Button>

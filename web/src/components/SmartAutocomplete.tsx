@@ -1,8 +1,11 @@
 /**
  * Универсальный Autocomplete с режимом freeSolo и фильтрацией по вхождению.
- * Используется для Н/З, ТИ, префиксов проб.
+ *
+ * MUI v9: у `AutocompleteRenderInputParams` нет `InputProps`/`inputProps`.
+ * Loading indicator вынесен под поле, чтобы не лезть в пропсы TextField.
  */
-import { Autocomplete, TextField } from "@mui/material";
+import { Autocomplete, TextField, Typography } from "@mui/material";
+import React from "react";
 
 interface SmartAutocompleteProps {
     label: string;
@@ -13,6 +16,9 @@ interface SmartAutocompleteProps {
     disabled?: boolean;
     placeholder?: string;
     required?: boolean;
+    error?: boolean;
+    helperText?: React.ReactNode;
+    onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
 }
 
 export default function SmartAutocomplete({
@@ -24,54 +30,56 @@ export default function SmartAutocomplete({
     disabled = false,
     placeholder,
     required,
+    error,
+    helperText,
+    onKeyDown,
 }: SmartAutocompleteProps) {
     return (
-        <Autocomplete
-            freeSolo
-            options={options}
-            loading={loading}
-            disabled={disabled}
-            value={value}
-            onChange={(_, newValue) => {
-                onChange(newValue || "");
-            }}
-            onInputChange={(_, newInputValue) => {
-                onChange(newInputValue);
-            }}
-            filterOptions={(opts, { inputValue }) => {
-                // Сортировка и фильтрация: если пусто — показываем всё,
-                // иначе ищем совпадения без учета регистра.
-                const filtered = opts.filter((option) =>
-                    option.toLowerCase().includes(inputValue.toLowerCase()),
-                );
-                // Если введенное значение уникально и его нет в списке, добавим его в конец
-                if (
-                    inputValue &&
-                    !filtered.includes(inputValue)
-                ) {
-                    return [...filtered, inputValue];
-                }
-                return filtered;
-            }}
-            renderInput={(params) => (
-                <TextField
-                    {...params}
-                    label={label}
-                    placeholder={placeholder}
-                    required={required}
-                    size="small"
-                    fullWidth
-                    InputProps={{
-                        ...params.InputProps,
-                        endAdornment: (
-                            <>
-                                {loading ? <span style={{ marginRight: 8 }}>...</span> : null}
-                                {params.InputProps.endAdornment}
-                            </>
-                        ),
-                    }}
-                />
+        <>
+            <Autocomplete
+                freeSolo
+                options={options}
+                loading={loading}
+                disabled={disabled}
+                value={value}
+                onChange={(_, newValue) => {
+                    onChange(newValue || "");
+                }}
+                onInputChange={(_, newInputValue) => {
+                    onChange(newInputValue);
+                }}
+                filterOptions={(opts, { inputValue }) => {
+                    const filtered = opts.filter((option) =>
+                        option.toLowerCase().includes(inputValue.toLowerCase()),
+                    );
+                    if (inputValue && !filtered.includes(inputValue)) {
+                        return [...filtered, inputValue];
+                    }
+                    return filtered;
+                }}
+                renderInput={(params) => (
+                    <TextField
+                        {...params}
+                        label={label}
+                        placeholder={placeholder}
+                        required={required}
+                        size="small"
+                        fullWidth
+                        error={error}
+                        helperText={helperText}
+                        onKeyDown={onKeyDown}
+                    />
+                )}
+            />
+            {loading && (
+                <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5, ml: 1.5 }}
+                >
+                    Загрузка подсказок…
+                </Typography>
             )}
-        />
+        </>
     );
 }
