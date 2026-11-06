@@ -103,6 +103,10 @@
 - ⏸ **`c-5`** — sneakernet через флешку (отложено).
 - ✅ **`c-8a`**, **`c-8c`**, **`c-8d`**, **`c-8e`** — сняты с плана после аудита 2026-11-05.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - **Backend: 842 теста** (без изменений).
@@ -122,6 +126,10 @@
 - ✅ **`c-2.x-shipments-1`** (2026-11-06) — модель `ShipmentContainerItem`, `Shipment.name`, `sent_at` переделан с `auto_now_add` на `null=True` (баг: ставился при создании). Endpoints `add-containers` / `remove-container` / `send`. Тесты: 855 passed (+13 в picking).
 - ✅ **`c-2.x-shipments-1a`** (2026-11-06) — автогенерация `shipment_number` (ОТ-YYYY-NNN для OUTBOUND, ПР-YYYY-NNN для INBOUND). Поле `shipment_number` в сериализаторе теперь `required=False`. Тесты: 858 passed (+3).
 - ✅ **`c-2.x-shipments-1b`** (2026-11-06) — страница «Отправка» (`ShipmentsPage` + `CreateShipmentDialog`), роут `/shipments`, пункт в sidebar. UI: создание рейса с автогенерацией, редирект на детали. Тесты: 24 passed web.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
@@ -159,6 +167,10 @@
 
 - ✅ **`bundle-7a-3`..`bundle-7a-4c-2c`**, **`receiving-3d-1`..`3d-3`**, **`3f-2`**, **`2f-1`..`2f-17c`**, **`3.x-offline-auth`** (полный список — в предыдущих версиях, все закрыты).
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов закрыто: 75.
@@ -178,6 +190,10 @@
 - ✅ **`bundle-1a`..`5`** — Flutter init, API, auth, сканер, список проб.
 - ✅ **`docs/2.x-mobile-update`**.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 8.
@@ -193,6 +209,10 @@
 ### Что закрыто
 
 - ✅ **`bundle-1a`..`9`** — инициализация, ESLint, MUI, `axios`, `authStore`, `ProtectedRoute`, sidebar, 4 карточки, DataGrid тары/проб, партии печати, bulk, справочники.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
@@ -211,6 +231,10 @@
 
 - ✅ **`bundle-1`..`4d-4`** — QR-сервис, PDF-этикетка, `label.pdf/`, `PrintBatch`, раскладка A4, QR-сетка 8×11, API печати партии.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 7.
@@ -226,6 +250,10 @@
 ### Что закрыто
 
 - ✅ **`bundle-1`..`3`** — парсер `.xlsx`, сервис импорта, `POST /receiving/import-sessions/upload/`.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
@@ -243,6 +271,10 @@
 
 - ✅ **`bundle-1`..`8b`** — справочники, seeds, Sample FK, Container comment/draft, WorkOrder site FK, модели + API приёмки, Shipment, ContainerType laboratory.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 13.
@@ -258,6 +290,10 @@
 ### Что закрыто
 
 - ✅ **`bundle-1`..`2`** — Flutter init, API-клиент с JWT.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
@@ -275,6 +311,10 @@
 
 - ✅ **`bundle-1`..`9`** — сериализаторы, ViewSets, JWT, OpenAPI.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 9.
@@ -290,6 +330,10 @@
 ### Что закрыто
 
 - ✅ **`bundle-1`..`3`** — storage v2, samples (soft-delete) + inventory, picking + movements.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
@@ -307,6 +351,10 @@
 
 - ✅ **`bundle-1`..`10`** — Poetry init, Django skeleton, 6 приложений, модели, seeds.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 11.
@@ -323,6 +371,10 @@
 
 - ✅ Структура папок, `.env.example`, CI, `TEMPLATES-PROJECT.md`.
 
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
+
 ### Метрики
 
 - Заходов: 3.
@@ -337,6 +389,10 @@
 ### Что закрыто
 
 - ✅ Стартовые доки (README, LICENSE, .gitignore, PROJECT, CONTEXT, DECISIONS), DATABASE, API, SCENARIOS, TESTING.
+
+- ✅ **`c-2.x-shipments-2`** (2026-11-06) — детали рейса OUTBOUND: тары в рейсе (`ShipmentContainerItem`), «Добавить тары» (`AddContainersToShipmentDialog`), «Убрать», «Собрать рейс», «Отправить». При `send` тары → `IN_TRANSIT`, пробы синхронизируются.
+- ✅ **`c-2.x-shipments-2-fix`** (2026-11-06) — `origin_laboratory` (FK → Laboratory) для «Откуда», миграция `0005`. UI: «Откуда»/«Куда» в форме, «Участок» скрыт для OUTBOUND, автообновление (staleTime 0 + invalidate вместо setQueryData).
+- ✅ **`c-2.x-shipments-2-fix-2`** (2026-11-06) — `Autocomplete` с `freeSolo` для «Откуда»/«Куда» (`inputValue`/`onInputChange`), автосоздание организации в справочнике `Laboratory` при создании рейса. `AddContainersToShipmentDialog` включает `PENDING_PLACEMENT` (не только `ACTIVE`). Колонка «Откуда» в списке рейсов.
 
 ### Метрики
 
