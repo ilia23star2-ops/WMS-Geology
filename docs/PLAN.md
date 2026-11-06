@@ -112,6 +112,7 @@
 ## Следующие серии (план)
 
 | # | Серия | Что делает | Заходов |
+| 0 | `feature/2.x-shipments` | Отправка (OUTBOUND): модель тар в рейсе, UI, автогенерация номера | 5 |
 | 0 | `feature/2.x-smart-input` | Контекстные подсказки (Н/З, ТИ, диапазон) | 3–4 |
 |---|---|---|---|
 | 1 | `feature/2.x-lab-portal` | Портал лабораторий | 5–7 |
@@ -126,9 +127,9 @@
 
 ## Требует обсуждения (серия `2.x-lifecycle`)
 
-**1. Статусы тары:** `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED`.
+**1. Статусы тары:** ✅ решение 1.109. `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED`.
 
-**2. Статусы пробы:** `IN_STORAGE`, `IN_TRANSIT`, `CONSUMED`, `DISPOSED`, `PENDING_PLACEMENT`, `SELECTED`.
+**2. Статусы пробы:** ✅ решение 1.110. `IN_STORAGE`, `IN_TRANSIT`, `CONSUMED`, `DISPOSED`, `PENDING_PLACEMENT`, `SELECTED`.
 
 **3. Отправка в лабораторию:** тара едет с пробами или пробы перекладываются?
 
@@ -143,6 +144,8 @@
 **8. Кто меняет статусы?**
 
 **9. Приёмка ↔ отправка:** кто ставит `RECEIVED`?
+
+**10. Происхождение пробы:** ✅ решение 1.111. хранить ли `origin_laboratory_id` (на уровне `Container` или `Sample`)? Для шифрованных — по префиксу, для нешифрованных — сейчас теряется.
 
 ---
 

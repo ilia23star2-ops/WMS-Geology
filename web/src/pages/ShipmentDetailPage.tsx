@@ -1,14 +1,13 @@
 /**
  * Детали рейса (Shipment).
  *
- * Показывает:
- * - шапку рейса (номер, статус, направление, лаборатория, дата,
- *   водитель, машина);
- * - связанный Receipt (один на рейс, `site=NULL`);
- * - список ReceiptItem (по одной строке на тару);
- * - кнопки «Начать сверку», «Отменить партию» (2f-5a-2);
- * - edit/delete строк (2f-5a-2);
- * - (2f-6c) Edit / Delete рейса, «Отменить рейс».
+ * INBOUND: партия приёмки + ReceiptItem + сверка.
+ * OUTBOUND: тары в рейсе + добавить/убрать + Собрать/Отправить.
+ *
+ * c-2.x-shipments-2, c-2.x-shipments-2-fix:
+ * - «Откуда» / «Куда» для OUTBOUND (origin_laboratory / laboratory).
+ * - «Участок» скрыт для OUTBOUND.
+ * - Автообновление (staleTime 0 + invalidate в хуках).
  */
 import { useState } from "react";
 import {
@@ -20,6 +19,12 @@ import {
     Chip,
     IconButton,
     Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
     Tooltip,
     Typography,
 } from "@mui/material";
@@ -28,6 +33,9 @@ import CancelIcon from "@mui/icons-material/Cancel";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import Inventory2Icon from "@mui/icons-material/Inventory2";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import SendIcon from "@mui/icons-material/Send";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import {
     DataGrid,
@@ -36,22 +44,29 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
+    CONTAINER_STATUS_LABELS,
     RECEIPT_ITEM_STATUS_LABELS,
     RECEIPT_STATUS_LABELS,
     SHIPMENT_DIRECTION_LABELS,
     SHIPMENT_STATUS_LABELS,
+    useAssembleShipment,
     useCancelReceipt,
     useCancelShipment,
     useDeleteReceiptItem,
     useDeleteShipment,
     useReceiptItems,
     useReceipts,
+    useRemoveShipmentContainer,
+    useSendShipment,
     useShipment,
+    type ContainerStatus,
     type Receipt,
     type ReceiptItem,
     type ReceiptItemStatus,
+    type ShipmentContainerItem,
     type ShipmentStatus,
 } from "../api";
+import AddContainersToShipmentDialog from "../components/AddContainersToShipmentDialog";
 import ReceiptItemEditDialog from "../components/ReceiptItemEditDialog";
 import ShipmentEditDialog from "../components/ShipmentEditDialog";
 
@@ -81,6 +96,17 @@ const ITEM_STATUS_COLORS: Record<
     PENDING_DECRYPTION: "default",
 };
 
+const CONTAINER_STATUS_COLORS: Record<
+    ContainerStatus,
+    "default" | "success" | "warning" | "info"
+> = {
+    PENDING_FILLING: "warning",
+    PENDING_PLACEMENT: "warning",
+    ACTIVE: "success",
+    IN_TRANSIT: "info",
+    ISSUED: "default",
+};
+
 function formatDate(value: string | null): string {
     if (!value) return "—";
     try {
@@ -102,7 +128,7 @@ function extractError(err: unknown): string | null {
 }
 
 // ============================================================
-// Список ReceiptItem
+// INBOUND: список ReceiptItem
 // ============================================================
 interface ReceiptItemsPanelProps {
     receiptId: number;
@@ -267,6 +293,166 @@ function ReceiptItemsPanel({
 }
 
 // ============================================================
+// OUTBOUND: список тар в рейсе
+// ============================================================
+interface ContainerItemsPanelProps {
+    shipmentId: number;
+    items: ShipmentContainerItem[];
+    status: ShipmentStatus;
+    onMessage: (msg: string) => void;
+    onError: (msg: string) => void;
+}
+
+function ContainerItemsPanel({
+    shipmentId,
+    items,
+    status,
+    onMessage,
+    onError,
+}: ContainerItemsPanelProps) {
+    const [addOpen, setAddOpen] = useState(false);
+    const removeMutation = useRemoveShipmentContainer(shipmentId);
+
+    const canModify =
+        status === "DRAFT" || status === "ASSEMBLED";
+
+    async function handleRemove(containerId: number, number: string | null) {
+        const label = number ?? `#${containerId}`;
+        const ok = window.confirm(`Убрать тару ${label} из рейса?`);
+        if (!ok) return;
+        try {
+            await removeMutation.mutateAsync(containerId);
+            onMessage(`Тара ${label} убрана из рейса.`);
+        } catch (err) {
+            onError(
+                extractError(err) ?? "Не удалось убрать тару.",
+            );
+        }
+    }
+
+    return (
+        <>
+            <Card>
+                <CardContent
+                    sx={{
+                        pb: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                    }}
+                >
+                    <Typography variant="h3">
+                        Тары в рейсе ({items.length})
+                    </Typography>
+                    {canModify && (
+                        <Button
+                            variant="outlined"
+                            startIcon={<Inventory2Icon />}
+                            onClick={() => setAddOpen(true)}
+                        >
+                            Добавить тары
+                        </Button>
+                    )}
+                </CardContent>
+                {items.length === 0 ? (
+                    <CardContent>
+                        <Alert severity="info">
+                            В рейсе пока нет тар. Нажмите «Добавить тары».
+                        </Alert>
+                    </CardContent>
+                ) : (
+                    <TableContainer>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell width={50}>№</TableCell>
+                                    <TableCell>Номер</TableCell>
+                                    <TableCell>Тип</TableCell>
+                                    <TableCell>Н/З</TableCell>
+                                    <TableCell>ТИ</TableCell>
+                                    <TableCell width={150}>Статус</TableCell>
+                                    {canModify && <TableCell width={60} />}
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {items.map((item, idx) => (
+                                    <TableRow key={item.id}>
+                                        <TableCell>{idx + 1}</TableCell>
+                                        <TableCell sx={{ fontFamily: "monospace" }}>
+                                            {item.container_number ?? (
+                                                <Chip
+                                                    label="Заготовка"
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="warning"
+                                                />
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            {item.container_type_name ?? "—"}
+                                        </TableCell>
+                                        <TableCell>
+                                            {item.draft_work_order_coded || "—"}
+                                        </TableCell>
+                                        <TableCell>
+                                            {item.draft_research_type_name ?? "—"}
+                                        </TableCell>
+                                        <TableCell>
+                                            <Chip
+                                                size="small"
+                                                label={
+                                                    CONTAINER_STATUS_LABELS[
+                                                    item.container_status as ContainerStatus
+                                                    ] ?? item.container_status
+                                                }
+                                                color={
+                                                    CONTAINER_STATUS_COLORS[
+                                                    item.container_status as ContainerStatus
+                                                    ] ?? "default"
+                                                }
+                                            />
+                                        </TableCell>
+                                        {canModify && (
+                                            <TableCell>
+                                                <Tooltip title="Убрать из рейса">
+                                                    <IconButton
+                                                        size="small"
+                                                        color="error"
+                                                        disabled={
+                                                            removeMutation.isPending
+                                                        }
+                                                        onClick={() =>
+                                                            void handleRemove(
+                                                                item.container,
+                                                                item.container_number,
+                                                            )
+                                                        }
+                                                    >
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </TableCell>
+                                        )}
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
+            </Card>
+
+            <AddContainersToShipmentDialog
+                open={addOpen}
+                shipmentId={shipmentId}
+                excludedContainerIds={items.map((i) => i.container)}
+                onClose={() => setAddOpen(false)}
+                onSuccess={onMessage}
+            />
+        </>
+    );
+}
+
+// ============================================================
 // Страница
 // ============================================================
 export default function ShipmentDetailPage() {
@@ -282,12 +468,20 @@ export default function ShipmentDetailPage() {
     const cancelReceiptMutation = useCancelReceipt();
     const cancelShipmentMutation = useCancelShipment();
     const deleteShipmentMutation = useDeleteShipment();
+    const assembleMutation = useAssembleShipment(shipmentId ?? 0);
+    const sendMutation = useSendShipment(shipmentId ?? 0);
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [editOpen, setEditOpen] = useState(false);
 
     const receipt: Receipt | null = receipts.data?.results[0] ?? null;
+
+    const isOutbound = shipment.data?.direction === "OUTBOUND";
+    const backPath = isOutbound ? "/shipments" : "/receiving";
+    const backLabel = isOutbound
+        ? "К списку рейсов (отправка)"
+        : "К списку рейсов (приёмка)";
 
     async function handleCancelReceipt() {
         if (!receipt) return;
@@ -313,7 +507,6 @@ export default function ShipmentDetailPage() {
             + "Необязательно: укажите причину.",
             "",
         );
-        // null — пользователь нажал «Отмена» в prompt.
         if (reason === null) return;
         try {
             await cancelShipmentMutation.mutateAsync({
@@ -338,10 +531,44 @@ export default function ShipmentDetailPage() {
         if (!ok) return;
         try {
             await deleteShipmentMutation.mutateAsync(shipment.data.id);
-            navigate("/receiving");
+            navigate(backPath);
         } catch (err) {
             setError(
                 extractError(err) ?? "Не удалось удалить рейс.",
+            );
+        }
+    }
+
+    async function handleAssemble() {
+        if (!shipment.data) return;
+        const ok = window.confirm(
+            `Собрать рейс ${shipment.data.shipment_number}? `
+            + "Статус станет «Собран», после этого тары нельзя менять.",
+        );
+        if (!ok) return;
+        try {
+            await assembleMutation.mutateAsync();
+            setMessage(`Рейс ${shipment.data.shipment_number} собран.`);
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось собрать рейс.",
+            );
+        }
+    }
+
+    async function handleSend() {
+        if (!shipment.data) return;
+        const ok = window.confirm(
+            `Отправить рейс ${shipment.data.shipment_number}? `
+            + "Все тары и пробы перейдут в статус «В пути».",
+        );
+        if (!ok) return;
+        try {
+            await sendMutation.mutateAsync();
+            setMessage(`Рейс ${shipment.data.shipment_number} отправлен.`);
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось отправить рейс.",
             );
         }
     }
@@ -353,7 +580,7 @@ export default function ShipmentDetailPage() {
                     Ошибка загрузки рейса.
                 </Typography>
                 <Button
-                    onClick={() => navigate("/receiving")}
+                    onClick={() => navigate(backPath)}
                     sx={{ mt: 2 }}
                 >
                     Назад
@@ -380,18 +607,25 @@ export default function ShipmentDetailPage() {
         && data.status !== "CANCELLED"
         && !cancelShipmentMutation.isPending;
 
+    const canAssemble = isOutbound && data.status === "DRAFT";
+    const canSend =
+        isOutbound
+        && (data.status === "DRAFT" || data.status === "ASSEMBLED");
+
     const busyShipment =
         deleteShipmentMutation.isPending
-        || cancelShipmentMutation.isPending;
+        || cancelShipmentMutation.isPending
+        || assembleMutation.isPending
+        || sendMutation.isPending;
 
     return (
         <Box>
             <Button
                 startIcon={<ArrowBackIcon />}
-                onClick={() => navigate("/receiving")}
+                onClick={() => navigate(backPath)}
                 sx={{ mb: 2 }}
             >
-                К списку рейсов
+                {backLabel}
             </Button>
 
             <Box
@@ -406,6 +640,7 @@ export default function ShipmentDetailPage() {
             >
                 <Typography variant="h2" component="h1">
                     Рейс {data.shipment_number}
+                    {data.name && ` — ${data.name}`}
                 </Typography>
                 <Chip
                     label={SHIPMENT_STATUS_LABELS[data.status] ?? data.status}
@@ -460,13 +695,22 @@ export default function ShipmentDetailPage() {
                                     data.direction}
                             </b>
                         </Typography>
+                        {isOutbound && (
+                            <Typography variant="body1">
+                                Откуда:{" "}
+                                <b>
+                                    {data.origin_laboratory_name ?? "—"}
+                                </b>
+                            </Typography>
+                        )}
                         <Typography variant="body1">
-                            Лаборатория:{" "}
-                            <b>{data.laboratory_name ?? "—"}</b>
+                            Куда: <b>{data.laboratory_name ?? "—"}</b>
                         </Typography>
-                        <Typography variant="body1">
-                            Участок: <b>{data.site_name ?? "—"}</b>
-                        </Typography>
+                        {!isOutbound && (
+                            <Typography variant="body1">
+                                Участок: <b>{data.site_name ?? "—"}</b>
+                            </Typography>
+                        )}
                         <Typography variant="body1">
                             Дата рейса: <b>{formatDate(data.shipment_date)}</b>
                         </Typography>
@@ -508,6 +752,32 @@ export default function ShipmentDetailPage() {
                         spacing={2}
                         sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}
                     >
+                        {canAssemble && (
+                            <Button
+                                variant="contained"
+                                color="primary"
+                                startIcon={<PlayArrowIcon />}
+                                onClick={() => void handleAssemble()}
+                                disabled={busyShipment}
+                            >
+                                {assembleMutation.isPending
+                                    ? "Собираем..."
+                                    : "Собрать рейс"}
+                            </Button>
+                        )}
+                        {canSend && (
+                            <Button
+                                variant="contained"
+                                color="success"
+                                startIcon={<SendIcon />}
+                                onClick={() => void handleSend()}
+                                disabled={busyShipment}
+                            >
+                                {sendMutation.isPending
+                                    ? "Отправляем..."
+                                    : "Отправить"}
+                            </Button>
+                        )}
                         <Tooltip
                             title={
                                 canCancelShipment
@@ -534,90 +804,114 @@ export default function ShipmentDetailPage() {
                 </CardContent>
             </Card>
 
-            {receipts.isLoading && <Typography>Загрузка партии...</Typography>}
-
-            {receipt && (
+            {isOutbound ? (
+                <ContainerItemsPanel
+                    shipmentId={data.id}
+                    items={data.container_items}
+                    status={data.status}
+                    onMessage={setMessage}
+                    onError={setError}
+                />
+            ) : (
                 <>
-                    <Card sx={{ mb: 2 }}>
-                        <CardContent>
-                            <Typography variant="h3" sx={{ mb: 1 }}>
-                                Партия приёмки
-                            </Typography>
-                            <Stack spacing={1}>
-                                <Typography variant="body1">
-                                    Номер: <b>{receipt.receipt_number}</b>
-                                </Typography>
-                                <Typography variant="body1">
-                                    Ожидаемая дата:{" "}
-                                    <b>{formatDate(receipt.expected_date)}</b>
-                                </Typography>
-                                <Typography variant="body1">
-                                    Статус:{" "}
-                                    <b>
-                                        {RECEIPT_STATUS_LABELS[
-                                            receipt.status
-                                        ] ?? receipt.status}
-                                    </b>
-                                </Typography>
-                                <Typography variant="body1">
-                                    Тар в партии: <b>{receipt.items_count}</b>
-                                </Typography>
-                            </Stack>
-                            <Stack
-                                direction="row"
-                                spacing={2}
-                                sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}
-                            >
-                                <Button
-                                    variant="contained"
-                                    startIcon={<FactCheckIcon />}
-                                    onClick={() =>
-                                        navigate(
-                                            `/receiving/${data.id}/check`,
-                                        )
-                                    }
-                                >
-                                    Начать сверку
-                                </Button>
-                                <Tooltip
-                                    title={
-                                        canCancelReceipt
-                                            ? "Статус станет «Отменена»"
-                                            : "Подтверждённую или отменённую партию отменить нельзя"
-                                    }
-                                >
-                                    <span>
+                    {receipts.isLoading && (
+                        <Typography>Загрузка партии...</Typography>
+                    )}
+
+                    {receipt && (
+                        <>
+                            <Card sx={{ mb: 2 }}>
+                                <CardContent>
+                                    <Typography variant="h3" sx={{ mb: 1 }}>
+                                        Партия приёмки
+                                    </Typography>
+                                    <Stack spacing={1}>
+                                        <Typography variant="body1">
+                                            Номер:{" "}
+                                            <b>{receipt.receipt_number}</b>
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            Ожидаемая дата:{" "}
+                                            <b>
+                                                {formatDate(
+                                                    receipt.expected_date,
+                                                )}
+                                            </b>
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            Статус:{" "}
+                                            <b>
+                                                {RECEIPT_STATUS_LABELS[
+                                                    receipt.status
+                                                ] ?? receipt.status}
+                                            </b>
+                                        </Typography>
+                                        <Typography variant="body1">
+                                            Тар в партии:{" "}
+                                            <b>{receipt.items_count}</b>
+                                        </Typography>
+                                    </Stack>
+                                    <Stack
+                                        direction="row"
+                                        spacing={2}
+                                        sx={{
+                                            mt: 2,
+                                            flexWrap: "wrap",
+                                            rowGap: 1,
+                                        }}
+                                    >
                                         <Button
-                                            variant="outlined"
-                                            color="warning"
-                                            startIcon={<WarningAmberIcon />}
+                                            variant="contained"
+                                            startIcon={<FactCheckIcon />}
                                             onClick={() =>
-                                                void handleCancelReceipt()
+                                                navigate(
+                                                    `/receiving/${data.id}/check`,
+                                                )
                                             }
-                                            disabled={!canCancelReceipt}
                                         >
-                                            {cancelReceiptMutation.isPending
-                                                ? "Отменяем..."
-                                                : "Отменить партию"}
+                                            Начать сверку
                                         </Button>
-                                    </span>
-                                </Tooltip>
-                            </Stack>
-                        </CardContent>
-                    </Card>
+                                        <Tooltip
+                                            title={
+                                                canCancelReceipt
+                                                    ? "Статус станет «Отменена»"
+                                                    : "Подтверждённую или отменённую партию отменить нельзя"
+                                            }
+                                        >
+                                            <span>
+                                                <Button
+                                                    variant="outlined"
+                                                    color="warning"
+                                                    startIcon={<WarningAmberIcon />}
+                                                    onClick={() =>
+                                                        void handleCancelReceipt()
+                                                    }
+                                                    disabled={!canCancelReceipt}
+                                                >
+                                                    {cancelReceiptMutation.isPending
+                                                        ? "Отменяем..."
+                                                        : "Отменить партию"}
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
 
-                    <ReceiptItemsPanel
-                        receiptId={receipt.id}
-                        onMessage={setMessage}
-                        onError={setError}
-                    />
+                            <ReceiptItemsPanel
+                                receiptId={receipt.id}
+                                onMessage={setMessage}
+                                onError={setError}
+                            />
+                        </>
+                    )}
+
+                    {!receipts.isLoading && !receipt && (
+                        <Alert severity="info">
+                            У рейса пока нет связанной партии приёмки.
+                        </Alert>
+                    )}
                 </>
-            )}
-
-            {!receipts.isLoading && !receipt && (
-                <Alert severity="info">
-                    У рейса пока нет связанной партии приёмки.
-                </Alert>
             )}
 
             <ShipmentEditDialog

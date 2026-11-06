@@ -21,6 +21,7 @@ import ReceiptCheckPage from "./pages/ReceiptCheckPage";
 import ReceivingPage from "./pages/ReceivingPage";
 import SamplesPage from "./pages/SamplesPage";
 import ShipmentDetailPage from "./pages/ShipmentDetailPage";
+import ShipmentsPage from "./pages/ShipmentsPage";
 import TopologyPage from "./pages/TopologyPage";
 import WorkOrdersPage from "./pages/WorkOrdersPage";
 import { useAuthStore } from "./stores/authStore";
@@ -66,6 +67,11 @@ function AppRoutes() {
                     <Route path="/" element={<HomePage />} />
                     <Route path="/containers" element={<ContainersPage />} />
                     <Route path="/samples" element={<SamplesPage />} />
+                    <Route path="/shipments" element={<ShipmentsPage />} />
+                    <Route
+                        path="/shipments/:id"
+                        element={<ShipmentDetailPage />}
+                    />
                     <Route path="/receiving" element={<ReceivingPage />} />
                     <Route
                         path="/receiving/:id"

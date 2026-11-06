@@ -2,14 +2,19 @@
 Сериализаторы приложения picking.
 
 PickList, PickListItem — + updated_at (3.x-offline-sync-b-1c).
-Shipment — расширен: direction, laboratory, site, shipment_date,
-  driver_name, vehicle_number, status, cancel_reason + updated_at.
-ShipmentItem — без изменений.
+Shipment — расширен: name, direction, laboratory, site, ... (c-2.x-shipments-1).
+ShipmentContainerItem — новый (c-2.x-shipments-1).
 """
 
 from rest_framework import serializers
 
-from .models import PickList, PickListItem, Shipment, ShipmentItem
+from .models import (
+    PickList,
+    PickListItem,
+    Shipment,
+    ShipmentContainerItem,
+    ShipmentItem,
+)
 
 
 # ============================================================
@@ -69,17 +74,62 @@ class PickListItemSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
+# ShipmentContainerItem
+# ============================================================
+class ShipmentContainerItemSerializer(serializers.ModelSerializer):
+    """Тара в рейсе (OUTBOUND). Read-only денормализация для UI."""
+
+    container_number = serializers.CharField(
+        source="container.container_number", read_only=True, default=None,
+    )
+    container_status = serializers.CharField(
+        source="container.status", read_only=True,
+    )
+    container_type_name = serializers.CharField(
+        source="container.container_type.name", read_only=True, default=None,
+    )
+    draft_work_order_coded = serializers.CharField(
+        source="container.draft_work_order_coded", read_only=True, default="",
+    )
+    draft_research_type_name = serializers.CharField(
+        source="container.draft_research_type.name",
+        read_only=True,
+        default=None,
+    )
+
+    class Meta:
+        model = ShipmentContainerItem
+        fields = [
+            "id",
+            "shipment",
+            "container",
+            "position",
+            "container_number",
+            "container_status",
+            "container_type_name",
+            "draft_work_order_coded",
+            "draft_research_type_name",
+        ]
+        read_only_fields = ["id", "shipment"]
+
+
+# ============================================================
 # Shipment
 # ============================================================
 class ShipmentSerializer(serializers.ModelSerializer):
-    """Отправка. Read-only: `sent_by_username`, `laboratory_name`,
-    `site_name`, `items_count`."""
+    """Отправка. Read-only: денормализация + `container_items` (c-2.x-shipments-1)."""
 
+    # c-2.x-shipments-1a: shipment_number опционально. Если пусто —
+    # автогенерируется в ShipmentViewSet.perform_create (ОТ-YYYY-NNN / ПР-YYYY-NNN).
+    shipment_number = serializers.CharField(required=False, allow_blank=True)
     sent_by_username = serializers.CharField(
         source="sent_by.username", read_only=True, default=None,
     )
     laboratory_name = serializers.CharField(
         source="laboratory.name", read_only=True, default=None,
+    )
+    origin_laboratory_name = serializers.CharField(
+        source="origin_laboratory.name", read_only=True, default=None,
     )
     site_name = serializers.CharField(
         source="site.name", read_only=True, default=None,
@@ -91,16 +141,22 @@ class ShipmentSerializer(serializers.ModelSerializer):
         source="items.count", read_only=True,
     )
     containers_count = serializers.IntegerField(read_only=True)
+    container_items = ShipmentContainerItemSerializer(
+        many=True, read_only=True,
+    )
 
     class Meta:
         model = Shipment
         fields = [
             "id",
             "shipment_number",
+            "name",
             "direction",
             "destination",
             "laboratory",
             "laboratory_name",
+            "origin_laboratory",
+            "origin_laboratory_name",
             "site",
             "site_name",
             "shipment_date",
@@ -118,6 +174,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "cancel_reason",
             "items_count",
             "containers_count",
+            "container_items",
             "note",
             "updated_at",
         ]

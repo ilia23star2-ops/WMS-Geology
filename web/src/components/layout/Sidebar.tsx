@@ -3,6 +3,8 @@
  *
  * Активный пункт: подсветка primary.main + белый текст.
  * На мобильном — закрывается после выбора пункта.
+ *
+ * c-2.x-shipments-1b: добавлен пункт «Отправка».
  */
 import {
     Box,
@@ -18,6 +20,7 @@ import HomeIcon from "@mui/icons-material/Home";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import BiotechIcon from "@mui/icons-material/Biotech";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import SendIcon from "@mui/icons-material/Send";
 import PrintIcon from "@mui/icons-material/Print";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AccountTreeIcon from "@mui/icons-material/AccountTree";
@@ -41,6 +44,7 @@ const MENU: MenuItem[] = [
     { label: "Тара", path: "/containers", icon: <Inventory2Icon /> },
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
     { label: "Наряд-заказы", path: "/work-orders", icon: <AssignmentIcon /> },
+    { label: "Отправка", path: "/shipments", icon: <SendIcon /> },
     { label: "Приёмка", path: "/receiving", icon: <LocalShippingIcon /> },
     { label: "Печать", path: "/print", icon: <PrintIcon /> },
     { label: "Топология", path: "/topology", icon: <AccountTreeIcon /> },

@@ -659,3 +659,82 @@
 **Где:** `web/src/components/SmartAutocomplete.tsx` (`appendOnSelect`), `FillContainerContent.tsx` (`baseSampleOptions`).
 **Статус:** ✅ действует.
 
+
+### 1.109. 2026-11-06 — Статусы тары: DISPOSED + is_disposable
+
+**Решение:**
+1. `Container.status` — добавляем `DISPOSED` (Утилизирована). Итого: `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED` / `DISPOSED`.
+2. UI-метка `ACTIVE` = «Размещена» (было «Активна» в вебе, «Размещена» в мобилке — синхронизируем на «Размещена»).
+3. `ContainerType.is_disposable` (boolean, default `false`) — флаг «одноразовая тара».
+4. При утилизации последней пробы в таре: `is_disposable=true` → `Container.status=DISPOSED`; `is_disposable=false` → `PENDING_FILLING` (переиспользование, этикетку сорвать).
+5. Возврат тары (была `ACTIVE`, вывезли, вернули): `PENDING_PLACEMENT` (полный цикл приёмки, даже если место известно). Пробы могли быть перешифрованы — нужна проверка.
+
+**Причина:** одноразовые коробки должны уходить в утиль, многоразовые ящики — возвращаться в оборот. Без флага не знаем, что делать с записью после утилизации проб.
+
+**Где:** `backend/apps/storage/models.py` (`ContainerType.is_disposable`, `Container.DISPOSED`), `backend/apps/samples/services.py::_handle_container_after_dispose`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+
+
+### 1.110. 2026-11-06 — Статусы пробы: убираем CONSUMED, синхронизация с тарой
+
+**Решение:**
+1. Из `Sample.status` убираем `CONSUMED` (Израсходована). Итого: `IN_STORAGE` / `IN_TRANSIT` / `ISSUED` / `DISPOSED` / `PENDING_DECRYPTION` / `PENDING_PLACEMENT` / `SELECTED`.
+2. Проба синхронизируется с тарой: тара `IN_TRANSIT` → проба `IN_TRANSIT`. Тара `PENDING_PLACEMENT` → проба `PENDING_PLACEMENT`. Тара `ACTIVE` → проба `IN_STORAGE`.
+3. `PENDING_DECRYPTION` — только у пробы (не у тары). Шифруются `WorkOrder` и `Sample`, тара — просто контейнер.
+
+**Причина:** «Израсходована» — не состояние пробы, а событие (её просто больше нет в наличии). Учёт ведётся через `DISPOSED` (soft-delete). Шифровка — на уровне наряда и пробы, не тары.
+
+**Где:** `backend/apps/samples/models.py` (STATUS_CHOICES), `backend/apps/samples/services.py::sync_sample_status_for_container` (расширить), `web/src/api/samples.ts`, `mobile/lib/models/sample.dart`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+
+
+### 1.111. 2026-11-06 — origin_laboratory_id на уровне Container
+
+**Решение:** добавляем `Container.origin_laboratory_id` (FK → `Laboratory`, nullable). Одна лаборатория на тару (пробы одной тары почти всегда из одного источника).
+
+Заполнение:
+- При создании тары через приёмку (`Receipt.laboratory_id` → `Container.origin_laboratory_id`).
+- При создании тары вручную — опционально в `CreateContainersDialog` (поле «Лаборатория-источник»).
+- При `fill-samples` — если передано в payload, иначе остаётся `null`.
+
+**Причина:** для нешифрованных проб `Laboratory` сейчас не хранится вообще (теряется). Для шифрованных — можно по префиксу, но это ненадёжно. `Container.origin_laboratory_id` — минимальный уровень, покрывающий 95% случаев.
+
+**Где:** `backend/apps/storage/models.py` (`Container.origin_laboratory_id`), `backend/apps/storage/serializers.py`, `web/src/api/containers.ts`, `mobile/lib/models/container.dart`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+
+
+### 1.112. 2026-11-06 — ShipmentContainerItem: тары в рейсе (c-2.x-shipments-1)
+
+**Решение:** для OUTBOUND-рейсов тары хранятся в новой таблице `ShipmentContainerItem` (`shipment` + `container` + `position`). Старая `ShipmentItem` (пробы) остаётся для INBOUND и смешанных случаев. `Shipment.containers_count` для OUTBOUND считается из `container_items`, для INBOUND — из `receipts`.
+
+**Также:**
+- `Shipment.name` — человекочитаемое название (опционально).
+- `Shipment.sent_at` — переделан с `auto_now_add=True` на `null=True` (баг: ставился при создании, а не при отправке).
+- `shipment_number` — генерируется на бэкенде: `ОТ-YYYY-NNN` (OUTBOUND), `ПР-YYYY-NNN` (INBOUND).
+- Custom actions: `add-containers`, `remove-container`, `send`. При `send` все тары → `IN_TRANSIT`, пробы синхронизируются.
+
+**Причина:** в OUTBOUND тара едет целиком с пробами (не перекладываются). Хранить тару удобнее чем перечислять 30 проб. INBOUND остаётся через Receipt (там уже работает).
+
+**Где:** `backend/apps/picking/models.py`, `serializers.py`, `views.py`, миграция `picking/0004_...`.
+**Статус:** ✅ действует.
+
+
+### 1.113. 2026-11-06 — origin_laboratory: «Откуда» / «Куда» в рейсе (c-2.x-shipments-2-fix)
+
+**Решение:** в `Shipment` добавлено `origin_laboratory` (FK → `Laboratory`, null). В UI: «Откуда» / «Куда». «Участок» (`site`) скрыт для OUTBOUND (показывается только для INBOUND).
+
+**Причина:** для OUTBOUND-рейса «Куда едет» — главное, «Откуда едет» — тоже нужно (какой склад/лаборатория отправил). «Участок» — это про пробы (для INBOUND), в OUTBOUND не нужен.
+
+**Где:** `backend/apps/picking/models.py`, миграция `picking/0005_...`, `web/src/pages/ShipmentDetailPage.tsx`, `CreateShipmentDialog.tsx`.
+**Статус:** ✅ действует.
+
+
+### 1.114. 2026-11-06 — Автосоздание организации из Autocomplete (c-2.x-shipments-2-fix-2)
+
+**Решение:** в форме создания рейса поля «Откуда» / «Куда» — `Autocomplete freeSolo`. Если ввести имя, которого нет в справочнике «Лаборатории», при нажатии «Создать» организация создаётся автоматически (`code` = имя без пробелов в верхнем регистре, `prefixes=[]`).
+
+**Причина:** вводить организацию каждый раз заново (или сначала идти в «Справочники» → создавать) — долго. Хочется ввести в один клик.
+
+**Где:** `web/src/components/CreateShipmentDialog.tsx`.
+**Статус:** ✅ действует.
+

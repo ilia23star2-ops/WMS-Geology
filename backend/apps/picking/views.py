@@ -1,9 +1,10 @@
 """
-ViewSets приложения picking.
+ViewSets приложения picking (v4).
 
 PickList: CRUD + custom actions activate, complete.
 PickListItem: CRUD + custom action pick.
-Shipment: CRUD + custom actions add-from-pick-list, assemble, cancel.
+Shipment: CRUD + custom actions add-from-pick-list, add-containers,
+          remove-container, assemble, send, cancel (c-2.x-shipments-1).
 ShipmentItem: CRUD.
 """
 
@@ -14,7 +15,16 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import PickList, PickListItem, Shipment, ShipmentItem
+from apps.samples.services import sync_sample_status_for_container
+from apps.storage.models import Container
+
+from .models import (
+    PickList,
+    PickListItem,
+    Shipment,
+    ShipmentContainerItem,
+    ShipmentItem,
+)
 from .serializers import (
     PickListItemSerializer,
     PickListSerializer,
@@ -100,13 +110,17 @@ class PickListItemViewSet(viewsets.ModelViewSet):
 
 class ShipmentViewSet(viewsets.ModelViewSet):
     """
-    CRUD для отправок.
+    CRUD для отправок (рейсов).
 
     Фильтры: ?direction=, ?status=, ?laboratory_id=, ?site_id=
+
     Custom actions:
       - POST /shipments/{id}/add-from-pick-list/
-      - POST /shipments/{id}/assemble/ — status ASSEMBLED
-      - POST /shipments/{id}/cancel/ — status CANCELLED
+      - POST /shipments/{id}/add-containers/    (c-2.x-shipments-1, OUTBOUND)
+      - POST /shipments/{id}/remove-container/  (c-2.x-shipments-1, OUTBOUND)
+      - POST /shipments/{id}/assemble/ — DRAFT → ASSEMBLED
+      - POST /shipments/{id}/send/     — DRAFT/ASSEMBLED → SENT (c-2.x-shipments-1)
+      - POST /shipments/{id}/cancel/   — отмена (до RECEIVED)
     """
 
     serializer_class = ShipmentSerializer
@@ -115,7 +129,7 @@ class ShipmentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Shipment.objects.select_related(
             "sent_by", "laboratory", "site", "cancelled_by",
-        ).all()
+        ).prefetch_related("container_items__container__container_type").all()
         p = self.request.query_params
 
         if p.get("direction"):
@@ -130,7 +144,52 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(sent_by=self.request.user)
+        shipment_number = (
+            serializer.validated_data.get("shipment_number") or ""
+        ).strip()
+        if not shipment_number:
+            direction = serializer.validated_data.get(
+                "direction", Shipment.DIRECTION_OUTBOUND,
+            )
+            shipment_number = self._generate_shipment_number(direction)
+        serializer.save(
+            shipment_number=shipment_number,
+            sent_by=self.request.user,
+        )
+
+    @staticmethod
+    def _generate_shipment_number(direction: str) -> str:
+        """
+        Автогенерация номера рейса (c-2.x-shipments-1a).
+
+        OUTBOUND: ОТ-YYYY-NNN.
+        INBOUND:  ПР-YYYY-NNN.
+
+        Race condition: при параллельном создании двух рейсов
+        возможен одинаковый номер → IntegrityError. Ретрай
+        не реализован; при необходимости — повторная генерация
+        с +1 в цикле.
+        """
+        prefix = (
+            "ОТ"
+            if direction == Shipment.DIRECTION_OUTBOUND
+            else "ПР"
+        )
+        year = timezone.now().year
+        last = (
+            Shipment.objects
+            .filter(shipment_number__startswith=f"{prefix}-{year}-")
+            .order_by("-shipment_number")
+            .first()
+        )
+        if last:
+            try:
+                last_n = int(last.shipment_number.rsplit("-", 1)[-1])
+            except (ValueError, IndexError):
+                last_n = 0
+        else:
+            last_n = 0
+        return f"{prefix}-{year}-{last_n + 1:03d}"
 
     @action(detail=True, methods=["post"], url_path="add-from-pick-list")
     def add_from_pick_list(self, request, pk=None):
@@ -178,6 +237,97 @@ class ShipmentViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["post"], url_path="add-containers")
+    def add_containers(self, request, pk=None):
+        """
+        Добавить тары в рейс (c-2.x-shipments-1).
+
+        Body: `{"container_ids": [1, 2, 3]}`.
+        Только для OUTBOUND и статуса DRAFT/ASSEMBLED.
+        """
+        shipment = self.get_object()
+        if shipment.direction != Shipment.DIRECTION_OUTBOUND:
+            return Response(
+                {"error": "Только для OUTBOUND."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if shipment.status not in (
+            Shipment.STATUS_DRAFT,
+            Shipment.STATUS_ASSEMBLED,
+        ):
+            return Response(
+                {"error": "Добавлять тары можно только в DRAFT или ASSEMBLED."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        container_ids = request.data.get("container_ids") or []
+        if not container_ids:
+            return Response(
+                {"error": "Поле `container_ids` обязательно."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        containers = Container.objects.filter(id__in=container_ids)
+        found_ids = set(containers.values_list("id", flat=True))
+        missing = set(container_ids) - found_ids
+        if missing:
+            return Response(
+                {"error": f"Тары не найдены: {sorted(missing)}"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        added = 0
+        with transaction.atomic():
+            for c in containers:
+                _, created = ShipmentContainerItem.objects.get_or_create(
+                    shipment=shipment,
+                    container=c,
+                )
+                if created:
+                    added += 1
+
+        return Response(
+            {
+                "shipment": ShipmentSerializer(shipment).data,
+                "added_count": added,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="remove-container")
+    def remove_container(self, request, pk=None):
+        """
+        Убрать тару из рейса (c-2.x-shipments-1).
+
+        Body: `{"container_id": X}`. Только в DRAFT/ASSEMBLED.
+        """
+        shipment = self.get_object()
+        if shipment.status not in (
+            Shipment.STATUS_DRAFT,
+            Shipment.STATUS_ASSEMBLED,
+        ):
+            return Response(
+                {"error": "Удалять тары можно только в DRAFT или ASSEMBLED."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        container_id = request.data.get("container_id")
+        if not container_id:
+            return Response(
+                {"error": "Поле `container_id` обязательно."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        deleted, _ = ShipmentContainerItem.objects.filter(
+            shipment=shipment, container_id=container_id,
+        ).delete()
+
+        return Response(
+            {
+                "shipment": ShipmentSerializer(shipment).data,
+                "removed": deleted > 0,
+            }
+        )
+
     @action(detail=True, methods=["post"])
     def assemble(self, request, pk=None):
         """DRAFT → ASSEMBLED."""
@@ -190,6 +340,46 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         shipment.status = Shipment.STATUS_ASSEMBLED
         shipment.assembled_at = timezone.now()
         shipment.save(update_fields=["status", "assembled_at"])
+        return Response(ShipmentSerializer(shipment).data)
+
+    @action(detail=True, methods=["post"])
+    def send(self, request, pk=None):
+        """
+        Отправить рейс (c-2.x-shipments-1).
+
+        DRAFT/ASSEMBLED → SENT. Все тары рейса → `IN_TRANSIT`,
+        пробы внутри — синхронизируются (решение 1.110).
+        """
+        shipment = self.get_object()
+        if shipment.status not in (
+            Shipment.STATUS_DRAFT,
+            Shipment.STATUS_ASSEMBLED,
+        ):
+            return Response(
+                {"error": "Отправить можно только DRAFT или ASSEMBLED."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        container_items = list(shipment.container_items.select_related(
+            "container",
+        ).all())
+        if not container_items:
+            return Response(
+                {"error": "В рейсе нет тар."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            shipment.status = Shipment.STATUS_SENT
+            shipment.sent_at = timezone.now()
+            shipment.save(update_fields=["status", "sent_at"])
+
+            for item in container_items:
+                container = item.container
+                container.status = "IN_TRANSIT"
+                container.save(update_fields=["status"])
+                sync_sample_status_for_container(container)
+
         return Response(ShipmentSerializer(shipment).data)
 
     @action(detail=True, methods=["post"])
