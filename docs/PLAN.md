@@ -93,7 +93,7 @@
 | c-8b-status | Ручная смена статуса тары | Dropdown в `ContainerEditForm` (5 значений), офлайн через `sync_queue` | ✅ |
 | c-2f-comment-web | Веб: комментарий тары | `ContainerDetailDialog` (шапка) + `ContainersPage` (колонка) | ✅ |
 | c-8-catalog-create-offline | Офлайн-создание справочников | `CatalogService.create` → `sync_queue` + local→server маппинг | ⬜ |
-| c-9-overflow-fix-4 | 2 overflow (3.5 / 7.2 px) | Косметика, `ТД-61` | ⬜ |
+| c-9-overflow-fix-4 | Landscape: клавиатура над окном шапки | `Padding` + `(H - insets) * 0.95` | ✅ |
 | c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) | ✅ |
 | c-5 | Файловая синхронизация | Sneakernet через флешку | ⏸ отложено |
 

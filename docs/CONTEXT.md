@@ -55,6 +55,8 @@
 **Web (комментарий тары, `c-2f-comment-web`):**
 - `c-2f-comment-web` — `ContainerDetailDialog.tsx`: в шапке `Комментарий` + `Шаблон`; `ContainersPage.tsx`: колонка «Комментарий» — `comment` с fallback на `comment_template_text` — ✅.
 
+- **`c-9-overflow-fix-4`** — landscape-фикс клавиатуры над окном шапки (UI) — ✅.
+
 **Следующие заходы:**
 - `c-8-catalog-create-offline` — офлайн-создание справочников через `sync_queue`. ⬜ 
 

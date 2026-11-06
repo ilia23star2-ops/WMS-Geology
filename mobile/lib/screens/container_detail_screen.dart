@@ -1,9 +1,12 @@
-/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3 + c-2d-2c-fix-1 + c-8b).
+/// Карточка тары (c-7a..c-7h + c-7c + c-9 overflow-fix-2 + list-actions + fill-offline-2b/2c-3-fix-3b + c-2d-2a-fix-3 + c-2d-2c-fix-1 + c-8b + c-9-overflow-fix-4).
 ///
 /// c-9-fill-offline-2c-3-fix-3b: после офлайн-операций — `SyncProvider.refresh()`.
 /// c-2d-2a-fix-3: `_loadHistory` не ходит на сервер при `id < 0`.
 /// c-2d-2c-fix-1: при `PlaceOutcome.queued` — перечитать локальный кэш.
 /// c-8b: при `UpdateOutcome.queued` — перечитать локальный кэш + SnackBar «офлайн».
+/// c-9-overflow-fix-4: `_openEditSheet` — добавлен `Padding(bottom: insets)`,
+///                     высота `SizedBox` = `(H - insets) * 0.95`. В landscape
+///                     клавиатура больше не перекрывает окно.
 ///
 /// ВАЖНО: `hide Container` — иначе конфликт имён с Flutter-виджетом.
 library;
@@ -191,42 +194,46 @@ class _ContainerDetailScreenState extends State<ContainerDetailScreen> {
       builder: (context) {
         final insets = MediaQuery.of(context).viewInsets.bottom;
         final screenHeight = MediaQuery.of(context).size.height;
-        // c-8b-fix-4: 0.95 от доступной высоты (экран − клавиатура).
-        // Раньше было 0.9 × (height − safeBottom) — окно выходило ниже,
-        // а Padding+SizedBox при клавиатуре давал overflow.
-        // `useSafeArea: true` уже учитывает системный бар снизу.
-        return SizedBox(
-          height: (screenHeight - insets) * 0.95,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Редактировать шапку тары',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+
+        // c-9-overflow-fix-4: возвращаем Padding(bottom: insets), чтобы
+        // окно поднималось над клавиатурой. Высоту SizedBox считаем
+        // как (H - insets) * 0.95, чтобы общая высота
+        // (H - insets) * 0.95 + insets была < H (без overflow).
+        return Padding(
+          padding: EdgeInsets.only(bottom: insets),
+          child: SizedBox(
+            height: (screenHeight - insets) * 0.95,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Редактировать шапку тары',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Expanded(
-                child: ContainerEditForm(
-                  key: ValueKey(_container.updatedAt),
-                  initial: _container,
-                  onSubmit: _onSaveEdit,
+                Expanded(
+                  child: ContainerEditForm(
+                    key: ValueKey(_container.updatedAt),
+                    initial: _container,
+                    onSubmit: _onSaveEdit,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

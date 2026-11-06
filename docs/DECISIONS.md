@@ -629,3 +629,13 @@
 **Где:** `mobile/lib/models/container.dart`, `mobile/lib/widgets/container_edit_form.dart`, `mobile/test/services/container_service_test.dart`.
 **Статус:** ✅ действует.
 
+
+### 1.106. 2026-11-06 — Мобилка: фикс клавиатуры над окном шапки в landscape (c-9-overflow-fix-4)
+
+**Решение:** в `_openEditSheet` вернуть `Padding(bottom: insets)` + высоту `SizedBox` = `(H - insets) * 0.95`. Общая высота `(H - insets) * 0.95 + insets` всегда < H — overflow не будет, окно над клавиатурой.
+
+**Причина:** `c-8b-fix-4` убрал `Padding`, чтобы избежать overflow, но в landscape клавиатура перекрывала окно.
+
+**Где:** `mobile/lib/screens/container_detail_screen.dart` (`_openEditSheet`).
+**Статус:** ✅ действует.
+
