@@ -659,3 +659,46 @@
 **Где:** `web/src/components/SmartAutocomplete.tsx` (`appendOnSelect`), `FillContainerContent.tsx` (`baseSampleOptions`).
 **Статус:** ✅ действует.
 
+
+### 1.109. 2026-11-06 — Статусы тары: DISPOSED + is_disposable
+
+**Решение:**
+1. `Container.status` — добавляем `DISPOSED` (Утилизирована). Итого: `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED` / `DISPOSED`.
+2. UI-метка `ACTIVE` = «Размещена» (было «Активна» в вебе, «Размещена» в мобилке — синхронизируем на «Размещена»).
+3. `ContainerType.is_disposable` (boolean, default `false`) — флаг «одноразовая тара».
+4. При утилизации последней пробы в таре: `is_disposable=true` → `Container.status=DISPOSED`; `is_disposable=false` → `PENDING_FILLING` (переиспользование, этикетку сорвать).
+5. Возврат тары (была `ACTIVE`, вывезли, вернули): `PENDING_PLACEMENT` (полный цикл приёмки, даже если место известно). Пробы могли быть перешифрованы — нужна проверка.
+
+**Причина:** одноразовые коробки должны уходить в утиль, многоразовые ящики — возвращаться в оборот. Без флага не знаем, что делать с записью после утилизации проб.
+
+**Где:** `backend/apps/storage/models.py` (`ContainerType.is_disposable`, `Container.DISPOSED`), `backend/apps/samples/services.py::_handle_container_after_dispose`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+
+
+### 1.110. 2026-11-06 — Статусы пробы: убираем CONSUMED, синхронизация с тарой
+
+**Решение:**
+1. Из `Sample.status` убираем `CONSUMED` (Израсходована). Итого: `IN_STORAGE` / `IN_TRANSIT` / `ISSUED` / `DISPOSED` / `PENDING_DECRYPTION` / `PENDING_PLACEMENT` / `SELECTED`.
+2. Проба синхронизируется с тарой: тара `IN_TRANSIT` → проба `IN_TRANSIT`. Тара `PENDING_PLACEMENT` → проба `PENDING_PLACEMENT`. Тара `ACTIVE` → проба `IN_STORAGE`.
+3. `PENDING_DECRYPTION` — только у пробы (не у тары). Шифруются `WorkOrder` и `Sample`, тара — просто контейнер.
+
+**Причина:** «Израсходована» — не состояние пробы, а событие (её просто больше нет в наличии). Учёт ведётся через `DISPOSED` (soft-delete). Шифровка — на уровне наряда и пробы, не тары.
+
+**Где:** `backend/apps/samples/models.py` (STATUS_CHOICES), `backend/apps/samples/services.py::sync_sample_status_for_container` (расширить), `web/src/api/samples.ts`, `mobile/lib/models/sample.dart`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+
+
+### 1.111. 2026-11-06 — origin_laboratory_id на уровне Container
+
+**Решение:** добавляем `Container.origin_laboratory_id` (FK → `Laboratory`, nullable). Одна лаборатория на тару (пробы одной тары почти всегда из одного источника).
+
+Заполнение:
+- При создании тары через приёмку (`Receipt.laboratory_id` → `Container.origin_laboratory_id`).
+- При создании тары вручную — опционально в `CreateContainersDialog` (поле «Лаборатория-источник»).
+- При `fill-samples` — если передано в payload, иначе остаётся `null`.
+
+**Причина:** для нешифрованных проб `Laboratory` сейчас не хранится вообще (теряется). Для шифрованных — можно по префиксу, но это ненадёжно. `Container.origin_laboratory_id` — минимальный уровень, покрывающий 95% случаев.
+
+**Где:** `backend/apps/storage/models.py` (`Container.origin_laboratory_id`), `backend/apps/storage/serializers.py`, `web/src/api/containers.ts`, `mobile/lib/models/container.dart`.
+**Статус:** ✅ действует (решение принято, реализация — пачки `c-2.x-lifecycle-*`).
+

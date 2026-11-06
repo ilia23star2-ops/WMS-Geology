@@ -126,9 +126,9 @@
 
 ## Требует обсуждения (серия `2.x-lifecycle`)
 
-**1. Статусы тары:** `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED`.
+**1. Статусы тары:** ✅ решение 1.109. `PENDING_FILLING` / `PENDING_PLACEMENT` / `ACTIVE` / `IN_TRANSIT` / `ISSUED`.
 
-**2. Статусы пробы:** `IN_STORAGE`, `IN_TRANSIT`, `CONSUMED`, `DISPOSED`, `PENDING_PLACEMENT`, `SELECTED`.
+**2. Статусы пробы:** ✅ решение 1.110. `IN_STORAGE`, `IN_TRANSIT`, `CONSUMED`, `DISPOSED`, `PENDING_PLACEMENT`, `SELECTED`.
 
 **3. Отправка в лабораторию:** тара едет с пробами или пробы перекладываются?
 
@@ -144,7 +144,7 @@
 
 **9. Приёмка ↔ отправка:** кто ставит `RECEIVED`?
 
-**10. Происхождение пробы:** хранить ли `origin_laboratory_id` (на уровне `Container` или `Sample`)? Для шифрованных — по префиксу, для нешифрованных — сейчас теряется.
+**10. Происхождение пробы:** ✅ решение 1.111. хранить ли `origin_laboratory_id` (на уровне `Container` или `Sample`)? Для шифрованных — по префиксу, для нешифрованных — сейчас теряется.
 
 ---
 
