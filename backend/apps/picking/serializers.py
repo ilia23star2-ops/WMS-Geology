@@ -119,6 +119,9 @@ class ShipmentContainerItemSerializer(serializers.ModelSerializer):
 class ShipmentSerializer(serializers.ModelSerializer):
     """Отправка. Read-only: денормализация + `container_items` (c-2.x-shipments-1)."""
 
+    # c-2.x-shipments-1a: shipment_number опционально. Если пусто —
+    # автогенерируется в ShipmentViewSet.perform_create (ОТ-YYYY-NNN / ПР-YYYY-NNN).
+    shipment_number = serializers.CharField(required=False, allow_blank=True)
     sent_by_username = serializers.CharField(
         source="sent_by.username", read_only=True, default=None,
     )

@@ -144,7 +144,52 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(sent_by=self.request.user)
+        shipment_number = (
+            serializer.validated_data.get("shipment_number") or ""
+        ).strip()
+        if not shipment_number:
+            direction = serializer.validated_data.get(
+                "direction", Shipment.DIRECTION_OUTBOUND,
+            )
+            shipment_number = self._generate_shipment_number(direction)
+        serializer.save(
+            shipment_number=shipment_number,
+            sent_by=self.request.user,
+        )
+
+    @staticmethod
+    def _generate_shipment_number(direction: str) -> str:
+        """
+        Автогенерация номера рейса (c-2.x-shipments-1a).
+
+        OUTBOUND: ОТ-YYYY-NNN.
+        INBOUND:  ПР-YYYY-NNN.
+
+        Race condition: при параллельном создании двух рейсов
+        возможен одинаковый номер → IntegrityError. Ретрай
+        не реализован; при необходимости — повторная генерация
+        с +1 в цикле.
+        """
+        prefix = (
+            "ОТ"
+            if direction == Shipment.DIRECTION_OUTBOUND
+            else "ПР"
+        )
+        year = timezone.now().year
+        last = (
+            Shipment.objects
+            .filter(shipment_number__startswith=f"{prefix}-{year}-")
+            .order_by("-shipment_number")
+            .first()
+        )
+        if last:
+            try:
+                last_n = int(last.shipment_number.rsplit("-", 1)[-1])
+            except (ValueError, IndexError):
+                last_n = 0
+        else:
+            last_n = 0
+        return f"{prefix}-{year}-{last_n + 1:03d}"
 
     @action(detail=True, methods=["post"], url_path="add-from-pick-list")
     def add_from_pick_list(self, request, pk=None):

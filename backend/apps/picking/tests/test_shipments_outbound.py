@@ -172,3 +172,34 @@ class TestSend:
         )
         r = api_client.post(f"/api/v1/shipments/{sh.id}/send/")
         assert r.status_code == 400
+
+@pytest.mark.django_db
+class TestCreateShipmentAutoNumber:
+    def test_create_auto_number_outbound(self, api_client, db):
+        r = api_client.post(
+            "/api/v1/shipments/",
+            {"direction": "OUTBOUND"},
+            format="json",
+        )
+        assert r.status_code == 201
+        body = r.json()
+        assert body["shipment_number"].startswith("ОТ-")
+        assert body["status"] == "DRAFT"
+
+    def test_create_auto_number_inbound(self, api_client, db):
+        r = api_client.post(
+            "/api/v1/shipments/",
+            {"direction": "INBOUND"},
+            format="json",
+        )
+        assert r.status_code == 201
+        assert r.json()["shipment_number"].startswith("ПР-")
+
+    def test_create_with_explicit_number(self, api_client, db):
+        r = api_client.post(
+            "/api/v1/shipments/",
+            {"direction": "OUTBOUND", "shipment_number": "ОТ-9999-001"},
+            format="json",
+        )
+        assert r.status_code == 201
+        assert r.json()["shipment_number"] == "ОТ-9999-001"
