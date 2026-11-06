@@ -9,6 +9,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.labels.models import PrintBatchItem
 from apps.labels.services import render_container_label
@@ -705,3 +706,55 @@ class ContainerViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+class SmartInputSuggestionsView(APIView):
+    """
+    c-2.x-smart-input: контекстные подсказки для заполнения тары.
+
+    GET /storage/suggestions/?site=1&work_order=TST0001&research_type=ШЛ
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.samples.models import Sample
+
+        site_raw = (request.query_params.get("site") or "").strip()
+        work_order = (request.query_params.get("work_order") or "").strip()
+        research_type = (request.query_params.get("research_type") or "").strip()
+
+        site_id = int(site_raw) if site_raw.isdigit() else None
+
+        qs = Sample.objects.all()
+        if site_id is not None:
+            qs = qs.filter(site_id=site_id)
+        if work_order:
+            qs = qs.filter(current_work_order__order_number=work_order)
+        if research_type:
+            qs = qs.filter(research_type__code=research_type)
+
+        work_orders = list(
+            qs.exclude(current_work_order__isnull=True)
+            .values_list("current_work_order__order_number", flat=True)
+            .order_by().distinct()[:20]
+        )
+        research_types = list(
+            qs.exclude(research_type__isnull=True)
+            .values_list("research_type__code", flat=True)
+            .order_by().distinct()[:20]
+        )
+        samples = list(
+            qs.values_list("sample_number", flat=True)
+            .order_by().distinct()[:50]
+        )
+        wells = list(
+            qs.exclude(well__isnull=True)
+            .values_list("well__well_name", flat=True)
+            .order_by().distinct()[:20]
+        )
+
+        return Response({
+            "work_orders": work_orders,
+            "research_types": research_types,
+            "samples": samples,
+            "wells": wells,
+        })

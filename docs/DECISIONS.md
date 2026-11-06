@@ -639,3 +639,23 @@
 **Где:** `mobile/lib/screens/container_detail_screen.dart` (`_openEditSheet`).
 **Статус:** ✅ действует.
 
+
+### 1.107. 2026-11-06 — Контекстные подсказки (c-2.x-smart-input-bundle-1)
+
+**Решение:** эндпоинт `GET /storage/suggestions/?site=&work_order=&research_type=` возвращает уникальные `work_orders`, `research_types`, `samples`, `wells` по контексту. На фронте — `SmartAutocomplete` (MUI Autocomplete + freeSolo) для полей Н/З, ТИ, диапазон проб.
+
+**Причина:** пользователь не должен вводить одно и то же (Н/З, префикс, скважину) при заполнении 3-5 тар одного Н/З.
+
+**Где:** `backend/apps/storage/views.py::SmartInputSuggestionsView`, `web/src/components/SmartAutocomplete.tsx`, `CreateContainersDialog.tsx`, `FillContainerContent.tsx`.
+**Статус:** ✅ действует.
+
+
+### 1.108. 2026-11-06 — Подсказки диапазона: база + auto-dash (c-2.x-smart-input-bundle-2)
+
+**Решение:** в поле «Диапазон проб» подсказки — базовые части (`TST1209`), без sequence. При выборе подсказки автодобавляется `-` (`TST1209-`), пользователь дописывает диапазон (`031` или `001-031`). Из списка скрыты базы, у которых все пробы уже добавлены.
+
+**Причина:** ввод `TST1209` без `-` не работает (парсер требует sequence). Показ полного `TST120901` → пользователь случайно вводит одну пробу вместо диапазона. Скрытие использованных — меньше шума при 3-5 тарах одного Н/З.
+
+**Где:** `web/src/components/SmartAutocomplete.tsx` (`appendOnSelect`), `FillContainerContent.tsx` (`baseSampleOptions`).
+**Статус:** ✅ действует.
+

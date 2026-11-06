@@ -1,5 +1,6 @@
 """Маршрутизация API приложения storage."""
 
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -11,6 +12,7 @@ from .views import (
     RackViewSet,
     RoomViewSet,
     SectionViewSet,
+    SmartInputSuggestionsView,
     TierViewSet,
 )
 
@@ -31,4 +33,7 @@ router.register("pallets", PalletViewSet, basename="pallet")
 router.register("container-types", ContainerTypeViewSet, basename="container-type")
 router.register("containers", ContainerViewSet, basename="container")
 
-urlpatterns = router.urls
+# Custom endpoint для подсказок
+urlpatterns = [
+    path("suggestions/", SmartInputSuggestionsView.as_view(), name="smart-suggestions"),
+] + router.urls

@@ -277,7 +277,7 @@ export default function ContainersPage() {
             flex: 1,
             minWidth: 120,
             valueGetter: (_value, row) =>
-                (row as any).comment || row.comment_template_text || "",
+                row.comment || row.comment_template_text || "",
             renderCell: (params) => {
                 const v = (params.value as string) || "";
                 if (!v) return "—";
