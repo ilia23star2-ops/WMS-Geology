@@ -8,12 +8,30 @@ import 'package:sqflite/sqflite.dart';
 import 'database.dart';
 
 class ContainerDao {
-  static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
+    static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
+    if (rawList.isEmpty) return;
     final db = await AppDatabase.instance.database;
     final batch = db.batch();
 
+    final pendingIds = <int>{};
+    final ids = rawList.map((j) => j['id'] as int).toList();
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.query(
+      'containers',
+      columns: ['id', 'pending_sync'],
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
+    );
+    for (final r in rows) {
+      if ((r['pending_sync'] as int? ?? 0) == 1) {
+        pendingIds.add(r['id'] as int);
+      }
+    }
+
     for (final json in rawList) {
       final id = json['id'] as int;
+      if (pendingIds.contains(id)) continue;
+
       final updatedAt = (json['updated_at'] as String?) ?? '';
 
       batch.insert('containers', {
