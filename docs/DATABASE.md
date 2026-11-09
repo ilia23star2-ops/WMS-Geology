@@ -270,7 +270,7 @@
 | `site_id` | INT FK → Sites NULL | |
 | `container_id` | INT FK → Containers (PROTECT) NOT NULL | |
 | `current_work_order_id` | INT FK → WorkOrders NULL | |
-| `status` | VARCHAR(50) | `IN_STORAGE / IN_TRANSIT / ISSUED / CONSUMED / DISPOSED / PENDING_DECRYPTION / PENDING_PLACEMENT` |
+| `status` | VARCHAR(50) | `IN_STORAGE / IN_TRANSIT / ISSUED / DISPOSED / PENDING_DECRYPTION / PENDING_PLACEMENT / SELECTED` |
 | `receipt_item_id` | INT FK → ReceiptItems NULL | |
 | `qr_code` | TEXT UNIQUE NULL | |
 | `legacy_data` | JSONB NULL | |

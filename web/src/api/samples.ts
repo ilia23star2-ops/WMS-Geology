@@ -15,7 +15,6 @@ import type { PaginatedResponse } from "./types";
 export type SampleStatus =
     | "IN_STORAGE"
     | "IN_TRANSIT"
-    | "CONSUMED"
     | "DISPOSED"
     | "PENDING_PLACEMENT"
     | "SELECTED";
@@ -23,7 +22,6 @@ export type SampleStatus =
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
     IN_STORAGE: "На хранении",
     IN_TRANSIT: "В пути",
-    CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
     PENDING_PLACEMENT: "Ожидает размещения",
     SELECTED: "Выбрана",
@@ -47,6 +45,9 @@ export interface Sample {
     status: SampleStatus;
     qr_code: string | null;
     legacy_data: Record<string, unknown> | null;
+    // c-2.x-lifecycle-3b: преемственность (родительская проба).
+    parent_sample: number | null;
+    parent_sample_number: string | null;
     disposed_at: string | null;
     disposed_by: number | null;
     disposal_reason: string;

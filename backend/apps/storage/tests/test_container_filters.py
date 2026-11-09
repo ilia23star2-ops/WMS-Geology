@@ -160,3 +160,50 @@ def test_delete_container_protected_returns_409(api, container_type):
     body = resp.json()
     assert "error" in body
     assert Container.objects.filter(pk=c.pk).exists()
+
+# ============================================================
+# c-2.x-lifecycle-1-ui: show_disposed
+# ============================================================
+
+from rest_framework.test import APIClient as _APIClient
+
+
+@pytest.mark.django_db
+class TestShowDisposed:
+    def test_disposed_hidden_by_default(self, user, container_type):
+        from apps.storage.models import Container
+
+        client = _APIClient()
+        client.force_authenticate(user=user)
+
+        active = Container.objects.create(
+            container_type=container_type, status="ACTIVE",
+        )
+        disposed = Container.objects.create(
+            container_type=container_type, status="DISPOSED",
+        )
+
+        r = client.get("/api/v1/storage/containers/")
+        assert r.status_code == 200
+        ids = [c["id"] for c in r.json()["results"]]
+        assert active.id in ids
+        assert disposed.id not in ids
+
+    def test_disposed_shown_with_flag(self, user, container_type):
+        from apps.storage.models import Container
+
+        client = _APIClient()
+        client.force_authenticate(user=user)
+
+        active = Container.objects.create(
+            container_type=container_type, status="ACTIVE",
+        )
+        disposed = Container.objects.create(
+            container_type=container_type, status="DISPOSED",
+        )
+
+        r = client.get("/api/v1/storage/containers/?show_disposed=true")
+        assert r.status_code == 200
+        ids = [c["id"] for c in r.json()["results"]]
+        assert active.id in ids
+        assert disposed.id in ids

@@ -45,7 +45,6 @@ const STATUS_COLORS: Record<
 > = {
     IN_STORAGE: "success",
     IN_TRANSIT: "info",
-    CONSUMED: "warning",
     DISPOSED: "error",
     PENDING_PLACEMENT: "warning",
     SELECTED: "default",

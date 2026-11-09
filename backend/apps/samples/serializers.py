@@ -85,6 +85,12 @@ class SampleSerializer(serializers.ModelSerializer):
         source="site.name", read_only=True, default=None,
     )
     current_location = serializers.SerializerMethodField()
+    # c-2.x-lifecycle-3: преемственность (родительская проба).
+    parent_sample_number = serializers.CharField(
+        source="parent_sample.sample_number",
+        read_only=True,
+        default=None,
+    )
 
     class Meta:
         model = Sample
@@ -106,6 +112,8 @@ class SampleSerializer(serializers.ModelSerializer):
             "status",
             "qr_code",
             "legacy_data",
+            "parent_sample",
+            "parent_sample_number",
             "disposed_at",
             "disposed_by",
             "disposal_reason",

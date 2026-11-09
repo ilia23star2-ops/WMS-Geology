@@ -41,8 +41,7 @@ class SampleStatusChip extends StatelessWidget {
         return (Colors.green.shade900, Colors.green.shade50);
       case SampleStatus.inTransit:
         return (Colors.blue.shade900, Colors.blue.shade50);
-      case SampleStatus.consumed:
-        return (Colors.orange.shade900, Colors.orange.shade50);
+
       case SampleStatus.disposed:
         return (Colors.red.shade900, Colors.red.shade50);
       case SampleStatus.pendingPlacement:

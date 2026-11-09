@@ -240,6 +240,8 @@ Hard-delete. `ProtectedError` (`PickListItem`, `ShipmentItem`) → 409.
 - `draft_work_order_coded` (icontains), `draft_research_type_id`;
 - **`updated_since=<ISO 8601>`** — только с `updated_at > момента` (c-6b).
 
+**c-2.x-lifecycle-1:** `ContainerType.is_disposable` (boolean). `Container.status` + `DISPOSED` (утилизирована). `GET /storage/containers/?show_disposed=true` — показать утилизированные (по умолчанию скрыты, как Sample).
+
 **Статусы контейнера:**
 - `PENDING_FILLING` — «Ожидает заполнения» (создана, проб нет);
 - `PENDING_PLACEMENT` — «Ожидает размещения» (пробы есть, места нет);

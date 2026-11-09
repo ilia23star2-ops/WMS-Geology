@@ -45,8 +45,20 @@ export type {
     UpdateContainerPayload,
 } from "./containers";
 
-export { fetchContainerTypes, useContainerTypes } from "./containerTypes";
-export type { ContainerType } from "./containerTypes";
+export {
+    createContainerType,
+    deleteContainerType,
+    fetchContainerTypes,
+    updateContainerType,
+    useContainerTypes,
+    useCreateContainerType,
+    useDeleteContainerType,
+    useUpdateContainerType,
+} from "./containerTypes";
+export type {
+    ContainerType,
+    ContainerTypePayload,
+} from "./containerTypes";
 
 export {
     SAMPLE_STATUS_LABELS,

@@ -65,6 +65,7 @@ const STATUS_COLORS: Record<
     ACTIVE: "success",
     IN_TRANSIT: "info",
     ISSUED: "default",
+    DISPOSED: "default",
 };
 
 export default function CellContentsDialog({

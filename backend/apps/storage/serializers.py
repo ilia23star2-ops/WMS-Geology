@@ -43,6 +43,7 @@ class ContainerTypeSerializer(serializers.ModelSerializer):
             "size_class",
             "max_on_standard_pallet",
             "is_core",
+            "is_disposable",
             "description",
         ]
 
@@ -147,6 +148,12 @@ class ContainerSerializer(serializers.ModelSerializer):
     cell_full_address = serializers.CharField(
         source="pallet.cell.full_address", read_only=True, default=None,
     )
+    # c-2.x-lifecycle-3: преемственность (родительская тара).
+    parent_container_number = serializers.CharField(
+        source="parent_container.container_number",
+        read_only=True,
+        default=None,
+    )
     # 2f-17b: статус последней не-CANCELLED партии печати.
     # None — тара не в активной партии.
     print_batch_status = serializers.SerializerMethodField()
@@ -176,6 +183,8 @@ class ContainerSerializer(serializers.ModelSerializer):
             "draft_work_order_coded",
             "draft_work_order_incoming",
             "label_printed_at",
+            "parent_container",
+            "parent_container_number",
             "print_batch_status",
             "created_at",
             "updated_at",
@@ -187,6 +196,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "floor_room_name",
             "cell_id",
             "cell_full_address",
+            "parent_container_number",
             "print_batch_status",
             "updated_at",
         ]
