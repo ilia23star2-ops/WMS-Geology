@@ -97,6 +97,15 @@ class Sample(models.Model):
     qr_code = models.TextField(unique=True, null=True, blank=True)
     legacy_data = models.JSONField(null=True, blank=True)
 
+    # c-2.x-lifecycle-3 (решение 1.119): преемственность. NULL — первичная.
+    parent_sample = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="returned_as",
+    )
+
     disposed_at = models.DateTimeField(null=True, blank=True)
     disposed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

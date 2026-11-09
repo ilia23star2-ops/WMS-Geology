@@ -425,6 +425,21 @@ class Container(models.Model):
         help_text="Входящий Н/З (черновик).",
     )
 
+    # c-2.x-lifecycle-3 (решение 1.119): преемственность.
+    # При возврате от лаборатории — новый объект, parent указывает на старый.
+    # Перекладывание проб (вопрос 3) — НЕ заполняется.
+    parent_container = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="returned_as",
+        help_text=(
+            "Родительская тара (если эта — возврат от лаборатории). "
+            "NULL — первичная тара."
+        ),
+    )
+
     # --- Пачка 2f-7d: защита от повторной печати ---
     label_printed_at = models.DateTimeField(
         null=True,
