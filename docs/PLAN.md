@@ -112,7 +112,7 @@
 ## Следующие серии (план)
 
 | # | Серия | Что делает | Заходов |
-| 0 | `feature/2.x-lifecycle` | Статусы Container/Sample: DISPOSED, is_disposable, parent_*, шифрование | 5 |
+| 0 | `feature/2.x-lifecycle` | Статусы Container/Sample: DISPOSED, is_disposable, parent_*, шифрование | 5 — ✅ закрыта (3/5) |
 | 0 | `feature/2.x-pool` | Пул (буфер) для тар/проб: собрать в пул, потом переместить/выбрать | 4–6 |
 | 0 | `feature/2.x-shipments` | Отправка (OUTBOUND): модель тар в рейсе, UI, автогенерация номера | 5 — ✅ закрыта |
 | 0 | `feature/2.x-smart-input` | Контекстные подсказки (Н/З, ТИ, диапазон) | 3–4 — ✅ закрыта |

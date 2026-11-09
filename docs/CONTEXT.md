@@ -110,7 +110,7 @@
 
 - **`c-2.x-lifecycle-2a/2b/2c`** — убран `CONSUMED`, миграция `0007`, web/mobile — ✅.
 
-- **`c-2.x-lifecycle-3a/3b`** — `parent_*` (FK → self) + `is_disposable` в сериализаторе — ✅.
+- **`c-2.x-lifecycle-3a/3b`** — `parent_*` (FK → self) + `is_disposable` в сериализаторе — ✅. Смержено в `main`.
 
 **Ближайшая работа:**
 
