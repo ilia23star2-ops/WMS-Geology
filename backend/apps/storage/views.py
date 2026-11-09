@@ -413,6 +413,14 @@ class ContainerViewSet(viewsets.ModelViewSet):
         ).all()
         p = self.request.query_params
 
+        # c-2.x-lifecycle-1-ui: по умолчанию скрываем утилизированные
+        # (как Sample). show_disposed=true — показать все.
+        show_disposed = p.get("show_disposed")
+        if show_disposed is None or show_disposed.lower() not in (
+            "1", "true", "yes",
+        ):
+            qs = qs.exclude(status=Container.STATUS_DISPOSED)
+
         if p.get("pallet_id"):
             qs = qs.filter(pallet_id=p["pallet_id"])
         if p.get("floor_room_id"):

@@ -11,6 +11,11 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.samples.services import (
+    _handle_container_after_dispose,
+    _handle_container_after_restore,
+    sync_sample_status_for_container,
+)
 from apps.storage.filters import apply_updated_since
 from apps.work_orders.models import WorkOrder
 
@@ -218,6 +223,10 @@ class SampleViewSet(viewsets.ModelViewSet):
             "status", "disposed_at", "disposed_by", "disposal_reason",
         ])
 
+        # c-2.x-lifecycle-1: если это была последняя проба — тара
+        # уходит в DISPOSED (одноразовая) или PENDING_FILLING (многоразовая).
+        _handle_container_after_dispose(sample.container)
+
         return Response(SampleSerializer(sample).data)
 
     @action(detail=True, methods=["post"], url_path="restore")
@@ -242,6 +251,12 @@ class SampleViewSet(viewsets.ModelViewSet):
         sample.save(update_fields=[
             "status", "disposed_at", "disposed_by", "disposal_reason",
         ])
+
+        # c-2.x-lifecycle-1: тара была DISPOSED/PENDING_FILLING — вернуть.
+        _handle_container_after_restore(sample.container)
+        # c-2.x-lifecycle-1-fix: синхронизировать статус пробы с тарой
+        # (например, если тара стала PENDING_PLACEMENT — проба тоже).
+        sync_sample_status_for_container(sample.container)
 
         return Response(SampleSerializer(sample).data)
 

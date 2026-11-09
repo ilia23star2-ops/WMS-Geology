@@ -4,8 +4,10 @@ import {
     Button,
     Card,
     CardContent,
+    Checkbox,
     Chip,
     FormControl,
+    FormControlLabel,
     Grid,
     IconButton,
     InputLabel,
@@ -28,6 +30,7 @@ import Inventory2Icon from "@mui/icons-material/Inventory2";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import OutputIcon from "@mui/icons-material/Output";
+import RecyclingIcon from "@mui/icons-material/Recycling";
 import PlaceIcon from "@mui/icons-material/Place";
 import {
     DataGrid,
@@ -64,6 +67,7 @@ const STATUS_ICONS: Record<ContainerStatus, React.ReactElement> = {
     ACTIVE: <CheckCircleIcon fontSize="small" color="success" />,
     IN_TRANSIT: <LocalShippingIcon fontSize="small" color="info" />,
     ISSUED: <OutputIcon fontSize="small" color="disabled" />,
+    DISPOSED: <RecyclingIcon fontSize="small" color="disabled" />,
 };
 
 function renderPrintIcon(status: PrintBatchStatus | null) {
@@ -555,6 +559,24 @@ export default function ContainersPage() {
                                     ))}
                                 </Select>
                             </FormControl>
+                        </Grid>
+
+                        <Grid size={{ xs: 12 }}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={filters.show_disposed ?? false}
+                                        onChange={(e) => {
+                                            setFilters((prev) => ({
+                                                ...prev,
+                                                show_disposed: e.target.checked || undefined,
+                                            }));
+                                            setPaginationModel((m) => ({ ...m, page: 0 }));
+                                        }}
+                                    />
+                                }
+                                label="Показать утилизированные"
+                            />
                         </Grid>
                     </Grid>
                 </CardContent>

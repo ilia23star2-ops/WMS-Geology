@@ -289,6 +289,16 @@ class ContainerType(models.Model):
         default=False,
         help_text="Задел: тип относится к керну.",
     )
+    # c-2.x-lifecycle-1 (решение 1.109): одноразовая тара.
+    # При утилизации последней пробы: True → Container.DISPOSED;
+    # False → Container.PENDING_FILLING (переиспользование).
+    is_disposable = models.BooleanField(
+        default=False,
+        help_text=(
+            "Одноразовая тара (коробка). При утилизации последней пробы "
+            "→ DISPOSED. Иначе (ящик, биг-бег) → PENDING_FILLING."
+        ),
+    )
     description = models.TextField(blank=True, default="")
 
     class Meta:
@@ -318,12 +328,15 @@ class Container(models.Model):
     STATUS_ACTIVE = "ACTIVE"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
     STATUS_ISSUED = "ISSUED"
+    # c-2.x-lifecycle-1 (решение 1.109): утилизированная тара.
+    STATUS_DISPOSED = "DISPOSED"
     STATUS_CHOICES = [
         (STATUS_PENDING_FILLING, "Ожидает заполнения"),
         (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
-        (STATUS_ACTIVE, "Активна"),
+        (STATUS_ACTIVE, "Размещена"),
         (STATUS_IN_TRANSIT, "В пути"),
         (STATUS_ISSUED, "Выдана"),
+        (STATUS_DISPOSED, "Утилизирована"),
     ]
 
     container_number = models.CharField(

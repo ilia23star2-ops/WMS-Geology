@@ -1,10 +1,8 @@
 /**
- * Справочники: типы исследования, участки, лаборатории.
+ * Справочники: типы исследования, участки, лаборатории, типы тары.
  *
- * Пачка 2f-3a: добавлены CRUD-действия (создать / редактировать /
- * активировать-деактивировать / удалить).
- * - «Деактивировать» — soft через `is_active=false`.
- * - «Удалить» — hard `DELETE`, backend отдаст 409 при `PROTECT`.
+ * c-2.x-lifecycle-1-ui: добавлена 4-я вкладка «Типы тары» (CRUD +
+ * is_disposable).
  */
 import { useState } from "react";
 import {
@@ -29,12 +27,15 @@ import ToggleOnIcon from "@mui/icons-material/ToggleOn";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 
 import {
+    useContainerTypes,
     useDeleteCatalog,
+    useDeleteContainerType,
     useLaboratories,
     useResearchTypes,
     useSites,
     useUpdateCatalog,
     type CatalogKind,
+    type ContainerType,
     type Laboratory,
     type ResearchType,
     type Site,
@@ -42,6 +43,7 @@ import {
 import CatalogEntityDialog, {
     type CatalogEntityInitial,
 } from "../components/CatalogEntityDialog";
+import ContainerTypeDialog from "../components/ContainerTypeDialog";
 
 interface TabPanelProps {
     value: number;
@@ -103,12 +105,17 @@ export default function CatalogsPage() {
     const researchTypes = useResearchTypes();
     const sites = useSites();
     const laboratories = useLaboratories();
+    const containerTypes = useContainerTypes();
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<CatalogEntityInitial | null>(null);
     const [dialogConfig, setDialogConfig] = useState<CatalogTabConfig>(
         RESEARCH_TAB,
     );
+
+    const [ctDialogOpen, setCtDialogOpen] = useState(false);
+    const [ctEditing, setCtEditing] = useState<ContainerType | null>(null);
+
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -135,6 +142,16 @@ export default function CatalogsPage() {
             prefixes: "prefixes" in row ? row.prefixes : undefined,
         });
         setDialogOpen(true);
+    }
+
+    function openCreateCt() {
+        setCtEditing(null);
+        setCtDialogOpen(true);
+    }
+
+    function openEditCt(row: ContainerType) {
+        setCtEditing(row);
+        setCtDialogOpen(true);
     }
 
     function renderActions(
@@ -258,6 +275,70 @@ export default function CatalogsPage() {
         },
     ];
 
+    const containerTypeColumns: GridColDef<ContainerType>[] = [
+        { field: "id", headerName: "ID", width: 70 },
+        { field: "name", headerName: "Название", flex: 1, minWidth: 160 },
+        {
+            field: "laboratory_name",
+            headerName: "Лаборатория",
+            flex: 1,
+            minWidth: 160,
+            valueGetter: (value) => value ?? "— общая —",
+        },
+        {
+            field: "size_class",
+            headerName: "Класс",
+            width: 90,
+            valueGetter: (value) => value || "—",
+        },
+        {
+            field: "max_on_standard_pallet",
+            headerName: "Макс/поддон",
+            width: 120,
+            type: "number",
+            align: "right",
+            headerAlign: "right",
+        },
+        {
+            field: "is_core",
+            headerName: "Керн",
+            width: 80,
+            renderCell: (params) =>
+                params.value ? (
+                    <Chip label="Да" size="small" color="info" />
+                ) : (
+                    "—"
+                ),
+        },
+        {
+            field: "is_disposable",
+            headerName: "Одноразовая",
+            width: 130,
+            renderCell: (params) =>
+                params.value ? (
+                    <Chip label="Да" size="small" color="warning" />
+                ) : (
+                    <Chip label="Нет" size="small" variant="outlined" />
+                ),
+        },
+        {
+            field: "actions",
+            headerName: "",
+            width: 100,
+            sortable: false,
+            filterable: false,
+            disableColumnMenu: true,
+            renderCell: (params) => (
+                <ContainerTypeRowActions
+                    row={params.row}
+                    onEdit={() => openEditCt(params.row)}
+                    onMessage={setMessage}
+                    onError={setError}
+                />
+            ),
+        },
+    ];
+
     return (
         <Box>
             <Box
@@ -293,6 +374,7 @@ export default function CatalogsPage() {
                 <Tab label="Типы исследования" />
                 <Tab label="Участки" />
                 <Tab label="Лаборатории" />
+                <Tab label="Типы тары" />
             </Tabs>
 
             <TabPanel value={tab} index={0}>
@@ -382,12 +464,48 @@ export default function CatalogsPage() {
                 </Card>
             </TabPanel>
 
+            <TabPanel value={tab} index={3}>
+                <Stack
+                    direction="row"
+                    sx={{ justifyContent: "flex-end", mb: 1 }}
+                >
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={openCreateCt}
+                    >
+                        Добавить тип тары
+                    </Button>
+                </Stack>
+                <Card>
+                    <Box sx={{ height: 500, width: "100%" }}>
+                        <DataGrid
+                            rows={containerTypes.data ?? []}
+                            columns={containerTypeColumns}
+                            loading={containerTypes.isLoading}
+                            disableRowSelectionOnClick
+                            disableColumnFilter
+                            disableColumnSelector
+                            disableDensitySelector
+                            hideFooter
+                        />
+                    </Box>
+                </Card>
+            </TabPanel>
+
             <CatalogEntityDialog
                 open={dialogOpen}
                 kind={dialogConfig.kind}
                 title={dialogConfig.singular}
                 initial={editing}
                 onClose={() => setDialogOpen(false)}
+                onSuccess={(msg) => setMessage(msg)}
+            />
+
+            <ContainerTypeDialog
+                open={ctDialogOpen}
+                initial={ctEditing}
+                onClose={() => setCtDialogOpen(false)}
                 onSuccess={(msg) => setMessage(msg)}
             />
 
@@ -402,7 +520,73 @@ export default function CatalogsPage() {
 }
 
 // ============================================================
-// Действия в строке (edit / toggle / delete)
+// Действия в строке для типов тары (edit / delete — без toggle,
+// так как у ContainerType нет is_active)
+// ============================================================
+interface ContainerTypeRowActionsProps {
+    row: ContainerType;
+    onEdit: () => void;
+    onMessage: (msg: string) => void;
+    onError: (msg: string) => void;
+}
+
+function ContainerTypeRowActions({
+    row,
+    onEdit,
+    onMessage,
+    onError,
+}: ContainerTypeRowActionsProps) {
+    const remove = useDeleteContainerType();
+
+    async function handleDelete() {
+        const ok = window.confirm(
+            `Удалить тип тары «${row.name}»? Действие необратимо.`,
+        );
+        if (!ok) return;
+        try {
+            await remove.mutateAsync(row.id);
+            onMessage(`«${row.name}» удалён.`);
+        } catch (err) {
+            onError(
+                extractError(err)
+                ?? "Не удалось удалить (возможно, используется в тарах).",
+            );
+        }
+    }
+
+    return (
+        <Stack direction="row" spacing={0.5}>
+            <Tooltip title="Редактировать">
+                <IconButton
+                    size="small"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit();
+                    }}
+                    disabled={remove.isPending}
+                >
+                    <EditIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+            <Tooltip title="Удалить">
+                <IconButton
+                    size="small"
+                    color="error"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete();
+                    }}
+                    disabled={remove.isPending}
+                >
+                    <DeleteIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+        </Stack>
+    );
+}
+
+// ============================================================
+// Действия в строке (edit / toggle / delete) — research/site/lab
 // ============================================================
 interface CatalogRowActionsProps {
     config: CatalogTabConfig;

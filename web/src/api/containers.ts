@@ -16,14 +16,16 @@ export type ContainerStatus =
     | "PENDING_PLACEMENT"
     | "ACTIVE"
     | "IN_TRANSIT"
-    | "ISSUED";
+    | "ISSUED"
+    | "DISPOSED";
 
 export const CONTAINER_STATUS_LABELS: Record<ContainerStatus, string> = {
     PENDING_FILLING: "Ожидает заполнения",
     PENDING_PLACEMENT: "Ожидает размещения",
-    ACTIVE: "Активна",
+    ACTIVE: "Размещена",
     IN_TRANSIT: "В пути",
     ISSUED: "Выдана",
+    DISPOSED: "Утилизирована",
 };
 
 export type PrintBatchStatus = "DRAFT" | "READY" | "PRINTED" | "CANCELLED";
@@ -62,6 +64,8 @@ export interface ContainerFilters {
     comment_template_id?: number;
     draft_work_order_coded?: string;
     draft_research_type_id?: number;
+    /** c-2.x-lifecycle-1-ui: показать утилизированные (DISPOSED). */
+    show_disposed?: boolean;
 }
 
 export interface ContainersListParams {
@@ -82,6 +86,7 @@ export async function fetchContainers(
     if (f.comment_template_id !== undefined) query.comment_template_id = f.comment_template_id;
     if (f.draft_work_order_coded) query.draft_work_order_coded = f.draft_work_order_coded;
     if (f.draft_research_type_id !== undefined) query.draft_research_type_id = f.draft_research_type_id;
+    if (f.show_disposed) query.show_disposed = "true";
 
     const { data } = await apiClient.get<PaginatedResponse<Container>>(
         "/storage/containers/",
