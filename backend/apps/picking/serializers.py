@@ -96,6 +96,13 @@ class ShipmentContainerItemSerializer(serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    # c-2.x-lab-portal-2: где сейчас тара.
+    current_holder = serializers.SerializerMethodField()
+
+    def get_current_holder(self, obj) -> str:
+        # Используем логику из ContainerSerializer, чтобы не дублировать код.
+        from apps.storage.serializers import ContainerSerializer
+        return ContainerSerializer().get_current_holder(obj.container)
 
     class Meta:
         model = ShipmentContainerItem
@@ -109,6 +116,7 @@ class ShipmentContainerItemSerializer(serializers.ModelSerializer):
             "container_type_name",
             "draft_work_order_coded",
             "draft_research_type_name",
+            "current_holder",
         ]
         read_only_fields = ["id", "shipment"]
 

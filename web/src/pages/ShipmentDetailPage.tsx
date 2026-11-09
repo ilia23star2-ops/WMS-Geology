@@ -8,6 +8,7 @@
  * - «Откуда» / «Куда» для OUTBOUND (origin_laboratory / laboratory).
  * - «Участок» скрыт для OUTBOUND.
  * - Автообновление (staleTime 0 + invalidate в хуках).
+ * c-2.x-lab-portal-2: кнопка «Принять», current_holder тар.
  */
 import { useState } from "react";
 import {
@@ -54,6 +55,7 @@ import {
     useCancelShipment,
     useDeleteReceiptItem,
     useDeleteShipment,
+    useMarkReceived,
     useReceiptItems,
     useReceipts,
     useRemoveShipmentContainer,
@@ -371,6 +373,7 @@ function ContainerItemsPanel({
                                     <TableCell>Тип</TableCell>
                                     <TableCell>Н/З</TableCell>
                                     <TableCell>ТИ</TableCell>
+                                    <TableCell width={150}>Где сейчас</TableCell>
                                     <TableCell width={150}>Статус</TableCell>
                                     {canModify && <TableCell width={60} />}
                                 </TableRow>
@@ -397,6 +400,9 @@ function ContainerItemsPanel({
                                         </TableCell>
                                         <TableCell>
                                             {item.draft_research_type_name ?? "—"}
+                                        </TableCell>
+                                        <TableCell>
+                                            {item.current_holder ?? "—"}
                                         </TableCell>
                                         <TableCell>
                                             <Chip
@@ -471,6 +477,7 @@ export default function ShipmentDetailPage() {
     const deleteShipmentMutation = useDeleteShipment();
     const assembleMutation = useAssembleShipment(shipmentId ?? 0);
     const sendMutation = useSendShipment(shipmentId ?? 0);
+    const markReceivedMutation = useMarkReceived();
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -574,6 +581,23 @@ export default function ShipmentDetailPage() {
         }
     }
 
+    async function handleMarkReceived() {
+        if (!shipment.data) return;
+        const ok = window.confirm(
+            `Принять рейс ${shipment.data.shipment_number}? `
+            + "Статус станет «Принят».",
+        );
+        if (!ok) return;
+        try {
+            await markReceivedMutation.mutateAsync(shipment.data.id);
+            setMessage(`Рейс ${shipment.data.shipment_number} принят.`);
+        } catch (err) {
+            setError(
+                extractError(err) ?? "Не удалось принять рейс.",
+            );
+        }
+    }
+
     if (shipment.isError) {
         return (
             <Box>
@@ -617,7 +641,8 @@ export default function ShipmentDetailPage() {
         deleteShipmentMutation.isPending
         || cancelShipmentMutation.isPending
         || assembleMutation.isPending
-        || sendMutation.isPending;
+        || sendMutation.isPending
+        || markReceivedMutation.isPending;
 
     return (
         <Box>
@@ -753,6 +778,19 @@ export default function ShipmentDetailPage() {
                         spacing={2}
                         sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}
                     >
+                        {data.can_mark_received && (
+                            <Button
+                                variant="contained"
+                                color="success"
+                                startIcon={<FactCheckIcon />}
+                                onClick={() => void handleMarkReceived()}
+                                disabled={busyShipment}
+                            >
+                                {markReceivedMutation.isPending
+                                    ? "Принимаем..."
+                                    : "Принять рейс"}
+                            </Button>
+                        )}
                         {canAssemble && (
                             <Button
                                 variant="contained"
