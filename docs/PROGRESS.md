@@ -145,6 +145,9 @@
 ### Что закрыто
 
 - ✅ **`c-2.x-lifecycle-1`** (2026-11-09) — решение 1.109: `ContainerType.is_disposable` (миграция storage/0011), `Container.STATUS_DISPOSED`, `_handle_container_after_dispose` / `_handle_container_after_restore` в `services.py`. Логика: при утилизации последней пробы одноразовая тара → `DISPOSED`, многоразовая → `PENDING_FILLING`. При restore: место есть → `ACTIVE`, нет → `PENDING_PLACEMENT`. UI: 4-я вкладка «Типы тары» в «Справочниках», `ContainerTypeDialog`, чекбокс «Показать утилизированные» в реестре тары, иконка `Recycling` для `DISPOSED`.
+- ✅ **`c-2.x-lifecycle-3a`** (2026-11-09) — backend: `Container.parent_container_id` (FK → self), `Sample.parent_sample_id` (FK → self). Миграции `storage/0012` + `samples/0008`. Сериализаторы: `parent_container*` / `parent_sample*` (read-only, денормализация). Фикс: `ContainerTypeSerializer` теперь возвращает `is_disposable` (пропущено в `c-2.x-lifecycle-1-ui`). Тесты: 874 passed (+8 `test_parent`).
+- ✅ **`c-2.x-lifecycle-3b`** (2026-11-09) — web: `parent_container` / `parent_container_number` / `parent_sample` / `parent_sample_number` в интерфейсах `Container` / `Sample`.
+
 - ✅ **`c-2.x-lifecycle-2a`** (2026-11-09) — backend: убран `Sample.STATUS_CONSUMED`, data-migration `CONSUMED → DISPOSED`. Обновлены `_PROTECTED_SAMPLE_STATUSES`, `inventory/offline_import`, тесты. Миграция `samples/0007`.
 - ✅ **`c-2.x-lifecycle-2b`** (2026-11-09) — web: убран `CONSUMED` из `SampleStatus`, `SAMPLE_STATUS_LABELS`, `STATUS_COLORS` (`FillContainerContent`, `SamplesTreeTable`), `ActualizationPage`.
 - ✅ **`c-2.x-lifecycle-2c`** (2026-11-09) — mobile: убран `SampleStatus.consumed`, `_parseStatus` мапит `CONSUMED → disposed` (старый кэш). `flutter analyze` OK, 227 тестов.
