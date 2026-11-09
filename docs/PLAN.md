@@ -20,8 +20,17 @@
 
 ## Ближайший план
 
-**Активная серия:** `feature/3.x-offline` (мобильный офлайн).
-**Долгоживущий бранч:** `fix/2.x-mobile-bundle-c-2`.
+**План серии 2.x-lab-portal:**
+
+| # | Заход | Что делает | Статус |
+|---|---|---|---|
+| 1 | backend | `UserProfile.laboratory`, `lab_worker`, `mark-received`, `current_holder` | ✅ |
+| 2 | web: фильтр | `?my_lab=true`, вкладки «Все/Исх/Вх», кнопка «Принять», `current_holder` | ⬜ |
+| 3 | web: sidebar | `Sidebar` по роли, `create-return` action, «Вернуть остатки» | ⬜ |
+
+
+**Активная серия:** `feature/2.x-lab-portal` (портал лабораторий).
+**Ветка:** `feature/2.x-lab-portal`.
 Серия `2f` — **закрыта полностью**.
 
 **План серии 3.x-offline:**
@@ -233,6 +242,9 @@
 | ТД-66 | `c-8b-fix-3`: `ContainerEditForm._catalogsError` блокирует сохранение шапки | ✅ | закрыто в `c-8b-fix-3` |
 | ТД-67 | `ContainersPage.tsx` — `valueGetter: (row as any).comment` — временный обход типа. Добавить `comment: string` в `web/src/api/types.ts::Container` | низкий | при следующем web-заходе |
 | ТД-68 | `api_client.dart` классифицирует `DioExceptionType.unknown` без `statusCode` как `isNetworkError = false`. `ContainerService.update` ловит `catch (_)`, но `fetchList` / `fetchHistory` / `fetchLabelPdf` — только `on ApiException if (!isNetworkError) rethrow`. Возможны ложные «не сетевые» ошибки офлайн. На device-check не воспроизвелось | низкий | при первом баг-репорте офлайн-загрузки |
+| ТД-69 | `mark_received` в `picking/views.py` — побитый docstring (плейсхолдеры). Не влияет на работу. | низкий | при следующей правке views.py |
+| ТД-72 | `mark_received` проверяет роль (`admin`/`manager`), а не `is_superuser` (расхождение с HANDOFF). Решено оставить как есть (вариант А). | низкий | в docs |
+| ТД-73 | `backend/apps/users/admin.py` — зарегистрировать `UserProfile`, `Role`, `AuditLog`, `AccessToken` в Django Admin (сейчас 404). | средний | отдельная пачка `fix/2.x-users-admin` |
 
 ---
 

@@ -1,3 +1,21 @@
+## Серия `feature/2.x-lab-portal`
+
+**Дата:** 2026-11-09 — активна.
+**Ветка:** `feature/2.x-lab-portal`.
+**Контекст:** Портал лабораторий. 3 пачки: backend, web (фильтр), web (sidebar).
+
+### Что закрыто
+
+- ✅ **`c-2.x-lab-portal-1`** (2026-11-09) — backend: `UserProfile.laboratory` (FK → samples.Laboratory, SET_NULL, null), роль `lab_worker` в `seed_roles`, `POST /shipments/{id}/mark-received/`, `can_mark_received` в `ShipmentSerializer`, `current_holder` в `ContainerSerializer` и `SampleSerializer`. Тесты: 892 passed (+18). Device-check: 46/46 PASS.
+
+### Метрики
+
+- **Backend: 892 теста.**
+- **Web: 24 юнит-теста.**
+- **Mobile: 227 юнит-тестов.**
+
+---
+
 # PROGRESS.md — история закрытых заходов
 
 > Хронология. Свежее — сверху.
