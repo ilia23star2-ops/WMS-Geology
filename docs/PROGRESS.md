@@ -136,6 +136,24 @@
 ---
 
 
+## Серия `feature/2.x-lifecycle`
+
+**Дата:** 2026-11-09 — активна.
+**Ветка:** `feature/2.x-lifecycle`.
+**Контекст:** Реализация решений 1.109-1.121 (статусы тары/пробы, is_disposable, утилизация, parent_*, шифрование).
+
+### Что закрыто
+
+- ✅ **`c-2.x-lifecycle-1`** (2026-11-09) — решение 1.109: `ContainerType.is_disposable` (миграция storage/0011), `Container.STATUS_DISPOSED`, `_handle_container_after_dispose` / `_handle_container_after_restore` в `services.py`. Логика: при утилизации последней пробы одноразовая тара → `DISPOSED`, многоразовая → `PENDING_FILLING`. При restore: место есть → `ACTIVE`, нет → `PENDING_PLACEMENT`. UI: 4-я вкладка «Типы тары» в «Справочниках», `ContainerTypeDialog`, чекбокс «Показать утилизированные» в реестре тары, иконка `Recycling` для `DISPOSED`.
+
+### Метрики
+
+- **Backend: 867 тестов.**
+- **Web: 24 юнит-теста.**
+
+---
+
+
 ## Серия `feature/2.x-web-v2`
 
 **Дата:** 2026-10-12 — 2026-10-27.
