@@ -144,6 +144,36 @@ class ShipmentSerializer(serializers.ModelSerializer):
     container_items = ShipmentContainerItemSerializer(
         many=True, read_only=True,
     )
+    # c-2.x-lab-portal-1: можно ли принять этот рейс текущему пользователю.
+    can_mark_received = serializers.SerializerMethodField()
+
+    def get_can_mark_received(self, obj) -> bool:
+        """Может ли текущий пользователь принять рейс."""
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        profile = getattr(request.user, "profile", None)
+        if profile is None:
+            return False
+        role_name = profile.role.name if profile.role else None
+        if role_name in ("admin", "manager"):
+            return obj.status not in (
+                Shipment.STATUS_RECEIVED,
+                Shipment.STATUS_PARTIALLY_RECEIVED,
+                Shipment.STATUS_CANCELLED,
+                Shipment.STATUS_LOST,
+            )
+        lab = getattr(profile, "laboratory", None)
+        if lab is None:
+            return False
+        if obj.laboratory_id != lab.id:
+            return False
+        return obj.status not in (
+            Shipment.STATUS_RECEIVED,
+            Shipment.STATUS_PARTIALLY_RECEIVED,
+            Shipment.STATUS_CANCELLED,
+            Shipment.STATUS_LOST,
+        )
 
     class Meta:
         model = Shipment
@@ -175,6 +205,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "items_count",
             "containers_count",
             "container_items",
+            "can_mark_received",
             "note",
             "updated_at",
         ]

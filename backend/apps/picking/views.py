@@ -382,6 +382,53 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
         return Response(ShipmentSerializer(shipment).data)
 
+    @action(detail=True, methods=["post"], url_path="mark-received")
+    def mark_received(self, request, pk=None):
+        """
+        Отметить рейс как принятый (c-2.x-lab-portal-1).
+
+        Меняет , .
+        Доступно:
+        -  /  — любой рейс;
+        -  — только рейс своей лаборатории.
+
+        Проверки:
+        - только для DRAFT / ASSEMBLED / SENT (не RECEIVED, не CANCELLED, не LOST);
+        - для OUTBOUND —  должен совпадать с
+          .
+        """
+        shipment = self.get_object()
+
+        # Права: lab_worker — только своя лаборатория.
+        profile = getattr(request.user, "profile", None)
+        lab = getattr(profile, "laboratory", None) if profile else None
+        role_name = profile.role.name if profile and profile.role else None
+        is_admin = role_name in ("admin", "manager")
+        if not is_admin:
+            if lab is None or shipment.laboratory_id != lab.id:
+                return Response(
+                    {"error": "Нет доступа к этому рейсу."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # Статус.
+        if shipment.status in (
+            Shipment.STATUS_RECEIVED,
+            Shipment.STATUS_PARTIALLY_RECEIVED,
+            Shipment.STATUS_CANCELLED,
+            Shipment.STATUS_LOST,
+        ):
+            return Response(
+                {"error": f"Нельзя принять рейс в статусе {shipment.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        shipment.status = Shipment.STATUS_RECEIVED
+        shipment.received_at = timezone.now()
+        shipment.save(update_fields=["status", "received_at"])
+
+        return Response(ShipmentSerializer(shipment).data)
+
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         """Отменить отправку (до RECEIVED)."""

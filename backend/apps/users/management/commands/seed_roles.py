@@ -25,11 +25,16 @@ DEFAULT_ROLES = [
         "name": "worker",
         "description": "Рабочий (кладовщик): приёмка, выдача, перемещения, инвентаризация.",
     },
+    {
+        # c-2.x-lab-portal-1: сотрудник лаборатории.
+        "name": "lab_worker",
+        "description": "Сотрудник лаборатории: приёмка рейсов своей лаборатории, работа с пробами.",
+    },
 ]
 
 
 class Command(BaseCommand):
-    help = "Создаёт базовые роли проекта (admin, manager, worker)."
+    help = "Создаёт базовые роли проекта (admin, manager, worker, lab_worker)."
 
     def handle(self, *args, **options) -> None:
         created = 0

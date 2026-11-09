@@ -28,6 +28,15 @@ class UserProfile(models.Model):
     )
     full_name = models.CharField(max_length=200, blank=True)
     phone = models.CharField(max_length=50, blank=True)
+    # c-2.x-lab-portal-1: привязка сотрудника к лаборатории.
+    # NULL — не сотрудник лаборатории (обычный пользователь/админ).
+    laboratory = models.ForeignKey(
+        "samples.Laboratory",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="user_profiles",
+    )
 
     class Meta:
         db_table = "user_profiles"

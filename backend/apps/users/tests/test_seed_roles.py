@@ -2,7 +2,7 @@
 Тесты management-команды seed_roles.
 
 Проверяют:
-- создание трёх базовых ролей;
+- создание четырёх базовых ролей (c-2.x-lab-portal-1: +lab_worker);
 - идемпотентность (повторный запуск не создаёт дубликатов);
 - обновление описания при изменении.
 """
@@ -15,18 +15,25 @@ from django.core.management import call_command
 from apps.users.models import Role
 
 
-def test_seed_roles_creates_three_roles(db):
-    """Команда создаёт admin, manager, worker."""
+def test_seed_roles_creates_four_roles(db):
+    """Команда создаёт admin, manager, worker, lab_worker (c-2.x-lab-portal-1)."""
     call_command("seed_roles", stdout=StringIO())
     names = set(Role.objects.values_list("name", flat=True))
-    assert names == {"admin", "manager", "worker"}
+    assert names == {"admin", "manager", "worker", "lab_worker"}
+
+
+def test_seed_roles_creates_lab_worker(db):
+    """c-2.x-lab-portal-1: роль lab_worker создаётся с описанием про лабораторию."""
+    call_command("seed_roles", stdout=StringIO())
+    role = Role.objects.get(name="lab_worker")
+    assert "лаборатори" in role.description.lower()
 
 
 def test_seed_roles_idempotent(db):
     """Повторный запуск не создаёт дубликатов."""
     call_command("seed_roles", stdout=StringIO())
     call_command("seed_roles", stdout=StringIO())
-    assert Role.objects.count() == 3
+    assert Role.objects.count() == 4
 
 
 def test_seed_roles_updates_description(db):

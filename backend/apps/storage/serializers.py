@@ -154,6 +154,8 @@ class ContainerSerializer(serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    # c-2.x-lab-portal-1: где сейчас тара (человеко-читаемо).
+    current_holder = serializers.SerializerMethodField()
     # 2f-17b: статус последней не-CANCELLED партии печати.
     # None — тара не в активной партии.
     print_batch_status = serializers.SerializerMethodField()
@@ -185,6 +187,7 @@ class ContainerSerializer(serializers.ModelSerializer):
             "label_printed_at",
             "parent_container",
             "parent_container_number",
+            "current_holder",
             "print_batch_status",
             "created_at",
             "updated_at",
@@ -197,9 +200,48 @@ class ContainerSerializer(serializers.ModelSerializer):
             "cell_id",
             "cell_full_address",
             "parent_container_number",
+            "current_holder",
             "print_batch_status",
             "updated_at",
         ]
+
+    def get_current_holder(self, obj) -> str:
+        """Где сейчас тара (c-2.x-lab-portal-1)."""
+        from apps.picking.models import Shipment
+        status = obj.status
+        if status == Container.STATUS_DISPOSED:
+            return "Утилизирована"
+        if status in (
+            Container.STATUS_ACTIVE,
+            Container.STATUS_PENDING_FILLING,
+            Container.STATUS_PENDING_PLACEMENT,
+        ):
+            return "У нас на складе"
+        if status == Container.STATUS_ISSUED:
+            # У лаборатории — последний OUTBOUND с этой тарой.
+            last = (
+                obj.shipment_items
+                .filter(shipment__direction=Shipment.DIRECTION_OUTBOUND)
+                .select_related("shipment__laboratory")
+                .order_by("-shipment__sent_at")
+                .first()
+            )
+            if last and last.shipment.laboratory:
+                return f"У лаборатории {last.shipment.laboratory.name}"
+            return "У лаборатории"
+        if status == Container.STATUS_IN_TRANSIT:
+            # В пути — либо OUTBOUND (едет к лаборатории), либо INBOUND (обратно).
+            last_out = (
+                obj.shipment_items
+                .filter(shipment__direction=Shipment.DIRECTION_OUTBOUND)
+                .select_related("shipment__laboratory")
+                .order_by("-shipment__sent_at")
+                .first()
+            )
+            if last_out and last_out.shipment.laboratory:
+                return f"В пути к {last_out.shipment.laboratory.name}"
+            return "В пути"
+        return "—"
 
     def get_print_batch_status(self, obj) -> str | None:
         """
