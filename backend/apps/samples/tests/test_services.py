@@ -6,7 +6,7 @@
   IN_TRANSIT);
 - отсутствие маппинга для ISSUED (2f-9c: Sample.STATUS_ISSUED удалён,
   sync не трогает пробы);
-- защита терминальных статусов (DISPOSED / CONSUMED / SELECTED);
+- защита терминальных статусов (DISPOSED / SELECTED);
 - возвращаемое количество обновлений;
 - поведение на неизвестном статусе тары.
 """
@@ -131,19 +131,7 @@ def test_disposed_sample_not_touched(container, research_type):
 
 
 @pytest.mark.django_db
-def test_consumed_sample_not_touched(container, research_type):
-    """CONSUMED-проба не перезаписывается."""
-    sample = _make_sample(container, research_type, "S-6", Sample.STATUS_CONSUMED)
-    container.status = Container.STATUS_ACTIVE
 
-    updated = sync_sample_status_for_container(container)
-
-    sample.refresh_from_db()
-    assert updated == 0
-    assert sample.status == Sample.STATUS_CONSUMED
-
-
-@pytest.mark.django_db
 def test_selected_sample_not_touched(container, research_type):
     """SELECTED-проба не перезаписывается (2f-9b)."""
     sample = _make_sample(container, research_type, "S-7", Sample.STATUS_SELECTED)

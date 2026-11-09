@@ -5,7 +5,7 @@
 применяет операции по классам:
 
 - **A. Append-only** (`DISPOSE_SAMPLE`) — идемпотентно. Если проба уже
-  DISPOSED/CONSUMED — applied без изменений.
+  DISPOSED — applied без изменений.
 - **B. Факты физического мира** (`RECEIVING_MATCH`, `RECEIVING_MISSING`,
   `PICKED`, `NOT_FOUND`, `PLACE`) — mobile прав. Применяем. Для `PLACE`
   при расхождении `server_updated_at` создаём `ActualizationTask` типа
@@ -58,7 +58,6 @@ logger = logging.getLogger(__name__)
 # Класс B: mobile прав, но если сервер уже в терминальном статусе — конфликт.
 _TERMINAL_SAMPLE_STATUSES = {
     Sample.STATUS_DISPOSED,
-    Sample.STATUS_CONSUMED,
 }
 
 

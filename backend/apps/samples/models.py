@@ -36,7 +36,6 @@ class Sample(models.Model):
 
     STATUS_IN_STORAGE = "IN_STORAGE"
     STATUS_IN_TRANSIT = "IN_TRANSIT"
-    STATUS_CONSUMED = "CONSUMED"
     STATUS_DISPOSED = "DISPOSED"
     STATUS_PENDING_PLACEMENT = "PENDING_PLACEMENT"
     STATUS_SELECTED = "SELECTED"
@@ -44,7 +43,6 @@ class Sample(models.Model):
     STATUS_CHOICES = [
         (STATUS_IN_STORAGE, "На хранении"),
         (STATUS_IN_TRANSIT, "В пути"),
-        (STATUS_CONSUMED, "Израсходована"),
         (STATUS_DISPOSED, "Утилизирована"),
         (STATUS_PENDING_PLACEMENT, "Ожидает размещения"),
         (STATUS_SELECTED, "Выбрана"),

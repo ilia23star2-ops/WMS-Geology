@@ -14,7 +14,6 @@ from apps.storage.models import Container
 # перезаписываться при синхронизации со статусом тары.
 _PROTECTED_SAMPLE_STATUSES = frozenset({
     Sample.STATUS_DISPOSED,
-    Sample.STATUS_CONSUMED,
     Sample.STATUS_SELECTED,  # 2f-9c: Защищаем "выбранные" пробы
 })
 
@@ -34,7 +33,7 @@ def sync_sample_status_for_container(container: Container) -> int:
     Возвращает количество обновлённых проб.
 
     Правила:
-    - Пробы в «защищённых» статусах (DISPOSED, CONSUMED, SELECTED)
+    - Пробы в «защищённых» статусах (DISPOSED, SELECTED)
       не трогаются — они управляются отдельно.
     - Неизвестный статус тары → 0 обновлений, без исключений.
 
