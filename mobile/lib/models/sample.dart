@@ -12,7 +12,6 @@ library;
 enum SampleStatus {
   inStorage,
   inTransit,
-  consumed,
   disposed,
   pendingPlacement,
   selected,
@@ -22,7 +21,6 @@ enum SampleStatus {
 const Map<SampleStatus, String> sampleStatusLabels = {
   SampleStatus.inStorage: 'На хранении',
   SampleStatus.inTransit: 'В пути',
-  SampleStatus.consumed: 'Израсходована',
   SampleStatus.disposed: 'Утилизирована',
   SampleStatus.pendingPlacement: 'Ожидает размещения',
   SampleStatus.selected: 'Выбрана',
@@ -36,7 +34,8 @@ SampleStatus _parseStatus(String? raw) {
     case 'IN_TRANSIT':
       return SampleStatus.inTransit;
     case 'CONSUMED':
-      return SampleStatus.consumed;
+      // c-2.x-lifecycle-2c: старые данные (кэш/сервер) — мапим в disposed.
+      return SampleStatus.disposed;
     case 'DISPOSED':
       return SampleStatus.disposed;
     case 'PENDING_PLACEMENT':
@@ -55,8 +54,7 @@ String sampleStatusToApi(SampleStatus status) {
       return 'IN_STORAGE';
     case SampleStatus.inTransit:
       return 'IN_TRANSIT';
-    case SampleStatus.consumed:
-      return 'CONSUMED';
+
     case SampleStatus.disposed:
       return 'DISPOSED';
     case SampleStatus.pendingPlacement:

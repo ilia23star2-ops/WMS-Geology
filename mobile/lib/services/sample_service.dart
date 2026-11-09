@@ -568,7 +568,8 @@ class SampleService {
       case 'IN_TRANSIT':
         return SampleStatus.inTransit;
       case 'CONSUMED':
-        return SampleStatus.consumed;
+        // c-2.x-lifecycle-2c: старые данные — мапим в disposed.
+        return SampleStatus.disposed;
       case 'DISPOSED':
         return SampleStatus.disposed;
       case 'PENDING_PLACEMENT':
