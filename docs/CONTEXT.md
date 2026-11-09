@@ -108,6 +108,8 @@
 
 - **`c-2.x-lifecycle-1`** — is_disposable + DISPOSED, логика утилизации, UI (типы тары, show_disposed, Recycling) — ✅.
 
+- **`c-2.x-lifecycle-2a/2b/2c`** — убран `CONSUMED`, миграция `0007`, web/mobile — ✅.
+
 **Ближайшая работа:**
 
 - **`c-8b-status`** — смена статуса тары через шапку (5 значений, офлайн через `sync_queue`) — ✅.
