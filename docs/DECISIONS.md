@@ -795,3 +795,47 @@
 **Где:** `backend/apps/samples/models.py` (`legacy_data` уже есть), ничего не меняем в модели. Заполнение — при `update` / `encrypt` в `2.x-lifecycle`.
 **Статус:** 🟡 решение принято, реализация — в `2.x-lifecycle-impl`.
 
+
+### 1.119. 2026-11-06 — parent_container_id / parent_sample_id (вопрос 7 = А)
+
+**Решение:** добавляем `Container.parent_container_id` (FK → `Container`, null) и `Sample.parent_sample_id` (FK → `Sample`, null). Хранится только **direct parent** (1 уровень). Полное дерево — рекурсией в Python (не в БД).
+
+**Когда заполняется:**
+- При **возврате от лаборатории** (создан новый объект, см. 1.116) — `parent_*` указывает на старый объект.
+- При **перекладывании проб** (вопрос 3, вариант В) — **НЕ заполняется**. Проба та же (`Sample.id`), меняется только `container_id`. Это не «потомок», это «переезд».
+
+**Причина:** materialized path (Б) и closure table (В) — избыточно для наших сценариев. Direct parent покрывает 99% случаев (цепочка A→B→C для аудита). Если понадобится «всё дерево одним SQL» — добавим `path` позже (без переделки модели).
+
+**Где:** `backend/apps/storage/models.py` (`parent_container_id`), `backend/apps/samples/models.py` (`parent_sample_id`).
+**Статус:** 🟡 решение принято, реализация — в `2.x-lab-portal`.
+
+
+### 1.120. 2026-11-06 — Кто меняет статусы (вопрос 8)
+
+**Решение:** два механизма — автоматический и ручной.
+
+**Автоматически** (при ключевых событиях):
+- `Shipment.send` → все тары рейса `IN_TRANSIT`, пробы синхронизируются.
+- `Receipt.complete` → `Shipment.RECEIVED` (для INBOUND).
+- `Sample.dispose` (последняя в таре) → `Container.DISPOSED` (если `is_disposable`) или `PENDING_FILLING` (см. 1.109).
+- `bulk-place` → `Container.ACTIVE`, пробы `IN_STORAGE`.
+
+**Вручную** — через edit-форму тары/пробы (`ContainerEditDialog` в вебе, `ContainerEditForm` в мобилке). Свободное переключение любого статуса (без валидации переходов).
+
+**Причина:** автоматика для нормальных сценариев, ручное — для исключений (ошибка, форс-мажор). State machine (жёсткие переходы) — откладываем; добавим, если начнутся ошибки «нельзя так делать».
+
+**Где:** `backend/apps/picking/views.py` (`send`), `backend/apps/receiving/views.py` (`complete`), `backend/apps/samples/views.py` (`dispose`), `backend/apps/storage/views.py` (`bulk-place`). Ручное — в UI.
+**Статус:** ✅ действует (автоматика уже работает, ручное — уже есть).
+
+
+### 1.121. 2026-11-06 — Приёмка ↔ отправка, кто ставит RECEIVED (вопрос 9)
+
+**Решение:**
+- **INBOUND** (лаборатория → мы): `Receipt.complete` → `Shipment.status = RECEIVED` **автоматически** (уже работает в `backend/apps/receiving/views.py`).
+- **OUTBOUND** (мы → лаборатория): лаборатория подтверждает **в своём клиенте** (`2.x-lab-portal`). У нас в деталях рейса — кнопка «Отметить принятым» (**ручная**) на случай, если лаборатория не через наш клиент.
+
+**Причина:** у нас нет доступа к системе лаборатории напрямую. INBOUND автоматически (мы принимаем — мы и ставим). OUTBOUND — лаборатория решает, когда подтвердить. Ручная кнопка у нас — fallback.
+
+**Где:** `backend/apps/receiving/views.py` (уже), `backend/apps/picking/views.py` (добавить `mark-received` action для OUTBOUND), `web/src/pages/ShipmentDetailPage.tsx` (кнопка).
+**Статус:** 🟡 для INBOUND — ✅, для OUTBOUND — реализация в `2.x-shipments-3`.
+
