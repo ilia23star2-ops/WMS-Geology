@@ -25,7 +25,7 @@
 | # | Заход | Что делает | Статус |
 |---|---|---|---|
 | 1 | backend | `UserProfile.laboratory`, `lab_worker`, `mark-received`, `current_holder` | ✅ |
-| 2 | web: фильтр | `?my_lab=true`, вкладки «Все/Исх/Вх», кнопка «Принять», `current_holder` | ⬜ |
+| 2 | web: фильтр | `?my_lab=true`, вкладки «Все/Исх/Вх», кнопка «Принять», `current_holder` | ✅ |
 | 3 | web: sidebar | `Sidebar` по роли, `create-return` action, «Вернуть остатки» | ⬜ |
 
 
