@@ -45,6 +45,9 @@ export interface Sample {
     status: SampleStatus;
     qr_code: string | null;
     legacy_data: Record<string, unknown> | null;
+    // c-2.x-lifecycle-3b: преемственность (родительская проба).
+    parent_sample: number | null;
+    parent_sample_number: string | null;
     disposed_at: string | null;
     disposed_by: number | null;
     disposal_reason: string;

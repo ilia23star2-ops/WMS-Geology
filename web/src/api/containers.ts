@@ -50,6 +50,9 @@ export interface Container {
     draft_work_order_coded: string;
     draft_work_order_incoming: string;
     label_printed_at: string | null;
+    // c-2.x-lifecycle-3b: преемственность (родительская тара).
+    parent_container: number | null;
+    parent_container_number: string | null;
     // 2f-17b: статус последней не-CANCELLED партии печати.
     // null — не в активной партии.
     print_batch_status: PrintBatchStatus | null;
