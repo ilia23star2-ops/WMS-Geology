@@ -91,7 +91,6 @@ const STATUS_LABELS: Record<string, string> = {
     ISSUED: "Выдана",
     // Sample
     IN_STORAGE: "На хранении",
-    CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
     SELECTED: "Выбрана",
     // ReceiptItem

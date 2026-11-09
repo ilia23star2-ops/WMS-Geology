@@ -15,7 +15,6 @@ import type { PaginatedResponse } from "./types";
 export type SampleStatus =
     | "IN_STORAGE"
     | "IN_TRANSIT"
-    | "CONSUMED"
     | "DISPOSED"
     | "PENDING_PLACEMENT"
     | "SELECTED";
@@ -23,7 +22,6 @@ export type SampleStatus =
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
     IN_STORAGE: "На хранении",
     IN_TRANSIT: "В пути",
-    CONSUMED: "Израсходована",
     DISPOSED: "Утилизирована",
     PENDING_PLACEMENT: "Ожидает размещения",
     SELECTED: "Выбрана",
