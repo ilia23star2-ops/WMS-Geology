@@ -8,6 +8,7 @@
 
 - ✅ **`c-2.x-lab-portal-1`** (2026-11-09) — backend: `UserProfile.laboratory` (FK → samples.Laboratory, SET_NULL, null), роль `lab_worker` в `seed_roles`, `POST /shipments/{id}/mark-received/`, `can_mark_received` в `ShipmentSerializer`, `current_holder` в `ContainerSerializer` и `SampleSerializer`. Тесты: 892 passed (+18). Device-check: 46/46 PASS.
 - ✅ **`c-2.x-lab-portal-2`** (2026-11-09) — web: фильтр `?my_lab=true`, вкладки «Все/Исх/Вх», кнопка «Принять», колонка `current_holder` в списке и карточке рейса. Backend: `current_holder` в `ShipmentContainerItemSerializer`. Тесты: web 24 passed.
+- ✅ **`c-2.x-lab-portal-3`** (2026-11-10) — web: `ROLE_MENU_ACCESS` в `Sidebar.tsx`, кнопка «Вернуть остатки» (`create-return`), колонка `current_holder`. Серия закрыта.
 
 ### Метрики
 

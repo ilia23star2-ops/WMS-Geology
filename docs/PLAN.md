@@ -26,10 +26,10 @@
 |---|---|---|---|
 | 1 | backend | `UserProfile.laboratory`, `lab_worker`, `mark-received`, `current_holder` | ✅ |
 | 2 | web: фильтр | `?my_lab=true`, вкладки «Все/Исх/Вх», кнопка «Принять», `current_holder` | ✅ |
-| 3 | web: sidebar | `Sidebar` по роли, `create-return` action, «Вернуть остатки» | ⬜ |
+| 3 | web: sidebar | `Sidebar` по роли, `create-return` action, «Вернуть остатки» | ✅ |
 
 
-**Активная серия:** `feature/2.x-lab-portal` (портал лабораторий).
+**Активная серия:** не выбрана (следующая — `feature/2.x-rbac`).
 **Ветка:** `feature/2.x-lab-portal`.
 Серия `2f` — **закрыта полностью**.
 
@@ -273,4 +273,5 @@
 | `feature/2.x-web` | 2026-10-10 | влита в `main` |
 | `feature/2.x-mobile` | 2026-10-12 | влита в `main` |
 | `feature/2.x-web-v2` | 2026-10-27 | влита в `main` |
+| `feature/2.x-lab-portal` | 2026-11-10 | влита в `main` |
 | **`feature/3.x-offline`** | **—** | **активная** (бранч `fix/2.x-mobile-bundle-c-2`) |
