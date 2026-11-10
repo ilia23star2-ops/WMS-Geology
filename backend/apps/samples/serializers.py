@@ -270,3 +270,11 @@ class SampleGroupSerializer(serializers.Serializer):
     research_type = GroupedResearchTypeSerializer()
     total_samples = serializers.IntegerField()
     containers = GroupedContainerSerializer(many=True)
+
+# ============================================================
+# Encryption (1.118-b)
+# ============================================================
+class EncryptSampleSerializer(serializers.Serializer):
+    new_sample_number = serializers.CharField(max_length=100)
+    new_work_order_coded = serializers.CharField(max_length=100)
+    new_work_order_incoming = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")

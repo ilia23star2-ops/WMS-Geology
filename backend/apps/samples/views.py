@@ -17,7 +17,7 @@ from apps.samples.services import (
     sync_sample_status_for_container,
 )
 from apps.storage.filters import apply_updated_since
-from apps.users.permissions import IsWorkerOrHigher
+from apps.users.permissions import IsManagerOrAdmin, IsWorkerOrHigher, IsWorkerOrLabWorkerOrHigher
 from apps.work_orders.models import WorkOrder
 
 from .catalogs import Laboratory, ResearchType, Site
@@ -114,7 +114,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         # RBAC: Кладовщик и выше могут изменять статусы и удалять.
         # Лабораториям доступно только чтение.
         if self.action in ("list", "retrieve", "grouped"):
-            permission_classes = [IsWorkerOrHigher] # lab_worker пропускается через get_queryset
+            permission_classes = [IsWorkerOrLabWorkerOrHigher] # lab_worker пропускается через get_queryset
         else:
             permission_classes = [IsWorkerOrHigher]
         return [permission() for permission in permission_classes]
@@ -277,6 +277,56 @@ class SampleViewSet(viewsets.ModelViewSet):
         # (например, если тара стала PENDING_PLACEMENT — проба тоже).
         sync_sample_status_for_container(sample.container)
 
+        return Response(SampleSerializer(sample).data)
+
+
+    @action(detail=True, methods=["post"], url_path="encrypt", permission_classes=[IsManagerOrAdmin])
+    def encrypt(self, request, pk=None):
+        from apps.users.models import log_audit
+        from .serializers import EncryptSampleSerializer
+        
+        sample = self._get_sample_any(pk)
+        if sample is None:
+            return Response({"error": "Проба не найдена."}, status=status.HTTP_404_NOT_FOUND)
+        if sample.is_encrypted:
+            return Response({"error": "Проба уже зашифрована."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = EncryptSampleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        with transaction.atomic():
+            old_wo = sample.current_work_order
+            old_number = sample.sample_number
+            
+            new_wo, _ = WorkOrder.objects.get_or_create(
+                order_number=data["new_work_order_coded"],
+                order_type=WorkOrder.ORDER_TYPE_CODED,
+                defaults={"site": sample.site}
+            )
+            
+            legacy = sample.legacy_data or {}
+            legacy["sample_number"] = old_number
+            if old_wo:
+                legacy["work_order_number"] = old_wo.order_number
+                
+            sample.sample_number = data["new_sample_number"]
+            sample.current_work_order = new_wo
+            sample.is_encrypted = True
+            sample.legacy_data = legacy
+            sample.save(update_fields=["sample_number", "current_work_order", "is_encrypted", "legacy_data", "updated_at"])
+            
+            SampleWorkOrder.objects.get_or_create(sample=sample, work_order=new_wo)
+            
+            log_audit(
+                user=request.user,
+                action="ENCRYPT",
+                entity_type="Sample",
+                entity_id=sample.id,
+                old_value={"sample_number": old_number},
+                new_value={"sample_number": sample.sample_number}
+            )
+            
         return Response(SampleSerializer(sample).data)
 
     @action(detail=False, methods=["get"], url_path="grouped")
