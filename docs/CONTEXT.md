@@ -12,27 +12,29 @@
 **Активная серия:** не выбрана. Все запланированные на текущий момент серии закрыты.
 **Ветка:** `main`.
 
-**Текущий заход:** серия `feature/2.x-rbac` — ✅ закрыта и влита в `main`.
-- Пачка 1: backend (`permissions.py`, фильтрация по лаборатории, ограничения для `worker`).
-- Пачка 2: web (скрытие кнопок создания, настройка `Sidebar` по ролям).
+**Текущий заход:** серия `feature/2.x-lifecycle-4` — ✅ закрыта и влита в `main`.
+- Пачка 1: Шифрование (флаг `is_encrypted`, заполнение `legacy_data` при `encrypt`, фикс 403 для `lab_worker`).
+- Пачка 2: Перекладывание проб (`repack-samples`, `_handle_container_after_dispose`).
 
-**Backend: 892 теста.**
+**Backend: 898 тестов.**
 **Web: 24 юнит-теста.**
 **Mobile: 227 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
-**Серия `2.x-lifecycle`** — закрыто 3/5 пачек.
+**Серия `2.x-lifecycle`** — закрыто 5/5 пачек.
 **Серия `2.x-shipments`** — закрыта.
 **Серия `2.x-smart-input`** — закрыта.
 **Серия `2.x-lab-portal`** — закрыта.
+**Серия `2.x-rbac`** — закрыта.
 
 ### Что готово
-- **Права (RBAC):** API защищено (роли `admin`, `manager`, `worker`, `lab_worker`). Фронтенд скрывает кнопки и вкладки меню в зависимости от роли. `lab_worker` видит только свою лабораторию.
-- **Техдолг:** практически весь доступный техдолг закрыт (ТД-21, 34, 37, 38, 56, 59, 67, 68, 69, 72, 73).
+- **Шифрование:** при вызове `POST /samples/{id}/encrypt/` проба получает `is_encrypted=True`, заполняется `legacy_data` (старый номер и Н/З), создается новая связь M:N.
+- **Перекладывание:** action `POST /shipments/{id}/repack-samples/` переносит пробы из одной тары в другую в рамках рейса (OUTBOUND, DRAFT/ASSEMBLED).
+- **Права (RBAC):** `lab_worker` больше не получает 403 при чтении тары и проб (видит только свою лабораторию).
 
 ### Известные грабли
-- **Admin:** `users/admin.py` зарегистрирован, но `lab_worker` не видит лишних разделов в Django Admin (стандартное поведение).
-- **`mark_received` проверяет роль:** `admin`/`manager`, `is_superuser` не проверяется (ТД-72, решено оставить).
+- **Admin:** `users/admin.py` зарегистрирован, но `lab_worker` не видит лишних разделов в Django Admin.
+- **`mark_received`:** проверяет роль, `is_superuser` не проверяется (ТД-72, решено оставить).
 
 ---
 
@@ -56,129 +58,40 @@
 - Node 20+, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13 + mobile_scanner 7.4.2.
 
-### Backend (892 теста)
+### Backend (898 тестов)
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология, Pallet, ContainerType, Container (+draft, nullable number, PENDING_FILLING), bulk-create, fill-samples, bulk-place, create-in-cell, history, print_batch_status, `current_holder` |
-| `samples` | ResearchType, Site, Laboratory, Well, Sample (+PENDING_PLACEMENT, SELECTED, dispose/restore), SampleWorkOrder, sync-сервис, `current_holder` |
+| `storage` | Топология, Pallet, ContainerType (+is_disposable), Container (+draft, PENDING_FILLING, DISPOSED, parent), bulk-create, fill-samples, bulk-place, create-in-cell, history, print_batch_status, `current_holder` |
+| `samples` | ResearchType, Site, Laboratory, Well, Sample (+is_encrypted, parent, DISPOSED, SELECTED), SampleWorkOrder, sync-сервис, `encrypt`, `current_holder` |
 | `work_orders` | WorkOrder (self-ref + site, admin, samples_count) |
-| `receiving` | Receipt, ReceiptItem (+container_type), ImportSession, conflicts, resolve-conflicts, check, complete, act |
-| `picking` | PickList, PickListItem, Shipment (+direction, статусы), ShipmentItem, ShipmentContainerItem, `mark-received`, `create-return` |
+| `receiving` | Receipt, ReceiptItem, ImportSession, conflicts, act |
+| `picking` | PickList, Shipment (+direction), ShipmentItem, ShipmentContainerItem, `repack-samples` |
 | `movements` | MoveOperation, MoveOperationItem |
-| `inventory` | InventorySession, InventoryScan, InventoryIssue, ActualizationTask, offline_import |
-| `users` | Role, UserProfile (+laboratory), AuditLog, `log_audit`, AccessToken (+qr_svg), JWT, offline-login, code-login, `seed_roles` (+lab_worker), `permissions.py` |
-| `labels` | QR-сервис, PDF-этикетки, QR-сетка, PrintBatch (+name), PrintBatchItem, act_service, `LabelConfigView` |
+| `inventory` | InventorySession, InventoryScan, ActualizationTask |
+| `users` | Role, UserProfile (+laboratory), AuditLog, JWT, `permissions.py` |
+| `labels` | QR-сервис, PDF-этикетки, PrintBatch, act_service |
 
 ### Web (React, 24 юнит-теста)
 | Раздел | Что внутри |
 |---|---|
 | Аутентификация | Zustand-стор, login, protected routes, JWT-интерцептор. |
 | Layout | MUI sidebar + header. `Sidebar` настроен по ролям. |
-| Главная | 4 карточки. |
-| Тара | DataGrid, фильтры, edit, delete (с force), PDF, bulk-print, создание, заполнение, предпросмотр, геометка, иконки печати. Кнопка «Создать тару» скрыта для `lab_worker`. |
+| Тара | DataGrid, фильтры, edit, delete, PDF, bulk-print, создание, заполнение, предпросмотр. Скрытие по ролям. |
 | Пробы | Дерево-таблица, `SampleEditDialog`, геометка. |
-| Наряд-заказы | `WorkOrdersPage`, диалоги. |
-| Печать | Партии, детали, PDF, переименование. |
-| Справочники | CRUD. Кнопка «Удалить» неактивна, если есть связи. |
-| Приёмка | Список, детали, сверка, акт. Импорт Excel только для manager/admin. |
-| Топология | Дерево, ячейки, поддоны, `CellContentsDialog`, `CreateInCellDialog`, force-удаление. N+1 устранен. |
-| Карточка тары | `ContainerDetailDialog` (3 вкладки + Предпросмотр / Разместить / Местоположение + Комментарий и Шаблон в шапке). |
-| Коды доступа | `AccessTokensPage` — создание, QR, отзыв. |
-| Отправка | `ShipmentsPage`, `ShipmentDetailPage`, `CreateShipmentDialog` (скрыт для `worker`), `AddContainersToShipmentDialog`. |
-| Отчётность | Code-splitting внедрен для всех страниц. |
+| Отправка | `ShipmentsPage`, `ShipmentDetailPage`, `CreateShipmentDialog`, `AddContainersToShipmentDialog`. |
 
 ### Mobile (Flutter, 227 юнит-тестов)
 | Раздел | Что внутри |
 |---|---|
-| Аутентификация | `AuthProvider`, login (пароль + QR), `TokenStorage`. |
-| API | `ApiClient` (Dio), JWT-интерцептор. |
-| Сеть | `NetworkProbe` + `AppConfig.resolve`. `NetworkStatusProvider` (heartbeat 10 с, тап → `pingNow`). `NetworkBadge`. |
-| Главная | Приветствие + «Сканировать», «Синхронизация (N)», история тар. |
-| Drawer | Главная, Тара, Пробы, Наряд-заказы, Приёмка, Печать, Топология, Справочники, Выход. |
-| Реестр тары | 4 фильтра, пагинация, офлайн-кэш, действия по статусу, создание тары. |
-| Карточка тары | 3 вкладки, адаптив, `ContainerEditForm` (safe area + sticky, не блокирует при пустых справочниках), `FillContainerContent`, `SampleEditDialog`, история. |
-| Шапка тары (офлайн) | `ContainerService.update` → `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`. |
-| Пробы | Поиск, чекбоксы, bulk-статус, чипы, `SampleEditDialog`. Офлайн: создание, редактирование, dispose/restore/delete через `sync_queue`. |
-| История | Аудит тары (online + офлайн). |
-| PDF | Online + offline на Dart. Конфигурация синхронизируется через Pull. |
-| Размещение | `PlaceContainerDialog` (online + offline, локальное обновление `ACTIVE` + `full_address`). |
-| Офлайн-справочники | `CatalogDao`, `CatalogService` fallback, создание через `sync_queue`. `NamedCatalog.fullAddress`. |
-| Офлайн-создание тары | `bulkCreate` при `isNetworkError` → negative ID + `sync_queue` с `localRef`, маппинг после Push. |
-| Офлайн-`fill-samples` / `bulk-place` | `fillSamples` при `containerId < 0` → очередь, `bulkPlace` при negatives → очередь атомарно. |
-| Синхронизация | Pull + Push + автосинхронизация. Incremental Pull `?updated_since=`. Батч-история (ТД-59). Natural sort проб. |
+| Офлайн-режим | SQLite, SyncService, SyncQueue, Deferred Offline Login, Auto-detect. |
+| Сеть | `NetworkProbe`, `NetworkStatusProvider`, `NetworkBadge`. |
+| Тара | 4 фильтра, пагинация, офлайн-кэш, создание. |
+| Карточка тары | 3 вкладки, `ContainerEditForm`, `FillContainerContent`, история. |
+| Пробы | Поиск, чекбоксы, bulk-статус, офлайн-редактирование через `sync_queue`. |
+| PDF | Online + offline на Dart. |
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
-
----
-
-## Известные грабли
-
-### PostgreSQL
-- **Домашний ПК:** Docker.
-- **Рабочий ПК:** портативный `pg_ctl`.
-- **После `git pull` с миграциями — всегда `migrate`.**
-
-### Django
-- Все команды — только через `poetry run`.
-- `log_audit(old_value=..., new_value=...)` — оба обязательны.
-- `ProtectedError` → 409 (есть `?force=true`).
-- **stale-тесты** копятся при прогоне только `apps/<app>/`. Перед закрытием — `pytest -q` целиком.
-- **Django signals не используем** (1.58, 1.70).
-- **Django Admin:** `apps/users/admin.py` настроен (ТД-73).
-
-### API
-- JWT, `PageNumberPagination`, `PAGE_SIZE=50`.
-- `?updated_since=<ISO 8601>` — с таймзоной; naive / невалидный → 400.
-- `GET /health/` — вне `/api/v1/`, без авторизации.
-- Денормализация `ContainerSerializer` — `*_name` поля.
-- **OpenAPI:** `?format=openapi-json` не работает, используй `/api/schema/` (YAML).
-
-### Домен
-- Проба = навеска. Не уникальна по номеру.
-- `container_number` — НЕ уникален глобально.
-- `PENDING_FILLING` — начальный статус.
-- `SELECTED` — защищён от перезаписи.
-- `fill-samples` обновляет draft-поля.
-
-### Web
-- Vite proxy `/api/*` → `localhost:8000`.
-- MUI X v9: `GridRowSelectionModel = { type, ids: Set<GridRowId> }`.
-- `ContainerDetailDialog`: `canPlace = PENDING_FILLING || PENDING_PLACEMENT`; `hasCell = cell_id !== null`.
-- **`Sidebar.tsx`:** `ROLE_MENU_ACCESS` определяет видимость пунктов для каждой роли.
-- **Кнопки создания:** скрываются через `useAuthStore` (например, «Создать рейс» скрыт для `worker`).
-
-### Mobile
-- **`AppConfig.resolve()`**: `--dart-define=API_HOST` → probe → fallback `192.168.0.77`.
-- **`export FLUTTER_STORAGE_BASE_URL`** — в каждом окне.
-- **`adb reverse` сбрасывается** при reconnect USB.
-- **`mobile_scanner 7.4.2`**: `BarcodeCapture.rotation` не существует; landscape swap в `mapImageToWidgetFrame`.
-- **`hide Container`** — в файлах с моделью `Container`.
-- **`context.read` после `await`** → сервис брать до первого `await`.
-- **Перед `git add` — `git status --short | grep "mobile/lib"`** (1.90).
-- **Перед выдачей кода — то же, должно быть пусто** (1.91).
-- **`mobile/android/*` и `tools/`** — машинные, не коммитить.
-- **SQLite v8:** таблицы `containers` (+`pending_sync`), `samples`, `sync_queue` (+`local_ref`), `catalog`, `container_history`.
-- **`SampleDao.saveAll`** не перезаписывает пробы с `_pending_sync = 1`.
-- **`fetchByContainerId`** возвращает кэш при `hasPendingForContainer`.
-- **Reconcile при Pull** сбрасывает `_pending_sync`, если записи в `sync_queue` нет.
-- **`_lastPullSince` в памяти** — Pull раз в сессию полный (ТД-62).
-- **`ContainerService.update` офлайн:** `sync_queue` PATCH + `updateFieldsLocal` + `pending_sync`. `UpdateOutcome {online, queued}`. **Ловит все не-4xx (сеть/таймаут/5xx/unknown)** — `catch (_)`.
-- **`ContainerEditForm._catalogsError`** — при 5xx/DB-ошибках форма **не блокирует** сохранение: текстовые поля сохраняются, dropdown'ы disabled.
-- **`LabelConfigService`** — кэширует конфигурацию PDF с сервера. `LabelPdfGenerator` использует её.
-
-### Рабочий ПК (прокси)
-- **После `git reset --hard`**: `setup.ps1` → `export FLUTTER_STORAGE_BASE_URL` → `flutter run --android-skip-build-dependency-validation`.
-- **`checkRevocation=false`**, **`aapt2FromMavenOverride`**, **`kotlin.incremental=false`**, **`kotlin.compiler.execution.strategy=in-process`**, **`org.gradle.parallel=false`**, **`org.gradle.workers.max=2`**.
-- **`android.aapt2FromMavenOverride`** — в `mobile/android/gradle.properties` + `~/.gradle/gradle.properties`.
-- **NDK `source.properties`** без BOM.
-- **Не делать `git add .`**.
-
-### Инструменты
-- Git — только терминал.
-- **`cd` — первой строкой блока.**
-- **`cat >> file`** без `\n` — склеивает строки.
-- **`pkill`** — нет в Git Bash, только `taskkill //F //IM <name>`.
 
 ---
 
