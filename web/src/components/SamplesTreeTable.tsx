@@ -20,13 +20,17 @@ import {
     TableRow,
     Tooltip,
     Typography,
+    Checkbox,
+    Button,
 } from "@mui/material";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 import ScienceIcon from "@mui/icons-material/Science";
-import PlaceIcon from "@mui/icons-material/Place"; // <--- Добавлено
-import { useNavigate } from "react-router-dom"; // <--- Добавлено
+import PlaylistAddCheckIcon from "@mui/icons-material/PlaylistAddCheck";
+import PlaceIcon from "@mui/icons-material/Place";
+import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
+import { useNavigate } from "react-router-dom";
 
 import {
     SAMPLE_STATUS_LABELS,
@@ -36,6 +40,7 @@ import {
     type SampleStatus,
 } from "../api";
 import SampleEditDialog from "./SampleEditDialog";
+import { useAddToPool, usePool } from "../api/pool";
 
 const GROUPS_PAGE_SIZE = 20;
 
@@ -84,6 +89,11 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [expandedContainers, setExpandedContainers] = useState<Set<number>>(new Set());
     const [editingSampleId, setEditingSampleId] = useState<number | null>(null);
+    const [selectedSampleIds, setSelectedSampleIds] = useState<Set<number>>(new Set());
+
+    const addToPoolMutation = useAddToPool();
+    const { data: pool } = usePool();
+    const poolSampleIds = new Set(pool?.items.filter(i => i.sample).map(i => i.sample) || []);
 
     const { data, isLoading, isError } = useSamplesGrouped({ page, filters });
 
@@ -94,6 +104,25 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
             else next.add(key);
             return next;
         });
+    }
+
+    function handleToggleSample(id: number) {
+        setSelectedSampleIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
+
+    async function handleAddToPool() {
+        if (selectedSampleIds.size === 0) return;
+        try {
+            await addToPoolMutation.mutateAsync({ sample_ids: Array.from(selectedSampleIds) });
+            setSelectedSampleIds(new Set());
+        } catch (err) {
+            console.error("Не удалось добавить в пул", err);
+        }
     }
 
     function toggleContainer(id: number) {
@@ -127,6 +156,14 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
 
     return (
         <Box>
+            {selectedSampleIds.size > 0 && (
+                <Box sx={{ mb: 2, p: 2, bgcolor: "primary.main", color: "primary.contrastText", borderRadius: 1, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Typography>Выбрано проб: {selectedSampleIds.size}</Typography>
+                    <Button variant="contained" color="secondary" size="small" startIcon={<PlaylistAddIcon />} onClick={() => void handleAddToPool()} disabled={addToPoolMutation.isPending}>
+                        В пул
+                    </Button>
+                </Box>
+            )}
             <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
                 <Table size="small">
                     <TableHead sx={{ bgcolor: "background.default" }}>
@@ -257,13 +294,26 @@ export default function SamplesTreeTable({ filters }: SamplesTreeTableProps) {
                                                                                                 onClick={() => setEditingSampleId(s.id)}
                                                                                                 sx={{ cursor: "pointer" }}
                                                                                             >
-                                                                                                <TableCell width={50} sx={{ pl: 8 }} />
+                                                                                                <TableCell width={80} sx={{ pl: 8 }}>
+                                                                                                    <Tooltip title={poolSampleIds.has(s.id) ? "Уже в пуле" : ""}>
+                                                                                                        <span>
+                                                                                                            <Checkbox
+                                                                                                                size="small"
+                                                                                                                disabled={poolSampleIds.has(s.id)}
+                                                                                                                checked={poolSampleIds.has(s.id) || selectedSampleIds.has(s.id)}
+                                                                                                                onChange={() => handleToggleSample(s.id)}
+                                                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                                            />
+                                                                                                        </span>
+                                                                                                    </Tooltip>
+                                                                                                </TableCell>
                                                                                                 <TableCell>
                                                                                                     <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                                                                                                         <ScienceIcon fontSize="small" color="disabled" />
                                                                                                         <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
                                                                                                             {s.sample_number}
                                                                                                         </Typography>
+                                                                                                        {poolSampleIds.has(s.id) && <Chip label="В пуле" size="small" color="info" variant="outlined" />}
                                                                                                     </Stack>
                                                                                                 </TableCell>
                                                                                                 <TableCell>

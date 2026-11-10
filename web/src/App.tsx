@@ -14,6 +14,7 @@ import { useAuthStore } from "./stores/authStore";
 // Ленивая загрузка страниц
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
+const PoolPage = lazy(() => import("./pages/PoolPage"));
 const ContainersPage = lazy(() => import("./pages/ContainersPage"));
 const SamplesPage = lazy(() => import("./pages/SamplesPage"));
 const ShipmentsPage = lazy(() => import("./pages/ShipmentsPage"));
@@ -82,6 +83,7 @@ function AppRoutes() {
                 <Route element={<ProtectedRoute />}>
                     <Route element={<MainLayout />}>
                         <Route path="/" element={<HomePage />} />
+                        <Route path="/pool" element={<PoolPage />} />
                         <Route path="/containers" element={<ContainersPage />} />
                         <Route path="/samples" element={<SamplesPage />} />
                         <Route path="/shipments" element={<ShipmentsPage />} />

@@ -1,11 +1,9 @@
 /**
  * Верхняя панель (AppBar).
- *
- * Содержит: кнопку-гамбургер (моб.), название системы,
- * имя пользователя и кнопку выхода.
  */
 import {
     AppBar,
+    Badge,
     Box,
     Button,
     IconButton,
@@ -14,9 +12,11 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutIcon from "@mui/icons-material/Logout";
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import { useNavigate } from "react-router-dom";
 
 import { useAuthStore } from "../../stores/authStore";
+import { usePool } from "../../api/pool";
 import { DRAWER_WIDTH } from "./Sidebar";
 
 interface HeaderProps {
@@ -27,6 +27,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
     const navigate = useNavigate();
     const user = useAuthStore((s) => s.user);
     const logout = useAuthStore((s) => s.logout);
+    const { data: pool } = usePool();
 
     async function handleLogout() {
         await logout();
@@ -61,6 +62,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 </Typography>
 
                 <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <IconButton color="inherit" onClick={() => navigate("/pool")} title="Перейти в Пул (Корзина)">
+                        <Badge badgeContent={pool?.items_count || 0} color="error">
+                            <ShoppingCartIcon />
+                        </Badge>
+                    </IconButton>
+
                     {user && (
                         <Typography
                             variant="body1"
