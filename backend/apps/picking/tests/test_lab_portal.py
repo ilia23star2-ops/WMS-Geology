@@ -145,7 +145,8 @@ class TestMarkReceived:
             status=Shipment.STATUS_SENT,
         )
         r = lab_client_a.post(f"/api/v1/shipments/{sh.id}/mark-received/")
-        assert r.status_code == 403
+        # RBAC: lab_worker не видит чужие рейсы → 404
+        assert r.status_code == 404
 
     def test_cannot_mark_already_received(self, admin_client, lab_a):
         sh = Shipment.objects.create(
@@ -193,8 +194,8 @@ class TestCanMarkReceived:
             status=Shipment.STATUS_SENT,
         )
         r = lab_client_a.get(f"/api/v1/shipments/{sh.id}/")
-        assert r.status_code == 200
-        assert r.json()["can_mark_received"] is False
+        # RBAC: lab_worker не видит чужие рейсы → 404
+        assert r.status_code == 404
 
 
 # ============================================================
