@@ -58,6 +58,7 @@ import ContainerDetailDialog from "../components/ContainerDetailDialog";
 import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import PlaceContainerDialog from "../components/PlaceContainerDialog";
+import { useAuthStore } from "../stores/authStore";
 
 const PAGE_SIZE = 50;
 
@@ -124,6 +125,8 @@ function emptySelection(): GridRowSelectionModel {
 
 export default function ContainersPage() {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
+    const canCreate = user?.role !== "lab_worker";
     const [filters, setFilters] = useState<ContainerFilters>({});
     const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
         page: 0,
@@ -437,13 +440,15 @@ export default function ContainersPage() {
                             </Tooltip>
                         </>
                     )}
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={() => setCreateDialogOpen(true)}
-                    >
-                        Создать тару
-                    </Button>
+                    {canCreate && (
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => setCreateDialogOpen(true)}
+                        >
+                            Создать тару
+                        </Button>
+                    )}
                 </Stack>
             </Box>
 

@@ -71,8 +71,16 @@ const ROLE_MENU_ACCESS: Record<string, string[]> = {
         "/shipments",
         "/print"
     ],
-    // Пример для кладовщика (если нужно будет ограничить):
-    // worker: ["/", "/containers", "/samples", "/receiving", "/shipments", "/print", "/topology"]
+    worker: [
+        "/", 
+        "/containers", 
+        "/samples", 
+        "/receiving", 
+        "/shipments", 
+        "/print", 
+        "/topology",
+        "/actualization"
+    ]
 };
 
 interface DrawerContentProps {

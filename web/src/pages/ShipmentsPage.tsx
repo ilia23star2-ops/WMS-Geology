@@ -45,6 +45,7 @@ import {
     type ShipmentStatus,
 } from "../api";
 import CreateShipmentDialog from "../components/CreateShipmentDialog";
+import { useAuthStore } from "../stores/authStore";
 
 const PAGE_SIZE = 50;
 
@@ -73,6 +74,8 @@ function formatDate(value: string | null): string {
 
 export default function ShipmentsPage() {
     const navigate = useNavigate();
+    const user = useAuthStore((state) => state.user);
+    const canCreate = user?.role !== "worker";
     const [tab, setTab] = useState<"ALL" | ShipmentDirection>("ALL");
     const [onlyMyLab, setOnlyMyLab] = useState(false);
     const [filters, setFilters] = useState<ShipmentFilters>({});
@@ -205,13 +208,15 @@ export default function ShipmentsPage() {
                 <Typography variant="h2" component="h1">
                     Рейсы
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => setCreateOpen(true)}
-                >
-                    Создать рейс
-                </Button>
+                {canCreate && (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setCreateOpen(true)}
+                    >
+                        Создать рейс
+                    </Button>
+                )}
             </Box>
 
             <Card sx={{ mb: 2 }}>
