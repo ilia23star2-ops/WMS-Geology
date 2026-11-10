@@ -298,7 +298,12 @@ class CellViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Cell.objects.select_related("tier").all()
+        # ТД-37: Оптимизация N+1. 
+        # Подтягиваем pallet и контейнеры на поддоне одним запросом.
+        qs = Cell.objects.select_related("tier", "pallet").prefetch_related(
+            "pallet__containers"
+        ).all()
+        
         tier_id = self.request.query_params.get("tier_id")
         if tier_id:
             qs = qs.filter(tier_id=tier_id)
