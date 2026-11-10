@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     AccessTokenViewSet,
+    AuditLogViewSet,
     CodeLoginView,
     LoginView,
     LogoutView,
@@ -15,6 +16,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register("auth/access-tokens", AccessTokenViewSet, basename="access-token")
+router.register("audit-logs", AuditLogViewSet, basename="audit-log")
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="auth-login"),

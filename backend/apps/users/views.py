@@ -7,9 +7,11 @@ Views приложения users.
 - AccessTokenViewSet — CRUD токенов доступа (create / list / revoke)
 - CodeLoginView — POST /api/v1/auth/code-login/ (web_login → JWT)
 - OfflineLoginView — POST /api/v1/auth/offline-login/ (offline → JWT)
+- AuditLogViewSet — GET /api/v1/audit-logs/ (ТД-59: батч-история)
 """
 
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -20,10 +22,11 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import AccessToken
+from .models import AccessToken, AuditLog
 from .serializers import (
     AccessTokenCreateSerializer,
     AccessTokenSerializer,
+    AuditLogSerializer,
     CodeLoginSerializer,
     LoginSerializer,
     LogoutRequestSerializer,
@@ -372,3 +375,38 @@ class OfflineLoginView(APIView):
         return Response(
             _build_login_response(obj.user), status=status.HTTP_200_OK
         )
+
+
+# ============================================================
+# AuditLog (ТД-59: Батч-эндпоинт для истории)
+# ============================================================
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    GET /api/v1/audit-logs/ — список аудита.
+
+    Фильтры: ?entity_type=Container, ?entity_id=42, ?updated_since=2026-11-01T00:00:00Z
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AuditLogSerializer
+
+    def get_queryset(self):
+        qs = AuditLog.objects.select_related("user").all()
+        p = self.request.query_params
+
+        entity_type = p.get("entity_type")
+        if entity_type:
+            qs = qs.filter(entity_type=entity_type)
+
+        entity_id = p.get("entity_id")
+        if entity_id:
+            qs = qs.filter(entity_id=entity_id)
+
+        updated_since = p.get("updated_since")
+        if updated_since:
+            dt = parse_datetime(updated_since)
+            if dt is not None:
+                qs = qs.filter(created_at__gt=dt)
+            # Если дата невалидна, просто игнорируем фильтр (или можно вернуть 400)
+
+        return qs

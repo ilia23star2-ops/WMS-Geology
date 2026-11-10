@@ -1,4 +1,5 @@
 /// Сервис синхронизации (Pull) (c-2, ..., c-8-catalog-create-offline).
+/// ТД-59: батч-запрос истории вместо N+1.
 library;
 
 import 'dart:convert';
@@ -70,22 +71,14 @@ class SyncService {
     await _pullCatalog('/storage/sections/', 'section');
     await _pullCatalog('/storage/tiers/', 'tier');
     await _pullCatalog('/storage/cells/', 'cell');
-    for (final id in pulled.ids) {
-      await _pullHistoryFor(id);
-    }
+
+    // ТД-59: качаем историю одним батч-запросом.
+    await _pullAllHistory(updatedSince: isoSince);
+
     await _reconcile();
     return PullStats(containers: pulled.ids.length, samples: samples);
   }
 
-  /// c-9-fill-offline-2c-3-fix-3a + c-8-catalog-create-offline.
-  ///
-  /// Собираем «живые» ID из очереди (PENDING + ERROR):
-  /// - `/samples/{id}/...` → keepSampleIds
-  /// - `/storage/containers/{id}/fill-samples/` → keepContainerIds
-  /// - `/storage/containers/bulk-place/` → keepContainerIds (из payload)
-  /// - `/storage/containers/bulk-create/` → keepContainerIds (negative
-  ///   из `localRef`, чтобы не сбросить `pending_sync` у офлайн-тар,
-  ///   ещё не ушедших на сервер)
   Future<void> _reconcile() async {
     final queue = await _getQueueItems();
     final keepSampleIds = <int>{};
@@ -112,7 +105,6 @@ class SyncService {
         }
         continue;
       }
-      // c-8-catalog-create-offline: keep negatives from bulk-create.
       if (item.endpoint == '/storage/containers/bulk-create/') {
         final localRef = item.localRef;
         if (localRef != null) {
@@ -206,17 +198,39 @@ class SyncService {
     }
   }
 
-  Future<void> _pullHistoryFor(int containerId) async {
-    try {
-      final res = await _client.get<List<dynamic>>(
-        '/storage/containers/$containerId/history/',
+  // ТД-59: Один запрос вместо N.
+  Future<void> _pullAllHistory({String? updatedSince}) async {
+    int page = 1;
+    while (true) {
+      final query = <String, dynamic>{'entity_type': 'Container', 'page': page};
+      if (updatedSince != null) query['updated_since'] = updatedSince;
+
+      final res = await _client.get<Map<String, dynamic>>(
+        '/audit-logs/',
+        queryParameters: query,
       );
       final data = res.data;
-      if (data == null) return;
-      final items = data.whereType<Map<String, dynamic>>().toList(
-        growable: false,
-      );
-      await _saveHistory(containerId, items);
-    } catch (_) {}
+      if (data == null) break;
+      final results =
+          (data['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
+          const <Map<String, dynamic>>[];
+      if (results.isEmpty) break;
+
+      // Группируем по entity_id (container_id)
+      final grouped = <int, List<Map<String, dynamic>>>{};
+      for (final item in results) {
+        final entityId = item['entity_id'];
+        if (entityId is int) {
+          grouped.putIfAbsent(entityId, () => []).add(item);
+        }
+      }
+
+      for (final entry in grouped.entries) {
+        await _saveHistory(entry.key, entry.value);
+      }
+
+      if (data['next'] == null) break;
+      page++;
+    }
   }
 }
