@@ -24,6 +24,7 @@ from rest_framework.response import Response
 
 from apps.labels.services.act_service import render_receipt_act
 from apps.samples.catalogs import ResearchType
+from apps.users.permissions import IsManagerOrAdmin, IsWorkerOrHigher
 
 from .models import ImportSession, Receipt, ReceiptItem
 from .parsers import parse_excel
@@ -94,7 +95,15 @@ class ReceiptViewSet(viewsets.ModelViewSet):
     """CRUD для партий приёмки + confirm/cancel/conflicts/resolve-conflicts/check/complete/act."""
 
     serializer_class = ReceiptSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # RBAC: Создание/удаление/отмена — только manager/admin. 
+        # Чтение, сверка, завершение — worker и выше.
+        if self.action in ("create", "update", "partial_update", "destroy", "cancel"):
+            permission_classes = [IsManagerOrAdmin]
+        else:
+            permission_classes = [IsWorkerOrHigher]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         qs = Receipt.objects.select_related(
@@ -324,7 +333,14 @@ class ReceiptItemViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ReceiptItemSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # RBAC: Удаление — только manager/admin. Остальное — worker и выше.
+        if self.action == "destroy":
+            permission_classes = [IsManagerOrAdmin]
+        else:
+            permission_classes = [IsWorkerOrHigher]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         qs = ReceiptItem.objects.select_related(
@@ -407,7 +423,8 @@ class ImportSessionViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ImportSessionSerializer
-    permission_classes = [IsAuthenticated]
+    # RBAC: Только manager/admin (кладовщик не должен загружать Excel).
+    permission_classes = [IsManagerOrAdmin]
 
     def get_queryset(self):
         qs = ImportSession.objects.select_related(
