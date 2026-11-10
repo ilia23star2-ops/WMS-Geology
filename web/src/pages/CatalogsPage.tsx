@@ -1,8 +1,8 @@
 /**
  * Справочники: типы исследования, участки, лаборатории, типы тары.
  *
- * c-2.x-lifecycle-1-ui: добавлена 4-я вкладка «Типы тары» (CRUD +
- * is_disposable).
+ * c-2.x-lifecycle-1-ui: добавлена 4-я вкладка «Типы тары» (CRUD + is_disposable).
+ * ТД-38: защита от удаления (disabled кнопки, если can_delete === false).
  */
 import { useState } from "react";
 import {
@@ -587,6 +587,7 @@ function ContainerTypeRowActions({
 
 // ============================================================
 // Действия в строке (edit / toggle / delete) — research/site/lab
+// ТД-38: блокировка кнопки удаления при can_delete === false.
 // ============================================================
 interface CatalogRowActionsProps {
     config: CatalogTabConfig;
@@ -607,6 +608,7 @@ function CatalogRowActions({
     const remove = useDeleteCatalog(config.kind);
 
     const busy = update.isPending || remove.isPending;
+    const isDeleteDisabled = busy || row.can_delete === false;
 
     async function handleToggleActive() {
         try {
@@ -678,18 +680,26 @@ function CatalogRowActions({
                 </IconButton>
             </Tooltip>
 
-            <Tooltip title="Удалить">
-                <IconButton
-                    size="small"
-                    color="error"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDelete();
-                    }}
-                    disabled={busy}
-                >
-                    <DeleteIcon fontSize="small" />
-                </IconButton>
+            <Tooltip
+                title={
+                    row.can_delete === false
+                        ? "Нельзя удалить: есть привязанные записи"
+                        : "Удалить"
+                }
+            >
+                <span> {/* span нужен, чтобы Tooltip работал на disabled-кнопке */}
+                    <IconButton
+                        size="small"
+                        color="error"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDelete();
+                        }}
+                        disabled={isDeleteDisabled}
+                    >
+                        <DeleteIcon fontSize="small" />
+                    </IconButton>
+                </span>
             </Tooltip>
         </Stack>
     );

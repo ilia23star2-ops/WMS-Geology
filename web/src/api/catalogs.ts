@@ -1,11 +1,7 @@
 /**
  * Хуки справочников: типы исследования, участки, лаборатории.
- *
- * URL: `/api/v1/<resource>/` — приложение `samples` подключено
- * к `/api/v1/` без префикса.
- *
- * Пачка 2f-3a: добавлены CRUD-мутации (create / update / delete
- * + soft `toggleActive`).
+ * 
+ * ТД-38: добавлено поле can_delete.
  */
 import {
     useMutation,
@@ -27,6 +23,7 @@ export interface ResearchType {
     description: string;
     sort_order: number;
     is_active: boolean;
+    can_delete: boolean;
 }
 
 export interface Site {
@@ -37,6 +34,7 @@ export interface Site {
     description: string;
     sort_order: number;
     is_active: boolean;
+    can_delete: boolean;
 }
 
 export interface Laboratory {
@@ -47,6 +45,7 @@ export interface Laboratory {
     description: string;
     sort_order: number;
     is_active: boolean;
+    can_delete: boolean;
 }
 
 /** Универсальная форма payload для трёх справочников. */
@@ -117,7 +116,7 @@ export function useLaboratories() {
 }
 
 // ============================================================
-// CRUD (пачка 2f-3a)
+// CRUD
 // ============================================================
 
 async function createOne<T>(

@@ -27,30 +27,76 @@ def compute_sample_location(container) -> str:
 
 
 # ============================================================
-# Справочники
+# Справочники (ТД-38: can_delete)
 # ============================================================
 class ResearchTypeSerializer(serializers.ModelSerializer):
+    can_delete = serializers.SerializerMethodField()
+
     class Meta:
         model = ResearchType
-        fields = ["id", "code", "name", "description", "sort_order", "is_active"]
+        fields = [
+            "id", "code", "name", "description", 
+            "sort_order", "is_active", "can_delete"
+        ]
+
+    def get_can_delete(self, obj) -> bool:
+        """Можно ли удалить (нет ли привязанных проб или тар)."""
+        from apps.storage.models import Container
+        if Sample.objects.filter(research_type=obj).exists():
+            return False
+        if Container.objects.filter(draft_research_type=obj).exists():
+            return False
+        return True
 
 
 class SiteSerializer(serializers.ModelSerializer):
+    can_delete = serializers.SerializerMethodField()
+
     class Meta:
         model = Site
         fields = [
             "id", "code", "name", "match_patterns",
-            "description", "sort_order", "is_active",
+            "description", "sort_order", "is_active", "can_delete"
         ]
+
+    def get_can_delete(self, obj) -> bool:
+        from apps.storage.models import Container
+        from apps.picking.models import Shipment
+        from apps.work_orders.models import WorkOrder
+        
+        if Sample.objects.filter(site=obj).exists():
+            return False
+        if Container.objects.filter(draft_site=obj).exists():
+            return False
+        if Shipment.objects.filter(site=obj).exists():
+            return False
+        if WorkOrder.objects.filter(site=obj).exists():
+            return False
+        return True
 
 
 class LaboratorySerializer(serializers.ModelSerializer):
+    can_delete = serializers.SerializerMethodField()
+
     class Meta:
         model = Laboratory
         fields = [
             "id", "code", "name", "prefixes",
-            "description", "sort_order", "is_active",
+            "description", "sort_order", "is_active", "can_delete"
         ]
+
+    def get_can_delete(self, obj) -> bool:
+        from apps.storage.models import ContainerType
+        from apps.picking.models import Shipment
+        from apps.users.models import UserProfile
+        
+        if Shipment.objects.filter(laboratory=obj).exists() or Shipment.objects.filter(origin_laboratory=obj).exists():
+            return False
+        if UserProfile.objects.filter(laboratory=obj).exists():
+            return False
+        if ContainerType.objects.filter(laboratory=obj).exists():
+            return False
+        return True
 
 
 # ============================================================
