@@ -29,6 +29,8 @@ from apps.storage.models import Container, ContainerType  # noqa: F401
 @pytest.fixture
 def auth_client(db):
     user = User.objects.create_user(username="resolve_test", password="x")
+    user.is_superuser = True
+    user.save()
     client = APIClient()
     client.force_authenticate(user=user)
     return client
