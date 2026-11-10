@@ -16,6 +16,7 @@ from apps.labels.services import render_container_label
 from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
 from apps.users.models import AuditLog
+from apps.users.permissions import IsManagerOrAdmin, IsWorkerOrHigher
 from apps.users.serializers import AuditLogSerializer
 from apps.users.services import log_audit
 
@@ -396,7 +397,15 @@ class ContainerTypeViewSet(viewsets.ModelViewSet):
 
 class ContainerViewSet(viewsets.ModelViewSet):
     serializer_class = ContainerSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # RBAC: Кладовщик и выше могут создавать и редактировать.
+        # Лабораториям доступно только чтение.
+        if self.action in ("list", "retrieve", "history"):
+            permission_classes = [IsWorkerOrHigher] # lab_worker пропускается через get_queryset
+        else:
+            permission_classes = [IsWorkerOrHigher]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         qs = Container.objects.select_related(
@@ -416,6 +425,12 @@ class ContainerViewSet(viewsets.ModelViewSet):
                 to_attr="active_print_items",
             )
         ).all()
+        
+        # RBAC: lab_worker видит только тары, принадлежащие его лаборатории.
+        profile = getattr(self.request.user, "profile", None)
+        if profile and profile.role and profile.role.name == "lab_worker" and profile.laboratory:
+            qs = qs.filter(container_type__laboratory=profile.laboratory)
+            
         p = self.request.query_params
 
         # c-2.x-lifecycle-1-ui: по умолчанию скрываем утилизированные

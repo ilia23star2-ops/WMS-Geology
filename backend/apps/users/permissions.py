@@ -35,3 +35,8 @@ class IsManagerOrAdmin(RolePermission):
 class IsWorkerOrHigher(RolePermission):
     """Кладовщик, менеджер или администратор (без лабораторий)."""
     allowed_roles = ("admin", "manager", "worker")
+
+
+class IsManagerOrAdminOrLabWorker(RolePermission):
+    """Менеджер, администратор или сотрудник лаборатории."""
+    allowed_roles = ("admin", "manager", "lab_worker")

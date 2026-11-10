@@ -9,15 +9,22 @@ ShipmentItem: CRUD.
 """
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
 from apps.storage.models import Container
+from apps.users.permissions import (
+    IsManagerOrAdmin,
+    IsManagerOrAdminOrLabWorker,
+    IsWorkerOrHigher,
+)
 
 from .models import (
     PickList,
@@ -127,13 +134,32 @@ class ShipmentViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ShipmentSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # RBAC: Создание и отправка — менеджер, админ или lab_worker.
+        # Всё остальное (удаление, отмена, добавление тар) — только менеджер/админ.
+        # Чтение и приёмка — кладовщик и выше.
+        if self.action in ("create", "assemble", "send"):
+            permission_classes = [IsManagerOrAdminOrLabWorker]
+        elif self.action in (
+            "update", "partial_update", "destroy", "cancel",
+            "add-containers", "remove-container", "add-from-pick-list", "create-return"
+        ):
+            permission_classes = [IsManagerOrAdmin]
+        else:
+            permission_classes = [IsWorkerOrHigher]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         qs = Shipment.objects.select_related(
             "sent_by", "laboratory", "site", "cancelled_by",
         ).prefetch_related("container_items__container__container_type").all()
         p = self.request.query_params
+
+        # RBAC: lab_worker видит только рейсы своей лаборатории (куда или откуда).
+        profile = getattr(self.request.user, "profile", None)
+        if profile and profile.role and profile.role.name == "lab_worker" and profile.laboratory:
+            qs = qs.filter(Q(laboratory=profile.laboratory) | Q(origin_laboratory=profile.laboratory))
 
         if p.get("direction"):
             qs = qs.filter(direction=p["direction"])
@@ -147,18 +173,35 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        profile = getattr(self.request.user, "profile", None)
+        is_lab_worker = profile and profile.role and profile.role.name == "lab_worker"
+
+        if is_lab_worker:
+            if not profile.laboratory:
+                raise PermissionDenied("У вас не указана лаборатория в профиле.")
+            direction = Shipment.DIRECTION_OUTBOUND
+            origin_laboratory = profile.laboratory
+        else:
+            direction = serializer.validated_data.get(
+                "direction", Shipment.DIRECTION_OUTBOUND,
+            )
+            origin_laboratory = serializer.validated_data.get("origin_laboratory")
+
         shipment_number = (
             serializer.validated_data.get("shipment_number") or ""
         ).strip()
         if not shipment_number:
-            direction = serializer.validated_data.get(
-                "direction", Shipment.DIRECTION_OUTBOUND,
-            )
             shipment_number = self._generate_shipment_number(direction)
-        serializer.save(
-            shipment_number=shipment_number,
-            sent_by=self.request.user,
-        )
+
+        kwargs = {
+            "shipment_number": shipment_number,
+            "sent_by": self.request.user,
+            "direction": direction,
+        }
+        if is_lab_worker:
+            kwargs["origin_laboratory"] = origin_laboratory
+
+        serializer.save(**kwargs)
 
     @staticmethod
     def _generate_shipment_number(direction: str) -> str:

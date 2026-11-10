@@ -17,6 +17,7 @@ from apps.samples.services import (
     sync_sample_status_for_container,
 )
 from apps.storage.filters import apply_updated_since
+from apps.users.permissions import IsWorkerOrHigher
 from apps.work_orders.models import WorkOrder
 
 from .catalogs import Laboratory, ResearchType, Site
@@ -108,7 +109,15 @@ class SampleViewSet(viewsets.ModelViewSet):
     CRUD для проб.
     """
     serializer_class = SampleSerializer
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # RBAC: Кладовщик и выше могут изменять статусы и удалять.
+        # Лабораториям доступно только чтение.
+        if self.action in ("list", "retrieve", "grouped"):
+            permission_classes = [IsWorkerOrHigher] # lab_worker пропускается через get_queryset
+        else:
+            permission_classes = [IsWorkerOrHigher]
+        return [permission() for permission in permission_classes]
 
     def get_queryset(self):
         qs = Sample.objects.select_related(
@@ -121,6 +130,11 @@ class SampleViewSet(viewsets.ModelViewSet):
             "research_type",
             "site",
         ).all()
+
+        # RBAC: lab_worker видит только пробы, принадлежащие его лаборатории.
+        profile = getattr(self.request.user, "profile", None)
+        if profile and profile.role and profile.role.name == "lab_worker" and profile.laboratory:
+            qs = qs.filter(container__container_type__laboratory=profile.laboratory)
 
         show_disposed = self.request.query_params.get("show_disposed")
         if show_disposed is None or show_disposed.lower() not in ("1", "true", "yes"):
