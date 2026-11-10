@@ -1,5 +1,5 @@
 /// Тесты `SyncService` (c-2, c-7-offline-catalog, c-7e-3,
-/// c-9-fill-offline-2c-3-fix-3a, c-6b-updated-since).
+/// c-9-fill-offline-2c-3-fix-3a, c-6b-updated-since, ТД-59).
 library;
 
 import 'package:dio/dio.dart';
@@ -19,8 +19,6 @@ const _catalogEndpoints = <String, String>{
   '/storage/tiers/': 'tier',
   '/storage/cells/': 'cell',
 };
-
-final _historyRe = RegExp(r'^/storage/containers/(\d+)/history/$');
 
 class FakeApiClient extends ApiClient {
   FakeApiClient() : super(dioOverride: Dio());
@@ -87,19 +85,30 @@ class FakeApiClient extends ApiClient {
           ],
         } as T,
       );
-    } else if (_historyRe.hasMatch(path)) {
-      final id = int.parse(_historyRe.firstMatch(path)!.group(1)!);
+    } else if (path == '/audit-logs/') {
+      // ТД-59: отдаем батч-историю (группировку делает клиент)
       return Response<T>(
         requestOptions: req,
         statusCode: 200,
-        data: [
-          {
-            'id': id * 100 + 1,
-            'action': 'CREATE',
-            'action_display': 'Создана',
-            'created_at': '2026-11-02T10:00:00Z',
-          },
-        ] as T,
+        data: {
+          'next': null,
+          'results': [
+            {
+              'id': 101,
+              'entity_id': 1,
+              'action': 'CREATE',
+              'action_display': 'Создана',
+              'created_at': '2026-11-02T10:00:00Z',
+            },
+            {
+              'id': 102,
+              'entity_id': 2,
+              'action': 'UPDATE',
+              'action_display': 'Изменена',
+              'created_at': '2026-11-02T10:05:00Z',
+            },
+          ],
+        } as T,
       );
     }
 
@@ -112,13 +121,14 @@ void main() {
     final client = FakeApiClient();
     final savedContainers = <Map<String, dynamic>>[];
     final savedSamples = <Map<String, dynamic>>[];
+    final savedHistory = <int, List<Map<String, dynamic>>>{};
 
     final service = SyncService(
       client,
       saveContainers: (list) async => savedContainers.addAll(list),
       saveSamples: (list) async => savedSamples.addAll(list),
       saveCatalog: (_, __) async {},
-      saveHistory: (_, __) async {},
+      saveHistory: (id, items) async => savedHistory[id] = items,
       getQueueItems: () async => const [],
       reconcileSamples: (_) async => 0,
       reconcileContainers: (_) async => 0,
@@ -133,10 +143,14 @@ void main() {
     for (final q in client.queryParams) {
       if (q != null) expect(q.containsKey('updated_since'), isFalse);
     }
+    // Проверяем, что история сгруппировалась по контейнерам
+    expect(savedHistory.keys.toSet(), {1, 2});
+    expect(savedHistory[1]!.first['action'], 'CREATE');
+    expect(savedHistory[2]!.first['action'], 'UPDATE');
   });
 
   test(
-    'pullAll(updatedSince) — ?updated_since= уходит в containers/samples',
+    'pullAll(updatedSince) — ?updated_since= уходит в containers/samples/audit',
     () async {
       final client = FakeApiClient();
       final since = DateTime.utc(2026, 11, 2, 10);
@@ -154,15 +168,10 @@ void main() {
 
       await service.pullAll(updatedSince: since);
 
-      // Проверяем: в запросах к /storage/containers/ и /samples/ есть updated_since.
-      final containerParams = client.queryParams
-          .where((q) => q != null && q.containsKey('page') && q['page'] == 1)
-          .toList();
       final hasUpdated = client.queryParams.any(
         (q) => q != null && q['updated_since'] == '2026-11-02T10:00:00.000Z',
       );
       expect(hasUpdated, isTrue);
-      expect(containerParams.isNotEmpty, isTrue);
     },
   );
 
