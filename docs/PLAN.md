@@ -208,9 +208,9 @@
 |---|---|---|---|
 | ТД-6 | Формат `legacy_data` (JSONB) | высокий | перед 3.x-migration |
 | ТД-11 | Формат ШК ЛИМС | высокий | перед 3.x-lims |
-| ТД-13 | `django-cors-headers` | средний | перед прод |
-| ТД-14 | Throttling / rate limiting | средний | перед прод |
-| ТД-16 | `MEDIA_ROOT` | средний | серия 2.x |
+| ТД-13 | `django-cors-headers` | средний | ✅ закрыто (corsheaders) |
+| ТД-14 | Throttling / rate limiting | средний | ✅ закрыто (drf throttling) |
+| ТД-16 | `MEDIA_ROOT` | средний | ✅ закрыто (urls.py + settings) |
 | ТД-21/35 | Web: code-splitting | средний | когда жалобы на скорость |
 | ТД-34 | Web: `console.error` в catch | низкий | ✅ закрыто (console.warn / debug) |
 | ТД-37 | `TopologyPage` — N+1 в `CellPalletChip` | низкий | если ячеек >30 |
