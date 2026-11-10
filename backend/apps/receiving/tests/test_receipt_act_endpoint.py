@@ -37,7 +37,10 @@ def _read_body(resp) -> bytes:
 # ============================================================
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(username="act-user", password="p")
+    user = User.objects.create_user(username="act-user", password="p")
+    user.is_superuser = True
+    user.save()
+    return user
 
 
 @pytest.fixture
