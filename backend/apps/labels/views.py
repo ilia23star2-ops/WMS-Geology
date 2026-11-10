@@ -10,11 +10,13 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.storage.models import Container
 
 from .models import PrintBatch, PrintBatchItem
 from .serializers import AddContainersSerializer, PrintBatchSerializer
+from .services import label_service
 from .services.label_service import (
     count_pdf_pages,
     render_batch_labels_pdf,
@@ -339,3 +341,30 @@ class PrintBatchViewSet(viewsets.ModelViewSet):
             buf = render_batch_labels_pdf(batch)
         pages = count_pdf_pages(buf.getvalue())
         return buf, pages
+
+
+# ============================================================
+# Config (ТД-56: Синхронизация констант этикетки)
+# ============================================================
+class LabelConfigView(APIView):
+    """
+    GET /api/v1/labels/config/ — конфигурация размеров этикеток.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "widths_mm": label_service.WIDTHS_MM,
+            "heights_mm": label_service.HEIGHTS_MM,
+            "qr_size_mm": label_service.QR_SIZE_MM,
+            "header_h_mm": label_service.HEADER_H_MM,
+            "label_margin_mm": label_service.LABEL_MARGIN_MM,
+            "label_bottom_pad_mm": label_service.LABEL_BOTTOM_PAD_MM,
+            "col_header_h_mm": label_service.COL_HEADER_H_MM,
+            "row_h_mm": label_service.ROW_H_MM,
+            "pnp_w_mm": label_service.PNP_W_MM,
+            "col_padding_mm": label_service.COL_PADDING_MM,
+            "checkbox_size_mm": label_service.CHECKBOX_SIZE_MM,
+            "font_size_pt": label_service.FONT_SIZE_PT,
+            "max_continuations": label_service.MAX_CONTINUATIONS,
+        })

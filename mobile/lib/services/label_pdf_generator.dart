@@ -1,28 +1,7 @@
-/// Офлайн-рендер PDF-этикетки тары на Dart (c-7f-2).
+/// Офлайн-рендер PDF-этикетки тары на Dart (c-7f-2, ТД-56).
 ///
 /// Порт `backend/apps/labels/services/label_service.py` 1:1 по раскладке
-/// и содержимому. Цель — при офлайне PDF выглядел так же, как серверный.
-///
-/// **Реализация через виджеты `pdf`** (`pw.Text`, `pw.Positioned`,
-/// `pw.Stack`, `pw.BarcodeWidget`), а не через низкоуровневый
-/// `PdfGraphics` — стабильнее между версиями `pdf` 3.10+.
-///
-/// **Галочка SELECTED** — рисуется двумя линиями через `pw.CustomPaint`
-/// (как на сервере: `pdf.line` × 2), а не текстом — шрифтовой `✓`
-/// в DejaVuSans слишком тонкий и похож на крестик.
-///
-/// **Что упрощено относительно Python-оригинала:**
-/// - нет пунктирного периметра резки (сплошная серая рамка);
-/// - нет `render_batch_labels_pdf` / `render_batch_qr_pdf` (это `c-7h`,
-///   только одиночная этикетка);
-/// - измерение ширины текста — приближённое (средняя ширина символа
-///   0.55 em), точное `PdfFont.stringMetrics` в `pdf 3.13` из `pw.Font`
-///   недоступно без `document`-контекста.
-///
-/// **Синхронизация с сервером:** константы (`_widthsMm`, `_heightsMm`,
-/// `_qrSizeMm`, `_headerHMm`, `_fontSizePt`, `_maxContinuations` и т.д.)
-/// **обязаны совпадать** с `label_service.py`. При изменении серверного
-/// рендера — обновить и здесь. Техдолг ТД-56.
+/// и содержимому.
 library;
 
 import 'dart:math' as math;
@@ -32,34 +11,12 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../models/label_config.dart';
 import '../models/label_data.dart';
-
-// ----------------------------------------------------------
-// Константы (мм) — 1:1 с label_service.py
-// ----------------------------------------------------------
-const _widthsMm = [110.0, 130.0, 150.0, 180.0, 210.0];
-const _heightsMm = [37.0, 49.0, 74.0, 99.0, 148.0];
-
-const _qrSizeMm = 25.0;
-const _headerHMm = 28.0;
-const _labelMarginMm = 1.0;
-const _labelBottomPadMm = 1.0;
-const _colHeaderHMm = 5.0;
-const _rowHMm = 5.0;
-const _pnpWMm = 12.0;
-const _colPaddingMm = 3.0;
-const _checkboxSizeMm = 2.2;
-
-const _fontSizePt = 10.0;
-
-const _maxContinuations = 3;
 
 /// 1 мм в points (как `PdfPageFormat.mm`).
 const _mmPt = PdfPageFormat.mm;
 
-// ----------------------------------------------------------
-// DTO страницы
-// ----------------------------------------------------------
 class LabelPage {
   const LabelPage({
     required this.containerNumber,
@@ -92,19 +49,17 @@ class LabelPage {
   bool get isContinuation => pageNum > 1;
 }
 
-// ----------------------------------------------------------
-// Публичный API
-// ----------------------------------------------------------
 class LabelPdfGenerator {
   LabelPdfGenerator._();
 
   static Future<Uint8List> render(
-    LabelData data, {
+    LabelData data,
+    LabelConfig config, {
     Uint8List? fontBytes,
   }) async {
     final bytes = fontBytes ?? await _loadFontBytes();
     final font = pw.Font.ttf(ByteData.view(bytes.buffer));
-    final pages = paginate(font, data);
+    final pages = paginate(font, data, config);
 
     final doc = pw.Document();
     for (final page in pages) {
@@ -112,15 +67,19 @@ class LabelPdfGenerator {
         pw.Page(
           pageFormat: PdfPageFormat(page.width * _mmPt, page.height * _mmPt),
           margin: pw.EdgeInsets.zero,
-          build: (ctx) => _buildLabelPage(page, font),
+          build: (ctx) => _buildLabelPage(page, font, config),
         ),
       );
     }
     return doc.save();
   }
 
-  static List<LabelPage> paginate(pw.Font font, LabelData data) {
-    return _paginate(font, data);
+  static List<LabelPage> paginate(
+    pw.Font font,
+    LabelData data,
+    LabelConfig config,
+  ) {
+    return _paginate(font, data, config);
   }
 
   static Future<Uint8List> _loadFontBytes() async {
@@ -129,20 +88,14 @@ class LabelPdfGenerator {
   }
 }
 
-// ----------------------------------------------------------
-// Измерение ширины текста (приближение)
-// ----------------------------------------------------------
-double _textWidthMm(String text, pw.Font font) {
+double _textWidthMm(String text, pw.Font font, LabelConfig config) {
   if (text.isEmpty) return 0.0;
   const avgFactor = 0.55;
-  final emMm = _fontSizePt * 25.4 / 72;
+  final emMm = config.fontSizePt * 25.4 / 72;
   return text.length * avgFactor * emMm;
 }
 
-// ----------------------------------------------------------
-// Пагинация
-// ----------------------------------------------------------
-List<LabelPage> _paginate(pw.Font font, LabelData data) {
+List<LabelPage> _paginate(pw.Font font, LabelData data, LabelConfig config) {
   final total = data.samples.length;
   if (total == 0) {
     return [
@@ -155,24 +108,24 @@ List<LabelPage> _paginate(pw.Font font, LabelData data) {
         samples: const [],
         pageNum: 1,
         totalPages: 1,
-        width: _widthsMm.first,
-        height: _heightsMm.first,
+        width: config.widthsMm.first,
+        height: config.heightsMm.first,
         totalSamples: 0,
         truncated: false,
       ),
     ];
   }
 
-  final size = _chooseSize(data.samples);
+  final size = _chooseSize(data.samples, config);
   final w = size.w;
   final h = size.h;
-  final cols = _columnsCount(data.samples, w);
-  final rows = _rowsCount(h);
+  final cols = _columnsCount(data.samples, w, config);
+  final rows = _rowsCount(h, config);
   final perPage = math.max(1, cols * rows);
 
   var totalPages = math.max(1, (total / perPage).ceil());
-  if (totalPages > _maxContinuations + 1) {
-    totalPages = _maxContinuations + 1;
+  if (totalPages > config.maxContinuations + 1) {
+    totalPages = config.maxContinuations + 1;
   }
 
   final pages = <LabelPage>[];
@@ -201,52 +154,64 @@ List<LabelPage> _paginate(pw.Font font, LabelData data) {
   return pages;
 }
 
-// ----------------------------------------------------------
-// Размер / ёмкость
-// ----------------------------------------------------------
-({double w, double h}) _chooseSize(List<LabelSample> samples) {
+({double w, double h}) _chooseSize(
+  List<LabelSample> samples,
+  LabelConfig config,
+) {
   final n = samples.length;
-  if (n == 0) return (w: _widthsMm.first, h: _heightsMm.first);
-  for (final h in _heightsMm) {
-    for (final w in _widthsMm) {
-      if (_totalCapacity(samples, w, h) >= n) {
+  if (n == 0) return (w: config.widthsMm.first, h: config.heightsMm.first);
+  for (final h in config.heightsMm) {
+    for (final w in config.widthsMm) {
+      if (_totalCapacity(samples, w, h, config) >= n) {
         return (w: w, h: h);
       }
     }
   }
-  return (w: _widthsMm.last, h: _heightsMm.last);
+  return (w: config.widthsMm.last, h: config.heightsMm.last);
 }
 
-int _totalCapacity(List<LabelSample> samples, double w, double h) {
-  return _columnsCount(samples, w) * _rowsCount(h);
+int _totalCapacity(
+  List<LabelSample> samples,
+  double w,
+  double h,
+  LabelConfig config,
+) {
+  return _columnsCount(samples, w, config) * _rowsCount(h, config);
 }
 
-int _rowsCount(double labelH) {
-  final workH = (labelH - _headerHMm - _labelBottomPadMm) - _colHeaderHMm;
-  if (workH < _rowHMm) return 0;
-  return (workH / _rowHMm).floor();
+int _rowsCount(double labelH, LabelConfig config) {
+  final workH =
+      (labelH - config.headerHMm - config.labelBottomPadMm) -
+      config.colHeaderHMm;
+  if (workH < config.rowHMm) return 0;
+  return (workH / config.rowHMm).floor();
 }
 
-int _columnsCount(List<LabelSample> samples, double labelW) {
-  final workW = labelW - 2 * _labelMarginMm;
-  final colW = _columnWidth(samples);
+int _columnsCount(
+  List<LabelSample> samples,
+  double labelW,
+  LabelConfig config,
+) {
+  final workW = labelW - 2 * config.labelMarginMm;
+  final colW = _columnWidth(samples, config);
   if (colW <= 0) return 1;
   return math.max(1, (workW / colW).floor());
 }
 
-double _columnWidth(List<LabelSample> samples) {
+double _columnWidth(List<LabelSample> samples, LabelConfig config) {
   var maxNumW = 0.0;
   for (final s in samples) {
-    final w = _textWidthMm(s.sampleNumber, pw.Font.helvetica());
+    final w = _textWidthMm(s.sampleNumber, pw.Font.helvetica(), config);
     if (w > maxNumW) maxNumW = w;
   }
-  return _pnpWMm + _checkboxSizeMm + 1 + maxNumW + _colPaddingMm;
+  return config.pnpWMm +
+      config.checkboxSizeMm +
+      1 +
+      maxNumW +
+      config.colPaddingMm;
 }
 
-// ----------------------------------------------------------
-// Рендер
-// ----------------------------------------------------------
-pw.Widget _buildLabelPage(LabelPage page, pw.Font font) {
+pw.Widget _buildLabelPage(LabelPage page, pw.Font font, LabelConfig config) {
   final pageWidthPt = page.width * _mmPt;
   final pageHeightPt = page.height * _mmPt;
 
@@ -270,22 +235,22 @@ pw.Widget _buildLabelPage(LabelPage page, pw.Font font) {
           ),
         ),
         if (page.isContinuation)
-          _buildContinuationNote(page, font)
+          _buildContinuationNote(page, font, config)
         else ...[
-          _buildHeader(page, font),
-          _buildHeaderDivider(page, font),
+          _buildHeader(page, font, config),
+          _buildHeaderDivider(page, font, config),
         ],
-        _buildWorkingArea(page, font),
-        if (page.truncated) _buildTruncatedNote(page, font),
+        _buildWorkingArea(page, font, config),
+        if (page.truncated) _buildTruncatedNote(page, font, config),
       ],
     ),
   );
 }
 
-pw.Widget _buildHeader(LabelPage page, pw.Font font) {
-  final marginPt = _labelMarginMm * _mmPt;
-  final qrPt = _qrSizeMm * _mmPt;
-  final headerHPt = _headerHMm * _mmPt;
+pw.Widget _buildHeader(LabelPage page, pw.Font font, LabelConfig config) {
+  final marginPt = config.labelMarginMm * _mmPt;
+  final qrPt = config.qrSizeMm * _mmPt;
+  final headerHPt = config.headerHMm * _mmPt;
 
   final rows = <({String label, String value})>[
     (label: 'Уч:', value: page.siteName.isEmpty ? '—' : page.siteName),
@@ -328,13 +293,14 @@ pw.Widget _buildHeader(LabelPage page, pw.Font font) {
                         children: [
                           pw.SizedBox(
                             width:
-                                _textWidthMm('Н/З (вх.):', font) * _mmPt +
+                                _textWidthMm('Н/З (вх.):', font, config) *
+                                    _mmPt +
                                 2 * _mmPt,
                             child: pw.Text(
                               r.label,
                               style: pw.TextStyle(
                                 font: font,
-                                fontSize: _fontSizePt,
+                                fontSize: config.fontSizePt,
                                 color: const PdfColor.fromInt(0x787878),
                               ),
                             ),
@@ -346,7 +312,7 @@ pw.Widget _buildHeader(LabelPage page, pw.Font font) {
                               overflow: pw.TextOverflow.clip,
                               style: pw.TextStyle(
                                 font: font,
-                                fontSize: _fontSizePt,
+                                fontSize: config.fontSizePt,
                               ),
                             ),
                           ),
@@ -374,36 +340,48 @@ pw.Widget _buildHeader(LabelPage page, pw.Font font) {
   );
 }
 
-pw.Widget _buildHeaderDivider(LabelPage page, pw.Font font) {
-  final y = _headerHMm * _mmPt - _mmPt;
+pw.Widget _buildHeaderDivider(
+  LabelPage page,
+  pw.Font font,
+  LabelConfig config,
+) {
+  final y = config.headerHMm * _mmPt - _mmPt;
   return pw.Positioned(
-    left: _labelMarginMm * _mmPt,
+    left: config.labelMarginMm * _mmPt,
     top: y,
     child: pw.Container(
-      width: page.width * _mmPt - 2 * _labelMarginMm * _mmPt,
+      width: page.width * _mmPt - 2 * config.labelMarginMm * _mmPt,
       height: 0.5,
       color: const PdfColor.fromInt(0x000000),
     ),
   );
 }
 
-pw.Widget _buildContinuationNote(LabelPage page, pw.Font font) {
+pw.Widget _buildContinuationNote(
+  LabelPage page,
+  pw.Font font,
+  LabelConfig config,
+) {
   return pw.Positioned(
-    left: _labelMarginMm * _mmPt,
-    top: _labelMarginMm * _mmPt,
+    left: config.labelMarginMm * _mmPt,
+    top: config.labelMarginMm * _mmPt,
     child: pw.Text(
       'Тара ${page.containerNumber} — продолжение '
       '${page.pageNum - 1}/${page.totalPages - 1}',
-      style: pw.TextStyle(font: font, fontSize: _fontSizePt),
+      style: pw.TextStyle(font: font, fontSize: config.fontSizePt),
     ),
   );
 }
 
-pw.Widget _buildTruncatedNote(LabelPage page, pw.Font font) {
+pw.Widget _buildTruncatedNote(
+  LabelPage page,
+  pw.Font font,
+  LabelConfig config,
+) {
   final hPt = page.height * _mmPt;
   final shown = math.min(page.totalSamples, page.samples.length * page.pageNum);
   return pw.Positioned(
-    left: _labelMarginMm * _mmPt,
+    left: config.labelMarginMm * _mmPt,
     top: hPt - 3 * _mmPt,
     child: pw.Text(
       'Показано $shown из ${page.totalSamples}. Полный список — в системе.',
@@ -416,19 +394,19 @@ pw.Widget _buildTruncatedNote(LabelPage page, pw.Font font) {
   );
 }
 
-pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
+pw.Widget _buildWorkingArea(LabelPage page, pw.Font font, LabelConfig config) {
   final samples = page.samples;
   final wPt = page.width * _mmPt;
   final hPt = page.height * _mmPt;
-  final topPt = page.isContinuation ? 8 * _mmPt : _headerHMm * _mmPt;
+  final topPt = page.isContinuation ? 8 * _mmPt : config.headerHMm * _mmPt;
   final workHPt = page.isContinuation
-      ? hPt - 8 * _mmPt - _labelBottomPadMm * _mmPt
-      : hPt - _headerHMm * _mmPt - _labelBottomPadMm * _mmPt;
-  final workWPt = wPt - 2 * _labelMarginMm * _mmPt;
+      ? hPt - 8 * _mmPt - config.labelBottomPadMm * _mmPt
+      : hPt - config.headerHMm * _mmPt - config.labelBottomPadMm * _mmPt;
+  final workWPt = wPt - 2 * config.labelMarginMm * _mmPt;
 
   if (samples.isEmpty) {
     return pw.Positioned(
-      left: _labelMarginMm * _mmPt,
+      left: config.labelMarginMm * _mmPt,
       top: topPt,
       child: pw.SizedBox(width: workWPt, height: workHPt),
     );
@@ -436,10 +414,11 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
 
   var maxNumW = 0.0;
   for (final s in samples) {
-    final sw = _textWidthMm(s.sampleNumber, font);
+    final sw = _textWidthMm(s.sampleNumber, font, config);
     if (sw > maxNumW) maxNumW = sw;
   }
-  final colWMinMm = _pnpWMm + _checkboxSizeMm + 1 + maxNumW + _colPaddingMm;
+  final colWMinMm =
+      config.pnpWMm + config.checkboxSizeMm + 1 + maxNumW + config.colPaddingMm;
   final cols = math.max(1, ((workWPt / _mmPt) / colWMinMm).floor());
   final perCol = (samples.length / cols).ceil();
 
@@ -454,7 +433,7 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
   final colWPt = workWPt / columns.length;
 
   return pw.Positioned(
-    left: _labelMarginMm * _mmPt,
+    left: config.labelMarginMm * _mmPt,
     top: topPt,
     child: pw.Container(
       width: workWPt,
@@ -485,7 +464,7 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Container(
-                    height: _colHeaderHMm * _mmPt,
+                    height: config.colHeaderHMm * _mmPt,
                     decoration: pw.BoxDecoration(
                       border: pw.Border(
                         bottom: pw.BorderSide(
@@ -497,7 +476,7 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
                     child: pw.Row(
                       children: [
                         pw.SizedBox(
-                          width: _pnpWMm * _mmPt,
+                          width: config.pnpWMm * _mmPt,
                           child: pw.Padding(
                             padding: pw.EdgeInsets.only(
                               left: 1 * _mmPt,
@@ -507,7 +486,7 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
                               'п/п',
                               style: pw.TextStyle(
                                 font: font,
-                                fontSize: _fontSizePt,
+                                fontSize: config.fontSizePt,
                               ),
                             ),
                           ),
@@ -522,7 +501,7 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
                               'Образец',
                               style: pw.TextStyle(
                                 font: font,
-                                fontSize: _fontSizePt,
+                                fontSize: config.fontSizePt,
                               ),
                             ),
                           ),
@@ -531,7 +510,12 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
                     ),
                   ),
                   for (var i = 0; i < columns[ci].length; i++)
-                    _buildSampleRow(columns[ci][i], ci * perCol + i + 1, font),
+                    _buildSampleRow(
+                      columns[ci][i],
+                      ci * perCol + i + 1,
+                      font,
+                      config,
+                    ),
                 ],
               ),
             ),
@@ -541,29 +525,29 @@ pw.Widget _buildWorkingArea(LabelPage page, pw.Font font) {
   );
 }
 
-/// Строка пробы: `п/п | [чекбокс] | номер`.
-///
-/// c-7f-2-fix: галочка `SELECTED` рисуется **двумя линиями** через
-/// `pw.CustomPaint` — как на сервере (`pdf.line` × 2). Шрифтовой
-/// `✓` в DejaVuSans слишком тонкий и похож на крестик.
-pw.Widget _buildSampleRow(LabelSample s, int num, pw.Font font) {
+pw.Widget _buildSampleRow(
+  LabelSample s,
+  int num,
+  pw.Font font,
+  LabelConfig config,
+) {
   return pw.Container(
-    height: _rowHMm * _mmPt,
+    height: config.rowHMm * _mmPt,
     child: pw.Row(
       children: [
         pw.SizedBox(
-          width: _pnpWMm * _mmPt,
+          width: config.pnpWMm * _mmPt,
           child: pw.Padding(
             padding: pw.EdgeInsets.only(left: 1 * _mmPt),
             child: pw.Text(
               '$num.',
-              style: pw.TextStyle(font: font, fontSize: _fontSizePt),
+              style: pw.TextStyle(font: font, fontSize: config.fontSizePt),
             ),
           ),
         ),
         pw.SizedBox(
-          width: _checkboxSizeMm * _mmPt,
-          height: _checkboxSizeMm * _mmPt,
+          width: config.checkboxSizeMm * _mmPt,
+          height: config.checkboxSizeMm * _mmPt,
           child: pw.Container(
             decoration: pw.BoxDecoration(
               border: pw.Border.all(
@@ -574,17 +558,10 @@ pw.Widget _buildSampleRow(LabelSample s, int num, pw.Font font) {
             child: s.selected
                 ? pw.CustomPaint(
                     size: PdfPoint(
-                      _checkboxSizeMm * _mmPt,
-                      _checkboxSizeMm * _mmPt,
+                      config.checkboxSizeMm * _mmPt,
+                      config.checkboxSizeMm * _mmPt,
                     ),
                     painter: (canvas, size) {
-                      // Галочка — две линии, как в `label_service.py`.
-                      // Толщина 0.4 (в оригинале `set_line_width(0.4)`).
-                      //
-                      // ВАЖНО: в PDF ось Y направлена ВВЕРХ (в отличие
-                      // от Flutter, где вниз). Поэтому короткий сегмент
-                      // галочки идёт вниз-влево от вершины, длинный —
-                      // вверх-вправо.
                       final w = size.x;
                       final h = size.y;
                       final vertexX = w * 0.4;
@@ -607,7 +584,7 @@ pw.Widget _buildSampleRow(LabelSample s, int num, pw.Font font) {
             s.sampleNumber,
             maxLines: 1,
             overflow: pw.TextOverflow.clip,
-            style: pw.TextStyle(font: font, fontSize: _fontSizePt),
+            style: pw.TextStyle(font: font, fontSize: config.fontSizePt),
           ),
         ),
       ],

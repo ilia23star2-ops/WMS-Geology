@@ -1,5 +1,4 @@
-/// Сервис синхронизации (Pull) (c-2, ..., c-8-catalog-create-offline).
-/// ТД-59: батч-запрос истории вместо N+1.
+/// Сервис синхронизации (Pull) (c-2, ..., c-8-catalog-create-offline, ТД-59, ТД-56).
 library;
 
 import 'dart:convert';
@@ -9,7 +8,9 @@ import '../db/container_dao.dart';
 import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
+import '../models/label_config.dart';
 import 'api_client.dart';
+import 'label_config_service.dart';
 
 class PullStats {
   const PullStats({this.containers = 0, this.samples = 0});
@@ -74,6 +75,8 @@ class SyncService {
 
     // ТД-59: качаем историю одним батч-запросом.
     await _pullAllHistory(updatedSince: isoSince);
+    // ТД-56: качаем конфигурацию этикеток.
+    await _pullLabelConfig();
 
     await _reconcile();
     return PullStats(containers: pulled.ids.length, samples: samples);
@@ -198,7 +201,6 @@ class SyncService {
     }
   }
 
-  // ТД-59: Один запрос вместо N.
   Future<void> _pullAllHistory({String? updatedSince}) async {
     int page = 1;
     while (true) {
@@ -216,7 +218,6 @@ class SyncService {
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
 
-      // Группируем по entity_id (container_id)
       final grouped = <int, List<Map<String, dynamic>>>{};
       for (final item in results) {
         final entityId = item['entity_id'];
@@ -231,6 +232,17 @@ class SyncService {
 
       if (data['next'] == null) break;
       page++;
+    }
+  }
+
+  Future<void> _pullLabelConfig() async {
+    try {
+      final res = await _client.get<Map<String, dynamic>>('/labels/config/');
+      if (res.data != null) {
+        await LabelConfigService.save(LabelConfig.fromJson(res.data!));
+      }
+    } catch (_) {
+      // Игнорируем, при отсутствии сети останется старый кэш
     }
   }
 }
