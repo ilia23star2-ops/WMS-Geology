@@ -160,6 +160,7 @@ class SampleSerializer(serializers.ModelSerializer):
             "status",
             "qr_code",
             "legacy_data",
+            "is_encrypted",
             "parent_sample",
             "parent_sample_number",
             "disposed_at",

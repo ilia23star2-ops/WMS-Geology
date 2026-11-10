@@ -163,6 +163,11 @@ class SampleViewSet(viewsets.ModelViewSet):
         if p.get("status"):
             qs = qs.filter(status=p["status"])
 
+        is_encrypted_param = p.get("is_encrypted")
+        if is_encrypted_param is not None:
+            is_enc = is_encrypted_param.lower() in ("1", "true", "yes")
+            qs = qs.filter(is_encrypted=is_enc)
+
         no_work_order = p.get("no_work_order")
         if no_work_order is not None and no_work_order.lower() in (
             "1", "true", "yes",
