@@ -1,5 +1,6 @@
 /**
  * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11).
+ * ТД-37: оптимизация N+1 (данные поддона берутся из Cell).
  */
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -94,13 +95,11 @@ function CellPalletChip({
     onOpenPallet: (cell: Cell) => void;
     onViewContents: (cell: Cell, palletId: number) => void;
 }) {
-    const { data: pallet, isLoading } = usePalletByCell(cell.id);
+    // ТД-37: берем данные из cell, без запроса к API.
+    const palletId = cell.pallet_id;
+    const palletStatus = cell.pallet_status;
 
-    if (isLoading) {
-        return <CircularProgress size={14} />;
-    }
-
-    if (!pallet) {
+    if (!palletId) {
         return (
             <Button
                 size="small"
@@ -117,13 +116,13 @@ function CellPalletChip({
         <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
             <Chip
                 size="small"
-                label={`#${pallet.id} · ${PALLET_STATUS_LABELS[pallet.status]}`}
-                color={pallet.status === "ACTIVE" ? "success" : "default"}
-                onClick={() => onViewContents(cell, pallet.id)}
+                label={`#${palletId} · ${PALLET_STATUS_LABELS[palletStatus as keyof typeof PALLET_STATUS_LABELS] || palletStatus}`}
+                color={palletStatus === "ACTIVE" ? "success" : "default"}
+                onClick={() => onViewContents(cell, palletId)}
                 clickable
             />
             <Tooltip title="Посмотреть содержимое">
-                <IconButton size="small" onClick={() => onViewContents(cell, pallet.id)}>
+                <IconButton size="small" onClick={() => onViewContents(cell, palletId)}>
                     <VisibilityIcon sx={{ fontSize: 16 }} />
                 </IconButton>
             </Tooltip>

@@ -76,6 +76,14 @@ class TierSerializer(serializers.ModelSerializer):
 
 
 class CellSerializer(serializers.ModelSerializer):
+    # ТД-37: отдаем данные о поддоне сразу, чтобы фронтенд не делал N+1.
+    pallet_id = serializers.IntegerField(
+        source="pallet.id", read_only=True, default=None,
+    )
+    pallet_status = serializers.CharField(
+        source="pallet.status", read_only=True, default=None,
+    )
+
     class Meta:
         model = Cell
         fields = [
@@ -86,6 +94,8 @@ class CellSerializer(serializers.ModelSerializer):
             "cell_type",
             "qr_code",
             "is_active",
+            "pallet_id",
+            "pallet_status",
         ]
 
 

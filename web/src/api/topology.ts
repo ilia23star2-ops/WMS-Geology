@@ -1,5 +1,6 @@
 /**
  * API топологии склада.
+ * ТД-37: добавлены pallet_id и pallet_status в Cell.
  */
 import {
     keepPreviousData,
@@ -61,6 +62,8 @@ export interface Cell {
     cell_type: CellType;
     qr_code: string | null;
     is_active: boolean;
+    pallet_id: number | null;
+    pallet_status: string | null;
 }
 
 export type PalletType = "STANDARD" | "CORE";
