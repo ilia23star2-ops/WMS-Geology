@@ -14,6 +14,7 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import SendIcon from "@mui/icons-material/Send";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import KeyboardReturnIcon from "@mui/icons-material/KeyboardReturn";
+import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -44,6 +45,7 @@ import {
 } from "../api";
 import AddContainersToShipmentDialog from "../components/AddContainersToShipmentDialog";
 import ReceiptItemEditDialog from "../components/ReceiptItemEditDialog";
+import RepackSamplesDialog from "../components/RepackSamplesDialog";
 import ShipmentEditDialog from "../components/ShipmentEditDialog";
 
 const SHIPMENT_STATUS_COLORS: Record<
@@ -189,6 +191,7 @@ interface ContainerItemsPanelProps {
 
 function ContainerItemsPanel({ shipmentId, items, status, onMessage, onError }: ContainerItemsPanelProps) {
     const [addOpen, setAddOpen] = useState(false);
+    const [repackOpen, setRepackOpen] = useState(false);
     const removeMutation = useRemoveShipmentContainer(shipmentId);
     const canModify = status === "DRAFT" || status === "ASSEMBLED";
 
@@ -210,7 +213,10 @@ function ContainerItemsPanel({ shipmentId, items, status, onMessage, onError }: 
                 <CardContent sx={{ pb: 1, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <Typography variant="h3">Тары в рейсе ({items.length})</Typography>
                     {canModify && (
-                        <Button variant="outlined" startIcon={<Inventory2Icon />} onClick={() => setAddOpen(true)}>Добавить тары</Button>
+                        <Stack direction="row" spacing={1}>
+                            <Button variant="outlined" startIcon={<Inventory2Icon />} onClick={() => setAddOpen(true)}>Добавить тары</Button>
+                            <Button variant="outlined" color="secondary" startIcon={<CompareArrowsIcon />} onClick={() => setRepackOpen(true)}>Переложить</Button>
+                        </Stack>
                     )}
                 </CardContent>
                 {items.length === 0 ? (
@@ -261,6 +267,7 @@ function ContainerItemsPanel({ shipmentId, items, status, onMessage, onError }: 
                 )}
             </Card>
             <AddContainersToShipmentDialog open={addOpen} shipmentId={shipmentId} excludedContainerIds={items.map((i) => i.container)} onClose={() => setAddOpen(false)} onSuccess={onMessage} />
+            <RepackSamplesDialog open={repackOpen} shipmentId={shipmentId} containers={items} onClose={() => setRepackOpen(false)} onSuccess={onMessage} />
         </>
     );
 }

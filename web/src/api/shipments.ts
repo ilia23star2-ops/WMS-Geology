@@ -438,3 +438,28 @@ export function useCreateReturn() {
         },
     });
 }
+// ============================================================
+// Repack samples (1.115)
+// ============================================================
+export interface RepackSamplesPayload {
+    from_container_id: number;
+    to_container_id: number;
+    sample_ids: number[];
+}
+
+export async function repackSamples(shipmentId: number, payload: RepackSamplesPayload): Promise<void> {
+    await apiClient.post('/shipments/' + shipmentId + '/repack-samples/', payload);
+}
+
+export function useRepackSamples(shipmentId: number) {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (payload: RepackSamplesPayload) => repackSamples(shipmentId, payload),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['shipment', shipmentId] });
+            void queryClient.invalidateQueries({ queryKey: ['shipments'] });
+            void queryClient.invalidateQueries({ queryKey: ['containers'] });
+            void queryClient.invalidateQueries({ queryKey: ['samples'] });
+        },
+    });
+}
