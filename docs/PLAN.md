@@ -106,7 +106,7 @@
 | c-8d | Mobile: Размещение тары | ✅ (закрыто в `c-7c`) | ✅ |
 | c-5 | Файловая синхронизация | Sneakernet через флешку | ⏸ отложено |
 
-**Снятые с плана после аудита (2026-11-05):**
+**Снятые с плана после аудита (2026-11-10):**
 - **`c-8a`** — все PATCH-эндпоинты есть на бэке.
 - **`c-8c`** — `SampleService.update/dispose/restore/deleteSample` с `sync_queue` в `c-9-fill-offline-2c-3`.
 - **`c-8d`** — `bulkPlace` с `sync_queue` в `c-7c`.
