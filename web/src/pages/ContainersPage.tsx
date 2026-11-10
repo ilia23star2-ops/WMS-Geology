@@ -32,6 +32,7 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import OutputIcon from "@mui/icons-material/Output";
 import RecyclingIcon from "@mui/icons-material/Recycling";
 import PlaceIcon from "@mui/icons-material/Place";
+import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
 import {
     DataGrid,
     type GridColDef,
@@ -59,6 +60,7 @@ import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import PlaceContainerDialog from "../components/PlaceContainerDialog";
 import { useAuthStore } from "../stores/authStore";
+import { useAddToPool, usePool } from "../api/pool";
 
 const PAGE_SIZE = 50;
 
@@ -153,6 +155,15 @@ export default function ContainersPage() {
     const researchTypes = useResearchTypes();
 
     const deleteMutation = useDeleteContainer();
+    const addToPoolMutation = useAddToPool();
+    const { data: pool } = usePool();
+    const poolContainerIds = useMemo(() => {
+        const ids = new Set<number>();
+        for (const item of pool?.items ?? []) {
+            if (item.container) ids.add(item.container);
+        }
+        return ids;
+    }, [pool]);
 
     const typesMap = useMemo(() => {
         const map = new Map<number, string>();
@@ -219,14 +230,12 @@ export default function ContainersPage() {
             flex: 1,
             minWidth: 120,
             renderCell: (params) => {
-                if (params.value) return params.value;
+                const inPool = poolContainerIds.has(params.row.id);
                 return (
-                    <Chip
-                        label="Заготовка"
-                        color="warning"
-                        size="small"
-                        variant="outlined"
-                    />
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        {params.value ? <span>{params.value}</span> : <Chip label="Заготовка" color="warning" size="small" variant="outlined" />}
+                        {inPool && <Chip label="В пуле" color="info" size="small" variant="outlined" />}
+                    </Stack>
                 );
             },
         },
@@ -438,6 +447,27 @@ export default function ContainersPage() {
                                     </IconButton>
                                 </span>
                             </Tooltip>
+                            <Tooltip title={selectedIds.every(id => poolContainerIds.has(id)) ? "Уже в пуле" : "Добавить в пул"}>
+                                <span>
+                                    <IconButton
+                                        color={selectedIds.every(id => poolContainerIds.has(id)) ? "success" : "info"}
+                                        disabled={selectedIds.every(id => poolContainerIds.has(id))}
+                                        onClick={async () => {
+                                            const toAdd = selectedIds.filter(id => !poolContainerIds.has(id));
+                                            if (toAdd.length === 0) return;
+                                            try {
+                                                await addToPoolMutation.mutateAsync({ container_ids: toAdd });
+                                                setSelection(emptySelection());
+                                                setEditMessage('В пул добавлено тар: ' + toAdd.length);
+                                            } catch (err) {
+                                                setDeleteError('Не удалось добавить в пул.');
+                                            }
+                                        }}
+                                    >
+                                        {selectedIds.every(id => poolContainerIds.has(id)) ? <CheckCircleIcon /> : <PlaylistAddIcon />}
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
                         </>
                     )}
                     {canCreate && (
@@ -601,6 +631,7 @@ export default function ContainersPage() {
                         checkboxSelection
                         rowSelectionModel={selection}
                         onRowSelectionModelChange={setSelection}
+                        isRowSelectable={(params) => !poolContainerIds.has(params.row.id)}
                         disableRowSelectionOnClick
                         disableColumnFilter
                         disableColumnSelector

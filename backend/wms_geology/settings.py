@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.picking",
     "apps.movements",
     "apps.receiving",
+    "apps.pool",
 ]
 
 MIDDLEWARE = [

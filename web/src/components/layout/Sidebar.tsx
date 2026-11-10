@@ -29,6 +29,7 @@ import AssignmentIcon from "@mui/icons-material/Assignment";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -44,6 +45,7 @@ interface MenuItem {
 
 const MENU: MenuItem[] = [
     { label: "Главная", path: "/", icon: <HomeIcon /> },
+    { label: "Пул", path: "/pool", icon: <PlaylistAddIcon /> },
     { label: "Тара", path: "/containers", icon: <Inventory2Icon /> },
     { label: "Пробы", path: "/samples", icon: <BiotechIcon /> },
     { label: "Наряд-заказы", path: "/work-orders", icon: <AssignmentIcon /> },
@@ -65,6 +67,7 @@ const MENU: MenuItem[] = [
 const ROLE_MENU_ACCESS: Record<string, string[]> = {
     lab_worker: [
         "/",
+        "/pool",
         "/containers",
         "/samples",
         "/work-orders",
@@ -73,6 +76,7 @@ const ROLE_MENU_ACCESS: Record<string, string[]> = {
     ],
     worker: [
         "/", 
+        "/pool",
         "/containers", 
         "/samples", 
         "/receiving", 
