@@ -839,3 +839,9 @@
 **Где:** `backend/apps/receiving/views.py` (уже), `backend/apps/picking/views.py` (добавить `mark-received` action для OUTBOUND), `web/src/pages/ShipmentDetailPage.tsx` (кнопка).
 **Статус:** 🟡 для INBOUND — ✅, для OUTBOUND — реализация в `2.x-shipments-3`.
 
+
+### 1.122. 2026-11-10 — mark_received проверяет роль, а не is_superuser (ТД-72)
+
+**Решение:** право на приёмку рейса (mark-received) проверяется только по роли (`admin` или `manager`) и привязке к лаборатории (`UserProfile.laboratory`). Флаг `is_superuser` игнорируется.
+
+**Причина:** роли — это бизнес-логика WMS. Суперюзер — это техническая роль Django (для доступа в админку). Смешивать их опасно. Если суперюзеру нужно принимать рейсы — ему нужно выдать роль `admin` в профиле.

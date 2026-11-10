@@ -212,7 +212,7 @@
 | ТД-14 | Throttling / rate limiting | средний | перед прод |
 | ТД-16 | `MEDIA_ROOT` | средний | серия 2.x |
 | ТД-21/35 | Web: code-splitting | средний | когда жалобы на скорость |
-| ТД-34 | Web: `console.error` в catch | низкий | при доработке UI |
+| ТД-34 | Web: `console.error` в catch | низкий | ✅ закрыто (console.warn / debug) |
 | ТД-37 | `TopologyPage` — N+1 в `CellPalletChip` | низкий | если ячеек >30 |
 | ТД-38 | UI-защита удаления (CASCADE vs PROTECT) | средний | до продакшена |
 | ТД-42 | `setup.ps1` — обновить при смене Gradle/AGP | средний | при обновлении Flutter |
@@ -240,11 +240,11 @@
 | ТД-64 | `ContainerService.bulkCreate` офлайн-ветка не покрыта unit-тестом (нет DI на `ContainerDao.saveAll`) | низкий | при первом баге офлайн-создания |
 | ТД-65 | `_defaultOnSuccess` `pending_sync` для `fill-samples` / `bulk-place` на negative-ID | ✅ | закрыто в `c-2d-2c` |
 | ТД-66 | `c-8b-fix-3`: `ContainerEditForm._catalogsError` блокирует сохранение шапки | ✅ | закрыто в `c-8b-fix-3` |
-| ТД-67 | `ContainersPage.tsx` — `valueGetter: (row as any).comment` — временный обход типа. Добавить `comment: string` в `web/src/api/types.ts::Container` | низкий | при следующем web-заходе |
-| ТД-68 | `api_client.dart` классифицирует `DioExceptionType.unknown` без `statusCode` как `isNetworkError = false`. `ContainerService.update` ловит `catch (_)`, но `fetchList` / `fetchHistory` / `fetchLabelPdf` — только `on ApiException if (!isNetworkError) rethrow`. Возможны ложные «не сетевые» ошибки офлайн. На device-check не воспроизвелось | низкий | при первом баг-репорте офлайн-загрузки |
-| ТД-69 | `mark_received` в `picking/views.py` — побитый docstring (плейсхолдеры). Не влияет на работу. | низкий | при следующей правке views.py |
-| ТД-72 | `mark_received` проверяет роль (`admin`/`manager`), а не `is_superuser` (расхождение с HANDOFF). Решено оставить как есть (вариант А). | низкий | в docs |
-| ТД-73 | `backend/apps/users/admin.py` — зарегистрировать `UserProfile`, `Role`, `AuditLog`, `AccessToken` в Django Admin (сейчас 404). | средний | отдельная пачка `fix/2.x-users-admin` |
+| ТД-67 | `ContainersPage.tsx` — `as any` | низкий | ✅ закрыто (поле comment добавлено) |
+| ТД-68 | `api_client.dart` классифицирует `unknown` | низкий | ✅ закрыто (isNetworkError = true) |
+| ТД-69 | `mark_received` docstring | низкий | ✅ закрыто (удален при рефакторинге) |
+| ТД-72 | `mark_received` и `is_superuser` | низкий | ✅ закрыто (см. DECISIONS 1.122) |
+| ТД-73 | Django Admin для users | средний | ✅ закрыто (admin.py создан) |
 
 ---
 

@@ -101,10 +101,20 @@ if (import.meta.env.DEV) {
         (error: AxiosError) => {
             const status = error.response?.status ?? "?";
             const url = error.config?.url ?? "";
-            console.error(
-                `[api] ✗ ${status} ${url}`,
-                error.response?.data ?? error.message,
-            );
+
+            // ТД-34: 400-499 — это штатные ошибки (валидация, нет доступа),
+            // выводим их как warn. Ошибки сервера (500+) или сети — как error.
+            if (typeof status === "number" && status >= 400 && status < 500) {
+                console.warn(
+                    `[api] ⚠ ${status} ${url}`,
+                    error.response?.data ?? error.message,
+                );
+            } else {
+                console.error(
+                    `[api] ✗ ${status} ${url}`,
+                    error.response?.data ?? error.message,
+                );
+            }
             return Promise.reject(error);
         },
     );

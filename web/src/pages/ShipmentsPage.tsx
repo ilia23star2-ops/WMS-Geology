@@ -3,6 +3,7 @@
  *
  * c-2.x-shipments-1b: базовая страница.
  * c-2.x-lab-portal-2: вкладки (Все/Исх/Вх), кнопка «Принять», фильтр «Только мои».
+ * ТД-34: console.error заменен на console.debug.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -99,7 +100,7 @@ export default function ShipmentsPage() {
             setMessage("Рейс успешно принят.");
             void refetch();
         } catch (err) {
-            console.error(err);
+            console.debug(err);
             setMessage("Ошибка при приёме рейса.");
         }
     };
