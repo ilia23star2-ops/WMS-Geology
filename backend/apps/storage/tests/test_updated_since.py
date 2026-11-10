@@ -18,6 +18,10 @@ from apps.storage.models import Container, ContainerType
 @pytest.fixture
 def auth_client(db):
     user = User.objects.create_user(username="tester", password="x")
+
+    user.is_superuser = True
+
+    user.save()
     c = APIClient()
     c.force_authenticate(user=user)
     return c

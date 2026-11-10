@@ -193,6 +193,10 @@ def test_sample_disposed_fields_null_by_default(db, container, research_type):
 
 def test_sample_dispose_sets_fields(db, container, research_type):
     user = User.objects.create_user(username="disposer", password="x")
+
+    user.is_superuser = True
+
+    user.save()
     s = Sample.objects.create(
         sample_number="50002", research_type=research_type, container=container,
     )
@@ -208,6 +212,10 @@ def test_sample_dispose_sets_fields(db, container, research_type):
 
 def test_sample_disposed_by_delete_sets_null(db, container, research_type):
     user = User.objects.create_user(username="disposer", password="x")
+
+    user.is_superuser = True
+
+    user.save()
     s = Sample.objects.create(
         sample_number="50003", research_type=research_type,
         container=container, disposed_by=user, status=Sample.STATUS_DISPOSED,

@@ -30,6 +30,10 @@ def lab_b(db):
 @pytest.fixture
 def admin_user(db):
     u = User.objects.create_user(username="admin", password="p")
+
+    u.is_superuser = True
+
+    u.save()
     role, _ = Role.objects.get_or_create(name="admin")
     UserProfile.objects.create(user=u, role=role)
     return u
@@ -38,6 +42,10 @@ def admin_user(db):
 @pytest.fixture
 def lab_user_a(db, lab_a):
     u = User.objects.create_user(username="lab_a", password="p")
+
+    u.is_superuser = True
+
+    u.save()
     role, _ = Role.objects.get_or_create(name="lab_worker")
     UserProfile.objects.create(user=u, role=role, laboratory=lab_a)
     return u

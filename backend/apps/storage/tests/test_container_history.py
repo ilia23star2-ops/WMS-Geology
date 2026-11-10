@@ -27,7 +27,10 @@ from apps.users.models import AuditLog
 
 @pytest.fixture
 def auth_user(db):
-    return User.objects.create_user(username="history_test", password="x")
+    user = User.objects.create_user(username="history_test", password="x")
+    user.is_superuser = True
+    user.save()
+    return user
 
 
 @pytest.fixture

@@ -100,6 +100,10 @@ class TestContainerTypeIsDisposableInSerializer:
         from django.contrib.auth import get_user_model
         User = get_user_model()
         user = User.objects.create_user(username="u", password="p")
+
+        user.is_superuser = True
+
+        user.save()
         client.force_login(user)
 
         r = client.get(f"/api/v1/storage/container-types/{container_type.id}/")
