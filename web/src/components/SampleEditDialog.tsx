@@ -8,6 +8,7 @@
  * - «Утилизировать» → под-диалог с причиной → `POST /samples/{id}/dispose/`.
  * - «Вернуть из утилизации» → `POST /samples/{id}/restore/`.
  * - «Удалить» → `DELETE /samples/{id}/` (hard, с confirm).
+ * ТД-38: обработка 409 (защита от удаления используемых проб).
  */
 import { useEffect, useState } from "react";
 import {
@@ -141,7 +142,17 @@ export default function SampleEditDialog({
             await deleteMutation.mutateAsync(sample.id);
             onClose();
         } catch (err) {
-            setError(extractError(err) ?? "Не удалось удалить пробу.");
+            const anyErr = err as {
+                response?: { status?: number; data?: { error?: string } }
+            };
+            // ТД-38: Если проба привязана к рейсу или выборке, бэкенд вернет 409.
+            if (anyErr?.response?.status === 409) {
+                setError(
+                    "Нельзя удалить пробу, так как она уже используется в рейсе или списке выборки."
+                );
+            } else {
+                setError(extractError(err) ?? "Не удалось удалить пробу.");
+            }
         }
     }
 

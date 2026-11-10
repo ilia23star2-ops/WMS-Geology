@@ -214,7 +214,7 @@
 | ТД-21/35 | Web: code-splitting | средний | когда жалобы на скорость |
 | ТД-34 | Web: `console.error` в catch | низкий | ✅ закрыто (console.warn / debug) |
 | ТД-37 | `TopologyPage` — N+1 в `CellPalletChip` | низкий | если ячеек >30 |
-| ТД-38 | UI-защита удаления (CASCADE vs PROTECT) | средний | до продакшена |
+| ТД-38 | UI-защита удаления (CASCADE vs PROTECT) | средний | ✅ закрыто (перехват 409) |
 | ТД-42 | `setup.ps1` — обновить при смене Gradle/AGP | средний | при обновлении Flutter |
 | ТД-43 | Offline-токен: таймер истечения на мобилке | низкий | UX-полировка |
 | ТД-44 | AGP 8.11.1 / Kotlin 2.2.20 — deprecated, апгрейд | низкий | когда Flutter потребует |
