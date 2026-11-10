@@ -5,6 +5,7 @@
 - уникальность Role.name;
 - OneToOne-связь UserProfile ↔ User;
 - каскадное удаление профиля при удалении User;
+- UserProfile.laboratory (c-2.x-lab-portal-1): null, set, SET_NULL;
 - JSONB-поля AuditLog;
 - поведение AuditLog.user при удалении User (SET_NULL);
 - сортировку AuditLog по created_at DESC.
@@ -14,6 +15,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.db import IntegrityError
 
+from apps.samples.catalogs import Laboratory
 from apps.users.models import AuditLog, Role, UserProfile
 
 
@@ -30,6 +32,12 @@ def role_manager(db):
 def user(db):
     """Обычный пользователь."""
     return User.objects.create_user(username="test_user", password="test123")
+
+
+@pytest.fixture
+def laboratory(db):
+    """Лаборатория для привязки профиля."""
+    return Laboratory.objects.create(code="ЛАБ-1", name="Лаборатория 1")
 
 
 # ============================================================
@@ -104,6 +112,33 @@ def test_user_profile_str_without_role(db, user):
     """__str__ профиля без роли содержит 'без роли'."""
     profile = UserProfile.objects.create(user=user)
     assert "без роли" in str(profile)
+
+
+# ============================================================
+# UserProfile.laboratory (c-2.x-lab-portal-1)
+# ============================================================
+def test_user_profile_laboratory_null_default(db, user):
+    """По умолчанию laboratory = NULL (не сотрудник лаборатории)."""
+    profile = UserProfile.objects.create(user=user)
+    assert profile.laboratory is None
+
+
+def test_user_profile_laboratory_set(db, user, laboratory):
+    """Привязка профиля к лаборатории сохраняется."""
+    profile = UserProfile.objects.create(user=user, laboratory=laboratory)
+    profile.refresh_from_db()
+    assert profile.laboratory_id == laboratory.id
+    assert profile.laboratory.name == "Лаборатория 1"
+
+
+def test_laboratory_delete_sets_null_on_profile(db, user, laboratory):
+    """Удаление Laboratory обнуляет UserProfile.laboratory (SET_NULL)."""
+    profile = UserProfile.objects.create(user=user, laboratory=laboratory)
+    profile_pk = profile.pk
+    laboratory.delete()
+    profile.refresh_from_db()
+    assert profile.pk == profile_pk
+    assert profile.laboratory is None
 
 
 # ============================================================

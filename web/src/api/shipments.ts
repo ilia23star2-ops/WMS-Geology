@@ -1,11 +1,7 @@
 /**
  * API рейсов (`Shipment`).
- *
- * Пачка 2f-6a: update / delete / cancel.
- * Пачка c-2.x-shipments-1b: name, createShipment.
- * Пачка c-2.x-shipments-2: add/remove containers, send, assemble.
- * Пачка c-2.x-shipments-2-fix: origin_laboratory (откуда), staleTime 0,
- *   invalidate вместо setQueryData (автообновление).
+ * ...
+ * Пачка c-2.x-lab-portal-3: create-return.
  */
 import {
     keepPreviousData,
@@ -55,6 +51,7 @@ export interface ShipmentContainerItem {
     container_type_name: string | null;
     draft_work_order_coded: string;
     draft_research_type_name: string | null;
+    current_holder?: string | null;
 }
 
 export interface Shipment {
@@ -63,10 +60,8 @@ export interface Shipment {
     name: string;
     direction: ShipmentDirection;
     destination: string;
-    /** Куда едет (FK → Laboratory). */
     laboratory: number | null;
     laboratory_name: string | null;
-    /** c-2.x-shipments-2-fix: откуда едет (FK → Laboratory). */
     origin_laboratory: number | null;
     origin_laboratory_name: string | null;
     site: number | null;
@@ -87,6 +82,7 @@ export interface Shipment {
     items_count: number;
     containers_count: number;
     container_items: ShipmentContainerItem[];
+    can_mark_received: boolean;
     note: string;
     updated_at: string;
 }
@@ -96,6 +92,7 @@ export interface ShipmentFilters {
     status?: ShipmentStatus;
     laboratory_id?: number;
     site_id?: number;
+    my_lab?: boolean;
 }
 
 export interface ShipmentsListParams {
@@ -106,7 +103,9 @@ export interface ShipmentsListParams {
 export async function fetchShipments(
     params: ShipmentsListParams,
 ): Promise<PaginatedResponse<Shipment>> {
-    const query: Record<string, string | number> = { page: params.page };
+    const query: Record<string, string | number | boolean> = {
+        page: params.page,
+    };
     const f = params.filters;
 
     if (f.direction) query.direction = f.direction;
@@ -115,6 +114,7 @@ export async function fetchShipments(
         query.laboratory_id = f.laboratory_id;
     }
     if (f.site_id !== undefined) query.site_id = f.site_id;
+    if (f.my_lab) query.my_lab = true;
 
     const { data } = await apiClient.get<PaginatedResponse<Shipment>>(
         "/shipments/",
@@ -139,10 +139,6 @@ export async function fetchShipment(id: number): Promise<Shipment> {
     return data;
 }
 
-/**
- * Детали рейса. staleTime: 0 — всегда рефетч при монтировании и
- * после инвалидации (автообновление после add/remove/send).
- */
 export function useShipment(id: number | null) {
     return useQuery({
         queryKey: ["shipment", id],
@@ -151,10 +147,6 @@ export function useShipment(id: number | null) {
         staleTime: 0,
     });
 }
-
-// ============================================================
-// Create
-// ============================================================
 
 export interface CreateShipmentPayload {
     name?: string;
@@ -189,10 +181,6 @@ export function useCreateShipment() {
         },
     });
 }
-
-// ============================================================
-// Update / delete / cancel
-// ============================================================
 
 export interface UpdateShipmentPayload {
     shipment_number?: string;
@@ -275,6 +263,24 @@ export function useCancelShipment() {
             reason?: string;
         }) => cancelShipment(id, reason),
         onSuccess: (_data, { id }) => {
+            void queryClient.invalidateQueries({ queryKey: ["shipment", id] });
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+        },
+    });
+}
+
+export async function markReceived(id: number): Promise<Shipment> {
+    const { data } = await apiClient.post<Shipment>(
+        `/shipments/${id}/mark-received/`,
+    );
+    return data;
+}
+
+export function useMarkReceived() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: markReceived,
+        onSuccess: (_data, id) => {
             void queryClient.invalidateQueries({ queryKey: ["shipment", id] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
         },
@@ -386,6 +392,46 @@ export function useSendShipment(shipmentId: number) {
             void queryClient.invalidateQueries({
                 queryKey: ["shipment", shipmentId],
             });
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({ queryKey: ["samples"] });
+        },
+    });
+}
+
+// ============================================================
+// Create Return (c-2.x-lab-portal-3)
+// ============================================================
+
+interface CreateReturnResponse {
+    shipment: Shipment;
+    returned_containers_count: number;
+    new_container_ids: number[];
+}
+
+export async function createReturn(
+    shipmentId: number,
+    containerIds?: number[],
+): Promise<CreateReturnResponse> {
+    const { data } = await apiClient.post<CreateReturnResponse>(
+        `/shipments/${shipmentId}/create-return/`,
+        { container_ids: containerIds },
+    );
+    return data;
+}
+
+export function useCreateReturn() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({
+            shipmentId,
+            containerIds,
+        }: {
+            shipmentId: number;
+            containerIds?: number[];
+        }) => createReturn(shipmentId, containerIds),
+        onSuccess: (_data, { shipmentId }) => {
+            void queryClient.invalidateQueries({ queryKey: ["shipment", shipmentId] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
             void queryClient.invalidateQueries({ queryKey: ["containers"] });
             void queryClient.invalidateQueries({ queryKey: ["samples"] });

@@ -85,6 +85,8 @@ class SampleSerializer(serializers.ModelSerializer):
         source="site.name", read_only=True, default=None,
     )
     current_location = serializers.SerializerMethodField()
+    # c-2.x-lab-portal-1: где сейчас проба.
+    current_holder = serializers.SerializerMethodField()
     # c-2.x-lifecycle-3: преемственность (родительская проба).
     parent_sample_number = serializers.CharField(
         source="parent_sample.sample_number",
@@ -118,6 +120,7 @@ class SampleSerializer(serializers.ModelSerializer):
             "disposed_by",
             "disposal_reason",
             "current_location",
+            "current_holder",
             "created_at",
             "updated_at",
         ]
@@ -127,6 +130,47 @@ class SampleSerializer(serializers.ModelSerializer):
 
     def get_current_location(self, obj: Sample) -> str:
         return compute_sample_location(obj.container)
+
+    def get_current_holder(self, obj: Sample) -> str:
+        """Где сейчас проба (c-2.x-lab-portal-1)."""
+        c = obj.container
+        if c is None:
+            return "—"
+        from apps.storage.models import Container
+        status = c.status
+        if status == Container.STATUS_DISPOSED:
+            return "Утилизирована"
+        if status in (
+            Container.STATUS_ACTIVE,
+            Container.STATUS_PENDING_FILLING,
+            Container.STATUS_PENDING_PLACEMENT,
+        ):
+            return "У нас на складе"
+        if status == Container.STATUS_ISSUED:
+            from apps.picking.models import Shipment
+            last = (
+                c.shipment_items
+                .filter(shipment__direction=Shipment.DIRECTION_OUTBOUND)
+                .select_related("shipment__laboratory")
+                .order_by("-shipment__sent_at")
+                .first()
+            )
+            if last and last.shipment.laboratory:
+                return f"У лаборатории {last.shipment.laboratory.name}"
+            return "У лаборатории"
+        if status == Container.STATUS_IN_TRANSIT:
+            from apps.picking.models import Shipment
+            last_out = (
+                c.shipment_items
+                .filter(shipment__direction=Shipment.DIRECTION_OUTBOUND)
+                .select_related("shipment__laboratory")
+                .order_by("-shipment__sent_at")
+                .first()
+            )
+            if last_out and last_out.shipment.laboratory:
+                return f"В пути к {last_out.shipment.laboratory.name}"
+            return "В пути"
+        return "—"
 
 
 class SampleWorkOrderSerializer(serializers.ModelSerializer):

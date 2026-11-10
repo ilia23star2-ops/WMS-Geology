@@ -96,6 +96,13 @@ class ShipmentContainerItemSerializer(serializers.ModelSerializer):
         read_only=True,
         default=None,
     )
+    # c-2.x-lab-portal-2: где сейчас тара.
+    current_holder = serializers.SerializerMethodField()
+
+    def get_current_holder(self, obj) -> str:
+        # Используем логику из ContainerSerializer, чтобы не дублировать код.
+        from apps.storage.serializers import ContainerSerializer
+        return ContainerSerializer().get_current_holder(obj.container)
 
     class Meta:
         model = ShipmentContainerItem
@@ -109,6 +116,7 @@ class ShipmentContainerItemSerializer(serializers.ModelSerializer):
             "container_type_name",
             "draft_work_order_coded",
             "draft_research_type_name",
+            "current_holder",
         ]
         read_only_fields = ["id", "shipment"]
 
@@ -144,6 +152,36 @@ class ShipmentSerializer(serializers.ModelSerializer):
     container_items = ShipmentContainerItemSerializer(
         many=True, read_only=True,
     )
+    # c-2.x-lab-portal-1: можно ли принять этот рейс текущему пользователю.
+    can_mark_received = serializers.SerializerMethodField()
+
+    def get_can_mark_received(self, obj) -> bool:
+        """Может ли текущий пользователь принять рейс."""
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        profile = getattr(request.user, "profile", None)
+        if profile is None:
+            return False
+        role_name = profile.role.name if profile.role else None
+        if role_name in ("admin", "manager"):
+            return obj.status not in (
+                Shipment.STATUS_RECEIVED,
+                Shipment.STATUS_PARTIALLY_RECEIVED,
+                Shipment.STATUS_CANCELLED,
+                Shipment.STATUS_LOST,
+            )
+        lab = getattr(profile, "laboratory", None)
+        if lab is None:
+            return False
+        if obj.laboratory_id != lab.id:
+            return False
+        return obj.status not in (
+            Shipment.STATUS_RECEIVED,
+            Shipment.STATUS_PARTIALLY_RECEIVED,
+            Shipment.STATUS_CANCELLED,
+            Shipment.STATUS_LOST,
+        )
 
     class Meta:
         model = Shipment
@@ -175,6 +213,7 @@ class ShipmentSerializer(serializers.ModelSerializer):
             "items_count",
             "containers_count",
             "container_items",
+            "can_mark_received",
             "note",
             "updated_at",
         ]

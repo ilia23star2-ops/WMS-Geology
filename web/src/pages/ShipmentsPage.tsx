@@ -1,11 +1,8 @@
 /**
- * Список рейсов (OUTBOUND).
+ * Список рейсов.
  *
- * Фильтры: статус, лаборатория.
- * Клик по строке — детали рейса.
- * Кнопка «Создать рейс» — модалка.
- *
- * c-2.x-shipments-1b.
+ * c-2.x-shipments-1b: базовая страница.
+ * c-2.x-lab-portal-2: вкладки (Все/Исх/Вх), кнопка «Принять», фильтр «Только мои».
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -15,14 +12,18 @@ import {
     Button,
     Card,
     CardContent,
+    Checkbox,
     Chip,
     FormControl,
+    FormControlLabel,
     Grid,
     InputLabel,
     MenuItem,
     Select,
     Snackbar,
     Stack,
+    Tab,
+    Tabs,
     Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
@@ -35,8 +36,10 @@ import {
 import {
     SHIPMENT_STATUS_LABELS,
     useLaboratories,
+    useMarkReceived,
     useShipments,
     type Shipment,
+    type ShipmentDirection,
     type ShipmentFilters,
     type ShipmentStatus,
 } from "../api";
@@ -69,9 +72,9 @@ function formatDate(value: string | null): string {
 
 export default function ShipmentsPage() {
     const navigate = useNavigate();
-    const [filters, setFilters] = useState<ShipmentFilters>({
-        direction: "OUTBOUND",
-    });
+    const [tab, setTab] = useState<"ALL" | ShipmentDirection>("ALL");
+    const [onlyMyLab, setOnlyMyLab] = useState(false);
+    const [filters, setFilters] = useState<ShipmentFilters>({});
     const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
         page: 0,
         pageSize: PAGE_SIZE,
@@ -79,11 +82,27 @@ export default function ShipmentsPage() {
     const [createOpen, setCreateOpen] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
 
-    const { data, isLoading, isError } = useShipments({
+    const { data, isLoading, isError, refetch } = useShipments({
         page: paginationModel.page + 1,
-        filters,
+        filters: {
+            ...filters,
+            direction: tab === "ALL" ? undefined : tab,
+            my_lab: onlyMyLab,
+        },
     });
     const laboratories = useLaboratories();
+    const markReceivedMutation = useMarkReceived();
+
+    const handleMarkReceived = async (id: number) => {
+        try {
+            await markReceivedMutation.mutateAsync(id);
+            setMessage("Рейс успешно принят.");
+            void refetch();
+        } catch (err) {
+            console.error(err);
+            setMessage("Ошибка при приёме рейса.");
+        }
+    };
 
     const columns: GridColDef<Shipment>[] = useMemo(
         () => [
@@ -131,7 +150,7 @@ export default function ShipmentsPage() {
             {
                 field: "status",
                 headerName: "Статус",
-                width: 200,
+                width: 180,
                 renderCell: (params) => {
                     const status = params.value as ShipmentStatus;
                     return (
@@ -143,8 +162,33 @@ export default function ShipmentsPage() {
                     );
                 },
             },
+            {
+                field: "actions",
+                headerName: "",
+                width: 130,
+                sortable: false,
+                renderCell: (params) => {
+                    if (params.row.can_mark_received) {
+                        return (
+                            <Button
+                                size="small"
+                                variant="contained"
+                                color="success"
+                                disabled={markReceivedMutation.isPending}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleMarkReceived(params.row.id);
+                                }}
+                            >
+                                Принять
+                            </Button>
+                        );
+                    }
+                    return null;
+                },
+            },
         ],
-        [],
+        [markReceivedMutation.isPending],
     );
 
     return (
@@ -158,7 +202,7 @@ export default function ShipmentsPage() {
                 }}
             >
                 <Typography variant="h2" component="h1">
-                    Отправка
+                    Рейсы
                 </Typography>
                 <Button
                     variant="contained"
@@ -170,8 +214,21 @@ export default function ShipmentsPage() {
             </Box>
 
             <Card sx={{ mb: 2 }}>
+                <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+                    <Tabs
+                        value={tab}
+                        onChange={(_, newValue) => {
+                            setTab(newValue);
+                            setPaginationModel((m) => ({ ...m, page: 0 }));
+                        }}
+                    >
+                        <Tab label="Все" value="ALL" />
+                        <Tab label="Исходящие" value="OUTBOUND" />
+                        <Tab label="Входящие" value="INBOUND" />
+                    </Tabs>
+                </Box>
                 <CardContent>
-                    <Grid container spacing={2}>
+                    <Grid container spacing={2} alignItems="center">
                         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
                             <FormControl fullWidth size="small">
                                 <InputLabel id="status-label">Статус</InputLabel>
@@ -248,6 +305,23 @@ export default function ShipmentsPage() {
                                     ))}
                                 </Select>
                             </FormControl>
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={onlyMyLab}
+                                        onChange={(e) => {
+                                            setOnlyMyLab(e.target.checked);
+                                            setPaginationModel((m) => ({
+                                                ...m,
+                                                page: 0,
+                                            }));
+                                        }}
+                                    />
+                                }
+                                label="Только доступные для приёма"
+                            />
                         </Grid>
                     </Grid>
                 </CardContent>
