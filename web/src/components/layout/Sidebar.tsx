@@ -5,6 +5,7 @@
  * На мобильном — закрывается после выбора пункта.
  *
  * c-2.x-shipments-1b: добавлен пункт «Отправка».
+ * c-2.x-lab-portal-3: настройка видимости пунктов по ролям (ROLE_MENU_ACCESS).
  */
 import {
     Box,
@@ -31,6 +32,8 @@ import FactCheckIcon from "@mui/icons-material/FactCheck";
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+import { useAuthStore } from "../../stores/authStore";
+
 export const DRAWER_WIDTH = 240;
 
 interface MenuItem {
@@ -54,6 +57,24 @@ const MENU: MenuItem[] = [
     { label: "Актуализация", path: "/actualization", icon: <FactCheckIcon /> },
 ];
 
+/**
+ * Настройка видимости пунктов меню по ролям.
+ * Если роли нет в конфиге — показываются ВСЕ пункты.
+ * Если роль есть — показываются только перечисленные пути.
+ */
+const ROLE_MENU_ACCESS: Record<string, string[]> = {
+    lab_worker: [
+        "/",
+        "/containers",
+        "/samples",
+        "/work-orders",
+        "/shipments",
+        "/print"
+    ],
+    // Пример для кладовщика (если нужно будет ограничить):
+    // worker: ["/", "/containers", "/samples", "/receiving", "/shipments", "/print", "/topology"]
+};
+
 interface DrawerContentProps {
     onNavigate: () => void;
 }
@@ -61,6 +82,15 @@ interface DrawerContentProps {
 function DrawerContent({ onNavigate }: DrawerContentProps) {
     const navigate = useNavigate();
     const location = useLocation();
+    const user = useAuthStore((state) => state.user);
+    const role = user?.role ?? "";
+
+    const allowedPaths = ROLE_MENU_ACCESS[role];
+
+    const visibleMenu = MENU.filter((item) => {
+        if (!allowedPaths) return true; // если роли нет в конфиге — показываем всё
+        return allowedPaths.includes(item.path);
+    });
 
     function handleClick(path: string) {
         navigate(path);
@@ -76,7 +106,7 @@ function DrawerContent({ onNavigate }: DrawerContentProps) {
             </Toolbar>
             <Box sx={{ overflow: "auto" }}>
                 <List>
-                    {MENU.map((item) => {
+                    {visibleMenu.map((item) => {
                         const selected =
                             item.path === "/"
                                 ? location.pathname === "/"

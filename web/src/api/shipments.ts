@@ -1,12 +1,7 @@
 /**
  * API рейсов (`Shipment`).
- *
- * Пачка 2f-6a: update / delete / cancel.
- * Пачка c-2.x-shipments-1b: name, createShipment.
- * Пачка c-2.x-shipments-2: add/remove containers, send, assemble.
- * Пачка c-2.x-shipments-2-fix: origin_laboratory (откуда), staleTime 0,
- *   invalidate вместо setQueryData (автообновление).
- * Пачка c-2.x-lab-portal-2: mark-received, can_mark_received.
+ * ...
+ * Пачка c-2.x-lab-portal-3: create-return.
  */
 import {
     keepPreviousData,
@@ -56,8 +51,6 @@ export interface ShipmentContainerItem {
     container_type_name: string | null;
     draft_work_order_coded: string;
     draft_research_type_name: string | null;
-    // Бэкенд отдаёт это поле в сериализаторе (c-2.x-lab-portal-1).
-    // Если в ShipmentContainerItem его нет, нужно будет добавить в backend.
     current_holder?: string | null;
 }
 
@@ -89,7 +82,7 @@ export interface Shipment {
     items_count: number;
     containers_count: number;
     container_items: ShipmentContainerItem[];
-    can_mark_received: boolean; // c-2.x-lab-portal-2
+    can_mark_received: boolean;
     note: string;
     updated_at: string;
 }
@@ -99,7 +92,7 @@ export interface ShipmentFilters {
     status?: ShipmentStatus;
     laboratory_id?: number;
     site_id?: number;
-    my_lab?: boolean; // c-2.x-lab-portal-2 (на будущее для бэка)
+    my_lab?: boolean;
 }
 
 export interface ShipmentsListParams {
@@ -155,10 +148,6 @@ export function useShipment(id: number | null) {
     });
 }
 
-// ============================================================
-// Create
-// ============================================================
-
 export interface CreateShipmentPayload {
     name?: string;
     direction: ShipmentDirection;
@@ -192,10 +181,6 @@ export function useCreateShipment() {
         },
     });
 }
-
-// ============================================================
-// Update / delete / cancel
-// ============================================================
 
 export interface UpdateShipmentPayload {
     shipment_number?: string;
@@ -283,10 +268,6 @@ export function useCancelShipment() {
         },
     });
 }
-
-// ============================================================
-// Mark received (c-2.x-lab-portal-2)
-// ============================================================
 
 export async function markReceived(id: number): Promise<Shipment> {
     const { data } = await apiClient.post<Shipment>(
@@ -411,6 +392,46 @@ export function useSendShipment(shipmentId: number) {
             void queryClient.invalidateQueries({
                 queryKey: ["shipment", shipmentId],
             });
+            void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+            void queryClient.invalidateQueries({ queryKey: ["containers"] });
+            void queryClient.invalidateQueries({ queryKey: ["samples"] });
+        },
+    });
+}
+
+// ============================================================
+// Create Return (c-2.x-lab-portal-3)
+// ============================================================
+
+interface CreateReturnResponse {
+    shipment: Shipment;
+    returned_containers_count: number;
+    new_container_ids: number[];
+}
+
+export async function createReturn(
+    shipmentId: number,
+    containerIds?: number[],
+): Promise<CreateReturnResponse> {
+    const { data } = await apiClient.post<CreateReturnResponse>(
+        `/shipments/${shipmentId}/create-return/`,
+        { container_ids: containerIds },
+    );
+    return data;
+}
+
+export function useCreateReturn() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({
+            shipmentId,
+            containerIds,
+        }: {
+            shipmentId: number;
+            containerIds?: number[];
+        }) => createReturn(shipmentId, containerIds),
+        onSuccess: (_data, { shipmentId }) => {
+            void queryClient.invalidateQueries({ queryKey: ["shipment", shipmentId] });
             void queryClient.invalidateQueries({ queryKey: ["shipments"] });
             void queryClient.invalidateQueries({ queryKey: ["containers"] });
             void queryClient.invalidateQueries({ queryKey: ["samples"] });

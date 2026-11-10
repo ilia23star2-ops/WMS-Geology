@@ -4,7 +4,7 @@ ViewSets приложения picking (v4).
 PickList: CRUD + custom actions activate, complete.
 PickListItem: CRUD + custom action pick.
 Shipment: CRUD + custom actions add-from-pick-list, add-containers,
-          remove-container, assemble, send, cancel (c-2.x-shipments-1).
+          remove-container, assemble, send, cancel, mark-received, create-return.
 ShipmentItem: CRUD.
 """
 
@@ -15,6 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
 from apps.storage.models import Container
 
@@ -121,6 +122,8 @@ class ShipmentViewSet(viewsets.ModelViewSet):
       - POST /shipments/{id}/assemble/ — DRAFT → ASSEMBLED
       - POST /shipments/{id}/send/     — DRAFT/ASSEMBLED → SENT (c-2.x-shipments-1)
       - POST /shipments/{id}/cancel/   — отмена (до RECEIVED)
+      - POST /shipments/{id}/mark-received/ — приёмка (c-2.x-lab-portal-1)
+      - POST /shipments/{id}/create-return/ — возврат остатков (c-2.x-lab-portal-3)
     """
 
     serializer_class = ShipmentSerializer
@@ -159,17 +162,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _generate_shipment_number(direction: str) -> str:
-        """
-        Автогенерация номера рейса (c-2.x-shipments-1a).
-
-        OUTBOUND: ОТ-YYYY-NNN.
-        INBOUND:  ПР-YYYY-NNN.
-
-        Race condition: при параллельном создании двух рейсов
-        возможен одинаковый номер → IntegrityError. Ретрай
-        не реализован; при необходимости — повторная генерация
-        с +1 в цикле.
-        """
         prefix = (
             "ОТ"
             if direction == Shipment.DIRECTION_OUTBOUND
@@ -239,12 +231,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="add-containers")
     def add_containers(self, request, pk=None):
-        """
-        Добавить тары в рейс (c-2.x-shipments-1).
-
-        Body: `{"container_ids": [1, 2, 3]}`.
-        Только для OUTBOUND и статуса DRAFT/ASSEMBLED.
-        """
         shipment = self.get_object()
         if shipment.direction != Shipment.DIRECTION_OUTBOUND:
             return Response(
@@ -295,11 +281,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="remove-container")
     def remove_container(self, request, pk=None):
-        """
-        Убрать тару из рейса (c-2.x-shipments-1).
-
-        Body: `{"container_id": X}`. Только в DRAFT/ASSEMBLED.
-        """
         shipment = self.get_object()
         if shipment.status not in (
             Shipment.STATUS_DRAFT,
@@ -330,7 +311,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def assemble(self, request, pk=None):
-        """DRAFT → ASSEMBLED."""
         shipment = self.get_object()
         if shipment.status != Shipment.STATUS_DRAFT:
             return Response(
@@ -344,12 +324,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def send(self, request, pk=None):
-        """
-        Отправить рейс (c-2.x-shipments-1).
-
-        DRAFT/ASSEMBLED → SENT. Все тары рейса → `IN_TRANSIT`,
-        пробы внутри — синхронизируются (решение 1.110).
-        """
         shipment = self.get_object()
         if shipment.status not in (
             Shipment.STATUS_DRAFT,
@@ -384,19 +358,6 @@ class ShipmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="mark-received")
     def mark_received(self, request, pk=None):
-        """
-        Отметить рейс как принятый (c-2.x-lab-portal-1).
-
-        Меняет , .
-        Доступно:
-        -  /  — любой рейс;
-        -  — только рейс своей лаборатории.
-
-        Проверки:
-        - только для DRAFT / ASSEMBLED / SENT (не RECEIVED, не CANCELLED, не LOST);
-        - для OUTBOUND —  должен совпадать с
-          .
-        """
         shipment = self.get_object()
 
         # Права: lab_worker — только своя лаборатория.
@@ -428,6 +389,82 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         shipment.save(update_fields=["status", "received_at"])
 
         return Response(ShipmentSerializer(shipment).data)
+
+    @action(detail=True, methods=["post"], url_path="create-return")
+    def create_return(self, request, pk=None):
+        """
+        Вернуть остатки из лаборатории (c-2.x-lab-portal-3).
+        
+        Создает новые Container и Sample с parent_container / parent_sample,
+        меняет статусы на PENDING_PLACEMENT.
+        Body: `{"container_ids": [1, 2]}` (если пусто — вернуть все тары рейса).
+        """
+        shipment = self.get_object()
+        if shipment.status not in (
+            Shipment.STATUS_SENT,
+            Shipment.STATUS_RECEIVED,
+            Shipment.STATUS_PARTIALLY_RECEIVED,
+        ):
+            return Response(
+                {"error": "Возврат возможен только для отправленных/принятых рейсов."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        container_ids = request.data.get("container_ids") or []
+        
+        query = shipment.container_items.select_related("container")
+        if container_ids:
+            query = query.filter(container_id__in=container_ids)
+            
+        items_to_return = list(query.all())
+        if not items_to_return:
+            return Response(
+                {"error": "Нет тар для возврата."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created_containers = []
+        with transaction.atomic():
+            for item in items_to_return:
+                old_container = item.container
+                
+                # Создаем новую тару
+                new_container = Container.objects.create(
+                    container_type=old_container.container_type,
+                    container_number=old_container.container_number,  # можно оставить тот же
+                    status=Container.STATUS_PENDING_PLACEMENT,
+                    draft_site=old_container.draft_site,
+                    draft_research_type=old_container.draft_research_type,
+                    draft_work_order_coded=old_container.draft_work_order_coded,
+                    draft_work_order_incoming=old_container.draft_work_order_incoming,
+                    parent_container=old_container,
+                )
+                created_containers.append(new_container)
+
+                # Переносим пробы
+                for old_sample in old_container.samples.all():
+                    Sample.objects.create(
+                        sample_number=old_sample.sample_number,
+                        research_type=old_sample.research_type,
+                        container=new_container,
+                        current_work_order=old_sample.current_work_order,
+                        site=old_sample.site,
+                        status=Sample.STATUS_PENDING_PLACEMENT,
+                        parent_sample=old_sample,
+                        legacy_data=old_sample.legacy_data,
+                    )
+            
+            # Обновляем статус рейса
+            shipment.status = Shipment.STATUS_RETURNED
+            shipment.save(update_fields=["status"])
+
+        return Response(
+            {
+                "shipment": ShipmentSerializer(shipment).data,
+                "returned_containers_count": len(created_containers),
+                "new_container_ids": [c.id for c in created_containers],
+            }
+        )
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
