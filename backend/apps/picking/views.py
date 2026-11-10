@@ -23,7 +23,7 @@ from apps.storage.models import Container
 from apps.users.permissions import (
     IsManagerOrAdmin,
     IsManagerOrAdminOrLabWorker,
-    IsWorkerOrHigher,
+    IsWorkerOrHigher, IsWorkerOrLabWorkerOrHigher,
 )
 
 from .models import (
@@ -147,7 +147,7 @@ class ShipmentViewSet(viewsets.ModelViewSet):
         ):
             permission_classes = [IsManagerOrAdmin]
         else:
-            permission_classes = [IsWorkerOrHigher]
+            permission_classes = [IsWorkerOrLabWorkerOrHigher]
         return [permission() for permission in permission_classes]
 
     def get_queryset(self):

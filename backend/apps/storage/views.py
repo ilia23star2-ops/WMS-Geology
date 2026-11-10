@@ -16,7 +16,7 @@ from apps.labels.services import render_container_label
 from apps.samples.models import Sample
 from apps.samples.services import sync_sample_status_for_container
 from apps.users.models import AuditLog
-from apps.users.permissions import IsManagerOrAdmin, IsWorkerOrHigher
+from apps.users.permissions import IsManagerOrAdmin, IsWorkerOrHigher, IsWorkerOrLabWorkerOrHigher
 from apps.users.serializers import AuditLogSerializer
 from apps.users.services import log_audit
 
@@ -402,7 +402,7 @@ class ContainerViewSet(viewsets.ModelViewSet):
         # RBAC: Кладовщик и выше могут создавать и редактировать.
         # Лабораториям доступно только чтение.
         if self.action in ("list", "retrieve", "history"):
-            permission_classes = [IsWorkerOrHigher] # lab_worker пропускается через get_queryset
+            permission_classes = [IsWorkerOrLabWorkerOrHigher] # lab_worker пропускается через get_queryset
         else:
             permission_classes = [IsWorkerOrHigher]
         return [permission() for permission in permission_classes]
