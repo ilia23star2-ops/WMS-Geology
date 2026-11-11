@@ -119,7 +119,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             tooltip: 'OCR старой этикетки',
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const OcrScreen()),
+                MaterialPageRoute(builder: (_) => OcrScreen()),
               );
             },
           ),

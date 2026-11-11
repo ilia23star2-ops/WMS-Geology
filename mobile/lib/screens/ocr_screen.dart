@@ -7,7 +7,7 @@ import 'package:image/image.dart' as img;
 import '../db/catalog_dao.dart';
 import '../db/duplicate_checker.dart';
 import '../models/ocr_result.dart';
-import '../services/tesseract_ocr_service.dart';
+import '../services/ocr_service.dart';
 import '../utils/levenshtein.dart';
 
 enum OcrStep {
@@ -29,7 +29,7 @@ class OcrScreen extends StatefulWidget {
 }
 
 class _OcrScreenState extends State<OcrScreen> {
-  final TesseractOcrService _ocrService = TesseractOcrService();
+  final MlKitOcrService _ocrService = MlKitOcrService();
   final ImagePicker _picker = ImagePicker();
 
   File? _originalFile;
@@ -84,6 +84,8 @@ class _OcrScreenState extends State<OcrScreen> {
     _incomingCtrl.dispose();
     _researchCtrl.dispose();
     _containerCtrl.dispose();
+    _ocrService.dispose();
+    _ocrService.dispose();
     super.dispose();
   }
 
@@ -347,19 +349,24 @@ class _OcrScreenState extends State<OcrScreen> {
   Widget _buildEmptyState() => Center(
     child: Column(
       mainAxisSize: MainAxisSize.min,
-      children: const [
-        Icon(Icons.document_scanner, size: 64, color: Colors.grey),
-        SizedBox(height: 16),
-        Text(
-          'Сделайте фото или выберите из галереи',
-          style: TextStyle(fontSize: 18),
-        ),
+      children: [
+        const Icon(Icons.document_scanner, size: 64, color: Colors.grey),
+        const SizedBox(height: 16),
+        const Text('Сделайте фото или выберите из галереи', style: TextStyle(fontSize: 18)),
+        const SizedBox(height: 24),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          ElevatedButton.icon(onPressed: () => _pickImage(ImageSource.camera), icon: const Icon(Icons.camera_alt), label: const Text('Сделать фото')),
+          const SizedBox(width: 16),
+          OutlinedButton.icon(onPressed: () => _pickImage(ImageSource.gallery), icon: const Icon(Icons.photo_library), label: const Text('Из галереи')),
+        ]),
       ],
     ),
   );
 
   Widget _buildLayout() {
-    return Row(
+    final isNarrow = MediaQuery.of(context).size.width < 700;
+    return Flex(
+      direction: isNarrow ? Axis.vertical : Axis.horizontal,
       children: [
         Expanded(
           flex: 2,
@@ -444,7 +451,7 @@ class _OcrScreenState extends State<OcrScreen> {
           ),
         ),
         Expanded(
-          flex: 1,
+          flex: isNarrow ? 3 : 1,
           child: SafeArea(
             child: Container(
               color: Colors.grey[100],
