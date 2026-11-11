@@ -605,3 +605,29 @@ Android-приложение для планшетов. QR-коды как ос�
 
 33. **Памятка для нового ИИ в HANDOFF.** В HANDOFF обязательно включать пункт "Важное напутствие" с напоминанием о правилах 21-31 (запрет символа доллара и cat << EOF в чате, использование Итог-блоков и wms_report), чтобы новый ИИ не сломал форматирование.
 
+
+35. **Умные блоки с логированием (Smart Blocks v2).**
+    Любой блок (Правка, Тесты, Линтер), который может упасть, ОБЯЗАН выводить ошибку в буфер.
+    **ВАЖНО:** В Git Bash на Windows нельзя использовать `exit 1` (закрывает терминал). Использовать `if/else`.
+    
+    **Если ошибка возникает в Python-скрипте:**
+    Не полагаться на `2>&1` (кириллица превратится в кракозябры). Вместо этого ловить ошибку внутри Python и писать лог-файл в UTF-8:
+    ```python
+    import traceback
+    try:
+        # код
+    except Exception as e:
+        with open('/tmp/err.log', 'w', encoding='utf-8') as f:
+            traceback.print_exc(file=f)
+        sys.exit(1)
+    ```
+    
+    **Для Pytest / Линтера:**
+    ```bash
+    poetry run pytest ... > /tmp/pytest.log 2>&1
+    if grep -q "failed" /tmp/pytest.log; then
+        echo "❌ ТЕСТЫ УПАЛИ. Логи:" > /tmp/wms_summary.txt
+        cat /tmp/pytest.log >> /tmp/wms_summary.txt
+        wms_report "❌ ТЕСТЫ УПАЛИ"
+    fi
+    ```
