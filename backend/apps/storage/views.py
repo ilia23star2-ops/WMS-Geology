@@ -676,6 +676,21 @@ class ContainerViewSet(viewsets.ModelViewSet):
     # ------------------------------------------------------------
     # Actions: создать в ячейке (аудит → CREATE_IN_CELL)
     # ------------------------------------------------------------
+
+    @action(detail=False, methods=['get'], url_path='suggest-placement')
+    def suggest_placement(self, request):
+        from .services.sorting import suggest_placement
+        ids_str = request.query_params.get('container_ids', '')
+        if not ids_str:
+            return Response({'error': 'Не переданы container_ids'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ids = [int(i) for i in ids_str.split(',') if i.strip()]
+        except ValueError:
+            return Response({'error': 'Неверный формат container_ids'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        res = suggest_placement(ids)
+        return Response({'suggestions': res})
+
     @action(detail=False, methods=["post"], url_path="create-in-cell")
     def create_in_cell(self, request):
         ser = CreateInCellSerializer(data=request.data)

@@ -33,6 +33,7 @@ import OutputIcon from "@mui/icons-material/Output";
 import RecyclingIcon from "@mui/icons-material/Recycling";
 import PlaceIcon from "@mui/icons-material/Place";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
+import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import {
     DataGrid,
     type GridColDef,
@@ -59,6 +60,7 @@ import ContainerDetailDialog from "../components/ContainerDetailDialog";
 import ContainerEditDialog from "../components/ContainerEditDialog";
 import CreateContainersDialog from "../components/CreateContainersDialog";
 import PlaceContainerDialog from "../components/PlaceContainerDialog";
+import SuggestPlacementDialog from "../components/SuggestPlacementDialog";
 import { useAuthStore } from "../stores/authStore";
 import { useAddToPool, usePool } from "../api/pool";
 
@@ -139,6 +141,7 @@ export default function ContainersPage() {
     const [pdfError, setPdfError] = useState<string | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [placeDialogOpen, setPlaceDialogOpen] = useState(false);
+    const [suggestDialogData, setSuggestDialogData] = useState<{ ids: number[], isMove: boolean } | null>(null);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [createMessage, setCreateMessage] = useState<string | null>(null);
 
@@ -180,7 +183,7 @@ export default function ContainersPage() {
 
     const selectedForPlacement = useMemo(() => {
         const all = data?.results ?? [];
-        return all.filter(c => selectedIds.includes(c.id) && (c.status === "PENDING_FILLING" || c.status === "PENDING_PLACEMENT"));
+        return all.filter(c => selectedIds.includes(c.id) && c.status !== "DISPOSED" && c.status !== "IN_TRANSIT");
     }, [data, selectedIds]);
 
     async function handleDelete(row: Container) {
@@ -355,6 +358,18 @@ export default function ContainersPage() {
                                 </IconButton>
                             </span>
                         </Tooltip>
+                        <Tooltip title="Куда поставить?">
+                            <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSuggestDialogData({ ids: [params.row.id], isMove: params.row.status === "ACTIVE" });
+                                }}
+                            >
+                                <LightbulbIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Редактировать">
                             <IconButton
                                 size="small"
@@ -444,6 +459,17 @@ export default function ContainersPage() {
                                         onClick={() => setPlaceDialogOpen(true)}
                                     >
                                         <Inventory2Icon />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
+                            <Tooltip title="Куда поставить выбранные?">
+                                <span>
+                                    <IconButton
+                                        color="warning"
+                                        disabled={selectedForPlacement.length === 0}
+                                        onClick={() => setSuggestDialogData({ ids: selectedForPlacement.map(c => c.id), isMove: selectedForPlacement[0]?.status === "ACTIVE" })}
+                                    >
+                                        <LightbulbIcon />
                                     </IconButton>
                                 </span>
                             </Tooltip>
@@ -696,6 +722,8 @@ export default function ContainersPage() {
                     navigate(`/print/${batchId}`);
                 }}
             />
+
+            <SuggestPlacementDialog containerIds={suggestDialogData?.ids ?? null} isMove={suggestDialogData?.isMove ?? false} onClose={() => setSuggestDialogData(null)} onSuccess={(msg) => { setSelection(emptySelection()); setEditMessage(msg); }} />
 
             <PlaceContainerDialog
                 open={placeDialogOpen}
