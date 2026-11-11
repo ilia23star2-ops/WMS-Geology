@@ -18,11 +18,14 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.4
   shared_preferences: ^2.3.2
-  # c-7d: открытие локальных PDF в системном вьювере.
   open_filex: ^4.5.0
-  # c-7f: офлайн-рендер PDF этикетки.
   pdf: ^3.11.1
   qr: ^3.0.2
+  google_mlkit_text_recognition: ^0.13.0
+  image_picker: ^1.1.2
+  image: ^4.3.0
+  # 3.x-migration: Современный форк Tesseract, совместимый с Gradle 9
+  tesseract_ocr: ^0.5.0
 
 dev_dependencies:
   flutter_test:
@@ -32,6 +35,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    # c-7f: шрифт с кириллицей для офлайн-рендера этикеток
-    # (тот же файл, что у backend-рендера).
     - assets/fonts/DejaVuSans.ttf
+    - assets/tessdata_config.json
+    - assets/tessdata/
