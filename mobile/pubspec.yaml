@@ -21,6 +21,7 @@ dependencies:
   open_filex: ^4.5.0
   pdf: ^3.11.1
   qr: ^3.0.2
+  flutter_tesseract_ocr: ^0.4.31
   google_mlkit_text_recognition: ^0.13.0
   image_picker: ^1.1.2
   image: ^4.3.0
