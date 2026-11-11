@@ -1,22 +1,21 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
-
 import '../db/catalog_dao.dart';
 import '../db/duplicate_checker.dart';
 import '../models/ocr_result.dart';
-import '../services/ocr_service.dart';
+import '../services/tesseract_ocr_service.dart';
 import '../utils/levenshtein.dart';
 
 enum OcrStep {
-  cropping('1/6 · Выделение области'),
-  preprocessing('2/6 · Подготовка фото'),
-  recognizing('3/6 · Распознавание Tesseract'),
-  parsing('4/6 · Поиск полей'),
-  validating('5/6 · Сверка с базой'),
-  done('6/6 · Готово');
+  cropping('1/7 · Выделение области'),
+  preprocessing('2/7 · Подготовка фото'),
+  normalizing('3/7 · Нормализация'),
+  recognizing('4/7 · Чтение текста'),
+  parsing('5/7 · Поиск полей'),
+  validating('6/7 · Сверка с базой'),
+  done('7/7 · Готово');
 
   final String label;
   const OcrStep(this.label);
@@ -24,12 +23,13 @@ enum OcrStep {
 
 class OcrScreen extends StatefulWidget {
   const OcrScreen({super.key});
+
   @override
   State<OcrScreen> createState() => _OcrScreenState();
 }
 
 class _OcrScreenState extends State<OcrScreen> {
-  final MlKitOcrService _ocrService = MlKitOcrService();
+  final TesseractOcrService _ocrService = TesseractOcrService();
   final ImagePicker _picker = ImagePicker();
 
   File? _originalFile;
@@ -40,6 +40,7 @@ class _OcrScreenState extends State<OcrScreen> {
 
   List<Map<String, dynamic>> _sites = [];
   List<Map<String, dynamic>> _researchTypes = [];
+
   bool? _isSiteValid;
   bool? _isRtValid;
 
@@ -67,11 +68,12 @@ class _OcrScreenState extends State<OcrScreen> {
     try {
       final sites = await CatalogDao.getAll('site');
       final rts = await CatalogDao.getAll('research_type');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _sites = sites;
           _researchTypes = rts;
         });
+      }
     } catch (e) {
       debugPrint('Ошибка загрузки справочников: $e');
     }
@@ -84,16 +86,16 @@ class _OcrScreenState extends State<OcrScreen> {
     _incomingCtrl.dispose();
     _researchCtrl.dispose();
     _containerCtrl.dispose();
-    _ocrService.dispose();
-    _ocrService.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile == null) return;
+
     final bytes = await pickedFile.readAsBytes();
     final image = await decodeImageFromList(bytes);
+
     setState(() {
       _originalFile = File(pickedFile.path);
       _result = null;
@@ -112,7 +114,7 @@ class _OcrScreenState extends State<OcrScreen> {
   Future<void> _processSelectedArea() async {
     if (_originalFile == null || _selectionRect == null || _imageSize == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Выделите область с текстом!')),
+        const SnackBar(content: Text('Выделите область с текстом на фото!')),
       );
       return;
     }
@@ -125,11 +127,13 @@ class _OcrScreenState extends State<OcrScreen> {
       _isProcessing = true;
       _currentStep = OcrStep.cropping;
     });
+
     await _delay(100);
     if (!mounted) return;
 
-    final imageAspect = _imageSize!.width / _imageSize!.height;
-    final widgetAspect = widgetSize.width / widgetSize.height;
+    final double imageAspect = _imageSize!.width / _imageSize!.height;
+    final double widgetAspect = widgetSize.width / widgetSize.height;
+
     double displayWidth, displayHeight, offsetX, offsetY;
     if (imageAspect > widgetAspect) {
       displayWidth = widgetSize.width;
@@ -142,21 +146,14 @@ class _OcrScreenState extends State<OcrScreen> {
       offsetX = (widgetSize.width - displayWidth) / 2;
       offsetY = 0;
     }
+
     final scaleX = _imageSize!.width / displayWidth;
     final scaleY = _imageSize!.height / displayHeight;
 
-    final cropLeft = ((_selectionRect!.left - offsetX) * scaleX)
-        .clamp(0, _imageSize!.width)
-        .toInt();
-    final cropTop = ((_selectionRect!.top - offsetY) * scaleY)
-        .clamp(0, _imageSize!.height)
-        .toInt();
-    final cropWidth = (_selectionRect!.width * scaleX)
-        .clamp(1, _imageSize!.width)
-        .toInt();
-    final cropHeight = (_selectionRect!.height * scaleY)
-        .clamp(1, _imageSize!.height)
-        .toInt();
+    final cropLeft = ((_selectionRect!.left - offsetX) * scaleX).clamp(0, _imageSize!.width).toInt();
+    final cropTop = ((_selectionRect!.top - offsetY) * scaleY).clamp(0, _imageSize!.height).toInt();
+    final cropWidth = (_selectionRect!.width * scaleX).clamp(1, _imageSize!.width).toInt();
+    final cropHeight = (_selectionRect!.height * scaleY).clamp(1, _imageSize!.height).toInt();
 
     setState(() => _currentStep = OcrStep.preprocessing);
     await _delay(100);
@@ -164,24 +161,22 @@ class _OcrScreenState extends State<OcrScreen> {
 
     final bytes = await _originalFile!.readAsBytes();
     final fullImage = img.decodeImage(bytes)!;
+
     final cropped = img.copyCrop(
-      fullImage,
-      x: cropLeft,
-      y: cropTop,
-      width: cropWidth,
-      height: cropHeight,
+      fullImage, x: cropLeft, y: cropTop, width: cropWidth, height: cropHeight,
     );
+
+    setState(() => _currentStep = OcrStep.normalizing);
+    await _delay(100);
+    if (!mounted) return;
+
     final resized = img.copyResize(
       cropped,
       width: cropped.width * 3,
       interpolation: img.Interpolation.cubic,
     );
     final grayscale = img.grayscale(resized);
-    final contrastAdjusted = img.adjustColor(
-      grayscale,
-      contrast: 1.5,
-      brightness: 1.0,
-    );
+    final contrastAdjusted = img.adjustColor(grayscale, contrast: 1.5, brightness: 1.0);
     final sharpened = img.convolution(
       contrastAdjusted,
       filter: [0, -1, 0, -1, 5, -1, 0, -1, 0],
@@ -189,9 +184,7 @@ class _OcrScreenState extends State<OcrScreen> {
     );
 
     final tempDir = Directory.systemTemp;
-    final tempFile = File(
-      '${tempDir.path}/ocr_crop_${DateTime.now().millisecondsSinceEpoch}.jpg',
-    );
+    final tempFile = File('${tempDir.path}/ocr_crop_${DateTime.now().millisecondsSinceEpoch}.jpg');
     await tempFile.writeAsBytes(img.encodeJpg(sharpened));
 
     setState(() => _currentStep = OcrStep.recognizing);
@@ -232,10 +225,7 @@ class _OcrScreenState extends State<OcrScreen> {
       int minDistance = 999;
       for (final rt in _researchTypes) {
         final dbCode = rt['code'].toString();
-        final dist = levenshtein(
-          res.researchType.toLowerCase(),
-          dbCode.toLowerCase(),
-        );
+        final dist = levenshtein(res.researchType.toLowerCase(), dbCode.toLowerCase());
         if (dist < minDistance) {
           minDistance = dist;
           bestMatch = dbCode;
@@ -284,13 +274,11 @@ class _OcrScreenState extends State<OcrScreen> {
 
   void _addSample() {
     setState(() {
-      _result?.samples.add(
-        OcrSampleRow(
-          sequenceNumber: (_result?.samples.length ?? 0) + 1,
-          sampleNumber: '',
-          boundingBox: Rect.zero,
-        ),
-      );
+      _result?.samples.add(OcrSampleRow(
+        sequenceNumber: (_result?.samples.length ?? 0) + 1,
+        sampleNumber: '',
+        boundingBox: Rect.zero,
+      ));
     });
   }
 
@@ -300,15 +288,64 @@ class _OcrScreenState extends State<OcrScreen> {
     });
   }
 
+  void _showRawText() {
+    if (_result == null || _result!.processedImagePath == null) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Фото для OCR и сырой текст',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Container(
+                width: double.infinity,
+                color: Colors.black,
+                child: Image.file(File(_result!.processedImagePath!), fit: BoxFit.contain),
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              flex: 1,
+              child: ListView.builder(
+                itemCount: _result!.rawTexts.length,
+                itemBuilder: (context, i) => ListTile(
+                  dense: true,
+                  title: Text(_result!.rawTexts[i],
+                      style: const TextStyle(fontFamily: 'monospace')),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _saveResult() {
     if (_result == null) return;
     final hasDupes = _result!.samples.any((s) => s.isDuplicate);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(hasDupes ? '⚠️ Есть дубликаты!' : 'Сохранить тару?'),
         content: Text(
-          'Н/З: ${_woCtrl.text}\nТип: ${_researchCtrl.text}\nПроб: ${_result!.samples.length}\n${hasDupes ? "\n⚠️ Некоторые пробы уже есть в системе!" : ""}',
+          'Н/З: ${_woCtrl.text}\nТип: ${_researchCtrl.text}\nПроб: ${_result!.samples.length}\n'
+          '${hasDupes ? "\n⚠️ Некоторые пробы уже есть в системе!" : ""}',
         ),
         actions: [
           TextButton(
@@ -333,10 +370,19 @@ class _OcrScreenState extends State<OcrScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Сканирование (OCR)')),
+      appBar: AppBar(
+        title: const Text('Сканирование (OCR)'),
+        actions: [
+          if (_result != null)
+            IconButton(
+              icon: const Icon(Icons.bug_report, color: Colors.redAccent),
+              tooltip: 'Показать сырой текст OCR',
+              onPressed: _showRawText,
+            ),
+        ],
+      ),
       body: _originalFile == null ? _buildEmptyState() : _buildLayout(),
-      floatingActionButton:
-          _originalFile != null && _result == null && !_isProcessing
+      floatingActionButton: _originalFile != null && _result == null && !_isProcessing
           ? FloatingActionButton.extended(
               onPressed: _processSelectedArea,
               icon: const Icon(Icons.search),
@@ -346,25 +392,60 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
-  Widget _buildEmptyState() => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.document_scanner, size: 64, color: Colors.grey),
-        const SizedBox(height: 16),
-        const Text('Сделайте фото или выберите из галереи', style: TextStyle(fontSize: 18)),
-        const SizedBox(height: 24),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          ElevatedButton.icon(onPressed: () => _pickImage(ImageSource.camera), icon: const Icon(Icons.camera_alt), label: const Text('Сделать фото')),
-          const SizedBox(width: 16),
-          OutlinedButton.icon(onPressed: () => _pickImage(ImageSource.gallery), icon: const Icon(Icons.photo_library), label: const Text('Из галереи')),
-        ]),
-      ],
-    ),
-  );
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.document_scanner, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text('Сделайте фото или выберите из галереи', style: TextStyle(fontSize: 18)),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.camera),
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Сделать фото'),
+                ),
+                const SizedBox(width: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Из галереи'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Card(
+              color: Colors.amber[50],
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text('💡 Советы:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Text('• Протрите этикетку.'),
+                    Text('• Избегайте бликов.'),
+                    Text('• Расправьте этикетку.'),
+                    Text('• Выделите ВСЮ этикетку целиком (с шапкой).'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildLayout() {
     final isNarrow = MediaQuery.of(context).size.width < 700;
+    
     return Flex(
       direction: isNarrow ? Axis.vertical : Axis.horizontal,
       children: [
@@ -376,53 +457,54 @@ class _OcrScreenState extends State<OcrScreen> {
               children: [
                 Positioned.fill(
                   child: LayoutBuilder(
-                    builder: (context, constraints) => GestureDetector(
-                      onPanStart: (_result == null && !_isProcessing)
-                          ? (details) {
-                              setState(() {
-                                _dragStart = details.localPosition;
-                                _selectionRect = Rect.fromPoints(
-                                  _dragStart!,
-                                  _dragStart!,
-                                );
-                              });
-                            }
-                          : null,
-                      onPanUpdate: (_result == null && !_isProcessing)
-                          ? (details) {
-                              if (_dragStart != null)
+                    builder: (context, constraints) {
+                      return GestureDetector(
+                        onPanStart: (_result == null && !_isProcessing)
+                            ? (details) {
                                 setState(() {
-                                  _selectionRect = Rect.fromPoints(
-                                    _dragStart!,
-                                    details.localPosition,
-                                  );
+                                  _dragStart = details.localPosition;
+                                  _selectionRect = Rect.fromPoints(_dragStart!, _dragStart!);
                                 });
-                            }
-                          : null,
-                      onPanEnd: (_result == null && !_isProcessing)
-                          ? (_) {
-                              setState(() => _dragStart = null);
-                            }
-                          : null,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Image.file(
-                              _originalFile!,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                          if (_selectionRect != null && _result == null)
+                              }
+                            : null,
+                        onPanUpdate: (_result == null && !_isProcessing)
+                            ? (details) {
+                                if (_dragStart != null) {
+                                  setState(() {
+                                    _selectionRect = Rect.fromPoints(_dragStart!, details.localPosition);
+                                  });
+                                }
+                              }
+                            : null,
+                        onPanEnd: (_result == null && !_isProcessing)
+                            ? (_) {
+                                setState(() => _dragStart = null);
+                              }
+                            : null,
+                        child: Stack(
+                          children: [
                             Positioned.fill(
-                              child: CustomPaint(
-                                painter: _CropOverlayPainter(
-                                  selectionRect: _selectionRect!,
+                              child: Image.file(_originalFile!, fit: BoxFit.contain),
+                            ),
+                            if (_selectionRect != null && _result == null)
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _CropOverlayPainter(selectionRect: _selectionRect!),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
+                            if (!_isProcessing && _imageSize != null && _result != null)
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _BoundingBoxPainter(
+                                    result: _result!,
+                                    imageSize: _imageSize!,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
                 if (_isProcessing)
@@ -456,8 +538,15 @@ class _OcrScreenState extends State<OcrScreen> {
             child: Container(
               color: Colors.grey[100],
               child: _result == null
-                  ? const Center(
-                      child: Text('Выделите область и нажмите "Распознать"'),
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'Выделите ВСЮ этикетку и нажмите "Распознать"',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[700], fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     )
                   : Column(
                       children: [
@@ -469,11 +558,7 @@ class _OcrScreenState extends State<OcrScreen> {
                               _buildField('Участок', _siteCtrl, _isSiteValid),
                               _buildField('Н/З', _woCtrl, null),
                               _buildField('Вх. Н/З', _incomingCtrl, null),
-                              _buildField(
-                                'Тип исследования',
-                                _researchCtrl,
-                                _isRtValid,
-                              ),
+                              _buildField('Тип исследования', _researchCtrl, _isRtValid),
                               _buildField('№ тары', _containerCtrl, null),
                             ],
                           ),
@@ -485,35 +570,22 @@ class _OcrScreenState extends State<OcrScreen> {
                             children: [
                               Expanded(
                                 child: _result!.samples.isEmpty
-                                    ? const Center(
-                                        child: Text('Пробы не найдены'),
-                                      )
+                                    ? const Center(child: Text('Пробы не найдены'))
                                     : ListView.builder(
                                         itemCount: _result!.samples.length,
                                         itemBuilder: (context, index) {
                                           final s = _result!.samples[index];
                                           return Card(
-                                            margin: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                            color: s.isDuplicate
-                                                ? Colors.red[50]
-                                                : null,
+                                            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            color: s.isDuplicate ? Colors.red[50] : null,
                                             child: ListTile(
                                               dense: true,
                                               leading: CircleAvatar(
                                                 radius: 12,
-                                                backgroundColor: s.isDuplicate
-                                                    ? Colors.red
-                                                    : null,
+                                                backgroundColor: s.isDuplicate ? Colors.red : null,
                                                 child: Text(
                                                   '${index + 1}',
-                                                  style: TextStyle(
-                                                    color: s.isDuplicate
-                                                        ? Colors.white
-                                                        : null,
-                                                  ),
+                                                  style: TextStyle(color: s.isDuplicate ? Colors.white : null),
                                                 ),
                                               ),
                                               title: TextFormField(
@@ -522,23 +594,14 @@ class _OcrScreenState extends State<OcrScreen> {
                                                   hintText: 'Номер пробы',
                                                   border: InputBorder.none,
                                                   suffixIcon: s.isDuplicate
-                                                      ? const Icon(
-                                                          Icons.warning,
-                                                          color: Colors.red,
-                                                          size: 18,
-                                                        )
+                                                      ? const Icon(Icons.warning, color: Colors.red, size: 18)
                                                       : null,
                                                 ),
-                                                onChanged: (val) =>
-                                                    s.sampleNumber = val,
+                                                onChanged: (val) => s.sampleNumber = val,
                                               ),
                                               trailing: IconButton(
-                                                icon: const Icon(
-                                                  Icons.delete,
-                                                  color: Colors.red,
-                                                ),
-                                                onPressed: () =>
-                                                    _removeSample(index),
+                                                icon: const Icon(Icons.delete, color: Colors.red),
+                                                onPressed: () => _removeSample(index),
                                               ),
                                             ),
                                           );
@@ -562,9 +625,7 @@ class _OcrScreenState extends State<OcrScreen> {
                                         onPressed: _saveResult,
                                         icon: const Icon(Icons.save),
                                         label: const Text('Сохранить'),
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: Colors.green,
-                                        ),
+                                        style: FilledButton.styleFrom(backgroundColor: Colors.green),
                                       ),
                                     ),
                                   ],
@@ -582,13 +643,10 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
-  Widget _buildField(
-    String label,
-    TextEditingController controller,
-    bool? isValid,
-  ) {
+  Widget _buildField(String label, TextEditingController controller, bool? isValid) {
     Color? borderColor;
     IconData? icon;
+
     if (controller.text.isNotEmpty) {
       if (isValid == true) {
         borderColor = Colors.green;
@@ -598,6 +656,7 @@ class _OcrScreenState extends State<OcrScreen> {
         icon = Icons.warning;
       }
     }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: TextField(
@@ -607,14 +666,10 @@ class _OcrScreenState extends State<OcrScreen> {
           isDense: true,
           border: const OutlineInputBorder(),
           enabledBorder: borderColor != null
-              ? OutlineInputBorder(
-                  borderSide: BorderSide(color: borderColor, width: 2),
-                )
+              ? OutlineInputBorder(borderSide: BorderSide(color: borderColor, width: 2))
               : null,
           focusedBorder: borderColor != null
-              ? OutlineInputBorder(
-                  borderSide: BorderSide(color: borderColor, width: 2),
-                )
+              ? OutlineInputBorder(borderSide: BorderSide(color: borderColor, width: 2))
               : null,
           suffixIcon: icon != null ? Icon(icon, color: borderColor) : null,
         ),
@@ -626,6 +681,7 @@ class _OcrScreenState extends State<OcrScreen> {
 class _CropOverlayPainter extends CustomPainter {
   final Rect selectionRect;
   _CropOverlayPainter({required this.selectionRect});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..color = Colors.black54;
@@ -635,11 +691,53 @@ class _CropOverlayPainter extends CustomPainter {
       ..addRect(selectionRect)
       ..fillType = PathFillType.evenOdd;
     canvas.drawPath(path, paint);
+
     final borderPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = Colors.blue;
     canvas.drawRect(selectionRect, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _BoundingBoxPainter extends CustomPainter {
+  final OcrParsedResult result;
+  final Size imageSize;
+  _BoundingBoxPainter({required this.result, required this.imageSize});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double imageAspect = imageSize.width / imageSize.height;
+    final double widgetAspect = size.width / size.height;
+
+    double scaleX, scaleY, dx = 0, dy = 0;
+    if (imageAspect > widgetAspect) {
+      scaleX = size.width / imageSize.width;
+      scaleY = scaleX;
+      dy = (size.height - (imageSize.height * scaleY)) / 2;
+    } else {
+      scaleY = size.height / imageSize.height;
+      scaleX = scaleY;
+      dx = (size.width - (imageSize.width * scaleX)) / 2;
+    }
+
+    for (final s in result.samples) {
+      if (s.boundingBox == Rect.zero) { continue; }
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..color = s.isDuplicate ? Colors.red : Colors.green;
+      final rect = Rect.fromLTRB(
+        (s.boundingBox.left * scaleX) + dx,
+        (s.boundingBox.top * scaleY) + dy,
+        (s.boundingBox.right * scaleX) + dx,
+        (s.boundingBox.bottom * scaleY) + dy,
+      );
+      canvas.drawRect(rect, paint);
+    }
   }
 
   @override
