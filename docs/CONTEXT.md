@@ -16,7 +16,7 @@
 - Пачка 1: Шифрование (флаг `is_encrypted`, заполнение `legacy_data` при `encrypt`, фикс 403 для `lab_worker`).
 - Пачка 2: Перекладывание проб (`repack-samples`, `_handle_container_after_dispose`).
 
-**Backend: 901 тест.**
+**Backend: 904 теста.**
 **Web: 24 юнит-теста.**
 **Mobile: 227 юнит-тестов.**
 
