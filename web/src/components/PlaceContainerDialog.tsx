@@ -1,38 +1,21 @@
 /**
  * Диалог размещения тар (2f-10a).
  * Позволяет разместить в ячейку (через поддон) или на пол в комнате.
+ * Добавлена кнопка вызова Помощника (2.x-sorting).
  */
 import { useState } from "react";
 import {
-    Alert,
-    Box,
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    FormControl,
-    FormControlLabel,
-    FormLabel,
-    InputLabel,
-    MenuItem,
-    Radio,
-    RadioGroup,
-    Select,
-    Stack,
-    Typography,
+    Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+    FormControl, FormControlLabel, FormLabel, InputLabel, MenuItem, Radio,
+    RadioGroup, Select, Stack, Typography,
 } from "@mui/material";
+import LightbulbIcon from "@mui/icons-material/Lightbulb";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-    apiClient,
-    useCells,
-    useRacks,
-    useRooms,
-    useSections,
-    useTiers,
-    type Cell,
+    apiClient, useCells, useRacks, useRooms, useSections, useTiers, type Cell,
 } from "../api";
+import SuggestPlacementDialog from "./SuggestPlacementDialog";
 
 interface PlaceContainerDialogProps {
     open: boolean;
@@ -44,20 +27,17 @@ interface PlaceContainerDialogProps {
 type PlaceMode = "cell" | "floor";
 
 export default function PlaceContainerDialog({
-    open,
-    containerIds,
-    onClose,
-    onSuccess,
+    open, containerIds, onClose, onSuccess,
 }: PlaceContainerDialogProps) {
     const queryClient = useQueryClient();
     const [mode, setMode] = useState<PlaceMode>("cell");
+    const [suggestOpen, setSuggestOpen] = useState(false);
 
     const [roomId, setRoomId] = useState<number | "">("");
     const [rackId, setRackId] = useState<number | "">("");
     const [sectionId, setSectionId] = useState<number | "">("");
     const [tierId, setTierId] = useState<number | "">("");
     const [cellId, setCellId] = useState<number | "">("");
-
     const [floorRoomId, setFloorRoomId] = useState<number | "">("");
 
     const [error, setError] = useState<string | null>(null);
@@ -121,135 +101,160 @@ export default function PlaceContainerDialog({
     if (!open) return null;
 
     return (
-        <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Разместить тары</DialogTitle>
-            <DialogContent>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                    Выбрано тар: <b>{containerIds.length}</b>.
-                </Typography>
-
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-                <FormControl component="fieldset" sx={{ mb: 2 }}>
-                    <FormLabel component="legend">Куда разместить?</FormLabel>
-                    <RadioGroup
-                        row
-                        value={mode}
-                        onChange={(e) => setMode(e.target.value as PlaceMode)}
+        <>
+            <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pr: 2 }}>
+                    <span>Разместить тары</span>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<LightbulbIcon />}
+                        onClick={() => setSuggestOpen(true)}
+                        color="warning"
                     >
-                        <FormControlLabel value="cell" control={<Radio />} label="В ячейку (на поддон)" />
-                        <FormControlLabel value="floor" control={<Radio />} label="На пол в комнате" />
-                    </RadioGroup>
-                </FormControl>
+                        Помощник
+                    </Button>
+                </DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" sx={{ mb: 2 }}>
+                        Выбрано тар: <b>{containerIds.length}</b>.
+                    </Typography>
 
-                {mode === "cell" ? (
-                    <Stack spacing={2}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Комната</InputLabel>
-                            <Select
-                                label="Комната"
-                                value={roomId}
-                                onChange={(e) => {
-                                    setRoomId(e.target.value as number);
-                                    setRackId(""); setSectionId(""); setTierId(""); setCellId("");
-                                }}
-                            >
-                                {(rooms.data ?? []).map((r) => (
-                                    <MenuItem key={r.id} value={r.id}>{r.name}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                    {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-                        <FormControl fullWidth size="small" disabled={roomId === ""}>
-                            <InputLabel>Стеллаж</InputLabel>
-                            <Select
-                                label="Стеллаж"
-                                value={rackId}
-                                onChange={(e) => {
-                                    setRackId(e.target.value as number);
-                                    setSectionId(""); setTierId(""); setCellId("");
-                                }}
-                            >
-                                {(racks.data ?? []).map((r) => (
-                                    <MenuItem key={r.id} value={r.id}>{r.code}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                    <FormControl component="fieldset" sx={{ mb: 2 }}>
+                        <FormLabel component="legend">Куда разместить?</FormLabel>
+                        <RadioGroup
+                            row
+                            value={mode}
+                            onChange={(e) => setMode(e.target.value as PlaceMode)}
+                        >
+                            <FormControlLabel value="cell" control={<Radio />} label="В ячейку (на поддон)" />
+                            <FormControlLabel value="floor" control={<Radio />} label="На пол в комнате" />
+                        </RadioGroup>
+                    </FormControl>
 
-                        <FormControl fullWidth size="small" disabled={rackId === ""}>
-                            <InputLabel>Секция</InputLabel>
-                            <Select
-                                label="Секция"
-                                value={sectionId}
-                                onChange={(e) => {
-                                    setSectionId(e.target.value as number);
-                                    setTierId(""); setCellId("");
-                                }}
-                            >
-                                {(sections.data ?? []).map((s) => (
-                                    <MenuItem key={s.id} value={s.id}>{s.code}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                    {mode === "cell" ? (
+                        <Stack spacing={2}>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Комната</InputLabel>
+                                <Select
+                                    label="Комната"
+                                    value={roomId}
+                                    onChange={(e) => {
+                                        setRoomId(e.target.value as number);
+                                        setRackId(""); setSectionId(""); setTierId(""); setCellId("");
+                                    }}
+                                >
+                                    {(rooms.data ?? []).map((r) => (
+                                        <MenuItem key={r.id} value={r.id}>{r.name}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
 
-                        <FormControl fullWidth size="small" disabled={sectionId === ""}>
-                            <InputLabel>Ярус</InputLabel>
-                            <Select
-                                label="Ярус"
-                                value={tierId}
-                                onChange={(e) => {
-                                    setTierId(e.target.value as number);
-                                    setCellId("");
-                                }}
-                            >
-                                {(tiers.data ?? []).map((t) => (
-                                    <MenuItem key={t.id} value={t.id}>Ярус {t.code}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
+                            <FormControl fullWidth size="small" disabled={roomId === ""}>
+                                <InputLabel>Стеллаж</InputLabel>
+                                <Select
+                                    label="Стеллаж"
+                                    value={rackId}
+                                    onChange={(e) => {
+                                        setRackId(e.target.value as number);
+                                        setSectionId(""); setTierId(""); setCellId("");
+                                    }}
+                                >
+                                    {(racks.data ?? []).map((r) => (
+                                        <MenuItem key={r.id} value={r.id}>{r.code}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
 
-                        <FormControl fullWidth size="small" disabled={tierId === ""}>
-                            <InputLabel>Ячейка</InputLabel>
-                            <Select
-                                label="Ячейка"
-                                value={cellId}
-                                onChange={(e) => setCellId(e.target.value as number)}
-                            >
-                                {(cells.data ?? []).map((c: Cell) => (
-                                    <MenuItem key={c.id} value={c.id}>
-                                        {c.full_address} ({c.cell_type === "CORE" ? "Керн" : "Обычная"})
-                                    </MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Stack>
-                ) : (
-                    <Box>
-                        <FormControl fullWidth size="small">
-                            <InputLabel>Комната (на пол)</InputLabel>
-                            <Select
-                                label="Комната (на пол)"
-                                value={floorRoomId}
-                                onChange={(e) => setFloorRoomId(e.target.value as number)}
-                            >
-                                {(rooms.data ?? []).map((r) => (
-                                    <MenuItem key={r.id} value={r.id}>{r.name}</MenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    </Box>
-                )}
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={handleClose} disabled={isSubmitting}>Отмена</Button>
-                <Button
-                    variant="contained"
-                    onClick={() => void handleSubmit()}
-                    disabled={isSubmitting}
-                >
-                    {isSubmitting ? "Размещаем..." : "Разместить"}
-                </Button>
-            </DialogActions>
-        </Dialog>
+                            <FormControl fullWidth size="small" disabled={rackId === ""}>
+                                <InputLabel>Секция</InputLabel>
+                                <Select
+                                    label="Секция"
+                                    value={sectionId}
+                                    onChange={(e) => {
+                                        setSectionId(e.target.value as number);
+                                        setTierId(""); setCellId("");
+                                    }}
+                                >
+                                    {(sections.data ?? []).map((s) => (
+                                        <MenuItem key={s.id} value={s.id}>{s.code}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            <FormControl fullWidth size="small" disabled={sectionId === ""}>
+                                <InputLabel>Ярус</InputLabel>
+                                <Select
+                                    label="Ярус"
+                                    value={tierId}
+                                    onChange={(e) => {
+                                        setTierId(e.target.value as number);
+                                        setCellId("");
+                                    }}
+                                >
+                                    {(tiers.data ?? []).map((t) => (
+                                        <MenuItem key={t.id} value={t.id}>Ярус {t.code}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+
+                            <FormControl fullWidth size="small" disabled={tierId === ""}>
+                                <InputLabel>Ячейка</InputLabel>
+                                <Select
+                                    label="Ячейка"
+                                    value={cellId}
+                                    onChange={(e) => setCellId(e.target.value as number)}
+                                >
+                                    {(cells.data ?? []).map((c: Cell) => (
+                                        <MenuItem key={c.id} value={c.id}>
+                                            {c.full_address} ({c.cell_type === "CORE" ? "Керн" : "Обычная"})
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Stack>
+                    ) : (
+                        <Box>
+                            <FormControl fullWidth size="small">
+                                <InputLabel>Комната (на пол)</InputLabel>
+                                <Select
+                                    label="Комната (на пол)"
+                                    value={floorRoomId}
+                                    onChange={(e) => setFloorRoomId(e.target.value as number)}
+                                >
+                                    {(rooms.data ?? []).map((r) => (
+                                        <MenuItem key={r.id} value={r.id}>{r.name}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleClose} disabled={isSubmitting}>Отмена</Button>
+                    <Button
+                        variant="contained"
+                        onClick={() => void handleSubmit()}
+                        disabled={isSubmitting}
+                    >
+                        {isSubmitting ? "Размещаем..." : "Разместить"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Вызов Помощника */}
+            <SuggestPlacementDialog
+                containerIds={suggestOpen ? containerIds : null}
+                isMove={false} // В этом диалоге мы размещаем (PENDING), а не перемещаем (ACTIVE)
+                onClose={() => setSuggestOpen(false)}
+                onSuccess={(msg) => {
+                    setSuggestOpen(false);
+                    onSuccess(msg);
+                    onClose(); // Закрываем и основной диалог, раз тары размещены
+                }}
+            />
+        </>
     );
 }
