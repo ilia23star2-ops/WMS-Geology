@@ -7,6 +7,7 @@ import '../services/scan_history_service.dart';
 import '../models/scan_history_entry.dart';
 import '../utils/scan_window.dart';
 import 'container_detail_screen.dart';
+import 'ocr_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -112,6 +113,17 @@ class _ScannerScreenState extends State<ScannerScreen> {
       appBar: AppBar(
         title: const Text('Сканирование'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.document_scanner),
+            tooltip: 'OCR старой этикетки',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const OcrScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {

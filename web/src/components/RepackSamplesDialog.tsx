@@ -72,8 +72,9 @@ export default function RepackSamplesDialog({ open, shipmentId, containers, onCl
             });
             onSuccess(`Переложено проб: ${selectedIds.length}.`);
             handleClose();
-        } catch (err: any) {
-            setError(err?.response?.data?.error ?? "Не удалось переложить пробы.");
+        } catch (err: unknown) {
+            const anyErr = err as { response?: { data?: { error?: string } } };
+            setError(anyErr?.response?.data?.error ?? "Не удалось переложить пробы.");
         }
     };
 
