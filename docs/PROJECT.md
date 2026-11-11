@@ -631,3 +631,34 @@ Android-приложение для планшетов. QR-коды как ос�
         wms_report "❌ ТЕСТЫ УПАЛИ"
     fi
     ```
+
+---
+
+## 36. ОБЯЗАТЕЛЬНЫЕ ШАБЛОНЫ БЛОКОВ (Few-Shot)
+
+**ВНИМАНИЕ ИИ:** Не пиши bash-блоки с нуля. Используй этот **Универсальный каркас** для ЛЮБЫХ bash-команд (pytest, npm lint, git, sed, python-скрипты). В нём уже встроены правила 31 (без \$), 35 (логирование UTF-8) и wms_report. Блоки [Файл] логировать не нужно (их применяет пользователь).
+
+### Универсальный bash-каркас
+```bash
+cd /d/Dev/projects/WMS-Geology
+wms_clear
+# ТУТ ВАША КОМАНДА (например, poetry run pytest ... > /tmp/cmd.log 2>&1)
+if ! <ВАША_КОМАНДА> > /tmp/cmd.log 2>&1; then
+    echo '❌ ОШИБКА ВЫПОЛНЕНИЯ:' > /tmp/wms_summary.txt
+    tail -n 15 /tmp/cmd.log >> /tmp/wms_summary.txt
+    wms_report '❌ КОМАНДА ЗАВЕРШИЛАСЬ С ОШИБКОЙ'
+else
+    echo '✅ УСПЕШНО.' > /tmp/wms_summary.txt
+    tail -n 3 /tmp/cmd.log >> /tmp/wms_summary.txt
+    wms_report '✅ УСПЕШНО'
+fi
+```
+
+### Особые случаи:
+1. **Pytest (ищем слово failed):**
+   `if grep -q 'failed' /tmp/cmd.log; then ...`
+2. **Python-скрипты (кириллица):** Обязательно `import traceback` и вывод ошибки в файл через `write_text(..., encoding='utf-8')`. Иначе Windows выдаст кракозябры.
+3. **Git:** Всегда пиши `git push origin <branch>` перед `wms_report`.
+
+**ПРАВИЛО:** Любое падение (ошибка линтера, ошибка теста, неверный синтаксис Python) должно отправлять Traceback в /tmp/wms_summary.txt и вызывать `wms_report '❌ ОШИБКА'`.
+
