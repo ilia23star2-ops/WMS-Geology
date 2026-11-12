@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import '../models/ocr_result.dart';
 
 class TesseractParser {
@@ -10,52 +11,140 @@ class TesseractParser {
         .where((l) => l.isNotEmpty)
         .toList();
 
+    // 1. Универсальные маркеры для поиска полей (работают для любых этикеток)
+    final siteRegex = RegExp(
+      r'^(Уч|yu|y4|уч|yy|Y4|Участок|Площадка|Site)',
+      caseSensitive: false,
+    );
+    final woRegex = RegExp(
+      r'^(Н/З|H/3|HI3|H13|n/3|НЗ|Наряд|Заказ|Work)',
+      caseSensitive: false,
+    );
+    final rtRegex = RegExp(
+      r'^(Исп|Mcn|Тип|Исл|cn|Ncn|Ucn|Vcn|ТИ|Исследование)',
+      caseSensitive: false,
+    );
+    final containerRegex = RegExp(
+      r'^(№|No|N0|Ne|Тара|Номер)',
+      caseSensitive: false,
+    );
+
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
 
-      if (result.site.isEmpty && _isHeader(line, ['уч', 'yu', 'y4', 'unu'])) {
-        result.site = _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
-      } else if (result.workOrder.isEmpty && _isHeader(line, ['н/з', 'h/3', 'hi3', 'n/3'])) {
-        result.workOrder = _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
-      } else if (result.researchType.isEmpty && _isHeader(line, ['исп', 'исл', 'тип', 'mcn', 'cn', 'vcn', 'ncn'])) {
-        final rt = _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
-        if (rt.length <= 5) result.researchType = rt;
-      } else if (result.containerNumber.isEmpty && _isHeader(line, ['҄', 'no', 'n0', 'ne'])) {
-        final num = _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
-        if (RegExp(r'^\d{1,3}$').hasMatch(num)) result.containerNumber = num;
+      if (result.site.isEmpty && siteRegex.hasMatch(line)) {
+        result.site =
+            _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
+      } else if (result.workOrder.isEmpty && woRegex.hasMatch(line)) {
+        var wo =
+            _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
+        result.workOrder = cleanWorkOrder(wo);
+      } else if (result.researchType.isEmpty && rtRegex.hasMatch(line)) {
+        final rt =
+            _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
+        if (rt.length <= 6) {
+          result.researchType = rt;
+        }
+      } else if (result.containerNumber.isEmpty &&
+          containerRegex.hasMatch(line)) {
+        final num =
+            _extractValue(line) ?? (i + 1 < lines.length ? lines[i + 1] : '');
+        if (RegExp(r'^\d{1,3}$').hasMatch(num)) {
+          result.containerNumber = num;
+        }
       }
     }
 
-    final sampleRegex = RegExp(r'\b([A-Z]{2,4}\d{3,8})\b', caseSensitive: false);
+    // 2. Если заголовков нет (например, при ручном выделении зоны)
+    final sampleRegex = RegExp(
+      r'\b([A-ZА-Я0-9]{2,5}\d{3,8})\b',
+      caseSensitive: false,
+    );
+    final samples = <String>{};
+
     for (final line in lines) {
-      final lower = line.toLowerCase();
-      if (lower.contains('образ') || lower.contains('o6pa') || lower.contains('6pa')) {
+      final upper = line.toUpperCase();
+      if (upper.contains('ОБРАЗЕЦ') ||
+          upper.contains('П/П') ||
+          upper.contains('ПРОБА')) {
         continue;
       }
-      final matches = sampleRegex.allMatches(line.toUpperCase());
-      for (final m in matches) {
-        final raw = m.group(1)!;
-        if (raw == result.workOrder) continue;
-        if (!result.samples.any((s) => s.sampleNumber == raw)) {
-          result.samples.add(OcrSampleRow(
-            sequenceNumber: result.samples.length + 1,
-            sampleNumber: raw,
-            boundingBox: Rect.zero,
-          ));
+
+      final match = sampleRegex.firstMatch(upper);
+      if (match != null) {
+        final raw = match.group(1)!;
+        if (raw.length >= 6) {
+          final cleaned = cleanSampleNumber(raw);
+          samples.add(cleaned);
         }
       }
+    }
+
+    for (final line in lines) {
+      final upper = line.toUpperCase();
+      if (upper.contains('ОБРАЗЕЦ') ||
+          upper.contains('П/П') ||
+          upper.contains('ПРОБА')) {
+        continue;
+      }
+
+      if (result.site.isEmpty &&
+          RegExp(r'[А-Яа-я\-]').hasMatch(line) &&
+          !upper.contains('ПА') &&
+          !upper.contains('ШЛ') &&
+          !upper.contains('ХА')) {
+        result.site = line;
+      } else if (result.researchType.isEmpty &&
+          RegExp(r'^(ПА|ШЛ|ХА|ИЗ|ICP)$').hasMatch(upper)) {
+        result.researchType = upper;
+      } else if (result.workOrder.isEmpty) {
+        final woMatch = RegExp(r'\b([A-ZА-Я]{2,4}\d{1,4})\b').firstMatch(upper);
+        if (woMatch != null && !samples.contains(woMatch.group(1)!)) {
+          result.workOrder = cleanWorkOrder(woMatch.group(1)!);
+        }
+      } else if (result.containerNumber.isEmpty &&
+          RegExp(r'^\d{1,3}$').hasMatch(line)) {
+        result.containerNumber = line;
+      }
+    }
+
+    for (final s in samples) {
+      result.samples.add(
+        OcrSampleRow(
+          sequenceNumber: result.samples.length + 1,
+          sampleNumber: s,
+          boundingBox: Rect.zero,
+        ),
+      );
     }
 
     result.samples.sort((a, b) => a.sampleNumber.compareTo(b.sampleNumber));
     return result;
   }
 
-  static bool _isHeader(String line, List<String> keys) {
-    final lower = line.toLowerCase();
-    for (final key in keys) {
-      if (lower.contains(key)) return true;
-    }
-    return false;
+  static String cleanWorkOrder(String raw) {
+    String res = raw.trim().toUpperCase().replaceAll(' ', '');
+    res = res.replaceAll('1ST', 'TST');
+    res = res.replaceAll('18T', 'TST');
+    res = res.replaceAll('I8T', 'TST');
+    res = res.replaceAll('T8T', 'TST');
+    res = res.replaceAll('Т8Т', 'TST');
+    return res;
+  }
+
+  static String cleanSampleNumber(String raw) {
+    String res = raw.trim().toUpperCase().replaceAll(' ', '');
+    res = res.replaceAll('1ST', 'TST');
+    res = res.replaceAll('18T', 'TST');
+    res = res.replaceAll('I8T', 'TST');
+    res = res.replaceAll('Т8Т', 'TST');
+    res = res.replaceAll('T8T', 'TST');
+    res = res.replaceAll('TS7', 'TST');
+    res = res.replaceAll('T5T', 'TST');
+    res = res.replaceAll('O', '0');
+    res = res.replaceAll('I', '1');
+    res = res.replaceAll('Z', '2');
+    return res;
   }
 
   static String? _extractValue(String line) {
