@@ -1,13 +1,18 @@
 import sys
-import json
 import os
+import json
 import contextlib
+
+# python312 — портативный (embed) дистрибутив. У него sys.path может
+# не включать директорию скрипта. Явно добавляем её ПЕРЕД импортом
+# локальных модулей, иначе `from bbox import` падает с ModuleNotFoundError.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
 
 # Redirect stdout to stderr so EasyOCR doesn't break our JSON
 import easyocr
 
-# bbox.py лежит в этой же папке — при запуске скрипта напрямую
-# sys.path[0] = apps/ocr/services/, импорт работает.
 from bbox import safe_bbox
 
 
