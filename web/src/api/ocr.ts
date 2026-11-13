@@ -1,8 +1,10 @@
 /**
- * API OCR: OcrTask, OcrBatch, approve.
+ * API OCR: OcrTask, OcrBatch, approve, zones, extracted.
  *
  * c-3.x-migration-5b: recognize, approve, bbox.
  * c-3.x-migration-5c: batch list / detail.
+ * c-3.x-migration-5e: zones, extracted fields.
+ * c-3.x-migration-5f: типизация для подсветки bbox ↔ поля.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -41,15 +43,49 @@ export const OCR_TASK_STATUS_LABELS: Record<OcrTaskStatus, string> = {
     ERROR: "Ошибка",
 };
 
+export type OcrZoneType =
+    | "work_order_coded"
+    | "work_order_incoming"
+    | "container_number"
+    | "research_type"
+    | "sample"
+    | "well";
+
+export const OCR_ZONE_LABELS: Record<OcrZoneType, string> = {
+    work_order_coded: "Н/З (текущий)",
+    work_order_incoming: "Н/З (входящий)",
+    container_number: "Номер тары",
+    research_type: "Тип исследования",
+    sample: "Проба",
+    well: "Скважина",
+};
+
 export interface OcrWord {
     text: string;
     confidence: number;
     bbox: number[][];
 }
 
+export interface OcrZone {
+    type: OcrZoneType;
+    bbox: number[][];
+    source: "manual" | "mlkit";
+}
+
+export interface ExtractedFields {
+    work_order_coded: string | null;
+    work_order_incoming: string | null;
+    container_number: string | null;
+    research_type: string | null;
+    samples: string[];
+    wells: string[];
+    source: "zones" | "fallback" | "mixed" | "none";
+}
+
 export interface OcrRawData {
     text: string;
     words: OcrWord[];
+    extracted?: ExtractedFields;
 }
 
 export interface OcrTask {
@@ -59,6 +95,7 @@ export interface OcrTask {
     status: OcrTaskStatus;
     raw_ocr_data: OcrRawData | null;
     reviewed_data: Record<string, unknown> | null;
+    zones: OcrZone[] | null;
     error_message: string;
     created_at: string;
 }
