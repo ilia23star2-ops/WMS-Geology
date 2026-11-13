@@ -1,10 +1,11 @@
 ## Серия `feature/3.x-migration` (OCR)
 
-**Дата:** 2026-11-11 — закрыта.
+**Дата:** 2026-11-13 — 🟡 активна (переоткрыта).
 **Ветка:** `feature/3.x-migration`.
 **Контекст:** Миграция старых этикеток. Отказ от Tesseract в пользу ML Kit.
 
 ### Что закрыто
+- ✅ **`c-3.x-migration-3`** (2026-11-13) — серверный OCR: модели `OcrBatch`/`OcrTask`, `POST /api/v1/ocr/recognize/`, `ocr_runner.py` (EasyOCR на портативном Python 3.12), `scripts/ocr_warmup.py` (warmup с монитором), `scripts/ocr_smoke.sh` (сквозной smoke с JWT + DB-verify), 14 unit-тестов (`test_bbox.py`, `test_ocr_recognize_view.py`). Fix: `safe_bbox` вынесен в `services/bbox.py` — numpy-типы в bbox не сериализовались в JSON.
 - ✅ **`c-3.x-migration-1`** — Экран OCR переведен с Tesseract на ML Kit (`MlKitOcrService`). Удален нерабочий плагин `tesseract_ocr`.
 - ✅ **`c-3.x-migration-2`** — Добавлены кнопки «Сделать фото» и «Из галереи» на экран OCR. Добавлена адаптивная верстка.
 

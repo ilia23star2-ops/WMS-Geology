@@ -29,8 +29,8 @@
 | 3 | web: sidebar | `Sidebar` по роли, `create-return` action, «Вернуть остатки» | ✅ |
 
 
-**Активная серия:** не выбрана (следующая — `feature/2.x-rbac`).
-**Ветка:** `feature/2.x-lab-portal`.
+**Активная серия:** `feature/3.x-migration` (OCR, активна с 2026-11-13).
+**Ветка:** `feature/3.x-migration`.
 Серия `2f` — **закрыта полностью**.
 
 **План серии 3.x-offline:**
@@ -130,7 +130,7 @@
 | 1 | `feature/2.x-lab-portal` | Портал лабораторий | 5–7 |
 | 2 | `feature/2.x-lifecycle` | Пересмотр статусов Container и Sample | 5–7 |
 | 3 | `feature/2.x-sorting` | Помощник сортировки | 3–4 |
-| 4 | `feature/3.x-migration` | Миграция старых этикеток (OCR) | 4–5 |
+| 4 | `feature/3.x-migration` | Миграция старых этикеток (OCR) | 4–5 — 🟡 активна |
 | 5 | `feature/3.x-lims` | Прямая интеграция с ЛИМС (Уровень 3) | 5–7 |
 | 6 | `feature/3.x-deploy` | Сборка web + backend в installer | 3–5 |
 | 7 | `feature/2.x-rbac` | Роли и права | 5–7 |
@@ -254,6 +254,8 @@
 
 | ТД-75 | Сквозная валидация (Data Integrity Checker): ловить ситуации, когда Container.status = PENDING_PLACEMENT, но у него есть ячейка (это баг логики). | средний | при следующей ревизии домена |
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
+| ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
+| ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
 
 
 ---
