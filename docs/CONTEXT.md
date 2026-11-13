@@ -17,7 +17,7 @@
 - Пачка 2: Перекладывание проб (`repack-samples`, `_handle_container_after_dispose`).
 
 **Backend: 918 тестов.** (+14 `apps.ocr`)
-**Web: 24 юнит-теста.**
+**Web: 30 юнит-тестов.**
 **Mobile: 227 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.

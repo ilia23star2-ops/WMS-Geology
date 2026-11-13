@@ -40,7 +40,8 @@
 | c-3.x-migration-1/2 | Mobile: Tesseract→сервер | Удалён локальный OCR, `scanner_screen` без OCR-ссылок | ✅ |
 | c-3.x-migration-3 | Серверный OCR | Модели `OcrBatch`/`OcrTask`, `POST /api/v1/ocr/recognize/`, `ocr_runner.py` (EasyOCR на python312), warmup, smoke, 14 тестов | ✅ |
 | c-3.x-migration-5a | Approve API | `POST /api/v1/ocr/tasks/{id}/approve/`, 4 эндпоинта, 8 тестов | ✅ |
-| c-3.x-migration-5b | Web: экран проверки | `OcrReviewPage.tsx`, bbox-overlay, sidebar, route | ⬜ |
+| c-3.x-migration-5b | Web: экран проверки | `OcrReviewPage.tsx`, bbox-overlay, approve, 6 тестов | ✅ |
+| c-3.x-migration-5c | Web: список батчей + sidebar + справочники в форме | `OcrBatchesPage.tsx`, `OcrBatchDetailPage.tsx`, пункт в sidebar, `useContainerTypes`/`useResearchTypes`/`useSites` в форме, placeholder `001-031` | ⬜ |
 
 **План серии 3.x-offline:**
 
@@ -265,7 +266,8 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
-| ТД-80 | `DATABASE.md` показывает формат `sample_number = TAA-A34076001-001` (с дефисом перед sequence), но реальный код `fill_container_with_samples` клеит `prefix + middle + sequence` без дефисов → `TAA-A34076001001`. Синхронизировать доки и код: либо править пример в `DATABASE.md`, либо добавить дефис в `fill_container_with_samples`. | средний | при следующей ревизии `samples` |
+| ТД-81 | Web: `npm run build` (`tsc --noEmit`) падает на MUI 9 breaking changes в pre-existing файлах: `PoolPage.tsx`, `ShipmentsPage.tsx`, `TopologyPage.tsx`, `ContainersPage.tsx`, `SamplesTreeTable.tsx`. Типы `<Grid item>`/`<Grid container>`, `Stack justifyContent`/`alignItems` в prop-позиции, unused `CircularProgress`/`PlaylistAddCheckIcon`. Dev (`npm run dev` через vite esbuild) работает. | высокий | при следующей ревизии web |
+| ТД-80 | Расхождение формата `sample_number` в трёх местах: `DATABASE.md` — `TAA-A34076001-001` (с дефисом); реальный код `fill_container_with_samples` — `prefix + middle + sequence` без дефисов → `TAA-A34076001001`; web-форма `OcrReviewPage` строит `sequence_digits` из длины `sequence_to` (`1-3` → digits=1 → `TAA-A340760011`, `001-003` → digits=3 → `TAA-A34076001001`). Синхронизировать: править `DATABASE.md`, добавить дефис в код или явно описать поведение в UI. | средний | при следующей ревизии `samples` |
 
 
 ---
