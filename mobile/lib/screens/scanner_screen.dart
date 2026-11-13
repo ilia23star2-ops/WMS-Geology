@@ -7,7 +7,7 @@ import '../services/scan_history_service.dart';
 import '../models/scan_history_entry.dart';
 import '../utils/scan_window.dart';
 import 'container_detail_screen.dart';
-import 'ocr_screen.dart';
+
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -119,7 +119,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             tooltip: 'OCR старой этикетки',
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => OcrScreen()),
+                MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text("Оцифровка")), body: Center(child: Text("Оцифровка перенесена на сервер")))),
               );
             },
           ),
