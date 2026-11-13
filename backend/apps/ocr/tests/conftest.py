@@ -16,7 +16,7 @@ _PNG_1X1_B64 = (
 
 @pytest.fixture(autouse=True)
 def _media_root(tmp_path, settings):
-    """Все загрузки OCR-тестов идут во временную папку — не в backend/media/."""
+    """Все загрузки OCR-тестов идут во временную папку."""
     settings.MEDIA_ROOT = str(tmp_path)
     return tmp_path
 
@@ -36,9 +36,38 @@ def api_client(user):
 
 @pytest.fixture
 def png_upload():
-    """Свежий SimpleUploadedFile на каждый тест (файл одноразовый)."""
     return SimpleUploadedFile(
         'test.png',
         base64.b64decode(_PNG_1X1_B64),
         content_type='image/png',
     )
+
+
+@pytest.fixture
+def container_type(db):
+    from apps.storage.models import ContainerType
+    return ContainerType.objects.create(name='Test Box', size_class='M')
+
+
+@pytest.fixture
+def research_type(db):
+    from apps.samples.models import ResearchType
+    return ResearchType.objects.create(code='ШЛ', name='Шлифы')
+
+
+@pytest.fixture
+def site(db):
+    from apps.samples.models import Site
+    return Site.objects.create(code='TST', name='Тестовый')
+
+
+@pytest.fixture
+def ocr_task(user):
+    from apps.ocr.models import OcrBatch, OcrTask
+    image = SimpleUploadedFile(
+        'task.png',
+        base64.b64decode(_PNG_1X1_B64),
+        content_type='image/png',
+    )
+    batch = OcrBatch.objects.create(user=user, status='REVIEW')
+    return OcrTask.objects.create(batch=batch, image=image, status='READY')
