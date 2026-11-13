@@ -10,6 +10,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import MainLayout from "./components/layout/MainLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuthStore } from "./stores/authStore";
+import OcrReviewPage from "./pages/OcrReviewPage";
 
 // Ленивая загрузка страниц
 const LoginPage = lazy(() => import("./pages/LoginPage"));
@@ -85,6 +86,7 @@ function AppRoutes() {
                         <Route path="/" element={<HomePage />} />
                         <Route path="/pool" element={<PoolPage />} />
                         <Route path="/containers" element={<ContainersPage />} />
+                        <Route path="/ocr/review/:id" element={<OcrReviewPage />} />
                         <Route path="/samples" element={<SamplesPage />} />
                         <Route path="/shipments" element={<ShipmentsPage />} />
                         <Route
