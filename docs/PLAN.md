@@ -33,6 +33,15 @@
 **Ветка:** `feature/3.x-migration`.
 Серия `2f` — **закрыта полностью**.
 
+**План серии 3.x-migration (OCR, активна):**
+
+| # | Заход | Что делает | Статус |
+|---|---|---|---|
+| c-3.x-migration-1/2 | Mobile: Tesseract→сервер | Удалён локальный OCR, `scanner_screen` без OCR-ссылок | ✅ |
+| c-3.x-migration-3 | Серверный OCR | Модели `OcrBatch`/`OcrTask`, `POST /api/v1/ocr/recognize/`, `ocr_runner.py` (EasyOCR на python312), warmup, smoke, 14 тестов | ✅ |
+| c-3.x-migration-5a | Approve API | `POST /api/v1/ocr/tasks/{id}/approve/`, 4 эндпоинта, 8 тестов | ✅ |
+| c-3.x-migration-5b | Web: экран проверки | `OcrReviewPage.tsx`, bbox-overlay, sidebar, route | ⬜ |
+
 **План серии 3.x-offline:**
 
 | # | Заход | Что делает | Статус |
@@ -256,6 +265,7 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
+| ТД-80 | `DATABASE.md` показывает формат `sample_number = TAA-A34076001-001` (с дефисом перед sequence), но реальный код `fill_container_with_samples` клеит `prefix + middle + sequence` без дефисов → `TAA-A34076001001`. Синхронизировать доки и код: либо править пример в `DATABASE.md`, либо добавить дефис в `fill_container_with_samples`. | средний | при следующей ревизии `samples` |
 
 
 ---

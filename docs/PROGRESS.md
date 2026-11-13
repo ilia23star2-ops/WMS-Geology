@@ -6,6 +6,7 @@
 
 ### Что закрыто
 - ✅ **`c-3.x-migration-3`** (2026-11-13) — серверный OCR: модели `OcrBatch`/`OcrTask`, `POST /api/v1/ocr/recognize/`, `ocr_runner.py` (EasyOCR на портативном Python 3.12), `scripts/ocr_warmup.py` (warmup с монитором), `scripts/ocr_smoke.sh` (сквозной smoke с JWT + DB-verify), 14 unit-тестов (`test_bbox.py`, `test_ocr_recognize_view.py`). Fix: `safe_bbox` вынесен в `services/bbox.py` — numpy-типы в bbox не сериализовались в JSON.
+- ✅ **`c-3.x-migration-5a`** (2026-11-13) — approve-API: `POST /api/v1/ocr/tasks/{id}/approve/`, сервис `apps/ocr/services/approve.py` (композиция `fill_container_with_samples` + `bulk_place_containers` + `log_audit`), сериализатор `OcrApproveSerializer` (наследник `FillSamplesSerializer` + `container_type_id` + `cell_id`), 4 эндпоинта (batches list/create, batch detail, task detail, task approve), 8 unit-тестов (`test_approve_view.py`). 23 passed total.
 - ✅ **`c-3.x-migration-1`** — Экран OCR переведен с Tesseract на ML Kit (`MlKitOcrService`). Удален нерабочий плагин `tesseract_ocr`.
 - ✅ **`c-3.x-migration-2`** — Добавлены кнопки «Сделать фото» и «Из галереи» на экран OCR. Добавлена адаптивная верстка.
 
