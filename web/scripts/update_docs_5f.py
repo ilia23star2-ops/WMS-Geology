@@ -3,6 +3,11 @@
 Идемпотентно.
 Одноразовая утилита захода c-3.x-migration-5f-docs.
 """
+import sys
+
+# Windows CP1251 не кодирует эмодзи (✅) в print → UnicodeEncodeError.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +29,7 @@ def patch(path: Path, replacements: list) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-# --- PROGRESS.md: вставить 5f перед 5b (свежее сверху) ---
+# --- PROGRESS.md: пропустится, уже применён ---
 patch(PROG, [
     (
         "c-3.x-migration-5f",
@@ -40,7 +45,7 @@ patch(PROG, [
     ),
 ])
 
-# --- PLAN.md: 5f → ✅, добавить ТД-82, ТД-83 ---
+# --- PLAN.md: 5f ✅, мини-таблица с 6/7/8, ТД-82/83 ---
 patch(PLAN, [
     (
         "5f ✅",

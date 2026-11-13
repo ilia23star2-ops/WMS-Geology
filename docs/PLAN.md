@@ -41,7 +41,13 @@
 | c-3.x-migration-3 | Серверный OCR | Модели `OcrBatch`/`OcrTask`, `POST /api/v1/ocr/recognize/`, `ocr_runner.py` (EasyOCR на python312), warmup, smoke, 14 тестов | ✅ |
 | c-3.x-migration-5a | Approve API | `POST /api/v1/ocr/tasks/{id}/approve/`, 4 эндпоинта, 8 тестов | ✅ |
 | c-3.x-migration-5b | Web: экран проверки | `OcrReviewPage.tsx`, bbox-overlay, approve, 6 тестов | ✅ |
-| c-3.x-migration-5c | Web: список батчей + sidebar + справочники в форме | `OcrBatchesPage.tsx`, `OcrBatchDetailPage.tsx`, пункт в sidebar, `useContainerTypes`/`useResearchTypes`/`useSites` в форме, placeholder `001-031` | ⬜ |
+| c-3.x-migration-5c | Web: список батчей + sidebar + справочники | `OcrBatchesPage.tsx`, `OcrBatchDetailPage.tsx`, sidebar «Оцифровка», `SmartAutocomplete` в форме | ✅ |
+| c-3.x-migration-5d | Web: `Н/З (входящий)` подсказки | `/storage/suggestions/` + `work_orders_incoming`, +2 backend-теста | ✅ |
+| c-3.x-migration-5e | Backend: `zones` + mapping | `OcrTask.zones`, `POST /zones/`, `mapping.py`, `extracted`, +14 тестов | ✅ |
+| c-3.x-migration-5f | Web: `extracted` + подсветка + диапазоны | `api/ocr.ts` (типы), `OcrReviewPage.tsx` v10, `RangeEditDialog`, группировка по скважинам | ✅ |
+| c-3.x-migration-6 | Mobile: экран «Оцифровка» | ячейка → фото → зоны → `POST /recognize/` (image + zones_json) | ⬜ |
+| c-3.x-migration-7 | Mobile: SyncQueue для зон | офлайн-разметка → отправка при возврате сети | ⬜ |
+| c-3.x-migration-8 | Web: fallback без зон (regex) | если зон нет — эвристика по тексту (TST\d+, T-\d+, TAA-A\d+) | ⬜ |
 
 **План серии 3.x-offline:**
 
@@ -266,6 +272,8 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
+| ТД-82 | Связь номера тары ↔ диапазон проб: при вводе номера тары (`T-001`) — автозаполнение начального/конечного диапазона (и наоборот). Требует бизнес-решения (1 к 1 / 1 к N / по последнему созданному). | низкий | по запросу |
+| ТД-83 | Зачистка мёртвого кода после 5f: `utils/parseSampleGroups.ts` (+тест) — не используется в `OcrReviewPage` v10. Проверить использование в других файлах, удалить если не нужно. | низкий | следующая ревизия web |
 | ТД-81 | Web: `npm run build` (`tsc --noEmit`) падает на MUI 9 breaking changes в pre-existing файлах: `PoolPage.tsx`, `ShipmentsPage.tsx`, `TopologyPage.tsx`, `ContainersPage.tsx`, `SamplesTreeTable.tsx`. Типы `<Grid item>`/`<Grid container>`, `Stack justifyContent`/`alignItems` в prop-позиции, unused `CircularProgress`/`PlaylistAddCheckIcon`. Dev (`npm run dev` через vite esbuild) работает. | высокий | при следующей ревизии web |
 | ТД-80 | Расхождение формата `sample_number` в трёх местах: `DATABASE.md` — `TAA-A34076001-001` (с дефисом); реальный код `fill_container_with_samples` — `prefix + middle + sequence` без дефисов → `TAA-A34076001001`; web-форма `OcrReviewPage` строит `sequence_digits` из длины `sequence_to` (`1-3` → digits=1 → `TAA-A340760011`, `001-003` → digits=3 → `TAA-A34076001001`). Синхронизировать: править `DATABASE.md`, добавить дефис в код или явно описать поведение в UI. | средний | при следующей ревизии `samples` |
 
