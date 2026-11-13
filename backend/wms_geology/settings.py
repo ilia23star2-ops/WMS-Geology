@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     # Локальные
     "apps.storage",
+    "apps.ocr",
     "apps.samples",
     "apps.work_orders",
     "apps.inventory",

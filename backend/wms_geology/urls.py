@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/v1/", include("apps.movements.urls")),
     path("api/v1/", include("apps.receiving.urls")),
     path("api/v1/", include("apps.pool.urls")),
+    path('api/v1/ocr/', include('apps.ocr.urls')),
 ]
 
 # ТД-16: Раздача медиафайлов (Excel, PDF) в режиме разработки.

@@ -141,3 +141,9 @@ mobile/android/gradle/gradle-daemon-jvm.properties
 # машинные каталоги рабочего ПК (CONTEXT.md §Mobile)
 tools/
 *.bak
+
+# Build-pack: Gradle caches, машино-специфично
+WMS-Build-Pack/
+
+# Smoke-тест OCR: временные файлы
+backend/.tmp_smoke/
