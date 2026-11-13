@@ -29,6 +29,7 @@ import AssignmentIcon from "@mui/icons-material/Assignment";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import DocumentScannerIcon from "@mui/icons-material/DocumentScanner";
 import PlaylistAddIcon from "@mui/icons-material/PlaylistAdd";
 import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -57,6 +58,7 @@ const MENU: MenuItem[] = [
     { label: "Коды доступа", path: "/settings/access-tokens", icon: <VpnKeyIcon /> },
     { label: "Офлайн-импорт", path: "/offline-import", icon: <CloudUploadIcon /> },
     { label: "Актуализация", path: "/actualization", icon: <FactCheckIcon /> },
+    { label: "Оцифровка", path: "/ocr/batches", icon: <DocumentScannerIcon /> },
 ];
 
 /**

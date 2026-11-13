@@ -1,11 +1,12 @@
 /**
- * Экран проверки OCR: слева фото + bbox-overlay, справа форма.
+ * Экран проверки OCR.
  *
- * c-3.x-migration-5b. Открывается по `/ocr/review/:id`,
- * где `id` — OcrTask.id.
- *
- * MUI 9: не используем <Grid item> / <Grid container> — заменяем на
- * Box + display: grid.
+ * c-3.x-migration-5c: layout, approve.
+ * c-3.x-migration-5d:
+ *   - Порядок: Участок → ТИ → Н/З → Н/З (вх.) → Тип тары → Номер → Пробы.
+ *   - SmartAutocomplete (существующий компонент) на все поля с подсказками.
+ *   - Н/З подсказки из /storage/suggestions/ (зависят от участка).
+ *   - Пробы — textarea (построчный редактор — 5e).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -22,6 +23,8 @@ import {
     Typography,
 } from "@mui/material";
 
+import { useContainerTypes } from "../api/containerTypes";
+import { useResearchTypes, useSites } from "../api/catalogs";
 import {
     resolveImageUrl,
     useApproveOcrTask,
@@ -29,39 +32,69 @@ import {
     type OcrApprovePayload,
     type OcrTask,
 } from "../api/ocr";
+import { useSuggestions } from "../api/suggestions";
 import {
     parseSampleGroups,
     type ParseResult,
 } from "../utils/parseSampleGroups";
+import SmartAutocomplete from "../components/SmartAutocomplete";
 
 export default function OcrReviewPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const taskId = id ? parseInt(id, 10) : null;
+    const parsedTaskId = id ? parseInt(id, 10) : NaN;
+    const taskId = Number.isFinite(parsedTaskId) && parsedTaskId > 0 ? parsedTaskId : null;
 
-    const { data: task, isLoading, error } = useOcrTask(
-        taskId && Number.isFinite(taskId) ? taskId : null,
-    );
+    const { data: task, isLoading, error } = useOcrTask(taskId);
     const approve = useApproveOcrTask(taskId ?? 0);
 
-    const [containerNumber, setContainerNumber] = useState("");
-    const [containerTypeId, setContainerTypeId] = useState<number | "">("");
-    const [cellId, setCellId] = useState<number | "">("");
+    const containerTypes = useContainerTypes();
+    const researchTypes = useResearchTypes();
+    const sites = useSites();
+
+    const [siteName, setSiteName] = useState("");
+    const [researchTypeName, setResearchTypeName] = useState("");
+    const [containerTypeName, setContainerTypeName] = useState("");
     const [workOrderCoded, setWorkOrderCoded] = useState("");
     const [workOrderIncoming, setWorkOrderIncoming] = useState("");
-    const [researchTypeId, setResearchTypeId] = useState<number | "">("");
-    const [siteId, setSiteId] = useState<number | "">("");
+    const [containerNumber, setContainerNumber] = useState("");
     const [sampleGroupsText, setSampleGroupsText] = useState("");
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitOk, setSubmitOk] = useState<string | null>(null);
 
+    const siteId = useMemo(() => {
+        if (!siteName) return null;
+        const s = sites.data?.find((x) => x.name === siteName || x.code === siteName);
+        return s?.id ?? null;
+    }, [sites.data, siteName]);
+
+    const researchTypeId = useMemo(() => {
+        if (!researchTypeName) return null;
+        const clean = researchTypeName.split(" — ")[0].trim();
+        const rt = researchTypes.data?.find((x) => x.code === clean || x.name === clean);
+        return rt?.id ?? null;
+    }, [researchTypes.data, researchTypeName]);
+
+    const containerTypeId = useMemo(() => {
+        if (!containerTypeName) return null;
+        const ct = containerTypes.data?.find((x) => x.name === containerTypeName);
+        return ct?.id ?? null;
+    }, [containerTypes.data, containerTypeName]);
+
+    const suggestions = useSuggestions(
+        {
+            site: siteId ?? undefined,
+            research_type: researchTypeId
+                ? researchTypes.data?.find((r) => r.id === researchTypeId)?.code
+                : undefined,
+        },
+        siteId !== null || researchTypeId !== null,
+    );
+
     useEffect(() => {
         if (!task?.raw_ocr_data?.text) return;
-        const text = task.raw_ocr_data.text;
-        const m = text.match(/\b[TТ][-–]?\d{2,6}\b/);
-        if (m && !containerNumber) {
-            setContainerNumber(m[0]);
-        }
+        const m = task.raw_ocr_data.text.match(/\b[TТ][-–]?\d{2,6}\b/);
+        if (m && !containerNumber) setContainerNumber(m[0]);
     }, [task, containerNumber]);
 
     const parsedGroups: ParseResult = useMemo(
@@ -84,11 +117,7 @@ export default function OcrReviewPage() {
         );
     }
     if (task.status === "DONE") {
-        return (
-            <Alert severity="info" sx={{ m: 2 }}>
-                Задача уже подтверждена.
-            </Alert>
-        );
+        return <Alert severity="info" sx={{ m: 2 }}>Задача уже подтверждена.</Alert>;
     }
     if (task.status === "ERROR") {
         return (
@@ -102,25 +131,28 @@ export default function OcrReviewPage() {
         setSubmitError(null);
         setSubmitOk(null);
         if (parsedGroups.errors.length > 0) {
-            setSubmitError("Исправь ошибки в списке проб: " + parsedGroups.errors.join("; "));
+            setSubmitError("Исправь ошибки: " + parsedGroups.errors.join("; "));
             return;
         }
         if (parsedGroups.groups.length === 0) {
             setSubmitError("Добавь хотя бы одну группу проб.");
             return;
         }
-        if (!containerTypeId || !researchTypeId) {
-            setSubmitError("Выбери тип тары и тип исследования.");
+        if (containerTypeId === null) {
+            setSubmitError("Тип тары не найден в справочнике — выбери из списка.");
+            return;
+        }
+        if (researchTypeId === null) {
+            setSubmitError("Тип исследования не найден в справочнике — выбери из списка.");
             return;
         }
         const payload: OcrApprovePayload = {
             container_number: containerNumber.trim(),
-            container_type_id: Number(containerTypeId),
-            cell_id: cellId === "" ? null : Number(cellId),
+            container_type_id: containerTypeId,
             work_order_coded: workOrderCoded.trim(),
             work_order_incoming: workOrderIncoming.trim(),
-            research_type_id: Number(researchTypeId),
-            site_id: siteId === "" ? null : Number(siteId),
+            research_type_id: researchTypeId,
+            site_id: siteId,
             sample_groups: parsedGroups.groups,
         };
         approve.mutate(payload, {
@@ -160,70 +192,73 @@ export default function OcrReviewPage() {
                 <Paper sx={{ p: 2 }}>
                     <Stack spacing={2}>
                         <Typography variant="subtitle1">Шапка тары</Typography>
+
+                        <SmartAutocomplete
+                            label="Участок"
+                            value={siteName}
+                            onChange={setSiteName}
+                            options={(sites.data ?? []).map(
+                                (s) => `${s.code} — ${s.name}`,
+                            )}
+                            loading={sites.isLoading}
+                            helperText="Сначала выбери участок — от него зависят подсказки Н/З"
+                        />
+
+                        <SmartAutocomplete
+                            label="Тип исследования"
+                            value={researchTypeName}
+                            onChange={setResearchTypeName}
+                            options={(researchTypes.data ?? []).map(
+                                (r) => `${r.code} — ${r.name}`,
+                            )}
+                            loading={researchTypes.isLoading}
+                            required
+                        />
+
+                        <SmartAutocomplete
+                            label="Н/З (текущий)"
+                            value={workOrderCoded}
+                            onChange={setWorkOrderCoded}
+                            options={suggestions.data?.work_orders ?? []}
+                            loading={suggestions.isFetching}
+                            required
+                            helperText={
+                                siteId === null && researchTypeId === null
+                                    ? "Выбери участок или ТИ — появятся подсказки"
+                                    : suggestions.data?.work_orders?.length
+                                        ? `Подсказок: ${suggestions.data.work_orders.length}`
+                                        : "Подсказок нет — введи вручную"
+                            }
+                        />
+
+                        <SmartAutocomplete
+                            label="Н/З (входящий)"
+                            value={workOrderIncoming}
+                            onChange={setWorkOrderIncoming}
+                            options={suggestions.data?.work_orders_incoming ?? []}
+                            loading={suggestions.isFetching}
+                            helperText={
+                                suggestions.data?.work_orders_incoming?.length
+                                    ? `Подсказок: ${suggestions.data.work_orders_incoming.length}`
+                                    : "Введи вручную"
+                            }
+                        />
+
+                        <SmartAutocomplete
+                            label="Тип тары"
+                            value={containerTypeName}
+                            onChange={setContainerTypeName}
+                            options={(containerTypes.data ?? []).map((c) => c.name)}
+                            loading={containerTypes.isLoading}
+                            required
+                        />
+
                         <TextField
                             label="Номер тары"
                             value={containerNumber}
                             onChange={(e) => setContainerNumber(e.target.value)}
                             fullWidth
-                        />
-                        <TextField
-                            label="Тип тары (ID)"
-                            type="number"
-                            value={containerTypeId}
-                            onChange={(e) =>
-                                setContainerTypeId(
-                                    e.target.value === "" ? "" : Number(e.target.value),
-                                )
-                            }
-                            fullWidth
-                            helperText="Справочник — c-5c. Пока ID вручную."
-                        />
-                        <TextField
-                            label="Ячейка (ID, опционально)"
-                            type="number"
-                            value={cellId}
-                            onChange={(e) =>
-                                setCellId(
-                                    e.target.value === "" ? "" : Number(e.target.value),
-                                )
-                            }
-                            fullWidth
-                        />
-                        <TextField
-                            label="Н/З (зашифрованный)"
-                            value={workOrderCoded}
-                            onChange={(e) => setWorkOrderCoded(e.target.value)}
-                            fullWidth
-                        />
-                        <TextField
-                            label="Н/З (входящий)"
-                            value={workOrderIncoming}
-                            onChange={(e) => setWorkOrderIncoming(e.target.value)}
-                            fullWidth
-                        />
-                        <TextField
-                            label="ТИ (ID)"
-                            type="number"
-                            value={researchTypeId}
-                            onChange={(e) =>
-                                setResearchTypeId(
-                                    e.target.value === "" ? "" : Number(e.target.value),
-                                )
-                            }
-                            fullWidth
-                            helperText="Справочник — c-5c. Пока ID вручную."
-                        />
-                        <TextField
-                            label="Участок (ID)"
-                            type="number"
-                            value={siteId}
-                            onChange={(e) =>
-                                setSiteId(
-                                    e.target.value === "" ? "" : Number(e.target.value),
-                                )
-                            }
-                            fullWidth
-                            helperText="Справочник — c-5c. Пока ID вручную."
+                            size="small"
                         />
 
                         <Typography variant="subtitle1" sx={{ pt: 1 }}>
@@ -237,11 +272,14 @@ export default function OcrReviewPage() {
                             minRows={4}
                             maxRows={10}
                             fullWidth
-                            placeholder={"TAA-A | 34076001 | 1-31\nTAA-B | 34076001 | 1-10"}
+                            placeholder={
+                                "TAA-A | 34076001 | 001-031\nTAA-B | 34076001 | 001-010"
+                            }
                             helperText={
                                 parsedGroups.errors.length > 0
                                     ? parsedGroups.errors.join("; ")
-                                    : `Разобрано групп: ${parsedGroups.groups.length}`
+                                    : `Разобрано групп: ${parsedGroups.groups.length}. ` +
+                                    "Длина `to` = длина sequence (001-031 → трёхзначный, 1-31 → однозначный)."
                             }
                             error={parsedGroups.errors.length > 0}
                         />
@@ -271,21 +309,18 @@ function ImageWithBboxes({ task }: { task: OcrTask }) {
     const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
     const src = resolveImageUrl(task.image);
 
-    const onLoad = () => {
-        const el = imgRef.current;
-        if (!el) return;
-        setDims({ w: el.naturalWidth, h: el.naturalHeight });
-    };
-
     return (
-        <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-            <CardContent sx={{ flex: 1, position: "relative", overflow: "auto" }}>
+        <Card sx={{ height: "100%" }}>
+            <CardContent sx={{ position: "relative", overflow: "auto" }}>
                 <div style={{ position: "relative", display: "inline-block" }}>
                     <img
                         ref={imgRef}
                         src={src}
                         alt="OCR"
-                        onLoad={onLoad}
+                        onLoad={() => {
+                            const el = imgRef.current;
+                            if (el) setDims({ w: el.naturalWidth, h: el.naturalHeight });
+                        }}
                         style={{ maxWidth: "100%", display: "block" }}
                     />
                     {dims && task.raw_ocr_data && (
@@ -300,20 +335,15 @@ function ImageWithBboxes({ task }: { task: OcrTask }) {
                                 pointerEvents: "none",
                             }}
                         >
-                            {task.raw_ocr_data.words.map((w, i) => {
-                                const pts = w.bbox
-                                    .map(([x, y]) => `${x},${y}`)
-                                    .join(" ");
-                                return (
-                                    <polygon
-                                        key={i}
-                                        points={pts}
-                                        fill="rgba(30, 58, 95, 0.15)"
-                                        stroke="rgba(30, 58, 95, 0.9)"
-                                        strokeWidth={2}
-                                    />
-                                );
-                            })}
+                            {task.raw_ocr_data.words.map((w, i) => (
+                                <polygon
+                                    key={i}
+                                    points={w.bbox.map(([x, y]) => `${x},${y}`).join(" ")}
+                                    fill="rgba(30, 58, 95, 0.15)"
+                                    stroke="rgba(30, 58, 95, 0.9)"
+                                    strokeWidth={2}
+                                />
+                            ))}
                         </svg>
                     )}
                 </div>

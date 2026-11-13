@@ -1,11 +1,13 @@
 /**
  * API OCR: OcrTask, OcrBatch, approve.
  *
- * c-3.x-migration-5b.
+ * c-3.x-migration-5b: recognize, approve, bbox.
+ * c-3.x-migration-5c: batch list / detail.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "./client";
+import type { PaginatedResponse } from "./types";
 
 export type OcrTaskStatus =
     | "PENDING"
@@ -14,10 +16,35 @@ export type OcrTaskStatus =
     | "DONE"
     | "ERROR";
 
+export type OcrBatchStatus =
+    | "DRAFT"
+    | "UPLOADING"
+    | "PROCESSING"
+    | "REVIEW"
+    | "COMPLETED"
+    | "FAILED";
+
+export const OCR_BATCH_STATUS_LABELS: Record<OcrBatchStatus, string> = {
+    DRAFT: "Черновик",
+    UPLOADING: "Загрузка фото",
+    PROCESSING: "Распознавание",
+    REVIEW: "Готово к проверке",
+    COMPLETED: "Подтверждено",
+    FAILED: "Ошибка",
+};
+
+export const OCR_TASK_STATUS_LABELS: Record<OcrTaskStatus, string> = {
+    PENDING: "Ожидает загрузки",
+    PROCESSING: "В процессе",
+    READY: "Распознано",
+    DONE: "Подтверждено",
+    ERROR: "Ошибка",
+};
+
 export interface OcrWord {
     text: string;
     confidence: number;
-    bbox: number[][]; // 4 точки: [[x,y], [x,y], [x,y], [x,y]]
+    bbox: number[][];
 }
 
 export interface OcrRawData {
@@ -28,12 +55,22 @@ export interface OcrRawData {
 export interface OcrTask {
     id: number;
     batch: number;
-    image: string; // относительный URL от MEDIA_ROOT
+    image: string;
     status: OcrTaskStatus;
     raw_ocr_data: OcrRawData | null;
     reviewed_data: Record<string, unknown> | null;
     error_message: string;
     created_at: string;
+}
+
+export interface OcrBatch {
+    id: number;
+    user: number;
+    cell: number | null;
+    status: OcrBatchStatus;
+    created_at: string;
+    processed_at: string | null;
+    tasks: OcrTask[];
 }
 
 export interface SampleGroup {
@@ -49,7 +86,6 @@ export interface SampleGroup {
 export interface OcrApprovePayload {
     container_number: string;
     container_type_id: number;
-    cell_id: number | null;
     work_order_coded: string;
     work_order_incoming: string;
     research_type_id: number;
@@ -63,11 +99,6 @@ export interface OcrApproveResult {
     batch_completed: boolean;
 }
 
-/**
- * OcrTask.image приходит из DRF как относительный путь
- * (например, `media/ocr_tasks/2026/11/13/foo.png`).
- * Приводим к абсолютному URL от текущего origin.
- */
 export function resolveImageUrl(image: string): string {
     if (!image) return "";
     if (image.startsWith("http://") || image.startsWith("https://")) return image;
@@ -100,5 +131,30 @@ export function useApproveOcrTask(taskId: number) {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ["ocr"] });
         },
+    });
+}
+
+export function useOcrBatches() {
+    return useQuery({
+        queryKey: ["ocr", "batches"],
+        queryFn: async () => {
+            const { data } = await apiClient.get<PaginatedResponse<OcrBatch>>(
+                "/ocr/batches/?per_page=200",
+            );
+            return data;
+        },
+    });
+}
+
+export function useOcrBatch(batchId: number | null) {
+    return useQuery({
+        queryKey: ["ocr", "batch", batchId],
+        queryFn: async () => {
+            const { data } = await apiClient.get<OcrBatch>(
+                `/ocr/batches/${batchId}/`,
+            );
+            return data;
+        },
+        enabled: batchId !== null && batchId > 0,
     });
 }

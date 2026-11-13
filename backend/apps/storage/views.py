@@ -760,6 +760,7 @@ class SmartInputSuggestionsView(APIView):
 
     def get(self, request):
         from apps.samples.models import Sample
+        from apps.work_orders.models import WorkOrder
 
         site_raw = (request.query_params.get("site") or "").strip()
         work_order = (request.query_params.get("work_order") or "").strip()
@@ -780,6 +781,13 @@ class SmartInputSuggestionsView(APIView):
             .values_list("current_work_order__order_number", flat=True)
             .order_by().distinct()[:20]
         )
+
+        work_orders_incoming = list(
+            WorkOrder.objects.filter(order_type="INCOMING")
+            .values_list("order_number", flat=True)
+            .order_by("-created_at")
+            .distinct()[:20]
+        )
         research_types = list(
             qs.exclude(research_type__isnull=True)
             .values_list("research_type__code", flat=True)
@@ -797,6 +805,7 @@ class SmartInputSuggestionsView(APIView):
 
         return Response({
             "work_orders": work_orders,
+                "work_orders_incoming": work_orders_incoming,
             "research_types": research_types,
             "samples": samples,
             "wells": wells,
