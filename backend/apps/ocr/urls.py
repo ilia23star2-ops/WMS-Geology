@@ -6,6 +6,7 @@ from .views import (
     OcrRecognizeView,
     OcrTaskApproveView,
     OcrTaskDetailView,
+    OcrTaskZonesView,
 )
 
 urlpatterns = [
@@ -14,4 +15,5 @@ urlpatterns = [
     path('batches/<int:pk>/', OcrBatchDetailView.as_view(), name='ocr-batch-detail'),
     path('tasks/<int:pk>/', OcrTaskDetailView.as_view(), name='ocr-task-detail'),
     path('tasks/<int:pk>/approve/', OcrTaskApproveView.as_view(), name='ocr-task-approve'),
+    path('tasks/<int:pk>/zones/', OcrTaskZonesView.as_view(), name='ocr-task-zones'),
 ]

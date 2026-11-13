@@ -14,6 +14,7 @@ from .serializers import (
     OcrApproveSerializer,
     OcrBatchSerializer,
     OcrTaskSerializer,
+    OcrZonesPayloadSerializer,
 )
 from .services.approve import approve_task
 
@@ -25,6 +26,21 @@ class OcrRecognizeView(APIView):
         image_file = request.FILES.get('image')
         if not image_file:
             return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 5e-2: zones_json — опционально, вместе с image
+        zones: list | None = None
+        zones_json = request.data.get('zones_json')
+        if zones_json:
+            try:
+                raw_zones = json.loads(zones_json)
+            except json.JSONDecodeError as e:
+                return Response(
+                    {'error': f'Invalid zones_json: {e}'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            zser = OcrZonesPayloadSerializer(data={'zones': raw_zones})
+            zser.is_valid(raise_exception=True)
+            zones = zser.validated_data['zones']
 
         batch_id = request.data.get('batch_id')
         if batch_id:
@@ -40,6 +56,9 @@ class OcrRecognizeView(APIView):
             batch = OcrBatch.objects.create(user=user)
 
         task = OcrTask.objects.create(batch=batch, image=image_file)
+        if zones is not None:
+            task.zones = zones
+            task.save(update_fields=['zones'])
 
         python_exe = r"D:\Dev\python312\python.exe"
         script_path = os.path.join(
@@ -57,6 +76,10 @@ class OcrRecognizeView(APIView):
             if result.returncode == 0:
                 try:
                     ocr_data = json.loads(result.stdout)
+                    # 5e-2: mapping zones + raw_ocr_data → extracted
+                    from .services.mapping import extract_fields
+                    extracted = extract_fields(task.zones or [], ocr_data)
+                    ocr_data['extracted'] = extracted
                     task.raw_ocr_data = ocr_data
                     task.status = 'READY'
                     task.save()
@@ -65,6 +88,7 @@ class OcrRecognizeView(APIView):
                         "task_id": task.id,
                         "batch_id": batch.id,
                         "data": ocr_data,
+                        "extracted": extracted,
                     }, status=status.HTTP_200_OK)
                 except json.JSONDecodeError:
                     task.status = 'ERROR'
@@ -94,10 +118,6 @@ class OcrRecognizeView(APIView):
 
 
 class OcrBatchListCreateView(generics.ListCreateAPIView):
-    """GET /api/v1/ocr/batches/ — список; POST — создать черновик батча.
-
-    Свои батчи — все. Staff/superuser — все.
-    """
     serializer_class = OcrBatchSerializer
     permission_classes = [IsAuthenticated]
 
@@ -112,7 +132,6 @@ class OcrBatchListCreateView(generics.ListCreateAPIView):
 
 
 class OcrBatchDetailView(generics.RetrieveAPIView):
-    """GET /api/v1/ocr/batches/{id}/ — батч + все задачи."""
     serializer_class = OcrBatchSerializer
     permission_classes = [IsAuthenticated]
 
@@ -124,7 +143,6 @@ class OcrBatchDetailView(generics.RetrieveAPIView):
 
 
 class OcrTaskDetailView(generics.RetrieveAPIView):
-    """GET /api/v1/ocr/tasks/{id}/ — задача + image_url + raw_ocr_data."""
     serializer_class = OcrTaskSerializer
     permission_classes = [IsAuthenticated]
 
@@ -136,11 +154,6 @@ class OcrTaskDetailView(generics.RetrieveAPIView):
 
 
 class OcrTaskApproveView(APIView):
-    """POST /api/v1/ocr/tasks/{id}/approve/ — создать Container + Sample.
-
-    Body — OcrApproveSerializer (наследник FillSamplesSerializer +
-    container_type_id + cell_id).
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
@@ -161,3 +174,38 @@ class OcrTaskApproveView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(result, status=status.HTTP_200_OK)
+
+
+class OcrTaskZonesView(APIView):
+    """POST /api/v1/ocr/tasks/{id}/zones/ — сохранить разметку зон на фото.
+
+    c-3.x-migration-5e-1. Payload: {"zones": [{type, bbox|rect, source}, ...]}.
+    Нельзя менять у задачи в статусе DONE — она уже подтверждена.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            if request.user.is_staff or request.user.is_superuser:
+                task = OcrTask.objects.get(pk=pk)
+            else:
+                task = OcrTask.objects.get(pk=pk, batch__user=request.user)
+        except OcrTask.DoesNotExist:
+            return Response({'error': 'Задача не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if task.status == 'DONE':
+            return Response(
+                {'error': 'Нельзя менять зоны у подтверждённой задачи.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ser = OcrZonesPayloadSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        task.zones = ser.validated_data['zones']
+        task.save(update_fields=['zones'])
+
+        return Response(
+            {'task_id': task.id, 'zones_count': len(task.zones)},
+            status=status.HTTP_200_OK,
+        )
