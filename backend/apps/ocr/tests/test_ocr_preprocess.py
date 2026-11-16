@@ -1,6 +1,6 @@
-"""Тесты preprocess OCR (c-3.x-migration-6i).
+"""Тесты preprocess OCR (c-3.x-migration-6i + 6j: tuple return).
 
-PIL есть в backend venv (11.3.0) — гоняем через pytest без python312.
+PIL есть в backend venv — гоняем через pytest без python312.
 """
 import os
 from pathlib import Path
@@ -23,22 +23,24 @@ def _make_img(path: Path, size: tuple, mode: str = "RGB") -> Path:
 
 
 def test_preprocess_large_image_resized(tmp_path):
-    """4000×3000 → max side = 2000."""
+    """4000×3000 → max side = 2000, scale_x=2, scale_y=2."""
     src = _make_img(tmp_path / "big.jpg", (4000, 3000))
-    out = preprocess_image(str(src))
+    out, sx, sy = preprocess_image(str(src))
     try:
         with Image.open(out) as img:
             assert max(img.size) == MAX_SIDE
             assert img.mode == "L"
+        assert abs(sx - 2.0) < 0.01
+        assert abs(sy - 2.0) < 0.01
     finally:
         if os.path.exists(out):
             os.unlink(out)
 
 
 def test_preprocess_small_image_upscaled(tmp_path):
-    """400×300 → min side = 800 (upscale по короткой стороне)."""
+    """400×300 → min side = 800."""
     src = _make_img(tmp_path / "small.jpg", (400, 300))
-    out = preprocess_image(str(src))
+    out, _sx, _sy = preprocess_image(str(src))
     try:
         with Image.open(out) as img:
             assert min(img.size) >= MIN_SIDE
@@ -48,9 +50,8 @@ def test_preprocess_small_image_upscaled(tmp_path):
 
 
 def test_preprocess_output_grayscale(tmp_path):
-    """Результат всегда L (grayscale)."""
     src = _make_img(tmp_path / "rgb.jpg", (1200, 800), "RGB")
-    out = preprocess_image(str(src))
+    out, _sx, _sy = preprocess_image(str(src))
     try:
         with Image.open(out) as img:
             assert img.mode == "L"

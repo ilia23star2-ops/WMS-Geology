@@ -226,14 +226,22 @@ export default function OcrReviewPage() {
         }
         if (ex.work_order_coded) setWorkOrderCoded(ex.work_order_coded);
         if (ex.work_order_incoming) setWorkOrderIncoming(ex.work_order_incoming);
+        // c-6a-fix5c: ждём все справочники, иначе mapping code→name не сработает
+        if (!sites.data || !researchTypes.data || !containerTypes.data) {
+            return;
+        }
         if (ex.container_number) setContainerNumber(ex.container_number);
-        if (ex.site) setSiteName(ex.site);
+        // c-6a-fix5c: участок — code → "code — name"
+        if (ex.site) {
+            const s = sites.data.find((x) => x.code === ex.site);
+            setSiteName(s ? `${s.code} — ${s.name}` : ex.site);
+        }
         if (ex.container_type) setContainerTypeName(ex.container_type);
         if (ex.research_type) {
-            const rt = researchTypes.data?.find(
+            const rt = researchTypes.data.find(
                 (x) => x.code === ex.research_type || x.name === ex.research_type,
             );
-            if (rt) setResearchTypeName(`${rt.code} — ${rt.name}`);
+            setResearchTypeName(rt ? `${rt.code} — ${rt.name}` : ex.research_type);
         }
         if (ex.samples && ex.samples.length > 0) {
             const opts = {
@@ -275,7 +283,7 @@ export default function OcrReviewPage() {
             setParseErrors(errors);
         }
         setPrefilled(true);
-    }, [task, prefilled, researchTypes.data, laboratoryPrefixes, siteMatchPatterns]);
+    }, [task, prefilled, sites.data, researchTypes.data, containerTypes.data, laboratoryPrefixes, siteMatchPatterns]);
 
     useEffect(() => {
         if (!task?.raw_ocr_data?.text) return;

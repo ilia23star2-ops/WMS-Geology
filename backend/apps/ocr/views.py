@@ -91,12 +91,21 @@ class OcrRecognizeView(APIView):
                         for rt in ResearchType.objects.filter(is_active=True)
                     ]
                     cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
+                    # 6j: valid_prefixes (site.code + match_patterns) — фильтр Н/З, коррекция ST→TST
+                    vp = set()
+                    for s in sites_meta:
+                        if s.get("code"):
+                            vp.add(s["code"].upper())
+                        for p in (s.get("match_patterns") or []):
+                            if p:
+                                vp.add(p.upper())
                     extracted = extract_fields(
                         task.zones or [],
                         ocr_data,
                         sites=sites_meta,
                         research_types=rts_meta,
                         container_types=cts_meta,
+                        valid_prefixes=vp,
                     )
                     ocr_data['extracted'] = extracted
                     task.raw_ocr_data = ocr_data
