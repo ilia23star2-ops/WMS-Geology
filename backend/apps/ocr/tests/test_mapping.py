@@ -1,6 +1,8 @@
 """Тесты apps.ocr.services.mapping.
 
-c-3.x-migration-5e-2.
+c-3.x-migration-5e-2: базовые.
+c-3.x-migration-6a-fix3: реальный формат TST1234501 + fallback work_order.
+c-3.x-migration-6a-fix4: дефис перед цифрами (TST-1234501).
 """
 import pytest
 
@@ -35,11 +37,10 @@ def test_bbox_intersects_false():
 def test_bbox_intersects_edge_touching():
     a = [[0, 0], [100, 0], [100, 100], [0, 100]]
     b = [[100, 0], [200, 0], [200, 100], [100, 100]]
-    # Границы касаются — считаем пересечением (max(axs)==min(bxs))
     assert bbox_intersects(a, b) is True
 
 
-# -------------------- extract_fields --------------------
+# -------------------- старый формат (TAA-A...) --------------------
 
 def test_extract_work_order_from_zone():
     words = [
@@ -87,7 +88,7 @@ def test_extract_empty_zone_returns_none():
     assert result["source"] == "none"
 
 
-def test_extract_samples_fallback():
+def test_extract_samples_fallback_old_format():
     text = "TST0001 TAA-A34076001 TAA-A34076002 шум TAA-B12345"
     result = extract_fields([], _ocr([], text))
 
@@ -122,3 +123,93 @@ def test_extract_no_zones_no_samples_returns_none():
     result = extract_fields([], _ocr([], ""))
     assert result["source"] == "none"
     assert result["samples"] == []
+
+
+# -------------------- новый формат (TST1234501) --------------------
+
+def test_extract_samples_tst_format():
+    """TST1234501 — новый формат этикетки, без дефиса."""
+    text = "TST1234 TST1234501 TST1234502 TST1234503"
+    result = extract_fields([], _ocr([], text))
+
+    assert "TST1234501" in result["samples"]
+    assert "TST1234502" in result["samples"]
+    assert "TST1234503" in result["samples"]
+    assert "TST1234" not in result["samples"]
+
+
+def test_extract_work_order_fallback():
+    """TST1234 — Н/З, не попадёт в samples (4 цифры < 5)."""
+    text = "TST1234 TST1234501 TST1234502"
+    result = extract_fields([], _ocr([], text))
+
+    assert result["work_order_coded"] == "TST1234"
+    assert "TST1234501" in result["samples"]
+    assert "TST1234502" in result["samples"]
+    assert "TST1234" not in result["samples"]
+
+
+def test_extract_work_order_fallback_no_samples():
+    text = "TST1234"
+    result = extract_fields([], _ocr([], text))
+
+    assert result["work_order_coded"] == "TST1234"
+    assert result["samples"] == []
+    assert result["source"] == "fallback"
+
+
+def test_extract_work_order_fallback_realistic_label():
+    text = (
+        "Тестовый участок TST1234 ICP 1 "
+        "TST1234501 TST1234502 TST1234503 "
+        "TST1234504 TST1234505 TST1234506"
+    )
+    result = extract_fields([], _ocr([], text))
+
+    assert result["work_order_coded"] == "TST1234"
+    assert len(result["samples"]) == 6
+    assert result["samples"][0] == "TST1234501"
+    assert "TST1234" not in result["samples"]
+
+
+# -------------------- 6a-fix4: дефис перед цифрами --------------------
+
+def test_extract_sample_with_dash_before_digits():
+    """TST-1234501 — дефис между буквами и цифрами."""
+    text = "TST-1234501 TST-1234502"
+    result = extract_fields([], _ocr([], text))
+
+    assert "TST-1234501" in result["samples"]
+    assert "TST-1234502" in result["samples"]
+
+
+def test_extract_sample_with_double_dash():
+    """TAA-A-34076001 — дефис + буква + дефис + цифры."""
+    text = "TAA-A-34076001"
+    result = extract_fields([], _ocr([], text))
+
+    assert "TAA-A-34076001" in result["samples"]
+
+
+def test_extract_work_order_with_dash():
+    """TST-1234 — Н/З с дефисом."""
+    text = "TST-1234"
+    result = extract_fields([], _ocr([], text))
+
+    assert result["work_order_coded"] == "TST-1234"
+    assert result["samples"] == []
+
+
+def test_extract_mixed_formats():
+    """В одном тексте — все форматы проб сразу."""
+    text = (
+        "TST1234 "
+        "TAA-A34076001 TST1234501 TST-1234502 TAA-A-34076003"
+    )
+    result = extract_fields([], _ocr([], text))
+
+    assert result["work_order_coded"] == "TST1234"
+    assert "TAA-A34076001" in result["samples"]
+    assert "TST1234501" in result["samples"]
+    assert "TST-1234502" in result["samples"]
+    assert "TAA-A-34076003" in result["samples"]

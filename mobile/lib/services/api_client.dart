@@ -17,16 +17,9 @@ class ApiException implements Exception {
     this.isNetworkError = false,
   });
 
-  /// Человекочитаемое сообщение.
   final String message;
-
-  /// HTTP-код ответа (null для сетевых ошибок).
   final int? statusCode;
-
-  /// Дополнительные данные (например, ошибки валидации DRF).
   final Map<String, dynamic>? details;
-
-  /// Является ли ошибка сетевой (Dio: connectionError / timeout).
   final bool isNetworkError;
 
   @override
@@ -139,9 +132,7 @@ class ApiClient {
     }
   }
 
-  /// c-7d: скачать бинарный файл (PDF, картинку). JWT-интерцептор
-  /// уже добавит `Authorization` в `dio`. Ошибка конвертируется
-  /// в `ApiException` — как `get`/`post`.
+  /// Скачать бинарный файл (PDF, картинку).
   Future<List<int>> download(String path) async {
     try {
       final response = await dio.get<List<int>>(
@@ -161,7 +152,34 @@ class ApiClient {
     }
   }
 
-  /// Преобразует ошибку Dio в ApiException.
+  /// 6a: multipart POST (загрузка файла + доп. поля).
+  Future<Response<T>> uploadMultipart<T>(
+    String path, {
+    required String imagePath,
+    Map<String, dynamic>? fields,
+  }) async {
+    try {
+      final formMap = <String, dynamic>{
+        'image': await MultipartFile.fromFile(imagePath),
+      };
+      if (fields != null) {
+        formMap.addAll(fields);
+      }
+      final formData = FormData.fromMap(formMap);
+      return await dio.post<T>(
+        path,
+        data: formData,
+        options: Options(
+          contentType: 'multipart/form-data',
+          responseType: ResponseType.json,
+          headers: {'Accept': 'application/json'},
+        ),
+      );
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
   ApiException _toApiException(DioException e) {
     final response = e.response;
     final statusCode = response?.statusCode;
@@ -193,8 +211,6 @@ class ApiClient {
       message = response.data as String;
     }
 
-    // Классифицируем по DioExceptionType. Dio добавляет новые типы
-    // (например, transformTimeout), поэтому default обязателен.
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
@@ -214,18 +230,14 @@ class ApiClient {
         message = 'Запрос отменён';
         break;
       case DioExceptionType.badResponse:
-        // Сервер ответил — это не сетевая ошибка.
         break;
       case DioExceptionType.unknown:
-        // В Dio 5.x 'unknown' обычно = SocketException (нет сети) или DNS-ошибка.
         if (statusCode == null) {
           message = 'Не удалось подключиться к серверу';
           isNetwork = true;
         }
         break;
       default:
-        // Будущие типы Dio (transformTimeout и т.п.): считаем сетевыми,
-        // если сервер не ответил.
         if (statusCode == null) {
           isNetwork = true;
         }

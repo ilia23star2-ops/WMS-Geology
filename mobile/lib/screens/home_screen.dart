@@ -17,6 +17,7 @@ import '../services/scan_history_service.dart';
 import '../widgets/network_badge.dart';
 import 'container_detail_screen.dart';
 import 'containers_list_screen.dart';
+import 'ocr_new_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
 
@@ -82,6 +83,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openContainers() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const ContainersListScreen()));
+  }
+
+  Future<void> _openOcr() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const OcrNewScreen()));
   }
 
   void _showComingSoon(String section) {
@@ -286,6 +292,15 @@ class _HomeScreenState extends State<HomeScreen> {
           _drawerStub(context, Icons.print_outlined, 'Печать'),
           _drawerStub(context, Icons.account_tree_outlined, 'Топология'),
           _drawerStub(context, Icons.menu_book_outlined, 'Справочники'),
+
+          ListTile(
+            leading: const Icon(Icons.document_scanner_outlined),
+            title: const Text('Оцифровка'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openOcr();
+            },
+          ),
 
           const Divider(),
 

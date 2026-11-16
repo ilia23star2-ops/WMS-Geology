@@ -1,23 +1,39 @@
 """Mapping zones + raw_ocr_data → extracted fields.
 
-c-3.x-migration-5e-2.
+c-3.x-migration-5e-2: базовый маппинг через зоны.
+c-3.x-migration-6a-fix3: расширенный regex для проб (TST1234501) +
+  fallback work_order_coded без зон.
+c-3.x-migration-6a-fix4: поддержка дефиса перед цифрами
+  (TST-1234501, TAA-A-34076001); кириллица в префиксе.
 
-Для каждой зоны:
-  - берём слова из raw_ocr_data.words, чьи bbox пересекаются с зоной;
-  - склеиваем текст по позиции (сверху-вниз, слева-направо);
-  - это значение поля.
+Реальные форматы этикеток (встречались):
+  TAA-A34076001       — «старый», дефис + буква + цифры
+  TST1234501          — без дефиса
+  TST-1234501         — дефис перед цифрами
+  TAA-A-34076001      — дефис + буква + дефис + цифры
 
-Для проб — fallback по всему тексту (regex TAA-A\\d+), потому что
-EasyOCR обычно читает пробу как одно слово, а зона 'sample' пока
-используется только для подсветки (UI, 5f).
+Если встретится ещё формат — расширить _SAMPLE_RE и добавить тест.
 """
 import re
-from typing import Any, Optional
+from typing import Optional
 
 
-# TAA-A34076001, TAA-B12345, TTA-A9999 и т.п.
-_SAMPLE_RE = re.compile(r"\b[A-Z]{2,}-[A-Z]\d{3,}\b", re.IGNORECASE)
-# Номера скважин: middle из sample-номера или "скважина 12345"
+# Проба: 2+ буквы (кириллица или латиница), опционально -буква,
+# опционально ещё один дефис, затем 5+ цифр.
+# Покрывает: TST1234501, TAA-A34076001, TST-1234501, TAA-A-34076001
+_SAMPLE_RE = re.compile(
+    r"\b[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d{5,}\b",
+    re.IGNORECASE,
+)
+
+# Н/З: 2+ буквы, опционально -буква, опционально дефис, 2-4 цифры.
+# Покрывает: TST1234, TAA-A001, TST-1234
+_WORK_ORDER_RE = re.compile(
+    r"\b[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d{2,4}\b",
+    re.IGNORECASE,
+)
+
+# Скважина: 5+ цифр внутри sample-номера
 _WELL_RE = re.compile(r"\d{5,}")
 
 
@@ -36,8 +52,6 @@ def bbox_intersects(a: list, b: list) -> bool:
 
 
 def _sort_words(words: list) -> list:
-    """Сортировка сверху-вниз, слева-направо (центр bbox)."""
-
     def key(w: dict) -> tuple:
         cy = sum(p[1] for p in w["bbox"]) / 4
         cx = sum(p[0] for p in w["bbox"]) / 4
@@ -60,7 +74,7 @@ def _extract_scalar(words: list, zone: dict) -> Optional[str]:
 
 
 def extract_fields(zones: list, ocr_data: dict) -> dict:
-    """Извлекает поля из OCR-данных по зонам.
+    """Извлекает поля из OCR-данных по зонам + fallback.
 
     Возвращает dict:
       work_order_coded: str | None
@@ -97,7 +111,7 @@ def extract_fields(zones: list, ocr_data: dict) -> dict:
             if val:
                 result[t] = val
 
-    # 2. Samples — regex по всему тексту (fallback + зоны 'sample' как подсказка)
+    # 2. Samples — regex по всему тексту
     samples_set: set = set()
     for m in _SAMPLE_RE.findall(full_text):
         samples_set.add(m.upper())
@@ -116,12 +130,23 @@ def extract_fields(zones: list, ocr_data: dict) -> dict:
                     wells_set.add(wm)
     result["wells"] = sorted(wells_set)
 
-    # 4. Источник
+    # 4. Fallback: work_order_coded без зон (после вычитания samples)
+    if not result["work_order_coded"]:
+        text_wo = full_text
+        for s in result["samples"]:
+            text_wo = text_wo.replace(s, " ")
+        for m in _WORK_ORDER_RE.findall(text_wo):
+            candidate = m.upper()
+            if candidate not in samples_set:
+                result["work_order_coded"] = candidate
+                break
+
+    # 5. Источник
     has_zones = bool(zones)
-    has_zones_data = any(
-        result[k] for k in scalar_types
+    has_zones_data = any(result[k] for k in scalar_types)
+    has_fallback = bool(
+        result["samples"] or result["wells"] or result["work_order_coded"]
     )
-    has_fallback = bool(result["samples"] or result["wells"])
 
     if has_zones and has_zones_data and has_fallback:
         result["source"] = "mixed"

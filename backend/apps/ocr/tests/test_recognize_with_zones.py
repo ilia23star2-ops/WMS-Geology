@@ -94,7 +94,7 @@ def test_recognize_without_zones_fallback(api_client, png):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body['extracted']['work_order_coded'] is None
+    assert body['extracted']['work_order_coded'] == 'TST0001'
     assert 'TAA-A34076001' in body['extracted']['samples']
     assert body['extracted']['source'] == 'fallback'
 
