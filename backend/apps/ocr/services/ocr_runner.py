@@ -14,6 +14,7 @@ if _THIS_DIR not in sys.path:
 import easyocr
 
 from bbox import safe_bbox
+from ocr_preprocess import preprocess_image
 
 
 def main():
@@ -26,10 +27,29 @@ def main():
         print(json.dumps({"error": "Image not found"}))
         sys.exit(1)
 
-    # Suppress EasyOCR stdout (loading bars, etc) — они бы сломали JSON
-    with contextlib.redirect_stdout(sys.stderr):
-        reader = easyocr.Reader(['ru', 'en'], gpu=False)
-        results = reader.readtext(image_path)
+    # c-6i: preprocess (rotate / resize / gray / contrast / sharpen)
+    preprocessed_path = None
+    try:
+        preprocessed_path = preprocess_image(image_path)
+        read_path = preprocessed_path
+    except Exception as e:
+        # Если preprocess упал — работаем на оригинале, не ломаем OCR.
+        # (Сообщение в stderr, чтобы не сломать JSON в stdout.)
+        print(f"[preprocess] fallback to original: {e}", file=sys.stderr)
+        read_path = image_path
+
+    try:
+        # Suppress EasyOCR stdout (loading bars, etc) — они бы сломали JSON
+        with contextlib.redirect_stdout(sys.stderr):
+            reader = easyocr.Reader(['ru', 'en'], gpu=False)
+            results = reader.readtext(read_path)
+    finally:
+        # Удаляем временный файл, даже если readtext упал.
+        if preprocessed_path and os.path.exists(preprocessed_path):
+            try:
+                os.unlink(preprocessed_path)
+            except OSError:
+                pass
 
     words = []
     full_text = []
