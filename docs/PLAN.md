@@ -45,7 +45,13 @@
 | c-3.x-migration-5d | Web: `Н/З (входящий)` подсказки | `/storage/suggestions/` + `work_orders_incoming`, +2 backend-теста | ✅ |
 | c-3.x-migration-5e | Backend: `zones` + mapping | `OcrTask.zones`, `POST /zones/`, `mapping.py`, `extracted`, +14 тестов | ✅ |
 | c-3.x-migration-5f | Web: `extracted` + подсветка + диапазоны | `api/ocr.ts` (типы), `OcrReviewPage.tsx` v10, `RangeEditDialog`, группировка по скважинам | ✅ |
-| c-3.x-migration-6 | Mobile: экран «Оцифровка» | ячейка → фото → зоны → `POST /recognize/` (image + zones_json) | ⬜ |
+| c-3.x-migration-6a | Mobile: экран «Оцифровка» | камера / галерея / QR ячейки / `POST /recognize/` | ✅ |
+| c-3.x-migration-6a-fix5 | Extraction+Web prefill | fuzzy match `Site`/`ResearchType`/`ContainerType` в тексте; web prefill + `parseSampleInput` fallback + bbox↔field для `words[]` | ⬜ |
+| c-3.x-migration-6e | Mobile: группировка фото по ячейкам | свёрнутый список `OcrBatch`, чекбоксы проб | ⬜ |
+| c-3.x-migration-6f | Mobile: прогресс между фото | SyncQueue для OCR (офлайн + отложенная отправка) | ⬜ |
+| c-3.x-migration-6g | Детекция галочек в чекбоксах | OpenCV template matching (☑ / ☐) | ⬜ |
+| c-3.x-migration-6h | Web: подсветка «подозрительных» слов | low-confidence bbox → клик → scroll to field | ⬜ |
+| c-3.x-migration-6c | Mobile: ручная разметка зон | free-draw → тип зоны → `zones_json` в recognize | ⬜ |
 | c-3.x-migration-7 | Mobile: SyncQueue для зон | офлайн-разметка → отправка при возврате сети | ⬜ |
 | c-3.x-migration-8 | Web: fallback без зон (regex) | если зон нет — эвристика по тексту (TST\d+, T-\d+, TAA-A\d+) | ⬜ |
 
@@ -272,6 +278,7 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
+| ТД-84 | `parseSampleInput` на web: жёстко `DEFAULT_DIGITS=3`, не понимает `TST1234501` (без дефиса, 7 цифр). Нужен fallback-парсер или `sequence_digits` из extracted. Баг в `OcrReviewPage`, но не блокер 6a (mobile работает). | средний | следующая ревизия web |
 | ТД-82 | Связь номера тары ↔ диапазон проб: при вводе номера тары (`T-001`) — автозаполнение начального/конечного диапазона (и наоборот). Требует бизнес-решения (1 к 1 / 1 к N / по последнему созданному). | низкий | по запросу |
 | ТД-83 | Зачистка мёртвого кода после 5f: `utils/parseSampleGroups.ts` (+тест) — не используется в `OcrReviewPage` v10. Проверить использование в других файлах, удалить если не нужно. | низкий | следующая ревизия web |
 | ТД-81 | Web: `npm run build` (`tsc --noEmit`) падает на MUI 9 breaking changes в pre-existing файлах: `PoolPage.tsx`, `ShipmentsPage.tsx`, `TopologyPage.tsx`, `ContainersPage.tsx`, `SamplesTreeTable.tsx`. Типы `<Grid item>`/`<Grid container>`, `Stack justifyContent`/`alignItems` в prop-позиции, unused `CircularProgress`/`PlaylistAddCheckIcon`. Dev (`npm run dev` через vite esbuild) работает. | высокий | при следующей ревизии web |

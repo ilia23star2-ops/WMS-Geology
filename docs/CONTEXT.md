@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-11-13
+**Дата обновления:** 2026-11-16
 
 ---
 
@@ -38,6 +38,9 @@
   - `POST /api/v1/ocr/tasks/{id}/approve/` — `Container` + `Sample` + `WorkOrder` link из `sample_groups`.
   - `GET /api/v1/ocr/batches/` / `batches/{id}/` / `tasks/{id}/` — списки.
   - `apps/ocr/services/mapping.py` — 6 типов зон (`work_order_coded`, `work_order_incoming`, `container_number`, `research_type`, `sample`, `well`), AABB-intersect, regex-fallback для samples/wells.
+- **Mobile:**
+  - Drawer «Оцифровка» → `OcrNewScreen`: камера / галерея / QR ячейки → `POST /recognize/`.
+  - `OcrService.recognize()`, `ApiClient.uploadMultipart()`, `QrCellScannerDialog`.
 - **Web:**
   - Sidebar «Оцифровка» → `/ocr/batches`.
   - Форма `/ocr/review/:id` — предзаполнение, подсветка, диапазоны, `RangeEditDialog`.
