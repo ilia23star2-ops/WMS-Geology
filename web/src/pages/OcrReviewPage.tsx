@@ -156,6 +156,7 @@ export default function OcrReviewPage() {
     const [activeField, setActiveField] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitOk, setSubmitOk] = useState<string | null>(null);
+    const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [prefilled, setPrefilled] = useState(false);
 
     const siteId = useMemo(() => {
@@ -226,6 +227,8 @@ export default function OcrReviewPage() {
         if (ex.work_order_coded) setWorkOrderCoded(ex.work_order_coded);
         if (ex.work_order_incoming) setWorkOrderIncoming(ex.work_order_incoming);
         if (ex.container_number) setContainerNumber(ex.container_number);
+        if (ex.site) setSiteName(ex.site);
+        if (ex.container_type) setContainerTypeName(ex.container_type);
         if (ex.research_type) {
             const rt = researchTypes.data?.find(
                 (x) => x.code === ex.research_type || x.name === ex.research_type,
@@ -239,6 +242,7 @@ export default function OcrReviewPage() {
                 hasIncomingWorkOrder: (ex.work_order_incoming ?? "").trim() !== "",
             };
             const parsed: RangeEntry[] = [];
+            const errors: string[] = [];
             for (const num of ex.samples) {
                 const r = parseSampleInput(num, opts);
                 if (r.ok) {
@@ -250,9 +254,25 @@ export default function OcrReviewPage() {
                         skippedSeqs: [],
                         selectedSeqs: [],
                     });
+                } else {
+                    errors.push(num);
+                    parsed.push({
+                        id: newRangeId(),
+                        rawInput: num,
+                        prefix: "",
+                        middle: num,
+                        sequenceFrom: 1,
+                        sequenceTo: 1,
+                        sequenceDigits: 1,
+                        wellName: null,
+                        allSeqs: [1],
+                        skippedSeqs: [],
+                        selectedSeqs: [],
+                    });
                 }
             }
             setRanges(parsed);
+            setParseErrors(errors);
         }
         setPrefilled(true);
     }, [task, prefilled, researchTypes.data, laboratoryPrefixes, siteMatchPatterns]);
@@ -659,6 +679,12 @@ export default function OcrReviewPage() {
                             </Table>
                         )}
 
+                        {parseErrors.length > 0 && (
+                            <Alert severity="warning">
+                                Не удалось разобрать: {parseErrors.join(", ")}.
+                                Введены как есть — проверь номер и скважину.
+                            </Alert>
+                        )}
                         {submitError && <Alert severity="error">{submitError}</Alert>}
                         {submitOk && <Alert severity="success">{submitOk}</Alert>}
 
@@ -703,6 +729,21 @@ function ImageWithBboxes({
     const src = resolveImageUrl(task.image);
 
     const zones: OcrZone[] = task.zones ?? [];
+    const ex = task.raw_ocr_data?.extracted;
+
+    // 6a-fix5b: слово → к какому полю относится (для клика).
+    function fieldForWord(text: string): string | null {
+        const t = text.trim().toUpperCase();
+        if (!t || !ex) return null;
+        if (ex.work_order_coded && ex.work_order_coded.toUpperCase().includes(t)) return 'work_order_coded';
+        if (ex.work_order_incoming && ex.work_order_incoming.toUpperCase().includes(t)) return 'work_order_incoming';
+        if (ex.container_number && ex.container_number.toUpperCase().includes(t)) return 'container_number';
+        if (ex.site && ex.site.toUpperCase().includes(t)) return 'site';
+        if (ex.research_type && ex.research_type.toUpperCase() === t) return 'research_type';
+        if (ex.container_type && ex.container_type.toUpperCase() === t) return 'container_type';
+        if (ex.samples && ex.samples.some((s) => s.toUpperCase().includes(t))) return 'sample';
+        return null;
+    }
 
     return (
         <Card sx={{ height: "100%" }}>
@@ -754,17 +795,36 @@ function ImageWithBboxes({
                                     />
                                 );
                             })}
-                            {zones.length === 0 && task.raw_ocr_data?.words.map((w, i) => (
-                                <polygon
-                                    key={`word-${i}`}
-                                    points={w.bbox
-                                        .map(([x, y]) => `${x},${y}`)
-                                        .join(" ")}
-                                    fill="rgba(30, 58, 95, 0.15)"
-                                    stroke="rgba(30, 58, 95, 0.9)"
-                                    strokeWidth={2}
-                                />
-                            ))}
+                            {task.raw_ocr_data?.words.map((w, i) => {
+                                const targetField = fieldForWord(w.text);
+                                const isActive =
+                                    targetField !== null && activeField === targetField;
+                                return (
+                                    <polygon
+                                        key={`word-${i}`}
+                                        points={w.bbox
+                                            .map(([x, y]) => `${x},${y}`)
+                                            .join(" ")}
+                                        fill={
+                                            isActive
+                                                ? "rgba(76, 175, 80, 0.3)"
+                                                : "rgba(30, 58, 95, 0.15)"
+                                        }
+                                        stroke={
+                                            isActive
+                                                ? "rgba(76, 175, 80, 0.95)"
+                                                : "rgba(30, 58, 95, 0.5)"
+                                        }
+                                        strokeWidth={isActive ? 2.5 : 1}
+                                        style={{ pointerEvents: "all", cursor: "pointer" }}
+                                        onClick={() => {
+                                            if (targetField) onBboxClick(targetField);
+                                        }}
+                                    >
+                                        <title>{w.text}</title>
+                                    </polygon>
+                                );
+                            })}
                         </svg>
                     )}
                     {dims && zones.length > 0 && zones.map((zone, i) => {

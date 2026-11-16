@@ -5,6 +5,7 @@
  * c-3.x-migration-5c: batch list / detail.
  * c-3.x-migration-5e: zones, extracted fields.
  * c-3.x-migration-5f: типизация для подсветки bbox ↔ поля.
+ * c-3.x-migration-6a-fix5b: +site, +container_type в ExtractedFields.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -77,6 +78,10 @@ export interface ExtractedFields {
     work_order_incoming: string | null;
     container_number: string | null;
     research_type: string | null;
+    /** c-6a-fix5b: код участка (TST) — fuzzy match в mapping.py */
+    site?: string | null;
+    /** c-6a-fix5b: имя типа тары (Ящик) — fuzzy match в mapping.py */
+    container_type?: string | null;
     samples: string[];
     wells: string[];
     source: "zones" | "fallback" | "mixed" | "none";
