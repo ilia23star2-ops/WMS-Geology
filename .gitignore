@@ -147,3 +147,6 @@ WMS-Build-Pack/
 
 # Smoke-тест OCR: временные файлы
 backend/.tmp_smoke/
+
+# flutter run создаёт скриншоты в mobile/
+mobile/flutter_*.png
