@@ -77,8 +77,27 @@ class OcrRecognizeView(APIView):
                 try:
                     ocr_data = json.loads(result.stdout)
                     # 5e-2: mapping zones + raw_ocr_data → extracted
+                    # 6a-fix5a: fuzzy match справочников (site/research_type/container_type)
                     from .services.mapping import extract_fields
-                    extracted = extract_fields(task.zones or [], ocr_data)
+                    from apps.samples.catalogs import Site, ResearchType
+                    from apps.storage.models import ContainerType
+
+                    sites_meta = [
+                        {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
+                        for s in Site.objects.filter(is_active=True)
+                    ]
+                    rts_meta = [
+                        {"code": rt.code, "name": rt.name}
+                        for rt in ResearchType.objects.filter(is_active=True)
+                    ]
+                    cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
+                    extracted = extract_fields(
+                        task.zones or [],
+                        ocr_data,
+                        sites=sites_meta,
+                        research_types=rts_meta,
+                        container_types=cts_meta,
+                    )
                     ocr_data['extracted'] = extracted
                     task.raw_ocr_data = ocr_data
                     task.status = 'READY'

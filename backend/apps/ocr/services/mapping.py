@@ -1,39 +1,28 @@
 """Mapping zones + raw_ocr_data → extracted fields.
 
 c-3.x-migration-5e-2: базовый маппинг через зоны.
-c-3.x-migration-6a-fix3: расширенный regex для проб (TST1234501) +
-  fallback work_order_coded без зон.
-c-3.x-migration-6a-fix4: поддержка дефиса перед цифрами
-  (TST-1234501, TAA-A-34076001); кириллица в префиксе.
+c-3.x-migration-6a-fix3/4: regex для TST1234501 / TST-1234501 / TAA-A-34076001.
+c-3.x-migration-6a-fix5a: fuzzy match справочников (Site, ResearchType,
+  ContainerType) в тексте. Справочники передаются параметром —
+  mapping.py остаётся pure-Python (тесты без БД).
 
-Реальные форматы этикеток (встречались):
-  TAA-A34076001       — «старый», дефис + буква + цифры
-  TST1234501          — без дефиса
-  TST-1234501         — дефис перед цифрами
-  TAA-A-34076001      — дефис + буква + дефис + цифры
-
-Если встретится ещё формат — расширить _SAMPLE_RE и добавить тест.
+Справочники передаются как list[dict] с полями:
+  - sites: [{"code": "TST", "name": "Тестовый участок", "match_patterns": ["TST", "Тест"]}]
+  - research_types: [{"code": "ICP", "name": "ICP"}]
+  - container_types: [{"name": "Ящик"}, ...]
 """
 import re
 from typing import Optional
 
 
-# Проба: 2+ буквы (кириллица или латиница), опционально -буква,
-# опционально ещё один дефис, затем 5+ цифр.
-# Покрывает: TST1234501, TAA-A34076001, TST-1234501, TAA-A-34076001
 _SAMPLE_RE = re.compile(
     r"\b[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d{5,}\b",
     re.IGNORECASE,
 )
-
-# Н/З: 2+ буквы, опционально -буква, опционально дефис, 2-4 цифры.
-# Покрывает: TST1234, TAA-A001, TST-1234
 _WORK_ORDER_RE = re.compile(
     r"\b[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d{2,4}\b",
     re.IGNORECASE,
 )
-
-# Скважина: 5+ цифр внутри sample-номера
 _WELL_RE = re.compile(r"\d{5,}")
 
 
@@ -56,7 +45,6 @@ def _sort_words(words: list) -> list:
         cy = sum(p[1] for p in w["bbox"]) / 4
         cx = sum(p[0] for p in w["bbox"]) / 4
         return (cy, cx)
-
     return sorted(words, key=key)
 
 
@@ -73,17 +61,86 @@ def _extract_scalar(words: list, zone: dict) -> Optional[str]:
     return text or None
 
 
-def extract_fields(zones: list, ocr_data: dict) -> dict:
-    """Извлекает поля из OCR-данных по зонам + fallback.
+# ---------- fuzzy match ----------
+
+def _find_site(text: str, sites: list) -> Optional[str]:
+    """Возвращает Site.code, если найдено в тексте."""
+    if not text or not sites:
+        return None
+    lower = text.lower()
+    # 1. match_patterns (приоритет — самые специфичные)
+    for s in sites:
+        for p in s.get("match_patterns") or []:
+            if p and p.lower() in lower:
+                return s["code"]
+    # 2. exact code
+    for s in sites:
+        code = (s.get("code") or "").strip()
+        if code and re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE):
+            return code
+    # 3. substring name
+    for s in sites:
+        name = (s.get("name") or "").strip()
+        if name and name.lower() in lower:
+            return s["code"]
+    return None
+
+
+def _find_research_type(text: str, research_types: list) -> Optional[str]:
+    """Возвращает ResearchType.code, если найдено в тексте."""
+    if not text or not research_types:
+        return None
+    lower = text.lower()
+    # 1. exact code (более короткий, но явный)
+    for rt in research_types:
+        code = (rt.get("code") or "").strip()
+        if code and re.search(rf"\b{re.escape(code)}\b", text, re.IGNORECASE):
+            return code
+    # 2. substring name
+    for rt in research_types:
+        name = (rt.get("name") or "").strip()
+        if name and name.lower() in lower:
+            return rt["code"]
+    return None
+
+
+def _find_container_type(text: str, container_types: list) -> Optional[str]:
+    """Возвращает ContainerType.name, если найдено в тексте.
+
+    Root-match: «Ящик» → «Ящик*» (поймает «Ящики»). Обратное —
+    «Ящики» в тексте, «Ящик» в справочнике.
+    """
+    if not text or not container_types:
+        return None
+    lower = text.lower()
+    # 1. exact name
+    for ct in container_types:
+        name = (ct.get("name") or "").strip()
+        if name and name.lower() in lower:
+            return name
+    # 2. root match (5 первых символов)
+    for ct in container_types:
+        name = (ct.get("name") or "").strip()
+        if len(name) >= 4:
+            root = name[:4].lower()
+            if re.search(rf"\b{re.escape(root)}\w*", lower):
+                return name
+    return None
+
+
+def extract_fields(
+    zones: list,
+    ocr_data: dict,
+    sites: Optional[list] = None,
+    research_types: Optional[list] = None,
+    container_types: Optional[list] = None,
+) -> dict:
+    """Извлекает поля из OCR-данных по зонам + fallback + fuzzy match.
 
     Возвращает dict:
-      work_order_coded: str | None
-      work_order_incoming: str | None
-      container_number: str | None
-      research_type: str | None
-      samples: list[str]
-      wells: list[str]
-      source: 'zones' | 'fallback' | 'mixed' | 'none'
+      work_order_coded, work_order_incoming, container_number,
+      research_type, container_type, site,
+      samples, wells, source
     """
     words = ocr_data.get("words") or []
     full_text = ocr_data.get("text") or ""
@@ -93,6 +150,8 @@ def extract_fields(zones: list, ocr_data: dict) -> dict:
         "work_order_incoming": None,
         "container_number": None,
         "research_type": None,
+        "container_type": None,
+        "site": None,
         "samples": [],
         "wells": [],
     }
@@ -130,7 +189,7 @@ def extract_fields(zones: list, ocr_data: dict) -> dict:
                     wells_set.add(wm)
     result["wells"] = sorted(wells_set)
 
-    # 4. Fallback: work_order_coded без зон (после вычитания samples)
+    # 4. Fallback: work_order_coded без зон
     if not result["work_order_coded"]:
         text_wo = full_text
         for s in result["samples"]:
@@ -141,11 +200,24 @@ def extract_fields(zones: list, ocr_data: dict) -> dict:
                 result["work_order_coded"] = candidate
                 break
 
-    # 5. Источник
+    # 5. Fuzzy match справочников
+    if not result["site"]:
+        result["site"] = _find_site(full_text, sites or [])
+    if not result["research_type"]:
+        result["research_type"] = _find_research_type(full_text, research_types or [])
+    if not result["container_type"]:
+        result["container_type"] = _find_container_type(full_text, container_types or [])
+
+    # 6. Источник
     has_zones = bool(zones)
     has_zones_data = any(result[k] for k in scalar_types)
     has_fallback = bool(
-        result["samples"] or result["wells"] or result["work_order_coded"]
+        result["samples"]
+        or result["wells"]
+        or result["work_order_coded"]
+        or result["site"]
+        or result["research_type"]
+        or result["container_type"]
     )
 
     if has_zones and has_zones_data and has_fallback:
