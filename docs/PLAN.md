@@ -47,7 +47,8 @@
 | c-3.x-migration-5f | Web: `extracted` + подсветка + диапазоны | `api/ocr.ts` (типы), `OcrReviewPage.tsx` v10, `RangeEditDialog`, группировка по скважинам | ✅ |
 | c-3.x-migration-6a | Mobile: экран «Оцифровка» | камера / галерея / QR ячейки / `POST /recognize/` | ✅ |
 | c-3.x-migration-6a-fix5 | Extraction+Web prefill | fuzzy match `Site`/`ResearchType`/`ContainerType` в тексте; web prefill + `parseSampleInput` fallback + bbox↔field для `words[]` | ⬜ |
-| c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + sharpen в `ocr_runner.py` (Python 3.12). На фото с бликом/муаром — большой прирост. | ⬜ |
+| c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + unsharp в `ocr_runner.py` | ✅ |
+| c-3.x-migration-6j | OCR correction: prefix + OCR-замены | `ocr_correction.py`: valid prefixes (site+lab) → Levenshtein fix, `I→1`, `O→0` в цифровой части. Интеграция в `views.py` после `extract_fields`. | ⬜ |
 | c-3.x-migration-6e | Mobile: группировка фото по ячейкам | свёрнутый список `OcrBatch`, чекбоксы проб | ⬜ |
 | c-3.x-migration-6f | Mobile: прогресс между фото | SyncQueue для OCR (офлайн + отложенная отправка) | ⬜ |
 | c-3.x-migration-6g | Детекция галочек в чекбоксах | OpenCV template matching (☑ / ☐) | ⬜ |
@@ -279,6 +280,7 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
+| ТД-86 | `OcrReviewPage`: `ТИ` пустое после prefill — race condition (`prefilled=true` до загрузки `researchTypes.data`). Также `Участок` показывает код (`TST`) вместо `TST — Тестовый участок`. Чинится в `6a-fix5c`. | средний | `6a-fix5c` |
 | ТД-85 | `parseSampleInput` (web): жёстко `DEFAULT_DIGITS=3`, не понимает `TST1234501` (7 цифр после TST, без дефиса). Fallback проб в `OcrReviewPage` сохраняет raw, но `approve` отправит `prefix=''`, `middle=TST1234501` — сервер создаст пробу с `sample_number = TST1234501`, что может не совпасть с реальным форматом. Нужен парсер для `TST<digits>` без дефиса. | средний | следующая ревизия web |
 | ТД-84 | `parseSampleInput` на web: жёстко `DEFAULT_DIGITS=3`, не понимает `TST1234501` (без дефиса, 7 цифр). Нужен fallback-парсер или `sequence_digits` из extracted. Баг в `OcrReviewPage`, но не блокер 6a (mobile работает). | средний | следующая ревизия web |
 | ТД-82 | Связь номера тары ↔ диапазон проб: при вводе номера тары (`T-001`) — автозаполнение начального/конечного диапазона (и наоборот). Требует бизнес-решения (1 к 1 / 1 к N / по последнему созданному). | низкий | по запросу |

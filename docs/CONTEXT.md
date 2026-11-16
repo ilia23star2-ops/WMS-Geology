@@ -33,6 +33,7 @@
 ### Что готово (OCR, 5b-5f)
 
 - **Backend:**
+  - `ocr_preprocess.py`: EXIF rotate + resize + gray + autocontrast + unsharp, вызывается из `ocr_runner.py`.
   - `POST /api/v1/ocr/recognize/` — принимает `image` + (опц.) `zones_json`. EasyOCR на python312. Возвращает `data` + `extracted`.
   - `POST /api/v1/ocr/tasks/{id}/zones/` — сохранить разметку зон.
   - `POST /api/v1/ocr/tasks/{id}/approve/` — `Container` + `Sample` + `WorkOrder` link из `sample_groups`.
