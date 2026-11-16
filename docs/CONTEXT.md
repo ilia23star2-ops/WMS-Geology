@@ -43,6 +43,7 @@
   - `OcrService.recognize()`, `ApiClient.uploadMultipart()`, `QrCellScannerDialog`.
 - **Web:**
   - Sidebar «Оцифровка» → `/ocr/batches`.
+  - `OcrReviewPage`: prefill `site`/`research_type`/`container_type` из `extracted`; fallback проб (raw с warning); клики `words[]` ↔ поля.
   - Форма `/ocr/review/:id` — предзаполнение, подсветка, диапазоны, `RangeEditDialog`.
 - **Demo (device-check 5f):** `curl` с `image` + `zones_json` → task READY → open `/ocr/review/N` → approve → Container + 3 Sample.
 
