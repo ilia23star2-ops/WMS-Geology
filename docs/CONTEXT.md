@@ -33,6 +33,7 @@
 ### Что готово (OCR, 5b-5f)
 
 - **Backend:**
+  - `mapping.py`: OCR-fix (`O→0`, `I/l→1`), `_fix_prefix` (ST→TST), фильтр по `valid_prefixes` (site+lab+match_patterns), Latin↔Cyrillic.
   - `ocr_preprocess.py`: EXIF rotate + resize + gray + autocontrast + unsharp, вызывается из `ocr_runner.py`.
   - `POST /api/v1/ocr/recognize/` — принимает `image` + (опц.) `zones_json`. EasyOCR на python312. Возвращает `data` + `extracted`.
   - `POST /api/v1/ocr/tasks/{id}/zones/` — сохранить разметку зон.

@@ -48,6 +48,12 @@
 | c-3.x-migration-6a | Mobile: экран «Оцифровка» | камера / галерея / QR ячейки / `POST /recognize/` | ✅ |
 | c-3.x-migration-6a-fix5 | Extraction+Web prefill | fuzzy match `Site`/`ResearchType`/`ContainerType` в тексте; web prefill + `parseSampleInput` fallback + bbox↔field для `words[]` | ⬜ |
 | c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + unsharp в `ocr_runner.py` | ✅ |
+| c-3.x-migration-6f-1 | Backend: approve с `batch.cell_id` | `batch.cell_id` → `Pallet.get_or_create` + `Container.ACTIVE`; иначе `PENDING_PLACEMENT`. Удалить `well` из `ZONE_TYPES`. | ⬜ |
+| c-3.x-migration-6e-1 | Mobile: новый экран «Оцифровка» | список ячеек + фото per cell (state в памяти) → одна отправка = один batch. | ⬜ |
+| c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
+| c-3.x-migration-6e-2 | Mobile: разметка зон на фото | free-draw (тап → прямоугольник → тип). Удаление зон. | ⬜ |
+| c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |
+| c-3.x-migration-6e-3 | Mobile: SyncQueue для OCR | офлайн-накопление → отправка при возврате сети. | ⬜ |
 | c-3.x-migration-6j | OCR correction: prefix + OCR-замены | `ocr_correction.py`: valid prefixes (site+lab) → Levenshtein fix, `I→1`, `O→0` в цифровой части. Интеграция в `views.py` после `extract_fields`. | ⬜ |
 | c-3.x-migration-6e | Mobile: группировка фото по ячейкам | свёрнутый список `OcrBatch`, чекбоксы проб | ⬜ |
 | c-3.x-migration-6f | Mobile: прогресс между фото | SyncQueue для OCR (офлайн + отложенная отправка) | ⬜ |
@@ -280,6 +286,7 @@
 | ТД-74 | Механизм сквозной валидации статусов (Data Integrity Checker). Проверка соответствия статусов проб статусам тары при сохранении или фоновой задачей. | средний | при следующей ревизии домена |
 | ТД-78 | `apps/ocr/services/`: 4 «спящих» файла (`auto_detector.py`, `mark_detector.py`, `ocr_engine.py`, `sample_parser.py`) + `services/models.py` — старый OCR-пайплайн, не используется `views.py`. Решить: удалить или интегрировать. | средний | при следующей ревизии OCR |
 | ТД-79 | `ocr_runner.py`: путь `python_exe = r"D:\\Dev\\python312\\python.exe"` захардкожен. На домашнем ПК / Linux не заведётся. Вынести в `settings.OCR_PYTHON_EXE` + `.env`. | высокий | перед выездом за пределы рабочего ПК |
+| ТД-87 | Скважины: добавить в справочники (`Well`) с FK `site` + `work_order` + `container`. UI в web (`CatalogsPage` → 4-я вкладка). Проверка скважин в помощнике сортировки. Не для MVP. | средний | после 6e |
 | ТД-86 | `OcrReviewPage`: `ТИ` пустое после prefill — race condition (`prefilled=true` до загрузки `researchTypes.data`). Также `Участок` показывает код (`TST`) вместо `TST — Тестовый участок`. Чинится в `6a-fix5c`. | средний | `6a-fix5c` |
 | ТД-85 | `parseSampleInput` (web): жёстко `DEFAULT_DIGITS=3`, не понимает `TST1234501` (7 цифр после TST, без дефиса). Fallback проб в `OcrReviewPage` сохраняет raw, но `approve` отправит `prefix=''`, `middle=TST1234501` — сервер создаст пробу с `sample_number = TST1234501`, что может не совпасть с реальным форматом. Нужен парсер для `TST<digits>` без дефиса. | средний | следующая ревизия web |
 | ТД-84 | `parseSampleInput` на web: жёстко `DEFAULT_DIGITS=3`, не понимает `TST1234501` (без дефиса, 7 цифр). Нужен fallback-парсер или `sequence_digits` из extracted. Баг в `OcrReviewPage`, но не блокер 6a (mobile работает). | средний | следующая ревизия web |
