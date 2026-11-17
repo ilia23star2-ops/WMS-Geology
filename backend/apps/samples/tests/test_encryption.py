@@ -44,7 +44,7 @@ def api_client_worker(db):
 def sample(db):
     rt = ResearchType.objects.create(code="TST", name="Test")
     site = Site.objects.create(code="S1", name="Site 1")
-    old_wo = WorkOrder.objects.create(order_number="OLD-01", order_type=WorkOrder.ORDER_TYPE_CODED)
+    old_wo = WorkOrder.objects.create(order_number="OLD-01", order_type=WorkOrder.TYPE_CODED)
     
     ctype = ContainerType.objects.create(name="Box")
     container = Container.objects.create(container_type=ctype, status=Container.STATUS_ACTIVE)

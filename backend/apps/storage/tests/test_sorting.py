@@ -43,7 +43,7 @@ class TestSortingAssistant:
         # Первая должна быть ячейка с совпадением (score 15)
         assert result[0]["cell_id"] == cell1.id
         assert result[0]["score"] == 15
-        assert "Есть тары с того же участка и ТИ" in result[0]["reason"]
+        assert "Совпадения: Участок, Тип исследования" in result[0]["reason"]
         
         # Вторая - пустая (score 1)
         assert result[1]["cell_id"] == cell2.id

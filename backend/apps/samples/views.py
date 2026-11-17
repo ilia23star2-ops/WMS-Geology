@@ -115,6 +115,8 @@ class SampleViewSet(viewsets.ModelViewSet):
         # Лабораториям доступно только чтение.
         if self.action in ("list", "retrieve", "grouped"):
             permission_classes = [IsWorkerOrLabWorkerOrHigher] # lab_worker пропускается через get_queryset
+        elif self.action == "encrypt":
+            permission_classes = [IsManagerOrAdmin]
         else:
             permission_classes = [IsWorkerOrHigher]
         return [permission() for permission in permission_classes]
@@ -282,7 +284,8 @@ class SampleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="encrypt", permission_classes=[IsManagerOrAdmin])
     def encrypt(self, request, pk=None):
-        from apps.users.models import log_audit
+        from apps.users.services import log_audit
+        from django.db import transaction
         from .serializers import EncryptSampleSerializer
         
         sample = self._get_sample_any(pk)
@@ -301,7 +304,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             
             new_wo, _ = WorkOrder.objects.get_or_create(
                 order_number=data["new_work_order_coded"],
-                order_type=WorkOrder.ORDER_TYPE_CODED,
+                order_type=WorkOrder.TYPE_CODED,
                 defaults={"site": sample.site}
             )
             
