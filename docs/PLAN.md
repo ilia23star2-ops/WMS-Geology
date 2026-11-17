@@ -48,7 +48,7 @@
 | c-3.x-migration-6a | Mobile: экран «Оцифровка» | камера / галерея / QR ячейки / `POST /recognize/` | ✅ |
 | c-3.x-migration-6a-fix5 | Extraction+Web prefill | fuzzy match `Site`/`ResearchType`/`ContainerType` в тексте; web prefill + `parseSampleInput` fallback + bbox↔field для `words[]` | ⬜ |
 | c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + unsharp в `ocr_runner.py` | ✅ |
-| c-3.x-migration-6f-1 | Backend: approve с `batch.cell_id` | `batch.cell_id` → `Pallet.get_or_create` + `Container.ACTIVE`; иначе `PENDING_PLACEMENT`. Удалить `well` из `ZONE_TYPES`. | ⬜ |
+| c-3.x-migration-6f-1 | Backend: approve с batch.cell_id + приоритеты; миграция 0003; 10 тестов; device-check пройден | ✅ |
 | c-3.x-migration-6e-1 | Mobile: новый экран «Оцифровка» | список ячеек + фото per cell (state в памяти) → одна отправка = один batch. | ⬜ |
 | c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
 | c-3.x-migration-6e-2 | Mobile: разметка зон на фото | free-draw (тап → прямоугольник → тип). Удаление зон. | ⬜ |
@@ -327,3 +327,5 @@
 | **`feature/3.x-offline`** | **—** | **активная** (бранч `fix/2.x-mobile-bundle-c-2`) |- **ТД-75.** Сквозная валидация (Data Integrity Checker): ловить ситуации, когда Container.status = PENDING_PLACEMENT, но у него есть ячейка (это баг логики).
 - **ТД-76.** Автоматическая оптимизация расположения в Топологии (план перемещений с минимальным количеством шагов + чек-лист со сканированием).
 - **ТД-77.** Глобальное сохранение состояния (State Persistence). При навигации между страницами фильтры, выделенные строки и позиция скролла должны сохраняться (через Zustand или URL параметры). Касается всего приложения.
+| ТД-88 | Mobile: label ячейки из \/storage\/cells\/{id}\/ (TODO 6a-fix2 ocr_new_screen.dart:45) | средний | 6e-1 |
+| ТД-89 | Решить судьбу well в ZONE_TYPES (остаток плана 6f-1) | средний | 6e-1 |

@@ -65,4 +65,23 @@
 
 ### И-0. Git не работал через HTTPS (schannel)
 
-**Статус:** 🟢 решено переходом на SSH через порт 443.
+**Статус:** 🟢 решено переходом на SSH через порт 443.И-4. `apps/samples/views.py` encrypt action — 4 бага (починено в 6f-1-pre)
+Статус: 🟢 решено (2026-11-17)
+Симптом: Кнопка «Зашифровать» отдавала 500 всем пользователям.
+Причина: `log_audit` импортировался из `models` вместо `services`; отсутствовал импорт `transaction`; устаревшая константа `ORDER_TYPE_CODED`.
+Решение: Исправлены импорты, добавлен `transaction`, обновлена константа на `TYPE_CODED`.
+Файлы:`apps/samples/views.py`.
+
+И-5. RBAC для encrypt — worker мог шифровать пробы
+Статус: 🟢 решено (2026-11-17)
+Симптом: Worker получал 200 OK при POST на `/samples/{id}/encrypt/`, хотя должен был получить 403.
+Причина: `SampleViewSet.get_permissions()` перебивал `permission_classes=[IsManagerOrAdmin]` из `@action` и возвращал `IsWorkerOrHigher` для всех не-GET действий.
+Решение: Добавлен `elif self.action == "encrypt"` в `get_permissions`.
+Файлы:`apps/samples/views.py`.
+
+И-6. Stale-тесты в `storage` и `samples`
+Статус: 🟢 решено (2026-11-17)
+Симптом: `test_sorting.py` ждал старую формулировку `reason`; `test_encryption.py` использовал несуществующую константу `WorkOrder.ORDER_TYPE_CODED`.
+Причина: Тесты не обновлялись после изменений логики в сериях `2.x-sorting` и `2.x-lifecycle`.
+Решение: Обновлены ассерты и константы в тестах.
+Файлы:`apps/storage/tests/test_sorting.py`, `apps/samples/tests/test_encryption.py`.

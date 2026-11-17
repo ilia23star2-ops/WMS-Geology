@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-11-16
+**Дата обновления:** 2026-11-17
 
 ---
 
@@ -18,6 +18,8 @@
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
 - **5e** — Backend: `OcrTask.zones`, `POST /ocr/tasks/{id}/zones/`, `mapping.py` (bbox ∩ words → `extracted`), авто-вызов в `recognize` (принимает `zones_json`).
 - **5f** — Web: предзаполнение из `extracted`, двусторонняя подсветка bbox ↔ поля, диапазоны через `SmartAutocomplete` + `RangeEditDialog` (skip/selected), группировка по скважинам.
+6f-1 — Backend: approve с batch.cell_id → Pallet+ACTIVE; приоритет payload>task>batch; миграция 0003.
+6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
 
 **Backend: 918 тестов** (в т.ч. **44** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
@@ -95,7 +97,7 @@
 - Flutter 3.47 + Dart 3.13 + mobile_scanner 7.4.2.
 - EasyOCR на портативном Python 3.12 (`D:\Dev\python312`, только рабочий ПК).
 
-### Backend (918 тестов)
+### Backend (985 тестов)
 
 | Приложение | Что внутри |
 |---|---|
