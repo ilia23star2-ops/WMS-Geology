@@ -53,7 +53,16 @@ class OcrRecognizeView(APIView):
             if not user:
                 from django.contrib.auth import get_user_model
                 user = get_user_model().objects.first()
-            batch = OcrBatch.objects.create(user=user)
+            cell_id_val = request.data.get("cell_id")
+            batch_kwargs = {"user": user}
+            if cell_id_val:
+                try:
+                    from apps.storage.models import Cell
+                    Cell.objects.get(pk=cell_id_val)
+                    batch_kwargs["cell_id"] = cell_id_val
+                except Cell.DoesNotExist:
+                    pass
+            batch = OcrBatch.objects.create(**batch_kwargs)
 
         task = OcrTask.objects.create(batch=batch, image=image_file)
         if zones is not None:
