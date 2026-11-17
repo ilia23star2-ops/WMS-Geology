@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'config.dart';
+import 'models/ocr_session.dart';
 import 'providers/auth_provider.dart';
 import 'providers/network_status_provider.dart';
 import 'providers/sync_provider.dart';
@@ -73,6 +74,7 @@ class WmsGeologyApp extends StatelessWidget {
             syncPusher: ctx.read<SyncPusher>(),
           ),
         ),
+        ChangeNotifierProvider<OcrSession>(create: (_) => OcrSession()),
       ],
       child: MaterialApp(
         title: 'WMS Geology',
