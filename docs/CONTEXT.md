@@ -20,6 +20,7 @@
 - **5f** — Web: предзаполнение из `extracted`, двусторонняя подсветка bbox ↔ поля, диапазоны через `SmartAutocomplete` + `RangeEditDialog` (skip/selected), группировка по скважинам.
 6f-1 — Backend: approve с batch.cell_id → Pallet+ACTIVE; приоритет payload>task>batch; миграция 0003.
 6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
+6e-1 — Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize.
 
 **Backend: 918 тестов** (в т.ч. **44** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).

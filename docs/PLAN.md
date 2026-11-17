@@ -49,7 +49,7 @@
 | c-3.x-migration-6a-fix5 | Extraction+Web prefill | fuzzy match `Site`/`ResearchType`/`ContainerType` в тексте; web prefill + `parseSampleInput` fallback + bbox↔field для `words[]` | ⬜ |
 | c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + unsharp в `ocr_runner.py` | ✅ |
 | c-3.x-migration-6f-1 | Backend: approve с batch.cell_id + приоритеты; миграция 0003; 10 тестов; device-check пройден | ✅ |
-| c-3.x-migration-6e-1 | Mobile: новый экран «Оцифровка» | список ячеек + фото per cell (state в памяти) → одна отправка = один batch. | ⬜ |
+| c-3.x-migration-6e-1 | Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize | ✅ |
 | c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
 | c-3.x-migration-6e-2 | Mobile: разметка зон на фото | free-draw (тап → прямоугольник → тип). Удаление зон. | ⬜ |
 | c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |

@@ -1,6 +1,7 @@
 ## Серия `feature/3.x-migration` (OCR)
 
 **Дата:** 2026-11-13 — 🟡 активна (переоткрыта).
+✅ `c-3.x-migration-6e-1` (2026-11-17) — Mobile: batch OCR. `OcrNewScreen`: список фото в памяти, отправка одним батчем (первое фото → `cell_id`, остальные → `batch_id`). 6a-fix2: запрос `/storage/cells/{id}/` для `full_address`. Backend: `OcrRecognizeView` сохраняет `cell_id` при создании батча. Device-check пройден: batch #13, cell #11, 3 задачи. Mobile: 231 тест; Backend: 985 тестов.
 ✅ `c-3.x-migration-6f-1` (2026-11-17) — Backend: approve с `batch.cell_id` → `Pallet.get_or_create` + `Container.ACTIVE`; приоритет `payload.cell_id > task.cell_id > batch.cell_id`; модели `OcrBatch.cell` FK, `OcrTask.cell` FK, `OcrBatch.sent_at`; миграция `0003_cell_and_sent_at`; 10 тестов `test_approve_view`. Device-check пройден (4 стадии: подготовка → batch.cell → приоритеты → БД+негатив). Backend: 985 тестов.
 ✅ `c-3.x-migration-6f-1-pre` (2026-11-17) — Pre-existing fixes: `apps/samples/views.py` encrypt action (4 бага: `log_audit` из `services`, `TYPE_CODED`, `transaction` import, RBAC `get_permissions` elif encrypt); `test_sorting.py` stale reason; `test_encryption.py` stale `ORDER_TYPE_CODED`. Backend: 985 тестов.
 **Ветка:** `feature/3.x-migration`.
