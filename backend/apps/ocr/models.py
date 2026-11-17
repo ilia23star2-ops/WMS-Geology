@@ -8,15 +8,25 @@ class OcrBatch(models.Model):
         ('DRAFT', 'Черновик'),
         ('UPLOADING', 'Загрузка фото'),
         ('PROCESSING', 'Распознавание на сервере'),
+        ('SENT', 'Отправлен'),               # 6e-1a: после «Отправить на сервер»
         ('REVIEW', 'Готово к проверке'),
         ('COMPLETED', 'Подтверждено и создано'),
         ('FAILED', 'Ошибка'),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name='Пользователь')
-    cell = models.ForeignKey(Cell, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Ячейка хранения')
+    cell = models.ForeignKey(
+        Cell, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name='Ячейка (legacy, если batch = одна ячейка)',
+        help_text='6e-1a: обычно пусто — ячейка хранится в OcrTask.cell',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT', verbose_name='Статус')
+    sent_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Дата отправки (6e-1a)',
+        help_text='Мобилка нажала «Отправить на сервер» — все фото распознаны.',
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
-    processed_at = models.DateTimeField(null=True, blank=True, verbose_name='Дата обработки')
+    processed_at = models.DateTimeField(null=True, blank=True, verbose_name='Дата обработки (все задачи DONE)')
 
     class Meta:
         verbose_name = 'Пакет оцифровки'
@@ -36,7 +46,6 @@ class OcrTask(models.Model):
         ('ERROR', 'Ошибка распознавания'),
     ]
 
-    # c-6f-1: `well` убран из зон (скважина выводится из samples).
     ZONE_TYPES = [
         ('work_order_coded', 'Н/З (текущий)'),
         ('work_order_incoming', 'Н/З (входящий)'),
@@ -47,17 +56,18 @@ class OcrTask(models.Model):
 
     batch = models.ForeignKey(OcrBatch, on_delete=models.CASCADE, related_name='tasks', verbose_name='Пакет')
     image = models.ImageField(upload_to='ocr_tasks/%Y/%m/%d/', verbose_name='Фото')
+    cell = models.ForeignKey(
+        Cell, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name='Ячейка (6e-1a)',
+        help_text='Из мобилки: оператор выбрал ячейку перед фото. Approve → Pallet + ACTIVE.',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name='Статус')
     raw_ocr_data = models.JSONField(null=True, blank=True, verbose_name='Сырые данные OCR')
     reviewed_data = models.JSONField(null=True, blank=True, verbose_name='Подтвержденные данные')
     zones = models.JSONField(
         null=True, blank=True,
         verbose_name='Разметка зон',
-        help_text=(
-            'JSON-массив: [{"type": "work_order_coded", '
-            '"bbox": [[x,y],[x,y],[x,y],[x,y]], "source": "manual"}, ...]. '
-            'Используется mapping-сервисом для извлечения полей из OCR.'
-        ),
+        help_text='JSON-массив [{type, bbox, source}, ...].',
     )
     error_message = models.TextField(blank=True, default='', verbose_name='Ошибка')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')

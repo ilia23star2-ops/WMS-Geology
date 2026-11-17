@@ -1,11 +1,7 @@
 """Превращение распознанной OcrTask в Container + Sample.
 
-Композиция существующих сервисов storage + samples.
-Не дублирует логику fill_container_with_samples / bulk_place_containers.
-
-c-6f-1: если batch.cell_id задан (оператор выбрал ячейку на мобилке) —
-Container размещается туда через bulk_place_containers (→ ACTIVE + Pallet).
-Приоритет: payload.cell_id > batch.cell_id > None.
+c-6f-1: priority payload.cell_id > batch.cell_id.
+c-6e-1a: priority payload.cell_id > task.cell_id > batch.cell_id.
 """
 from django.db import transaction
 from django.utils import timezone
@@ -20,14 +16,12 @@ def approve_task(task, payload, user):
     """Применяет reviewed_data к OcrTask.
 
     Создаёт Container (PENDING_FILLING), заполняет пробами через
-    fill_container_with_samples. Если cell_id (из payload или batch) —
-    размещает через bulk_place_containers → Container.ACTIVE.
+    fill_container_with_samples. Если есть cell_id — размещает через
+    bulk_place_containers → Container.ACTIVE.
 
-    Обновляет task.status=DONE, reviewed_data=payload. Если все
-    задачи батча в DONE — batch.status=COMPLETED, processed_at=now.
+    Приоритет cell_id: payload.cell_id > task.cell_id > task.batch.cell_id > None.
 
     Возвращает dict {container_id, samples_created, batch_completed}.
-    Бросает ValueError при ошибке валидации или повторном approve.
     """
     if task.status == 'DONE':
         raise ValueError('Задача уже подтверждена.')
@@ -38,9 +32,10 @@ def approve_task(task, payload, user):
     except ContainerType.DoesNotExist:
         raise ValueError(f'Тип тары #{container_type_id} не найден.')
 
-    # c-6f-1: приоритет — payload.cell_id (если оператор вернёт ручной ввод)
-    # > batch.cell_id (мобилка) > None.
+    # c-6e-1a: priority payload > task > batch.
     cell_id = payload.get('cell_id')
+    if not cell_id:
+        cell_id = task.cell_id
     if not cell_id and task.batch:
         cell_id = task.batch.cell_id
 
@@ -83,7 +78,7 @@ def approve_task(task, payload, user):
             batch.processed_at = timezone.now()
             batch.save(update_fields=['status', 'processed_at'])
             batch_completed = True
-        elif batch.status == 'DRAFT':
+        elif batch.status in ('DRAFT', 'SENT'):
             batch.status = 'REVIEW'
             batch.save(update_fields=['status'])
 

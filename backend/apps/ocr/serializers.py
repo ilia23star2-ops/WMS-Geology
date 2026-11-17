@@ -6,10 +6,13 @@ from .models import OcrTask, OcrBatch
 
 
 class OcrTaskSerializer(serializers.ModelSerializer):
+    cell_full_address = serializers.SerializerMethodField()
+
     class Meta:
         model = OcrTask
         fields = [
             'id', 'batch', 'image', 'status',
+            'cell', 'cell_full_address',
             'raw_ocr_data', 'reviewed_data', 'zones',
             'error_message', 'created_at',
         ]
@@ -17,6 +20,9 @@ class OcrTaskSerializer(serializers.ModelSerializer):
             'status', 'raw_ocr_data', 'reviewed_data',
             'error_message', 'created_at',
         ]
+
+    def get_cell_full_address(self, obj):
+        return obj.cell.full_address if obj.cell_id else None
 
 
 class OcrBatchSerializer(serializers.ModelSerializer):
@@ -26,18 +32,13 @@ class OcrBatchSerializer(serializers.ModelSerializer):
         model = OcrBatch
         fields = [
             'id', 'user', 'cell', 'status',
-            'created_at', 'processed_at', 'tasks',
+            'sent_at', 'created_at', 'processed_at', 'tasks',
         ]
-        read_only_fields = ['user', 'status', 'created_at', 'processed_at']
+        read_only_fields = ['user', 'status', 'sent_at', 'created_at', 'processed_at']
 
 
 class OcrApproveSerializer(FillSamplesSerializer):
-    """Payload для POST /api/v1/ocr/tasks/{id}/approve/.
-
-    Расширяет FillSamplesSerializer:
-    - container_type_id — обязательный (нужен для Container);
-    - cell_id — опциональный (если передан, тара сразу размещается).
-    """
+    """Payload для POST /api/v1/ocr/tasks/{id}/approve/."""
     container_type_id = serializers.IntegerField(min_value=1)
     cell_id = serializers.IntegerField(
         min_value=1, required=False, allow_null=True, default=None,
@@ -45,7 +46,6 @@ class OcrApproveSerializer(FillSamplesSerializer):
 
 
 class OcrZoneSerializer(serializers.Serializer):
-    """Одна размеченная зона на фото."""
     type = serializers.ChoiceField(
         choices=[c[0] for c in OcrTask.ZONE_TYPES],
     )
@@ -60,7 +60,6 @@ class OcrZoneSerializer(serializers.Serializer):
         child=serializers.FloatField(),
         min_length=4, max_length=4,
         required=False,
-        help_text="[x, y, w, h] — нормализуется в bbox",
     )
     source = serializers.ChoiceField(
         choices=['manual', 'mlkit'], default='manual',
@@ -81,5 +80,4 @@ class OcrZoneSerializer(serializers.Serializer):
 
 
 class OcrZonesPayloadSerializer(serializers.Serializer):
-    """Payload POST /api/v1/ocr/tasks/{id}/zones/."""
     zones = OcrZoneSerializer(many=True, allow_empty=True)
