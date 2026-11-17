@@ -1,7 +1,6 @@
-/// Экран «Оцифровка» (6a).
+/// Экран «Оцифровка» (6e-1).
 ///
-/// 6a-fix1: ApiClient через AuthProvider.service (в main.dart нет провайдера ApiClient).
-///          + кнопка «Сделать фото» (камера).
+/// Список ячеек + фото per cell (state в памяти) → одна отправка = один batch.
 library;
 
 import 'dart:io';
@@ -14,7 +13,6 @@ import 'package:provider/provider.dart';
 import '../models/ocr_task.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_client.dart';
-import '../services/catalog_service.dart';
 import '../services/ocr_service.dart';
 import '../widgets/qr_cell_scanner.dart';
 
@@ -28,10 +26,11 @@ class OcrNewScreen extends StatefulWidget {
 class _OcrNewScreenState extends State<OcrNewScreen> {
   int? _cellId;
   String? _cellLabel;
-  String? _imagePath;
+  final List<XFile> _photos = [];
   bool _uploading = false;
-  OcrRecognizeResult? _result;
+  List<OcrRecognizeResult> _results = [];
   String? _error;
+  int? _batchId;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -39,17 +38,21 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
     final cellId = await showQrCellScanner(context);
     if (cellId == null || !mounted) return;
 
-    String? label;
+    // 6a-fix2: Получаем label из API
+    String label = 'Ячейка #$cellId';
     try {
-      final catalog = context.read<CatalogService>();
-      // TODO 6a-fix2: label из /storage/cells/{id}/, если нужно.
-      // ignore: unused_local_variable
-      final _ = catalog;
-      label = 'Ячейка #$cellId';
+      final auth = context.read<AuthProvider>();
+      final response = await auth.service.apiClient.get(
+        '/storage/cells/$cellId/',
+      );
+      if (response.data != null && response.data['full_address'] != null) {
+        label = response.data['full_address'];
+      }
     } catch (_) {
-      label = 'Ячейка #$cellId';
+      // Если ошибка, оставляем дефолтный label
     }
 
+    if (!mounted) return;
     setState(() {
       _cellId = cellId;
       _cellLabel = label;
@@ -57,80 +60,100 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
     });
   }
 
-  Future<void> _pickImage() async {
-    try {
-      final picked = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 90,
-      );
-      if (picked == null) return;
-      setState(() {
-        _imagePath = picked.path;
-        _error = null;
-      });
-    } catch (e) {
-      setState(() => _error = 'Не удалось выбрать фото: $e');
-    }
-  }
-
-  Future<void> _takePhoto() async {
+  Future<void> _addPhoto() async {
     try {
       final picked = await _picker.pickImage(
         source: ImageSource.camera,
         imageQuality: 90,
       );
       if (picked == null) return;
+      if (!mounted) return;
       setState(() {
-        _imagePath = picked.path;
+        _photos.add(picked);
         _error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = 'Не удалось сделать фото: $e');
     }
   }
 
-  Future<void> _upload() async {
-    if (_imagePath == null) {
-      setState(() => _error = 'Сначала выбери или сделай фото.');
+  Future<void> _addFromGallery() async {
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (picked == null) return;
+      if (!mounted) return;
+      setState(() {
+        _photos.add(picked);
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Не удалось выбрать фото: $e');
+    }
+  }
+
+  void _removePhoto(int index) {
+    setState(() {
+      _photos.removeAt(index);
+    });
+  }
+
+  Future<void> _uploadBatch() async {
+    if (_photos.isEmpty) {
+      if (!mounted) return;
+      setState(() => _error = 'Добавь хотя бы одно фото.');
       return;
     }
+    if (!mounted) return;
     setState(() {
       _uploading = true;
       _error = null;
-      _result = null;
+      _results = [];
     });
+
     try {
-      // 6a-fix1: ApiClient — из AuthProvider.service
       final auth = context.read<AuthProvider>();
       final service = OcrService(auth.service.apiClient);
-      final result = await service.recognize(
-        imagePath: _imagePath!,
+
+      // Отправляем первое фото для создания батча
+      var result = await service.recognize(
+        imagePath: _photos.first.path,
         cellId: _cellId,
       );
+      _batchId = result.batchId;
+      _results.add(result);
+
+      // Остальные фото добавляем в тот же батч
+      for (var i = 1; i < _photos.length; i++) {
+        result = await service.recognize(
+          imagePath: _photos[i].path,
+          batchId: _batchId,
+        );
+        _results.add(result);
+      }
+
       if (!mounted) return;
-      setState(() => _result = result);
+      setState(() {});
     } on ApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.message);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = 'Ошибка: $e');
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
   }
 
-  Future<void> _copyTaskId() async {
-    if (_result == null) return;
-    await Clipboard.setData(ClipboardData(text: _result!.taskId.toString()));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('task_id=${_result!.taskId} скопирован')),
-    );
-  }
-
   void _reset() {
     setState(() {
-      _imagePath = null;
-      _result = null;
+      _photos.clear();
+      _results.clear();
+      _batchId = null;
       _error = null;
     });
   }
@@ -147,36 +170,81 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
         children: [
           _buildCellCard(),
           const SizedBox(height: 16),
-          _buildImageCard(),
+          _buildPhotosList(),
           const SizedBox(height: 16),
-          if (_result == null)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                icon: _uploading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cloud_upload_outlined),
-                label: Text(_uploading ? 'Отправка…' : 'Отправить на сервер'),
-                onPressed: _uploading ? null : _upload,
-              ),
-            )
-          else
-            _buildResultCard(),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            AlertDialog(
-              title: const Text('Ошибка'),
-              content: Text(_error!),
-              actions: [
-                TextButton(
-                  onPressed: () => setState(() => _error = null),
-                  child: const Text('Ок'),
+          if (_results.isEmpty)
+            Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        label: const Text('Камера'),
+                        onPressed: _addPhoto,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Галерея'),
+                        onPressed: _addFromGallery,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: _uploading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.cloud_upload_outlined),
+                    label: Text(
+                      _uploading
+                          ? 'Отправка…'
+                          : 'Отправить батч (${_photos.length})',
+                    ),
+                    onPressed: _uploading || _photos.isEmpty
+                        ? null
+                        : _uploadBatch,
+                  ),
                 ),
               ],
+            )
+          else
+            _buildResultsList(),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Card(
+              color: Colors.red.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ошибка',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_error!),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => setState(() => _error = null),
+                        child: const Text('Ок'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ],
@@ -221,19 +289,14 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Сканируй QR на ячейке — фото привяжется к ней. '
-              'Или оставь пустым.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildImageCard() {
+  Widget _buildPhotosList() {
+    if (_photos.isEmpty) return const SizedBox.shrink();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -241,35 +304,52 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Фото этикетки',
+              'Фото (${_photos.length})',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            if (_imagePath != null) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  File(_imagePath!),
-                  height: 200,
-                  fit: BoxFit.cover,
-                ),
+            SizedBox(
+              height: 100,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _photos.length,
+                itemBuilder: (context, index) {
+                  return Stack(
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          image: DecorationImage(
+                            image: FileImage(File(_photos[index].path)),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 12,
+                        child: GestureDetector(
+                          onTap: () => _removePhoto(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-            ],
-            Row(
-              children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.photo_camera_outlined),
-                  label: const Text('Сделать фото'),
-                  onPressed: _takePhoto,
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: Text(_imagePath == null ? 'Из галереи' : 'Заменить'),
-                  onPressed: _pickImage,
-                ),
-              ],
             ),
           ],
         ),
@@ -277,9 +357,7 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
     );
   }
 
-  Widget _buildResultCard() {
-    final r = _result!;
-    final ex = r.extracted;
+  Widget _buildResultsList() {
     return Card(
       color: Theme.of(context).colorScheme.primaryContainer,
       child: Padding(
@@ -292,76 +370,54 @@ class _OcrNewScreenState extends State<OcrNewScreen> {
                 const Icon(Icons.check_circle, color: Colors.green),
                 const SizedBox(width: 8),
                 Text(
-                  'Задача #${r.taskId} отправлена',
+                  'Батч #$_batchId отправлен',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text('batch_id = ${r.batchId}'),
-            if (ex != null && !ex.isEmpty) ...[
-              const SizedBox(height: 12),
-              const Divider(),
-              const SizedBox(height: 8),
-              if (ex.workOrderCoded != null)
-                _kv('Н/З (текущий)', ex.workOrderCoded!),
-              if (ex.workOrderIncoming != null)
-                _kv('Н/З (входящий)', ex.workOrderIncoming!),
-              if (ex.containerNumber != null)
-                _kv('Номер тары', ex.containerNumber!),
-              if (ex.researchType != null) _kv('ТИ', ex.researchType!),
-              if (ex.samples.isNotEmpty)
-                _kv(
-                  'Пробы',
-                  '${ex.samples.length}: ${ex.samples.take(5).join(", ")}'
-                      '${ex.samples.length > 5 ? "…" : ""}',
-                ),
-              if (ex.wells.isNotEmpty) _kv('Скважины', ex.wells.join(', ')),
-            ] else
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text('Поля не распознаны (нет зон / пустой OCR).'),
-              ),
             const SizedBox(height: 16),
-            Text(
-              'Проверьте и подтвердите на компьютере: /ocr/review/${r.taskId}',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            Text('Задач: ${_results.length}'),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child: ListView.builder(
+                itemCount: _results.length,
+                itemBuilder: (context, index) {
+                  final r = _results[index];
+                  return ListTile(
+                    title: Text('Task #${r.taskId}'),
+                    subtitle: Text(
+                      r.extracted?.containerNumber ?? 'Нет данных',
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.copy),
+                      onPressed: () async {
+                        if (!mounted) return;
+                        await Clipboard.setData(
+                          ClipboardData(text: r.taskId.toString()),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('task_id=${r.taskId} скопирован'),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.copy),
-                  label: const Text('Скопировать task_id'),
-                  onPressed: _copyTaskId,
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: _reset,
-                  child: const Text('Ещё одну'),
-                ),
-              ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _reset,
+                child: const Text('Новый батч'),
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(k, style: const TextStyle(color: Colors.grey)),
-          ),
-          Expanded(
-            child: Text(v, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
     );
   }
