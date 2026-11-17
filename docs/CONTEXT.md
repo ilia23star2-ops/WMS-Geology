@@ -21,10 +21,11 @@
 6f-1 — Backend: approve с batch.cell_id → Pallet+ACTIVE; приоритет payload>task>batch; миграция 0003.
 6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
 6e-1 — Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize.
+6e-a1 — Mobile: экран сессии OCR (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
 
-**Backend: 918 тестов** (в т.ч. **44** в `apps.ocr`).
+**Backend: 985 тестов** (в т.ч. **81** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
-**Mobile: 227 юнит-тестов.**
+**Mobile: 244 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
 **Серия `2.x-lifecycle`** — закрыта (5/5 пачек).
@@ -46,6 +47,7 @@
 - **Mobile:**
   - Drawer «Оцифровка» → `OcrNewScreen`: камера / галерея / QR ячейки → `POST /recognize/`.
   - `OcrService.recognize()`, `ApiClient.uploadMultipart()`, `QrCellScannerDialog`.
+  - Drawer «Оцифровка (сессия)» → `OcrSessionScreen` / `OcrCellScreen`, модель `OcrSession` (ChangeNotifier) в `MultiProvider`.
 - **Web:**
   - Sidebar «Оцифровка» → `/ocr/batches`.
   - `OcrReviewPage`: prefill `site`/`research_type`/`container_type` из `extracted`; fallback проб (raw с warning); клики `words[]` ↔ поля.
@@ -54,8 +56,8 @@
 
 ### Что осталось (OCR)
 
-- **`c-3.x-migration-6`** — Mobile «Оцифровка»: ячейка → фото → зоны → `POST /recognize/`.
-- **`c-3.x-migration-7`** — Mobile: SyncQueue для зон (офлайн).
+- **`c-3.x-migration-6e-a2`** — Mobile: заменить вход «Оцифровка» на сессионный экран + перенести функционал batch-экрана (ТД-90).
+- **`c-3.x-migration-6e-a3`** — Mobile: отправка сессии (`_uploadSession`) + `Provider<OcrService>`; бэкенд `6e-1a` готов. SyncQueue для зон — `6e-3`.
 - **`c-3.x-migration-8`** — Web: fallback без зон (regex по всему тексту).
 - **ТД-78/79** — `apps/ocr/services/` спящие файлы; `ocr_runner.py` python_exe хардкод.
 - **ТД-80** — расхождение формата `sample_number` (DATABASE.md vs код vs UI).
@@ -74,6 +76,7 @@
 - **`mark_received`:** проверяет роль, `is_superuser` не проверяется (ТД-72, оставлено).
 - **`npm run build`** — `rc=2` из-за pre-existing MUI 9 breaking changes в 5 файлах (`PoolPage`, `ShipmentsPage`, `TopologyPage`, `ContainersPage`, `SamplesTreeTable`). ТД-81. Dev (`npm run dev`) работает.
 - **`ocr_runner.py`** — `python_exe = r"D:\Dev\python312\python.exe"` захардкожен (ТД-79). На другой машине не заведётся.
+  - **Сборка на рабочем ПК** — без `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` в каждом окне Gradle тянет движок с storage.googleapis.com → прокси ломает сертификат (PKIX). Артефакты лежат в `D:/Dev/maven-local`, среда разворачивается `install_build_env.ps1`.
 
 ---
 
@@ -124,7 +127,7 @@
 | Отправка | `ShipmentsPage`, `ShipmentDetailPage`, `CreateShipmentDialog`, `AddContainersToShipmentDialog`. |
 | **OCR** | **`OcrBatchesPage`, `OcrBatchDetailPage`, `OcrReviewPage` (v10), `RangeEditDialog`, `SmartAutocomplete`, `api/ocr.ts`** |
 
-### Mobile (Flutter, 227 юнит-тестов)
+### Mobile (Flutter, 244 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|

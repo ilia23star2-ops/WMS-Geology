@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-11-11
+**Дата обновления:** 2026-11-17
 
 ---
 
@@ -50,6 +50,9 @@
 | c-3.x-migration-6i | OCR preprocess на сервере | EXIF rotate + resize + grayscale + autocontrast + unsharp в `ocr_runner.py` | ✅ |
 | c-3.x-migration-6f-1 | Backend: approve с batch.cell_id + приоритеты; миграция 0003; 10 тестов; device-check пройден | ✅ |
 | c-3.x-migration-6e-1 | Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize | ✅ |
+| c-3.x-migration-6e-a1 | Mobile: экран сессии OCR (`OcrSession` + провайдер, `OcrSessionScreen`, `OcrCellScreen`), фиксы notify/inset/context.mounted; 13 тестов | ✅ |
+| c-3.x-migration-6e-a2 | Mobile: заменить вход «Оцифровка» на сессионный экран + перенос функционала batch-экрана | ⬜ |
+| c-3.x-migration-6e-a3 | Mobile: отправка сессии + `Provider<OcrService>`; бэкенд 6e-1a готов | ⬜ |
 | c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
 | c-3.x-migration-6e-2 | Mobile: разметка зон на фото | free-draw (тап → прямоугольник → тип). Удаление зон. | ⬜ |
 | c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |
@@ -329,3 +332,4 @@
 - **ТД-77.** Глобальное сохранение состояния (State Persistence). При навигации между страницами фильтры, выделенные строки и позиция скролла должны сохраняться (через Zustand или URL параметры). Касается всего приложения.
 | ТД-88 | Mobile: label ячейки из \/storage\/cells\/{id}\/ (TODO 6a-fix2 ocr_new_screen.dart:45) | средний | 6e-1 |
 | ТД-89 | Решить судьбу well в ZONE_TYPES (остаток плана 6f-1) | средний | 6e-1 |
+| ТД-90 | Mobile: два входа в OCR (batch-экран и сессия) — склеить, перенести функционал | средний | 6e-a2 |
