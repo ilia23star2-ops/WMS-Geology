@@ -18,6 +18,7 @@ import '../widgets/network_badge.dart';
 import 'container_detail_screen.dart';
 import 'containers_list_screen.dart';
 import 'ocr_new_screen.dart';
+import 'ocr_session_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
 
@@ -88,6 +89,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openOcr() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const OcrNewScreen()));
+  }
+
+  Future<void> _openOcrSession() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const OcrSessionScreen()));
   }
 
   void _showComingSoon(String section) {
@@ -292,6 +298,15 @@ class _HomeScreenState extends State<HomeScreen> {
           _drawerStub(context, Icons.print_outlined, 'Печать'),
           _drawerStub(context, Icons.account_tree_outlined, 'Топология'),
           _drawerStub(context, Icons.menu_book_outlined, 'Справочники'),
+
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Оцифровка (сессия)'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openOcrSession();
+            },
+          ),
 
           ListTile(
             leading: const Icon(Icons.document_scanner_outlined),
