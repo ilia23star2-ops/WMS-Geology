@@ -42,6 +42,17 @@ class OcrRecognizeView(APIView):
             zser.is_valid(raise_exception=True)
             zones = zser.validated_data['zones']
 
+        # 6e-1a: cell_id идёт в OcrTask, не в OcrBatch
+        cell_id = request.data.get('cell_id')
+        if cell_id is not None:
+            try:
+                cell_id = int(cell_id)
+            except (ValueError, TypeError):
+                return Response(
+                    {'error': 'cell_id должен быть числом'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         batch_id = request.data.get('batch_id')
         if batch_id:
             try:
@@ -53,18 +64,10 @@ class OcrRecognizeView(APIView):
             if not user:
                 from django.contrib.auth import get_user_model
                 user = get_user_model().objects.first()
-            cell_id_val = request.data.get("cell_id")
-            batch_kwargs = {"user": user}
-            if cell_id_val:
-                try:
-                    from apps.storage.models import Cell
-                    Cell.objects.get(pk=cell_id_val)
-                    batch_kwargs["cell_id"] = cell_id_val
-                except Cell.DoesNotExist:
-                    pass
-            batch = OcrBatch.objects.create(**batch_kwargs)
+            # 6e-1a: batch создаётся без cell (cell в task)
+            batch = OcrBatch.objects.create(user=user)
 
-        task = OcrTask.objects.create(batch=batch, image=image_file)
+        task = OcrTask.objects.create(batch=batch, image=image_file, cell_id=cell_id)
         if zones is not None:
             task.zones = zones
             task.save(update_fields=['zones'])
