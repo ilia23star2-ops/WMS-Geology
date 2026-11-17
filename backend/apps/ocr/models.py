@@ -36,13 +36,13 @@ class OcrTask(models.Model):
         ('ERROR', 'Ошибка распознавания'),
     ]
 
+    # c-6f-1: `well` убран из зон (скважина выводится из samples).
     ZONE_TYPES = [
         ('work_order_coded', 'Н/З (текущий)'),
         ('work_order_incoming', 'Н/З (входящий)'),
         ('container_number', 'Номер тары'),
         ('research_type', 'Тип исследования'),
         ('sample', 'Проба'),
-        ('well', 'Скважина'),
     ]
 
     batch = models.ForeignKey(OcrBatch, on_delete=models.CASCADE, related_name='tasks', verbose_name='Пакет')

@@ -1,8 +1,11 @@
 """Превращение распознанной OcrTask в Container + Sample.
 
 Композиция существующих сервисов storage + samples.
-Не дублирует логику fill_container_with_samples / bulk_place_containers —
-использует их as-is.
+Не дублирует логику fill_container_with_samples / bulk_place_containers.
+
+c-6f-1: если batch.cell_id задан (оператор выбрал ячейку на мобилке) —
+Container размещается туда через bulk_place_containers (→ ACTIVE + Pallet).
+Приоритет: payload.cell_id > batch.cell_id > None.
 """
 from django.db import transaction
 from django.utils import timezone
@@ -17,8 +20,8 @@ def approve_task(task, payload, user):
     """Применяет reviewed_data к OcrTask.
 
     Создаёт Container (PENDING_FILLING), заполняет пробами через
-    fill_container_with_samples. Если передан cell_id — размещает
-    через bulk_place_containers (Container → ACTIVE).
+    fill_container_with_samples. Если cell_id (из payload или batch) —
+    размещает через bulk_place_containers → Container.ACTIVE.
 
     Обновляет task.status=DONE, reviewed_data=payload. Если все
     задачи батча в DONE — batch.status=COMPLETED, processed_at=now.
@@ -35,7 +38,11 @@ def approve_task(task, payload, user):
     except ContainerType.DoesNotExist:
         raise ValueError(f'Тип тары #{container_type_id} не найден.')
 
+    # c-6f-1: приоритет — payload.cell_id (если оператор вернёт ручной ввод)
+    # > batch.cell_id (мобилка) > None.
     cell_id = payload.get('cell_id')
+    if not cell_id and task.batch:
+        cell_id = task.batch.cell_id
 
     with transaction.atomic():
         container = Container.objects.create(
@@ -92,6 +99,7 @@ def approve_task(task, payload, user):
                 'created_samples': len(samples),
                 'source': 'ocr_approve',
                 'ocr_task_id': task.pk,
+                'placed_to_cell_id': cell_id,
             },
         )
 
