@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** `feature/3.x-migration` — закрыты `5b`…`5f`, `6e-1`, `6e-a1`, `6e-a2`, `6e-a3`; следующий `6e-2` (зоны).
+**Текущий заход:** `feature/3.x-migration` — закрыты 5b…5f, 6e-1, 6e-a1…6e-a3, 6e-2; следующие 6e-2-site (Участок), 6e-2-web (переключатель зон), 6e-4 (качество фото).
 - **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
 - **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
@@ -24,10 +24,11 @@
 6e-a1 — Mobile: экран сессии OCR (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
 6e-a2 — Mobile: замена входа «Оцифровка» на сессионный экран, удаление OcrNewScreen; один пункт drawer (6e-a2-fix).
 6e-a3 — Mobile: отправка сессии (recognize→sendBatch→clear) + прогресс; Web: метка SENT + stay-after-approve; Backend: PATCH batches→SENT, ASCII-safe runner (6e-a3-pre).
+6e-2 — Mobile: разметка зон на фото (drag-прямоугольник-тип, zoom/pan жестами, легенда-чипы в цвет зоны, авторазграничение пересекающихся зон с зазором).
 
 **Backend: 988 тестов** (в т.ч. **84** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
-**Mobile: 246 юнит-тестов.**
+**Mobile: 269 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
 **Серия `2.x-lifecycle`** — закрыта (5/5 пачек).
@@ -63,7 +64,7 @@
 - **ТД-80** — расхождение формата `sample_number` (DATABASE.md vs код vs UI).
 - **ТД-82** — связь номера тары ↔ диапазон проб.
 - **ТД-83** — мёртвый `parseSampleGroups.ts` после 5f.
-- **`c-3.x-migration-6e-2`** — Mobile: разметка зон; **`6e-4`** — качество фото при съёмке (идея).#
+- **`c-3.x-migration-6e-2-site`** — тип зоны Участок (backend сначала); **`6e-2-web`** — переключатель зон; **`6e-4`** — качество фото при съёмке.
 
 ### Что было закрыто до OCR (2.x-lifecycle, для истории)
 
