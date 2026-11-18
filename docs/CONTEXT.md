@@ -22,6 +22,7 @@
 6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
 6e-1 — Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize.
 6e-a1 — Mobile: экран сессии OCR (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
+6e-a2 — Mobile: замена входа «Оцифровка» на сессионный экран, удаление `OcrNewScreen`. (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
 
 **Backend: 985 тестов** (в т.ч. **81** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).

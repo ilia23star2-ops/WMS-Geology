@@ -1,3 +1,4 @@
+✅ `c-3.x-migration-6e-a2` (2026-11-18) — Mobile: замена входа «Оцифровка» на сессионный экран. `home_screen.dart`: `OcrNewScreen` → `OcrSessionScreen`. Удалён устаревший `ocr_new_screen.dart`. Закрыт ТД-90.
 ## Серия `feature/3.x-migration` (OCR)
 
 **Дата:** 2026-11-13 — 🟡 активна (переоткрыта).
