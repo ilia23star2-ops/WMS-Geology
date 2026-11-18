@@ -77,7 +77,7 @@
 - **`mark_received`:** проверяет роль, `is_superuser` не проверяется (ТД-72, оставлено).
 - **`npm run build`** — `rc=2` из-за pre-existing MUI 9 breaking changes в 5 файлах (`PoolPage`, `ShipmentsPage`, `TopologyPage`, `ContainersPage`, `SamplesTreeTable`). ТД-81. Dev (`npm run dev`) работает.
 - **`ocr_runner.py`** — `python_exe = r"D:\Dev\python312\python.exe"` захардкожен (ТД-79). На другой машине не заведётся.
-  - **Буфер чата:** `wms_report` шлёт base64 через stdin; аргумент командной строки powershell.exe ограничен 32767 символами → сводки >24 КБ молча не копируются (починено 2026-11-18).#
+- **Буфер чата:** `wms_report` шлёт base64 через stdin; аргумент командной строки powershell.exe ограничен 32767 символами → сводки >24 КБ молча не копируются (починено 2026-11-18).
   - **Сборка на рабочем ПК** — без `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` в каждом окне Gradle тянет движок с storage.googleapis.com → прокси ломает сертификат (PKIX). Артефакты лежат в `D:/Dev/maven-local`, среда разворачивается `install_build_env.ps1`.
 
 ---
