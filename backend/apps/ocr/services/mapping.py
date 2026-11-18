@@ -23,7 +23,7 @@ _DIGIT_SUFFIX_RE = re.compile(r"[0-9OoIiLl]+$")
 _PREFIX_RE = re.compile(r"^[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?", re.IGNORECASE)
 
 _OCR_DIGIT_TRANS = str.maketrans({
-    "O": "0", "o": "0", "I": "1", "i": "1", "l": "1",
+    "O": "0", "o": "0", "I": "1", "i": "1", "l": "1", "T": "1", "t": "1",
 })
 
 _LAT_TO_CYR = str.maketrans({
@@ -46,6 +46,21 @@ def _fix_ocr_digits(s: str) -> str:
     if not fixed.isdigit():
         return s
     return s[:m.start()] + fixed
+
+
+def _fix_leading_confusion(s: str, valid_prefixes: set) -> str:
+    """6e-2-site-fix2: OCR читает 1 как T сразу после валидного префикса
+    (TSTT234501 → TST1234501). Обычные TST1234 не трогает."""
+    if not valid_prefixes:
+        return s
+    up = s.upper()
+    for vp in sorted(valid_prefixes, key=len, reverse=True):
+        v = vp.upper()
+        if up.startswith(v) and len(s) > len(v) + 1:
+            c = s[len(v)]
+            if c in "TtIiOolL" and s[len(v) + 1].isdigit():
+                return s[:len(v)] + c.translate(_OCR_DIGIT_TRANS) + s[len(v) + 1:]
+    return s
 
 
 def _norm_cyr(s: str) -> str:
@@ -273,7 +288,7 @@ def extract_fields(
     # 2. Samples
     samples_set: set = set()
     for m in _SAMPLE_RE.findall(full_text):
-        fixed = _fix_ocr_digits(m)
+        fixed = _fix_leading_confusion(_fix_ocr_digits(m), vp)
         if not re.match(r"^[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d+$", fixed, re.IGNORECASE):
             continue
         fixed = _fix_prefix(fixed, vp)
@@ -302,7 +317,7 @@ def extract_fields(
             text_wo = text_wo.replace(s, " ")
             text_wo = text_wo.replace(s.lower(), " ")
         for m in _WORK_ORDER_RE.findall(text_wo):
-            fixed = _fix_ocr_digits(m)
+            fixed = _fix_leading_confusion(_fix_ocr_digits(m), vp)
             if not re.match(r"^[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d+$", fixed, re.IGNORECASE):
                 continue
             fixed = _fix_prefix(fixed, vp)
