@@ -239,6 +239,17 @@ def extract_fields(
             if val:
                 result[t] = val
 
+    # 1b. 6e-2-site: участок из зоны → code через fuzzy по тексту зоны
+    site_from_zone = False
+    for zone in zones or []:
+        if zone.get("type") == "site":
+            val = _extract_scalar(words, zone)
+            if val:
+                code = _find_site(val, sites or [])
+                if code:
+                    result["site"] = code
+                    site_from_zone = True
+
     # 2. Samples
     samples_set: set = set()
     for m in _SAMPLE_RE.findall(full_text):
@@ -293,7 +304,7 @@ def extract_fields(
 
     # 6. Источник
     has_zones = bool(zones)
-    has_zones_data = any(result[k] for k in scalar_types)
+    has_zones_data = any(result[k] for k in scalar_types) or site_from_zone
     has_fallback = bool(
         result["samples"] or result["wells"] or result["work_order_coded"]
         or result["site"] or result["research_type"] or result["container_type"]
