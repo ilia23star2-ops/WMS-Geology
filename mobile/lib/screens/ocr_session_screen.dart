@@ -236,6 +236,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
             imagePath: photo.path,
             cellId: cell.cellId,
             batchId: batchId,
+            zones: cell.zonesFor(photo.path).map((z) => z.toPayload()).toList(),
           );
           batchId ??= result.batchId;
           cell.removePhoto(0);
