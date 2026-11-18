@@ -62,10 +62,6 @@
 | c-3.x-migration-6e-2-web-2 | Web: инлайн-правка OCR-токена (убрал пробел — проба определилась) | ⬜ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
-| c-3.x-migration-6e-2-web-fix5 | Web: сверка номера тары с фото (ложный зелёный); аномалии только внутри скважины; разбить OcrReviewPage (>500 строк) | ⬜ |
-| c-3.x-migration-6e-2-web-2 | Web: инлайн-правка OCR-токена (убрал пробел — проба определилась) | ⬜ |
-| c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
-| c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
 | c-3.x-migration-6e-4 | Mobile: оценка качества фото при съёмке (резкость, яркость, разрешение) + подсказки | ⬜ |
 | c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |
 | c-3.x-migration-6e-3 | Mobile: SyncQueue для OCR | офлайн-накопление → отправка при возврате сети. | ⬜ |
