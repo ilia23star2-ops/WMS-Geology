@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** `feature/3.x-migration` — закрыты 5b…5f, 6e-1, 6e-a1…6e-a3, 6e-2; следующие 6e-2-site (Участок), 6e-2-web (переключатель зон), 6e-4 (качество фото).
+**Текущий заход:** `feature/3.x-migration` — закрыты 5b…5f, 6e-1, 6e-a1…6e-a3, 6e-2, 6e-2-site (+fix2); следующие 6e-2-web (labels/переключатель/кнопка тары), 6k (без ячейки), 6e-4 (качество фото).
 - **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
 - **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
@@ -26,8 +26,9 @@
 6e-a3 — Mobile: отправка сессии (recognize→sendBatch→clear) + прогресс; Web: метка SENT + stay-after-approve; Backend: PATCH batches→SENT, ASCII-safe runner (6e-a3-pre).
 6e-2 — Mobile: разметка зон на фото (drag-прямоугольник-тип, zoom/pan жестами, легенда-чипы в цвет зоны, авторазграничение пересекающихся зон с зазором).
 6e-2-site — Backend+Mobile: тип зоны Участок (ZONE_TYPES, mapping site_from_zone, UI); _pick_scalar v2 — из многословного текста зоны берётся токен формата, одиночная лексема as-is.
+6e-2-site-fix2 — Backend: _fix_leading_confusion (T→1 сразу после валидного префикса, TSTT234501→TST1234501); container_number из зоны подтверждён device-check.
 
-**Backend: 996 тестов** (в т.ч. **92** в `apps.ocr`).
+**Backend: 999 тестов** (в т.ч. **95** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
 **Mobile: 270 юнит-тестов.**
 
