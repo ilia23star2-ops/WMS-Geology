@@ -7,6 +7,7 @@
  * c-3.x-migration-5f: типизация для подсветки bbox ↔ поля.
  * c-3.x-migration-6a-fix5b: +site, +container_type в ExtractedFields.
  * c-3.x-migration-6e-a3: +SENT — сессия отправлена с мобильного.
+ * c-3.x-migration-6e-2-web: зона «Участок», label «Пробы», approvedContainerId.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -54,15 +55,19 @@ export type OcrZoneType =
     | "container_number"
     | "research_type"
     | "sample"
-    | "well";
+    | "well"
+    | "site";
 
 export const OCR_ZONE_LABELS: Record<OcrZoneType, string> = {
     work_order_coded: "Н/З (текущий)",
     work_order_incoming: "Н/З (входящий)",
     container_number: "Номер тары",
     research_type: "Тип исследования",
-    sample: "Проба",
+    // 6e-2-web: в зоне несколько проб
+    sample: "Пробы",
     well: "Скважина",
+    // 6e-2-site: тип зоны с мобильного
+    site: "Участок",
 };
 
 export interface OcrWord {
@@ -149,6 +154,18 @@ export function resolveImageUrl(image: string): string {
     if (!image) return "";
     if (image.startsWith("http://") || image.startsWith("https://")) return image;
     return "/" + image.replace(/^\/+/, "");
+}
+
+/**
+ * 6e-2-web: id тары, созданной при approve.
+ * Backend кладёт `container_id` в `reviewed_data` (6e-2-web-a).
+ * У задач, подтверждённых раньше, поля нет → null (кнопка не показывается).
+ */
+export function approvedContainerId(task: OcrTask): number | null {
+    const raw = task.reviewed_data?.["container_id"];
+    return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+        ? raw
+        : null;
 }
 
 export function useOcrTask(taskId: number | null) {
