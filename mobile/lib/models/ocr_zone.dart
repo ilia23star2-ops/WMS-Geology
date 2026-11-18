@@ -24,6 +24,7 @@ class OcrZoneTypes {
     sample,
     well,
   ];
+  static const List<String> uiOrder = [workOrderCoded, workOrderIncoming, containerNumber, researchType, sample];
 
   /// Подписи для UI (русский, как в web OCR_ZONE_LABELS).
   static const Map<String, String> labels = {
@@ -31,7 +32,7 @@ class OcrZoneTypes {
     workOrderIncoming: 'Н/З (входящий)',
     containerNumber: 'Номер тары',
     researchType: 'Тип исследования',
-    sample: 'Проба',
+    sample: 'Пробы',
     well: 'Скважина',
   };
 }

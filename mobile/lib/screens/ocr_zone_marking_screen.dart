@@ -1,7 +1,10 @@
-/// Экран разметки зон на фото (6e-2c).
+/// Экран разметки зон на фото (6e-2c, 6e-2-fix).
 ///
-/// Drag по фото → прямоугольник → выбор типа → зона в пикселях оригинала.
-/// Список зон с удалением; сохранение в CellPhotos (per-photo).
+/// Режимы: «Рисовать» (drag → прямоугольник → тип) и «Двигать»
+/// (pinch-zoom + pan через InteractiveViewer). Координаты рисования
+/// пересчитываются через обратную матрицу трансформации, поэтому
+/// разметка точна при любом zoom.
+/// 6e-2-fix: подписи на фото убраны; легенда — чипы в цвет зоны.
 library;
 
 import 'dart:io';
@@ -38,9 +41,11 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
   };
 
   late List<OcrZoneMark> _zones;
+  final TransformationController _tc = TransformationController();
   int _imageWidth = 0;
   int _imageHeight = 0;
   bool _error = false;
+  bool _drawMode = true;
   Offset? _dragStart;
   Offset? _dragCurrent;
   ImageStream? _stream;
@@ -58,6 +63,7 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
     if (_stream != null && _listener != null) {
       _stream!.removeListener(_listener!);
     }
+    _tc.dispose();
     super.dispose();
   }
 
@@ -83,6 +89,22 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
   }
 
   Color _color(String type) => _colors[type] ?? Colors.blueGrey;
+
+  /// Координаты viewport → координаты сцены (с учётом zoom/pan).
+  Offset? _toScene(Offset viewportPoint) {
+    final inv = Matrix4.tryInvert(_tc.value);
+    if (inv == null) return null;
+    return MatrixUtils.transformPoint(inv, viewportPoint);
+  }
+
+  void _dragTo(Offset viewportPoint, {bool start = false}) {
+    final p = _toScene(viewportPoint);
+    if (p == null) return;
+    setState(() {
+      if (start) _dragStart = p;
+      _dragCurrent = p;
+    });
+  }
 
   Rect _dragRect() {
     final s = _dragStart!;
@@ -118,10 +140,16 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
       builder: (ctx) => SimpleDialog(
         title: const Text('Тип зоны'),
         children: [
-          for (final t in OcrZoneTypes.order)
+          for (final t in OcrZoneTypes.uiOrder)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, t),
-              child: Text(OcrZoneTypes.labels[t] ?? t),
+              child: Row(
+                children: [
+                  Container(width: 12, height: 12, color: _color(t)),
+                  const SizedBox(width: 8),
+                  Text(OcrZoneTypes.labels[t] ?? t),
+                ],
+              ),
             ),
         ],
       ),
@@ -152,6 +180,20 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
       appBar: AppBar(
         title: const Text('Разметка зон'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            tooltip: _drawMode
+                ? 'Режим движения (zoom/pan)'
+                : 'Режим рисования',
+            icon: Icon(_drawMode ? Icons.pan_tool : Icons.edit),
+            onPressed: () => setState(() => _drawMode = !_drawMode),
+          ),
+          IconButton(
+            tooltip: 'Сбросить zoom',
+            icon: const Icon(Icons.center_focus_strong),
+            onPressed: () => setState(() => _tc.value = Matrix4.identity()),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -170,15 +212,9 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                   areaWidth: constraints.maxWidth,
                   areaHeight: constraints.maxHeight,
                 );
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanStart: (d) => setState(() {
-                    _dragStart = d.localPosition;
-                    _dragCurrent = d.localPosition;
-                  }),
-                  onPanUpdate: (d) =>
-                      setState(() => _dragCurrent = d.localPosition),
-                  onPanEnd: (d) => _finishDrag(frame),
+                final scene = SizedBox(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
                   child: Stack(
                     children: [
                       Positioned(
@@ -191,6 +227,7 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                           fit: BoxFit.fill,
                         ),
                       ),
+                      // 6e-2-fix: без подписей — только цветная рамка.
                       for (final z in _zones)
                         Positioned(
                           left: frame.toAreaX(z.x),
@@ -203,24 +240,7 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                                 color: _color(z.type),
                                 width: 2,
                               ),
-                              color: _color(z.type).withValues(alpha: 0.15),
-                            ),
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              child: Container(
-                                color: _color(z.type),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 1,
-                                ),
-                                child: Text(
-                                  OcrZoneTypes.labels[z.type] ?? z.type,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
+                              color: _color(z.type).withValues(alpha: 0.12),
                             ),
                           ),
                         ),
@@ -236,30 +256,50 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                             ),
                           ),
                         ),
-                      if (_zones.isEmpty)
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          bottom: 8,
-                          child: Container(
-                            color: Colors.black54,
-                            padding: const EdgeInsets.all(6),
-                            child: const Text(
-                              'Проведи пальцем по области этикетки, чтобы выделить зону',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                              textAlign: TextAlign.center,
+                      Positioned(
+                        left: 8,
+                        right: 8,
+                        bottom: 8,
+                        child: Container(
+                          color: Colors.black54,
+                          padding: const EdgeInsets.all(6),
+                          child: Text(
+                            _drawMode
+                                ? 'Рисование: проведи по области этикетки. Кнопка руки — zoom/pan'
+                                : 'Движение: щипок — zoom, палец — pan. Кнопка карандаша — рисование',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
                             ),
+                            textAlign: TextAlign.center,
                           ),
                         ),
+                      ),
                     ],
                   ),
                 );
+                final viewer = InteractiveViewer(
+                  transformationController: _tc,
+                  scaleEnabled: !_drawMode,
+                  panEnabled: !_drawMode,
+                  minScale: 1,
+                  maxScale: 6,
+                  child: scene,
+                );
+                if (_drawMode) {
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (d) => _dragTo(d.localPosition, start: true),
+                    onPanUpdate: (d) => _dragTo(d.localPosition),
+                    onPanEnd: (d) => _finishDrag(frame),
+                    child: viewer,
+                  );
+                }
+                return viewer;
               },
             ),
           ),
+          // 6e-2-fix: легенда — чипы в цвет зоны, крестик того же цвета.
           if (_zones.isNotEmpty)
             SizedBox(
               height: 56,
@@ -273,9 +313,13 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                       child: InputChip(
                         label: Text(
                           OcrZoneTypes.labels[_zones[i].type] ?? _zones[i].type,
+                          style: TextStyle(color: _color(_zones[i].type)),
                         ),
+                        backgroundColor: _color(_zones[i].type)
+                            .withValues(alpha: 0.12),
+                        side: BorderSide(color: _color(_zones[i].type)),
                         onDeleted: () => setState(() => _zones.removeAt(i)),
-                        deleteIconColor: Colors.red,
+                        deleteIconColor: _color(_zones[i].type),
                       ),
                     ),
                 ],

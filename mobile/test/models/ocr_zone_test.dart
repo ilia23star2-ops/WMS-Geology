@@ -88,6 +88,16 @@ void main() {
     }
   });
 
+  test('uiOrder: 5 типов, без well (6e-2-fix)', () {
+    expect(OcrZoneTypes.uiOrder.length, 5);
+    expect(OcrZoneTypes.uiOrder.contains(OcrZoneTypes.well), isFalse);
+    expect(OcrZoneTypes.uiOrder.contains(OcrZoneTypes.sample), isTrue);
+  });
+
+  test('label sample = Пробы (6e-2-fix)', () {
+    expect(OcrZoneTypes.labels[OcrZoneTypes.sample], 'Пробы');
+  });
+
   test('ImageFrame.contain: landscape фото в квадратной области', () {
     final f = ImageFrame.contain(
       imageWidth: 1000,
