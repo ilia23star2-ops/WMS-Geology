@@ -8,6 +8,8 @@
  *   - Пробы: диапазон через SmartAutocomplete + RangeEditDialog (как в
  *     FillContainerContent: skipped / selected).
  *   - Подсказки в поле «Диапазон проб» — baseSampleOptions из suggestions.samples.
+ * c-3.x-migration-6e-a3-web-fix: после approve остаёмся на окне.
+ * c-3.x-migration-6e-2-web: переключатель показа зон + кнопка «Открыть тару».
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -18,9 +20,11 @@ import {
     Card,
     CardContent,
     CircularProgress,
+    FormControlLabel,
     IconButton,
     Paper,
     Stack,
+    Switch,
     Table,
     TableBody,
     TableCell,
@@ -158,6 +162,9 @@ export default function OcrReviewPage() {
     const [submitOk, setSubmitOk] = useState<string | null>(null);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [prefilled, setPrefilled] = useState(false);
+    // 6e-2-web: показ зон на фото + id созданной тары.
+    const [showZones, setShowZones] = useState(true);
+    const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
 
     const siteId = useMemo(() => {
         if (!siteName) return null;
@@ -431,6 +438,7 @@ export default function OcrReviewPage() {
         };
         approve.mutate(payload, {
             onSuccess: (res) => {
+                setApprovedContainerId(res.container_id);
                 setSubmitOk(
                     `Создана тара #${res.container_id}, проб: ${res.samples_created}.` +
                     (res.batch_completed ? " Батч закрыт." : ""),
@@ -458,6 +466,17 @@ export default function OcrReviewPage() {
             <Typography variant="h5" gutterBottom>
                 Проверка OCR — задача #{task.id} ({task.status})
             </Typography>
+            <FormControlLabel
+                sx={{ mb: 1 }}
+                control={
+                    <Switch
+                        size="small"
+                        checked={showZones}
+                        onChange={(e) => setShowZones(e.target.checked)}
+                    />
+                }
+                label="Показывать зоны на фото"
+            />
             <Box
                 sx={{
                     display: "grid",
@@ -469,6 +488,7 @@ export default function OcrReviewPage() {
                 <ImageWithBboxes
                     task={task}
                     activeField={activeField}
+                    showZones={showZones}
                     onBboxClick={(type) => setActiveField(type)}
                 />
                 <Paper sx={{ p: 2 }}>
@@ -700,6 +720,16 @@ export default function OcrReviewPage() {
                             >
                                 {approve.isPending ? "Сохраняем…" : submitOk ? "Подтверждено" : "Подтвердить"}
                             </Button>
+                            {approvedContainerId !== null && (
+                                <Button
+                                    variant="outlined"
+                                    onClick={() =>
+                                        navigate(`/containers?highlight=${approvedContainerId}`)
+                                    }
+                                >
+                                    Открыть тару
+                                </Button>
+                            )}
                             <Button onClick={() => navigate(-1)}>Отмена</Button>
                         </Stack>
                     </Stack>
@@ -722,10 +752,12 @@ export default function OcrReviewPage() {
 function ImageWithBboxes({
     task,
     activeField,
+    showZones,
     onBboxClick,
 }: {
     task: OcrTask;
     activeField: string | null;
+    showZones: boolean;
     onBboxClick: (type: string) => void;
 }) {
     const imgRef = useRef<HTMLImageElement | null>(null);
@@ -773,6 +805,7 @@ function ImageWithBboxes({
                                 width: "100%",
                                 height: "100%",
                                 pointerEvents: "none",
+                                visibility: showZones ? "visible" : "hidden",
                             }}
                         >
                             {zones.map((zone, i) => {
@@ -854,6 +887,7 @@ function ImageWithBboxes({
                                     cursor: "pointer",
                                     whiteSpace: "nowrap",
                                     zIndex: 10,
+                                    visibility: showZones ? "visible" : "hidden",
                                 }}
                             >
                                 {OCR_ZONE_LABELS[zone.type as OcrZoneType] ?? zone.type}
