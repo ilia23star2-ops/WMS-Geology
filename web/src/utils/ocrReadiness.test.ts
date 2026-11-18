@@ -9,6 +9,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
         workOrderCoded: "TST1234",
         containerTypeName: "Ящик",
         containerNumber: "1",
+        photoContainerNumber: "1",
         rangesCount: 9,
         missingCount: 0,
         anomalyCount: 0,
@@ -50,5 +51,27 @@ describe("checkReadiness", () => {
         expect(r.blockers).toBe(0);
         expect(r.ready).toBe(true);
         expect(r.warnings).toBe(1);
+    });
+
+    it("fix5: номер с фото не распознан → не готов, не блокер", () => {
+        const r = checkReadiness(input({ photoContainerNumber: null }));
+        expect(r.blockers).toBe(0);
+        expect(r.ready).toBe(false);
+        const item = r.items.find((x) => x.key === "container_number_photo");
+        expect(item?.ok).toBe(false);
+        expect(item?.hint).toBe("не распознан на фото — проверь вручную");
+    });
+
+    it("fix5: несовпадение номера с фото → не готов, подсказка «на фото X, введено Y»", () => {
+        const r = checkReadiness(input({ containerNumber: "T-001", photoContainerNumber: "T-002" }));
+        expect(r.ready).toBe(false);
+        const item = r.items.find((x) => x.key === "container_number_photo");
+        expect(item?.ok).toBe(false);
+        expect(item?.hint).toBe("на фото T-002, введено T-001");
+    });
+
+    it("fix5: совпадение после нормализации (пробелы/дефисы/регистр/O→0/I→1) → готов", () => {
+        expect(checkReadiness(input({ containerNumber: "T-001", photoContainerNumber: "t 0o1" })).ready).toBe(true);
+        expect(checkReadiness(input({ containerNumber: "T-O0l", photoContainerNumber: "T001" })).ready).toBe(true);
     });
 });

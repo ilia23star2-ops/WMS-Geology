@@ -9,34 +9,25 @@
  *   - мини-зоны проб: клик по пробе на фото → строка списка, и обратно;
  *   - цвет строки = цвет её бокса (зелёный / жёлтый / малиновый пунктир);
  *   - динамическая готовность к подтверждению + зелёный сигнал.
+ * 6e-2-web: фото (ImageWithBboxes), готовность (ReadinessPanel) и таблица проб
+ *   (RangesTable) вынесены в components/ocr.
+ * 6e-2-web-fix5: шапка тары (ContainerHeaderFields) и алерты аудита (AuditAlerts)
+ *   вынесены в components/ocr.
  */
-import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     Alert,
     Box,
     Button,
-    Card,
-    CardContent,
-    Chip,
     CircularProgress,
     FormControlLabel,
-    IconButton,
     Paper,
     Stack,
     Switch,
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableRow,
-    TextField,
-    Tooltip,
     Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import DeleteIcon from "@mui/icons-material/Delete";
-import EditIcon from "@mui/icons-material/Edit";
 
 import { useContainerTypes } from "../api/containerTypes";
 import {
@@ -45,67 +36,29 @@ import {
     useSites,
 } from "../api/catalogs";
 import {
-    OCR_ZONE_LABELS,
-    resolveImageUrl,
     useApproveOcrTask,
     useOcrTask,
     type OcrApprovePayload,
-    type OcrTask,
-    type OcrZone,
-    type OcrZoneType,
     type SampleGroup,
 } from "../api/ocr";
 import { useSuggestions } from "../api/suggestions";
 import SmartAutocomplete from "../components/SmartAutocomplete";
 import RangeEditDialog from "../components/RangeEditDialog";
-import {
-    parseSampleInput,
-    type ParsedSampleRange,
-} from "../utils/parseSampleInput";
+import { parseSampleInput } from "../utils/parseSampleInput";
 import {
     auditSamples,
     linkSampleWords,
-    matchesSampleNumber,
     normalizeToken,
     rangeNumbers,
     rangeNumberSet,
     type SampleWordLink,
-    type SampleWordStatus,
 } from "../utils/ocrSampleAudit";
 import { checkReadiness } from "../utils/ocrReadiness";
-
-/** Цвета зон — совпадают с мобильной разметкой. */
-const ZONE_COLORS: Record<string, string> = {
-    work_order_coded: "#1E88E5",
-    work_order_incoming: "#00897B",
-    container_number: "#FB8C00",
-    research_type: "#8E24AA",
-    sample: "#43A047",
-    well: "#6D4C41",
-    site: "#3949AB",
-};
-
-/** Статусы проб: жёлтый и малиновый разведены далеко друг от друга. */
-const STATUS_COLORS: Record<SampleWordStatus, string> = {
-    covered: "#2E7D32",
-    anomaly: "#F9A825",
-    missing: "#D81B60",
-};
-
-const STATUS_LABELS: Record<SampleWordStatus, string> = {
-    covered: "есть в списке",
-    anomaly: "выбивается из группы",
-    missing: "нет в списке",
-};
-
-// ---------- типы ----------
-interface RangeEntry extends ParsedSampleRange {
-    id: string;
-    rawInput: string;
-    allSeqs: number[];
-    skippedSeqs: number[];
-    selectedSeqs: number[];
-}
+import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
+import RangesTable, { type RangeEntry } from "../components/ocr/RangesTable";
+import ReadinessPanel from "../components/ocr/ReadinessPanel";
+import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
+import AuditAlerts from "../components/ocr/AuditAlerts";
 
 function newRangeId(): string {
     return `r-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -398,12 +351,13 @@ export default function OcrReviewPage() {
             workOrderCoded,
             containerTypeName,
             containerNumber,
+            photoContainerNumber: task.raw_ocr_data?.extracted?.container_number ?? null,
             rangesCount: ranges.length,
             missingCount: audit.missing.length,
             anomalyCount: audit.anomalyIds.length,
         }),
         [siteName, researchTypeName, workOrderCoded, containerTypeName,
-            containerNumber, ranges.length, audit.missing.length, audit.anomalyIds.length],
+            task, containerNumber, ranges.length, audit.missing.length, audit.anomalyIds.length],
     );
 
     const focusSampleFromPhoto = (link: SampleWordLink) => {
@@ -585,11 +539,6 @@ export default function OcrReviewPage() {
 
     const focusField = (name: string) => setActiveField(name);
     const blurField = () => setActiveField(null);
-    const fieldSx = (name: string) => ({
-        bgcolor: activeField === name ? "rgba(255, 152, 0, 0.1)" : "transparent",
-        transition: "background-color 200ms",
-        borderRadius: 1,
-    });
 
     return (
         <Box sx={{ p: 2, height: "100%", overflow: "auto" }}>
@@ -639,93 +588,34 @@ export default function OcrReviewPage() {
                 </Box>
                 <Paper sx={{ p: 2 }}>
                     <Stack spacing={2}>
-                        <Typography variant="subtitle1">Шапка тары</Typography>
-
-                        <Box sx={fieldSx("site")} onFocus={() => focusField("site")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Участок"
-                                value={siteName}
-                                onChange={setSiteName}
-                                options={(sites.data ?? []).map(
-                                    (s) => `${s.code} — ${s.name}`,
-                                )}
-                                loading={sites.isLoading}
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("research_type")} onFocus={() => focusField("research_type")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Тип исследования"
-                                value={researchTypeName}
-                                onChange={setResearchTypeName}
-                                options={(researchTypes.data ?? []).map(
-                                    (r) => `${r.code} — ${r.name}`,
-                                )}
-                                loading={researchTypes.isLoading}
-                                required
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("work_order_coded")} onFocus={() => focusField("work_order_coded")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Н/З (текущий)"
-                                value={workOrderCoded}
-                                onChange={setWorkOrderCoded}
-                                options={suggestions.data?.work_orders ?? []}
-                                loading={suggestions.isFetching}
-                                required
-                                helperText={
-                                    siteId === null && researchTypeId === null
-                                        ? "Выбери участок или ТИ — появятся подсказки"
-                                        : suggestions.data?.work_orders?.length
-                                            ? `Подсказок: ${suggestions.data.work_orders.length}`
-                                            : "Подсказок нет — введи вручную"
-                                }
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("work_order_incoming")} onFocus={() => focusField("work_order_incoming")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Н/З (входящий)"
-                                value={workOrderIncoming}
-                                onChange={setWorkOrderIncoming}
-                                options={suggestions.data?.work_orders_incoming ?? []}
-                                loading={suggestions.isFetching}
-                                helperText={
-                                    workOrderIncoming.trim() !== ""
-                                        ? "Заполнено — пробы считаются шифрованными (без скважины)"
-                                        : "Не заполнено — проба нешифрованная (скважина = middle)"
-                                }
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("container_type")}>
-                            <SmartAutocomplete
-                                label="Тип тары"
-                                value={containerTypeName}
-                                onChange={setContainerTypeName}
-                                options={(containerTypes.data ?? []).map((c) => c.name)}
-                                loading={containerTypes.isLoading}
-                                required
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("container_number")} onFocus={() => focusField("container_number")} onBlur={blurField}>
-                            <TextField
-                                label="Номер тары"
-                                value={containerNumber}
-                                onChange={(e) => setContainerNumber(e.target.value)}
-                                fullWidth
-                                size="small"
-                                required
-                                error={containerNumber.trim() === ""}
-                                helperText={
-                                    containerNumber.trim() === ""
-                                        ? "Обязательно — например 1 или T-001"
-                                        : undefined
-                                }
-                            />
-                        </Box>
+                        <ContainerHeaderFields
+                            siteName={siteName}
+                            onSiteNameChange={setSiteName}
+                            researchTypeName={researchTypeName}
+                            onResearchTypeNameChange={setResearchTypeName}
+                            workOrderCoded={workOrderCoded}
+                            onWorkOrderCodedChange={setWorkOrderCoded}
+                            workOrderIncoming={workOrderIncoming}
+                            onWorkOrderIncomingChange={setWorkOrderIncoming}
+                            containerTypeName={containerTypeName}
+                            onContainerTypeNameChange={setContainerTypeName}
+                            containerNumber={containerNumber}
+                            onContainerNumberChange={setContainerNumber}
+                            siteOptions={(sites.data ?? []).map((s) => `${s.code} — ${s.name}`)}
+                            sitesLoading={sites.isLoading}
+                            researchTypeOptions={(researchTypes.data ?? []).map((r) => `${r.code} — ${r.name}`)}
+                            researchTypesLoading={researchTypes.isLoading}
+                            containerTypeOptions={(containerTypes.data ?? []).map((c) => c.name)}
+                            containerTypesLoading={containerTypes.isLoading}
+                            workOrderOptions={suggestions.data?.work_orders ?? []}
+                            workOrderIncomingOptions={suggestions.data?.work_orders_incoming ?? []}
+                            suggestionsLoading={suggestions.isFetching}
+                            siteId={siteId}
+                            researchTypeId={researchTypeId}
+                            activeField={activeField}
+                            onFocusField={focusField}
+                            onBlurField={blurField}
+                        />
 
                         <Box>
                             <Typography variant="subtitle1" sx={{ pt: 1 }}>
@@ -772,236 +662,27 @@ export default function OcrReviewPage() {
                         </Box>
 
                         {ranges.length > 0 && (
-                            <Box sx={{ maxHeight: 340, overflow: "auto" }}>
-                                <Table size="small" stickyHeader>
-                                    <TableHead>
-                                        <TableRow>
-                                            <TableCell>Диапазон</TableCell>
-                                            <TableCell>Скважина</TableCell>
-                                            <TableCell align="right">Проб</TableCell>
-                                            <TableCell align="right"></TableCell>
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {rangesByWell.map(([wellKey, wellRanges]) => (
-                                            <Fragment key={wellKey}>
-                                                <TableRow>
-                                                    <TableCell
-                                                        colSpan={4}
-                                                        sx={{
-                                                            bgcolor: "action.hover",
-                                                            fontWeight: 600,
-                                                            fontSize: "0.85rem",
-                                                        }}
-                                                    >
-                                                        {wellKey === "__none__"
-                                                            ? "Без скважины (шифрованные)"
-                                                            : `Скважина: ${wellKey}`}
-                                                    </TableCell>
-                                                </TableRow>
-                                                {wellRanges.map((r) => {
-                                                    const validCount =
-                                                        r.allSeqs.length - r.skippedSeqs.length;
-                                                    const isAnomaly = anomalySet.has(r.id);
-                                                    const rowLinks = linksByRange.get(r.id) ?? [];
-                                                    const nums = numbersByRange.get(r.id) ?? [];
-                                                    const isActiveRow =
-                                                        activeSample !== null && nums.includes(activeSample);
-                                                    const rowStatus: SampleWordStatus | null = isAnomaly
-                                                        ? "anomaly"
-                                                        : rowLinks.length > 0
-                                                            ? "covered"
-                                                            : null;
-                                                    const rowColor = rowStatus
-                                                        ? STATUS_COLORS[rowStatus]
-                                                        : null;
-                                                    return (
-                                                        <TableRow
-                                                            key={r.id}
-                                                            ref={(el) => {
-                                                                rowRefs.current.set(r.id, el);
-                                                            }}
-                                                            onClick={() => focusSampleFromRow(r.id)}
-                                                            sx={{
-                                                                cursor: "pointer",
-                                                                bgcolor: rowColor ? `${rowColor}1F` : undefined,
-                                                                boxShadow: isActiveRow
-                                                                    ? `inset 0 0 0 2px ${rowColor ?? "#1E88E5"}`
-                                                                    : undefined,
-                                                                "&:hover": {
-                                                                    bgcolor: rowColor ? `${rowColor}33` : "action.hover",
-                                                                },
-                                                            }}
-                                                        >
-                                                            <TableCell>
-                                                                <Tooltip
-                                                                    title={
-                                                                        rowStatus
-                                                                            ? `Проба ${STATUS_LABELS[rowStatus]} — клик ведёт к боксу на фото`
-                                                                            : "Клик ведёт к боксу на фото"
-                                                                    }
-                                                                >
-                                                                    <Typography
-                                                                        variant="body2"
-                                                                        sx={{
-                                                                            fontFamily: "monospace",
-                                                                            fontWeight: isAnomaly ? 700 : 400,
-                                                                            color: rowColor ?? "text.primary",
-                                                                        }}
-                                                                    >
-                                                                        {isAnomaly ? "⚠ " : ""}{r.rawInput}
-                                                                    </Typography>
-                                                                </Tooltip>
-                                                                {(r.skippedSeqs.length > 0 ||
-                                                                    r.selectedSeqs.length > 0) && (
-                                                                        <Typography
-                                                                            variant="caption"
-                                                                            sx={{ color: "text.secondary" }}
-                                                                        >
-                                                                            {r.skippedSeqs.length > 0 &&
-                                                                                `Проп: ${r.skippedSeqs.length}`}
-                                                                            {r.skippedSeqs.length > 0 &&
-                                                                                r.selectedSeqs.length > 0 &&
-                                                                                " · "}
-                                                                            {r.selectedSeqs.length > 0 &&
-                                                                                `Выбр: ${r.selectedSeqs.length}`}
-                                                                        </Typography>
-                                                                    )}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {r.wellName ?? "—"}
-                                                            </TableCell>
-                                                            <TableCell align="right">
-                                                                {validCount}
-                                                            </TableCell>
-                                                            <TableCell align="right">
-                                                                <Tooltip title="Редактировать">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            setEditingRange(r);
-                                                                        }}
-                                                                    >
-                                                                        <EditIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                                <Tooltip title="Удалить">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            removeRange(r.id);
-                                                                        }}
-                                                                    >
-                                                                        <DeleteIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    );
-                                                })}
-                                            </Fragment>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </Box>
+                            <RangesTable
+                                rangesByWell={rangesByWell}
+                                anomalySet={anomalySet}
+                                linksByRange={linksByRange}
+                                numbersByRange={numbersByRange}
+                                activeSample={activeSample}
+                                rowRefs={rowRefs}
+                                onRowClick={focusSampleFromRow}
+                                onEdit={setEditingRange}
+                                onRemove={removeRange}
+                            />
                         )}
 
-                        {audit.missing.length > 0 && (
-                            <Alert severity="warning">
-                                На фото есть пробы, которых нет в списке ({audit.missing.length}).
-                                Нажми на номер — он подставится в поле ввода, затем «Добавить».
-                                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
-                                    {audit.missing.map((m) => (
-                                        <Chip
-                                            key={m}
-                                            size="small"
-                                            variant="outlined"
-                                            label={m}
-                                            onClick={() => setRangeInput(m)}
-                                            sx={{
-                                                borderColor: STATUS_COLORS.missing,
-                                                color: STATUS_COLORS.missing,
-                                            }}
-                                        />
-                                    ))}
-                                </Box>
-                            </Alert>
-                        )}
+                        <AuditAlerts
+                            missing={audit.missing}
+                            anomalyCount={audit.anomalyIds.length}
+                            parseErrors={parseErrors}
+                            onMissingClick={setRangeInput}
+                        />
 
-                        {audit.anomalyIds.length > 0 && (
-                            <Alert severity="warning">
-                                Проб, выбивающихся из основной группы: {audit.anomalyIds.length}.
-                                Проверь номер — возможна ошибка распознавания.
-                            </Alert>
-                        )}
-
-                        {parseErrors.length > 0 && (
-                            <Alert severity="warning">
-                                Не удалось разобрать: {parseErrors.join(", ")}.
-                                Введены как есть — проверь номер и скважину.
-                            </Alert>
-                        )}
-
-                        {/* Динамическая готовность к подтверждению */}
-                        <Box
-                            sx={{
-                                border: "1px solid",
-                                borderColor: readiness.ready ? "success.main" : "divider",
-                                borderRadius: 1,
-                                p: 1.5,
-                                bgcolor: readiness.ready ? "rgba(46,125,50,0.06)" : undefined,
-                            }}
-                        >
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                Готовность к подтверждению
-                            </Typography>
-                            <Stack spacing={0.5}>
-                                {readiness.items.map((it) => (
-                                    <Box
-                                        key={it.key}
-                                        sx={{ display: "flex", gap: 1, alignItems: "baseline" }}
-                                    >
-                                        <Typography
-                                            component="span"
-                                            sx={{
-                                                fontWeight: 700,
-                                                color: it.ok
-                                                    ? "success.main"
-                                                    : it.required
-                                                        ? "error.main"
-                                                        : "warning.main",
-                                            }}
-                                        >
-                                            {it.ok ? "✓" : it.required ? "✗" : "⚠"}
-                                        </Typography>
-                                        <Typography variant="body2">
-                                            {it.label}{it.required ? " *" : ""}
-                                        </Typography>
-                                        {!it.ok && (
-                                            <Typography variant="caption" color="text.secondary">
-                                                — {it.hint}
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                ))}
-                            </Stack>
-                        </Box>
-
-                        {readiness.ready ? (
-                            <Alert severity="success">
-                                Всё заполнено и сходится с фото — можно подтверждать.
-                            </Alert>
-                        ) : readiness.blockers > 0 ? (
-                            <Alert severity="error">
-                                Не заполнено обязательных полей: {readiness.blockers}.
-                            </Alert>
-                        ) : (
-                            <Alert severity="warning">
-                                Обязательные заполнены, но есть замечания по пробам — проверь перед подтверждением.
-                            </Alert>
-                        )}
+                        <ReadinessPanel readiness={readiness} />
 
                         {submitError && <Alert severity="error">{submitError}</Alert>}
                         {submitOk && <Alert severity="success">{submitOk}</Alert>}
@@ -1044,206 +725,5 @@ export default function OcrReviewPage() {
                 onSave={handleRangeSave}
             />
         </Box>
-    );
-}
-
-// ---------- Image + bbox overlay с подсветкой ----------
-function ImageWithBboxes({
-    task,
-    activeField,
-    activeSample,
-    showZones,
-    sampleNumbers,
-    validPrefixes,
-    links,
-    wordRefs,
-    onBboxClick,
-    onSampleClick,
-}: {
-    task: OcrTask;
-    activeField: string | null;
-    activeSample: string | null;
-    showZones: boolean;
-    sampleNumbers: Set<string>;
-    validPrefixes: string[];
-    links: SampleWordLink[];
-    wordRefs: MutableRefObject<Map<number, SVGPolygonElement | null>>;
-    onBboxClick: (type: string) => void;
-    onSampleClick: (link: SampleWordLink) => void;
-}) {
-    const imgRef = useRef<HTMLImageElement | null>(null);
-    const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
-    const src = resolveImageUrl(task.image);
-
-    const zones: OcrZone[] = task.zones ?? [];
-    const ex = task.raw_ocr_data?.extracted;
-    const zoneTypes = Array.from(new Set(zones.map((z) => z.type)));
-    const linkByIndex = new Map(links.map((l) => [l.index, l]));
-
-    function fieldForWord(text: string): string | null {
-        const t = text.trim().toUpperCase();
-        if (!t) return null;
-        if (matchesSampleNumber(t, sampleNumbers, validPrefixes)) return "sample";
-        if (!ex) return null;
-        if (ex.work_order_coded && ex.work_order_coded.toUpperCase().includes(t)) return 'work_order_coded';
-        if (ex.work_order_incoming && ex.work_order_incoming.toUpperCase().includes(t)) return 'work_order_incoming';
-        if (ex.container_number && ex.container_number.toUpperCase().includes(t)) return 'container_number';
-        if (ex.site && ex.site.toUpperCase().includes(t)) return 'site';
-        if (ex.research_type && ex.research_type.toUpperCase() === t) return 'research_type';
-        if (ex.container_type && ex.container_type.toUpperCase() === t) return 'container_type';
-        if (ex.samples && ex.samples.some((s) => s.toUpperCase().includes(t))) return 'sample';
-        return null;
-    }
-
-    function zoneForWord(bbox: number[][]): string | null {
-        if (!bbox?.length) return null;
-        const cx = bbox.reduce((s, p) => s + p[0], 0) / bbox.length;
-        const cy = bbox.reduce((s, p) => s + p[1], 0) / bbox.length;
-        for (const z of zones) {
-            const xs = z.bbox.map((p) => p[0]);
-            const ys = z.bbox.map((p) => p[1]);
-            if (
-                cx >= Math.min(...xs) && cx <= Math.max(...xs) &&
-                cy >= Math.min(...ys) && cy <= Math.max(...ys)
-            ) {
-                return z.type;
-            }
-        }
-        return null;
-    }
-
-    return (
-        <Card>
-            <CardContent sx={{ position: "relative" }}>
-                <div style={{ position: "relative", display: "inline-block" }}>
-                    <img
-                        ref={imgRef}
-                        src={src}
-                        alt="OCR"
-                        onLoad={() => {
-                            const el = imgRef.current;
-                            if (el) setDims({ w: el.naturalWidth, h: el.naturalHeight });
-                        }}
-                        style={{ maxWidth: "100%", display: "block" }}
-                    />
-                    {dims && (
-                        <svg
-                            viewBox={`0 0 ${dims.w} ${dims.h}`}
-                            preserveAspectRatio="none"
-                            style={{
-                                position: "absolute",
-                                inset: 0,
-                                width: "100%",
-                                height: "100%",
-                                pointerEvents: "none",
-                                visibility: showZones ? "visible" : "hidden",
-                            }}
-                        >
-                            {zones.map((zone, i) => {
-                                const active = activeField === zone.type;
-                                const color = ZONE_COLORS[zone.type] ?? "#1E3A5F";
-                                return (
-                                    <polygon
-                                        key={`zone-${i}`}
-                                        points={zone.bbox
-                                            .map(([x, y]) => `${x},${y}`)
-                                            .join(" ")}
-                                        fill={active ? "rgba(255, 152, 0, 0.22)" : `${color}18`}
-                                        stroke={active ? "rgba(255, 152, 0, 0.95)" : color}
-                                        strokeWidth={active ? 3 : 2}
-                                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                                        onClick={() => onBboxClick(zone.type)}
-                                    />
-                                );
-                            })}
-                            {task.raw_ocr_data?.words.map((w, i) => {
-                                const link = linkByIndex.get(i);
-                                const status = link?.status ?? null;
-                                const statusColor = status ? STATUS_COLORS[status] : null;
-                                const isActiveSample =
-                                    link != null && activeSample === link.number;
-                                const targetField = link
-                                    ? "sample"
-                                    : fieldForWord(w.text) ?? zoneForWord(w.bbox);
-                                const isActive =
-                                    isActiveSample ||
-                                    (targetField !== null && activeField === targetField);
-                                const fill = statusColor
-                                    ? `${statusColor}${isActiveSample ? "66" : isActive ? "44" : "24"}`
-                                    : isActive
-                                        ? "rgba(255,152,0,0.28)"
-                                        : "rgba(30,58,95,0.10)";
-                                const stroke =
-                                    statusColor ??
-                                    (isActive ? "rgba(255,152,0,0.95)" : "rgba(30,58,95,0.45)");
-                                const width = isActiveSample ? 4 : isActive ? 3 : statusColor ? 2 : 1;
-                                const dash = status === "missing" ? "6 3" : undefined;
-                                return (
-                                    <polygon
-                                        key={`word-${i}`}
-                                        ref={(el) => {
-                                            wordRefs.current.set(i, el);
-                                        }}
-                                        points={w.bbox
-                                            .map(([x, y]) => `${x},${y}`)
-                                            .join(" ")}
-                                        fill={fill}
-                                        stroke={stroke}
-                                        strokeWidth={width}
-                                        strokeDasharray={dash}
-                                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                                        onClick={() => {
-                                            if (link) onSampleClick(link);
-                                            else if (targetField) onBboxClick(targetField);
-                                        }}
-                                    >
-                                        <title>
-                                            {link
-                                                ? `${w.text} — ${STATUS_LABELS[link.status]}`
-                                                : w.text}
-                                        </title>
-                                    </polygon>
-                                );
-                            })}
-                        </svg>
-                    )}
-                </div>
-                {showZones && zoneTypes.length > 0 && (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
-                        {zoneTypes.map((type) => {
-                            const color = ZONE_COLORS[type] ?? "#1E3A5F";
-                            const active = activeField === type;
-                            return (
-                                <Chip
-                                    key={type}
-                                    size="small"
-                                    variant="outlined"
-                                    label={OCR_ZONE_LABELS[type as OcrZoneType] ?? type}
-                                    onClick={() => onBboxClick(type)}
-                                    sx={{
-                                        borderColor: color,
-                                        color: active ? "#fff" : color,
-                                        bgcolor: active ? color : `${color}1A`,
-                                        fontWeight: active ? 700 : 400,
-                                    }}
-                                />
-                            );
-                        })}
-                    </Box>
-                )}
-                {showZones && (
-                    <Typography
-                        variant="caption"
-                        sx={{ display: "block", mt: 0.5, color: "text.secondary" }}
-                    >
-                        Пробы:{" "}
-                        <b style={{ color: STATUS_COLORS.covered }}>зелёный</b> — есть в списке ·{" "}
-                        <b style={{ color: STATUS_COLORS.anomaly }}>жёлтый</b> — выбивается ·{" "}
-                        <b style={{ color: STATUS_COLORS.missing }}>малиновый пунктир</b> — нет в списке.
-                        Клик по пробе ведёт к её строке, клик по строке — к боксу.
-                    </Typography>
-                )}
-            </CardContent>
-        </Card>
     );
 }

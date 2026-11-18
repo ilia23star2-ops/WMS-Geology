@@ -142,4 +142,22 @@ describe("auditSamples", () => {
     it("единственный диапазон → аномалий нет", () => {
         expect(auditSamples([], [range({ middle: "11234" })], VP).anomalyIds).toEqual([]);
     });
+
+    it("fix5: несколько скважин в одной таре — аномалий нет", () => {
+        const audit = auditSamples([], [
+            range({ id: "w1", middle: "1234", sequenceFrom: 501, sequenceTo: 503 }),
+            range({ id: "w2", middle: "5678", sequenceFrom: 601, sequenceTo: 603 }),
+            range({ id: "w3", middle: "9012", sequenceFrom: 701, sequenceTo: 702 }),
+        ], VP);
+        expect(audit.anomalyIds).toEqual([]);
+    });
+
+    it("fix5: OCR-сбой с лишней цифрой (TST11234506 против TST1234501..505) → аномалия", () => {
+        const audit = auditSamples([], [
+            range({ id: "g1", sequenceFrom: 501, sequenceTo: 503 }),
+            range({ id: "g2", sequenceFrom: 504, sequenceTo: 505 }),
+            range({ id: "ocr", middle: "11234", sequenceFrom: 506, sequenceTo: 506 }),
+        ], VP);
+        expect(audit.anomalyIds).toEqual(["ocr"]);
+    });
 });

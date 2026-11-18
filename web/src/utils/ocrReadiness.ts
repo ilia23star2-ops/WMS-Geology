@@ -1,6 +1,7 @@
 /**
- * Готовность задачи OCR к подтверждению (6e-2-web-fix4).
+ * Готовность задачи OCR к подтверждению (6e-2-web-fix4/fix5).
  * Динамические подсказки: что не заполнено / на что обратить внимание.
+ * fix5: номер тары сверяется с распознанным на фото — иначе зелёный сигнал врёт.
  * Чистая логика, без UI — покрывается тестами.
  */
 export interface ReadinessItem {
@@ -27,12 +28,31 @@ export interface ReadinessInput {
     workOrderCoded: string;
     containerTypeName: string;
     containerNumber: string;
+    /** Номер тары, распознанный на фото (null — не распознан). */
+    photoContainerNumber: string | null;
     rangesCount: number;
     missingCount: number;
     anomalyCount: number;
 }
 
+/**
+ * Нормализация номера тары: сначала верхний регистр, потом OCR-замены.
+ * Порядок важен: иначе строчные o/i/l не приводятся к цифрам.
+ * Убираются пробелы, дефисы, тире и точки; O/О→0, I/L/І→1.
+ */
+function normalizeContainerNumber(s: string): string {
+    return (s ?? "")
+        .toUpperCase()
+        .replace(/[\s\-–—.]/g, "")
+        .replace(/[OО]/g, "0")
+        .replace(/[ILІ]/g, "1");
+}
+
 export function checkReadiness(i: ReadinessInput): Readiness {
+    const photoCn = i.photoContainerNumber;
+    const photoCnMatches =
+        photoCn !== null &&
+        normalizeContainerNumber(photoCn) === normalizeContainerNumber(i.containerNumber);
     const items: ReadinessItem[] = [
         {
             key: "site",
@@ -70,6 +90,16 @@ export function checkReadiness(i: ReadinessInput): Readiness {
             hint: "например 1 или T-001",
         },
         {
+            key: "container_number_photo",
+            label: "Номер тары сходится с фото",
+            ok: photoCnMatches,
+            required: false,
+            hint:
+                photoCn === null
+                    ? "не распознан на фото — проверь вручную"
+                    : `на фото ${photoCn}, введено ${i.containerNumber.trim()}`,
+        },
+        {
             key: "samples",
             label: "Пробы",
             ok: i.rangesCount > 0,
@@ -99,6 +129,6 @@ export function checkReadiness(i: ReadinessInput): Readiness {
         items,
         blockers,
         warnings,
-        ready: blockers === 0 && i.missingCount === 0 && i.anomalyCount === 0,
+        ready: blockers === 0 && i.missingCount === 0 && i.anomalyCount === 0 && photoCnMatches,
     };
 }

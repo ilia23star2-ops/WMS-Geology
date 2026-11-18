@@ -351,12 +351,21 @@ export function auditSamples(
         }
     }
 
-    const anomalyIds =
-        baseCount.size > 1
-            ? ranges
-                .filter((r) => `${r.prefix}${r.middle}` !== dominantBase)
-                .map((r) => r.id)
-            : [];
+    // fix5: аномалия — только OCR-сбой: base отличается от более частого
+    // base с тем же prefix ровно на одну вставку/удаление.
+    // Разные скважины в одной таре (middle 1234 и 5678) — норма.
+    const anomalyIds: string[] = [];
+    for (const r of ranges) {
+        const base = `${r.prefix}${r.middle}`;
+        const own = baseCount.get(base) ?? 0;
+        for (const [other, otherCount] of baseCount) {
+            if (other === base || otherCount <= own) continue;
+            if (other.startsWith(r.prefix) && oneEditApart(base, other)) {
+                anomalyIds.push(r.id);
+                break;
+            }
+        }
+    }
 
     // fix4: та же терпимая сверка, что и при подсветке — исправленный
     // номер не считается «отсутствующим в списке».
