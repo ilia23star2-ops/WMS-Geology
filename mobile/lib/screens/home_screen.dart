@@ -17,7 +17,6 @@ import '../services/scan_history_service.dart';
 import '../widgets/network_badge.dart';
 import 'container_detail_screen.dart';
 import 'containers_list_screen.dart';
-import 'ocr_new_screen.dart';
 import 'ocr_session_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
@@ -88,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openOcr() async {
     await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const OcrNewScreen()));
+        .push(MaterialPageRoute(builder: (_) => const OcrSessionScreen()));
   }
 
   Future<void> _openOcrSession() async {
