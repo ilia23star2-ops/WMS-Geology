@@ -1,10 +1,11 @@
-/// Экран разметки зон на фото (6e-2c, 6e-2-fix).
+/// Экран разметки зон на фото (6e-2c, 6e-2-fix…fix4).
 ///
-/// Режимы: «Рисовать» (drag → прямоугольник → тип) и «Двигать»
-/// (pinch-zoom + pan через InteractiveViewer). Координаты рисования
-/// пересчитываются через обратную матрицу трансформации, поэтому
-/// разметка точна при любом zoom.
-/// 6e-2-fix: подписи на фото убраны; легенда — чипы в цвет зоны.
+/// Жесты как в телефоне: один палец — рисование зоны; щипок двумя —
+/// zoom; два пальца вместе (без изменения расстояния) — pan.
+/// Трансформация хранится как scale + offset (без Matrix4), поэтому
+/// пересчёт координат прост: scene = (viewport - offset) / scale.
+/// Новые зоны авторазграничиваются с существующими (зазор adaptive).
+/// Подписи на фото убраны; легенда — чипы в цвет зоны.
 library;
 
 import 'dart:io';
@@ -41,11 +42,14 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
   };
 
   late List<OcrZoneMark> _zones;
-  final TransformationController _tc = TransformationController();
+  double _scale = 1;
+  Offset _offset = Offset.zero;
+  double _scaleStart = 1;
+  Offset _focalSceneStart = Offset.zero;
   int _imageWidth = 0;
   int _imageHeight = 0;
   bool _error = false;
-  bool _drawMode = true;
+  bool _drawing = false;
   Offset? _dragStart;
   Offset? _dragCurrent;
   ImageStream? _stream;
@@ -63,7 +67,6 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
     if (_stream != null && _listener != null) {
       _stream!.removeListener(_listener!);
     }
-    _tc.dispose();
     super.dispose();
   }
 
@@ -91,15 +94,10 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
   Color _color(String type) => _colors[type] ?? Colors.blueGrey;
 
   /// Координаты viewport → координаты сцены (с учётом zoom/pan).
-  Offset? _toScene(Offset viewportPoint) {
-    final inv = Matrix4.tryInvert(_tc.value);
-    if (inv == null) return null;
-    return MatrixUtils.transformPoint(inv, viewportPoint);
-  }
+  Offset _toScene(Offset viewportPoint) => (viewportPoint - _offset) / _scale;
 
   void _dragTo(Offset viewportPoint, {bool start = false}) {
     final p = _toScene(viewportPoint);
-    if (p == null) return;
     setState(() {
       if (start) _dragStart = p;
       _dragCurrent = p;
@@ -115,6 +113,19 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
       math.max(s.dx, c.dx),
       math.max(s.dy, c.dy),
     );
+  }
+
+  /// Два пальца: zoom вокруг focal + pan. Порог 2% гасит дрожание
+  /// расстояния между пальцами, чтобы pan не дёргал zoom.
+  void _zoomPan(ScaleUpdateDetails d) {
+    final raw = (d.scale - 1).abs() < 0.02
+        ? _scaleStart
+        : _scaleStart * d.scale;
+    final newScale = raw.clamp(1.0, 6.0);
+    setState(() {
+      _scale = newScale;
+      _offset = d.localFocalPoint - _focalSceneStart * newScale;
+    });
   }
 
   Future<void> _finishDrag(ImageFrame frame) async {
@@ -166,7 +177,19 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
       imageHeight: _imageHeight,
     );
     if (zone == null) return;
-    setState(() => _zones.add(zone));
+
+    // 6e-2-fix4: авторазграничение с существующими зонами.
+    final gap = math.max(4.0, math.min(_imageWidth, _imageHeight) * 0.004);
+    final separated = separateZone(zone, _zones, gap: gap);
+    if (separated == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Зона перекрыта существующей — выдели свободнее'),
+        ),
+      );
+      return;
+    }
+    setState(() => _zones.add(separated));
   }
 
   void _save() {
@@ -182,16 +205,12 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
-            tooltip: _drawMode
-                ? 'Режим движения (zoom/pan)'
-                : 'Режим рисования',
-            icon: Icon(_drawMode ? Icons.pan_tool : Icons.edit),
-            onPressed: () => setState(() => _drawMode = !_drawMode),
-          ),
-          IconButton(
             tooltip: 'Сбросить zoom',
             icon: const Icon(Icons.center_focus_strong),
-            onPressed: () => setState(() => _tc.value = Matrix4.identity()),
+            onPressed: () => setState(() {
+              _scale = 1;
+              _offset = Offset.zero;
+            }),
           ),
         ],
       ),
@@ -227,7 +246,7 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                           fit: BoxFit.fill,
                         ),
                       ),
-                      // 6e-2-fix: без подписей — только цветная рамка.
+                      // Без подписей — только цветная рамка.
                       for (final z in _zones)
                         Positioned(
                           left: frame.toAreaX(z.x),
@@ -263,14 +282,9 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                         child: Container(
                           color: Colors.black54,
                           padding: const EdgeInsets.all(6),
-                          child: Text(
-                            _drawMode
-                                ? 'Рисование: проведи по области этикетки. Кнопка руки — zoom/pan'
-                                : 'Движение: щипок — zoom, палец — pan. Кнопка карандаша — рисование',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
+                          child: const Text(
+                            'Один палец — зона; щипок — zoom; два пальца вместе — pan; прицел — сброс',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -278,28 +292,48 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
                     ],
                   ),
                 );
-                final viewer = InteractiveViewer(
-                  transformationController: _tc,
-                  scaleEnabled: !_drawMode,
-                  panEnabled: !_drawMode,
-                  minScale: 1,
-                  maxScale: 6,
-                  child: scene,
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onScaleStart: (d) {
+                    if (d.pointerCount >= 2) {
+                      _drawing = false;
+                      _scaleStart = _scale;
+                      _focalSceneStart = _toScene(d.localFocalPoint);
+                      setState(() {
+                        _dragStart = null;
+                        _dragCurrent = null;
+                      });
+                    } else {
+                      _drawing = true;
+                      _dragTo(d.localFocalPoint, start: true);
+                    }
+                  },
+                  onScaleUpdate: (d) {
+                    if (d.pointerCount >= 2) {
+                      _zoomPan(d);
+                    } else if (_drawing) {
+                      _dragTo(d.localFocalPoint);
+                    }
+                  },
+                  onScaleEnd: (d) {
+                    if (_drawing) {
+                      _drawing = false;
+                      _finishDrag(frame);
+                    }
+                  },
+                  child: Transform.translate(
+                    offset: _offset,
+                    child: Transform.scale(
+                      scale: _scale,
+                      alignment: Alignment.topLeft,
+                      child: scene,
+                    ),
+                  ),
                 );
-                if (_drawMode) {
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (d) => _dragTo(d.localPosition, start: true),
-                    onPanUpdate: (d) => _dragTo(d.localPosition),
-                    onPanEnd: (d) => _finishDrag(frame),
-                    child: viewer,
-                  );
-                }
-                return viewer;
               },
             ),
           ),
-          // 6e-2-fix: легенда — чипы в цвет зоны, крестик того же цвета.
+          // Легенда — чипы в цвет зоны, крестик того же цвета.
           if (_zones.isNotEmpty)
             SizedBox(
               height: 56,

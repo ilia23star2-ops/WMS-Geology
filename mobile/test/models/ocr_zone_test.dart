@@ -98,6 +98,119 @@ void main() {
     expect(OcrZoneTypes.labels[OcrZoneTypes.sample], 'Пробы');
   });
 
+  test('separateZone: без пересечения — зона не меняется', () {
+    const e = OcrZoneMark(
+      type: OcrZoneTypes.sample,
+      x: 100,
+      y: 100,
+      w: 100,
+      h: 100,
+    );
+    const c = OcrZoneMark(
+      type: OcrZoneTypes.well,
+      x: 300,
+      y: 300,
+      w: 50,
+      h: 50,
+    );
+    final r = separateZone(c, [e]);
+    expect(r, isNotNull);
+    expect(r!.x, 300);
+    expect(r.y, 300);
+    expect(r.w, 50);
+    expect(r.h, 50);
+  });
+
+  test('separateZone: налез справа — обрезан левый край, зазор 6', () {
+    const e = OcrZoneMark(
+      type: OcrZoneTypes.sample,
+      x: 100,
+      y: 100,
+      w: 100,
+      h: 100,
+    );
+    const c = OcrZoneMark(
+      type: OcrZoneTypes.well,
+      x: 150,
+      y: 100,
+      w: 100,
+      h: 100,
+    );
+    final r = separateZone(c, [e]);
+    expect(r, isNotNull);
+    expect(r!.x, closeTo(206, 1e-6));
+    expect(r.w, closeTo(44, 1e-6));
+    expect(r.x - (e.x + e.w), closeTo(6, 1e-6));
+  });
+
+  test('separateZone: налез снизу — обрезан верхний край, зазор 6', () {
+    const e = OcrZoneMark(
+      type: OcrZoneTypes.sample,
+      x: 100,
+      y: 100,
+      w: 100,
+      h: 100,
+    );
+    const c = OcrZoneMark(
+      type: OcrZoneTypes.well,
+      x: 100,
+      y: 150,
+      w: 100,
+      h: 100,
+    );
+    final r = separateZone(c, [e]);
+    expect(r, isNotNull);
+    expect(r!.y, closeTo(206, 1e-6));
+    expect(r.h, closeTo(44, 1e-6));
+    expect(r.y - (e.y + e.h), closeTo(6, 1e-6));
+  });
+
+  test('separateZone: полностью внутри чужой зоны → null', () {
+    const e = OcrZoneMark(
+      type: OcrZoneTypes.sample,
+      x: 100,
+      y: 100,
+      w: 100,
+      h: 100,
+    );
+    const c = OcrZoneMark(
+      type: OcrZoneTypes.well,
+      x: 120,
+      y: 120,
+      w: 50,
+      h: 50,
+    );
+    expect(separateZone(c, [e]), isNull);
+  });
+
+  test('separateZone: каскад из двух зон — зазор с обеими', () {
+    const e1 = OcrZoneMark(
+      type: OcrZoneTypes.sample,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    );
+    const e2 = OcrZoneMark(
+      type: OcrZoneTypes.well,
+      x: 200,
+      y: 0,
+      w: 100,
+      h: 100,
+    );
+    const c = OcrZoneMark(
+      type: OcrZoneTypes.containerNumber,
+      x: 50,
+      y: 0,
+      w: 200,
+      h: 100,
+    );
+    final r = separateZone(c, [e1, e2]);
+    expect(r, isNotNull);
+    expect(r!.x, closeTo(106, 1e-6));
+    expect(r.x + r.w, closeTo(194, 1e-6));
+  });
+
   test('ImageFrame.contain: landscape фото в квадратной области', () {
     final f = ImageFrame.contain(
       imageWidth: 1000,

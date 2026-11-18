@@ -6,6 +6,8 @@
 /// при разметке — отправка не требует декодирования фото.
 library;
 
+import 'dart:math' as math;
+
 /// Типы зон — контракт backend `OcrTask.ZONE_TYPES`.
 class OcrZoneTypes {
   static const String workOrderCoded = 'work_order_coded';
@@ -24,7 +26,15 @@ class OcrZoneTypes {
     sample,
     well,
   ];
-  static const List<String> uiOrder = [workOrderCoded, workOrderIncoming, containerNumber, researchType, sample];
+
+  /// Порядок в UI разметки (6e-2-fix): без well — скважина не размечается вручную.
+  static const List<String> uiOrder = [
+    workOrderCoded,
+    workOrderIncoming,
+    containerNumber,
+    researchType,
+    sample,
+  ];
 
   /// Подписи для UI (русский, как в web OCR_ZONE_LABELS).
   static const Map<String, String> labels = {
@@ -89,6 +99,55 @@ OcrZoneMark? zoneFromNormalized({
     w: w,
     h: h,
   );
+}
+
+/// Авторазграничение зон (6e-2-fix4): новая зона не должна налеза на
+/// существующие — между ними остаётся зазор `gap` (пиксели оригинала).
+///
+/// Алгоритм: для каждой существующей зоны, расширенной на `gap`, если
+/// кандидат её пересекает — обрезаем кандидата по оси наименьшего
+/// перекрытия, оставляя ту часть, что дальше от центра существующей.
+/// Только сужение (без сдвига наружу) — новые пересечения не появляются.
+/// Если кандидат вырождается (полностью внутри чужой зоны) → `null`.
+OcrZoneMark? separateZone(
+  OcrZoneMark candidate,
+  List<OcrZoneMark> existing, {
+  double gap = 6,
+}) {
+  double x = candidate.x;
+  double y = candidate.y;
+  double w = candidate.w;
+  double h = candidate.h;
+  for (final e in existing) {
+    final ex = e.x - gap;
+    final ey = e.y - gap;
+    final ew = e.w + gap * 2;
+    final eh = e.h + gap * 2;
+    final ox = math.min(x + w, ex + ew) - math.max(x, ex);
+    final oy = math.min(y + h, ey + eh) - math.max(y, ey);
+    if (ox <= 0 || oy <= 0) continue; // нет пересечения с зазором
+    if (ox < oy) {
+      // режем по горизонтали: оставляем часть дальше от центра e
+      if (x + w / 2 < e.x + e.w / 2) {
+        w = ex - x;
+      } else {
+        final nx = ex + ew;
+        w = (x + w) - nx;
+        x = nx;
+      }
+    } else {
+      // режем по вертикали
+      if (y + h / 2 < e.y + e.h / 2) {
+        h = ey - y;
+      } else {
+        final ny = ey + eh;
+        h = (y + h) - ny;
+        y = ny;
+      }
+    }
+    if (w <= 0 || h <= 0) return null;
+  }
+  return OcrZoneMark(type: candidate.type, x: x, y: y, w: w, h: h);
 }
 
 /// Рамка отображения фото по BoxFit.contain (6e-2c).
