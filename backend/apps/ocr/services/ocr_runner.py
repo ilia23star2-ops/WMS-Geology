@@ -61,7 +61,7 @@ def main():
         "text": " ".join(full_text),
         "words": words,
     }
-    print(json.dumps(output, ensure_ascii=False))
+    print(json.dumps(output))  # ASCII-safe: stdout сабпроцесса cp1251 (6e-a3-pre)
 
 
 if __name__ == '__main__':
