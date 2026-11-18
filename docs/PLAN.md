@@ -3,7 +3,7 @@
 > Роадмап, ветки, техдолг, бэклог.
 > Сюда идут все идеи «на будущее» — см. `RULES.md` §11.
 
-**Дата обновления:** 2026-11-17
+**Дата обновления:** 2026-11-18
 
 ---
 
@@ -52,9 +52,10 @@
 | c-3.x-migration-6e-1 | Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize | ✅ |
 | c-3.x-migration-6e-a1 | Mobile: экран сессии OCR (`OcrSession` + провайдер, `OcrSessionScreen`, `OcrCellScreen`), фиксы notify/inset/context.mounted; 13 тестов | ✅ |
 | c-3.x-migration-6e-a2 | Mobile: заменить вход «Оцифровка» на сессионный экран + перенос функционала batch-экрана | ✅ |
-| c-3.x-migration-6e-a3 | Mobile: отправка сессии + `Provider<OcrService>`; бэкенд 6e-1a готов | ⬜ |
+| c-3.x-migration-6e-a3 | Mobile: отправка сессии (recognize-sendBatch-clear), прогресс Фото N/M, Provider<OcrService>; web: SENT + stay-after-approve | ✅ |
 | c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
 | c-3.x-migration-6e-2 | Mobile: разметка зон на фото | free-draw (тап → прямоугольник → тип). Удаление зон. | ⬜ |
+| c-3.x-migration-6e-4 | Mobile: оценка качества фото при съёмке (резкость, яркость, разрешение) + подсказки | ⬜ |
 | c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |
 | c-3.x-migration-6e-3 | Mobile: SyncQueue для OCR | офлайн-накопление → отправка при возврате сети. | ⬜ |
 | c-3.x-migration-6j | OCR correction: prefix + OCR-замены | `ocr_correction.py`: valid prefixes (site+lab) → Levenshtein fix, `I→1`, `O→0` в цифровой части. Интеграция в `views.py` после `extract_fields`. | ⬜ |
@@ -333,3 +334,4 @@
 | ТД-88 | Mobile: label ячейки из \/storage\/cells\/{id}\/ (TODO 6a-fix2 ocr_new_screen.dart:45) | средний | 6e-1 |
 | ТД-89 | Решить судьбу well в ZONE_TYPES (остаток плана 6f-1) | средний | 6e-1 |
 | ТД-90 | Mobile: два входа в OCR (batch-экран и сессия) — склеить, перенести функционал | средний | 6e-a2 |
+| ТД-91 | Короткие ошибки OCR: views отдаёт весь stderr в 500, mobile SnackBar не обрезает текст | средний | следующая ревизия OCR |

@@ -576,7 +576,7 @@ Android-приложение для планшетов. QR-коды как ос�
     Все мои bash-блоки, которые требуют отчёта пользователя, в конце
     копируют сводку в буфер обмена. Пользователь просто Ctrl+V в чат.
 
-    Способ: `base64 -w0` → `powershell.exe` → `[Convert]::FromBase64String`
+    Способ: `base64 -w0` → stdin `powershell.exe` → `[Convert]::FromBase64String([Console]::In.ReadToEnd())` → `Set-Clipboard`.
     → `[Text.Encoding]::UTF8.GetString` → `Set-Clipboard`.
 
     Почему не `clip.exe`: на русской Windows он читает stdin как CP866,
@@ -587,7 +587,7 @@ Android-приложение для планшетов. QR-коды как ос�
     1. Сводка в `/tmp/wms_summary.txt`.
     2. Показать на экране (cat/tee).
     3. `B64=$(base64 -w0 /tmp/wms_summary.txt)`.
-    4. `powershell.exe ...FromBase64String('$B64')... | Set-Clipboard`.
+    4. `base64 -w0 file | powershell.exe -NoProfile -Command "...FromBase64String([Console]::In.ReadToEnd())... | Set-Clipboard"`. НЕ передавать base64 аргументом командной строки: лимит Windows 32767 символов молча ломает буфер на сводках >24 КБ.
     5. Подсказка "📋 Скопировано — Ctrl+V в чат".
 
     Причина: экономит копирование вручную и исключает опечатки. Один

@@ -1,3 +1,4 @@
+✅ `c-3.x-migration-6e-a3` (2026-11-18) — Mobile: отправка сессии (recognize→sendBatch→clear), прогресс «Фото N/M · адрес», Provider<OcrService>, +2 теста (246). 6e-a2-fix: один вход «Оцифровка». 6e-a3-pre: ASCII-safe вывод ocr_runner (cp1251 + рубль). Web: метка SENT + остаться на окне после approve. Инфра: wms_report base64 через stdin (лимит 32767). Backend 988, Mobile 246, Web 30. Device-check пройден.
 ✅ `c-3.x-migration-6e-a2` (2026-11-18) — Mobile: замена входа «Оцифровка» на сессионный экран. `home_screen.dart`: `OcrNewScreen` → `OcrSessionScreen`. Удалён устаревший `ocr_new_screen.dart`. Закрыт ТД-90.
 ## Серия `feature/3.x-migration` (OCR)
 

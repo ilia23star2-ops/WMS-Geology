@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-11-17
+**Дата обновления:** 2026-11-18
 
 ---
 
@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** `feature/3.x-migration` — закрыты `c-3.x-migration-5b` … `5f`:
+**Текущий заход:** `feature/3.x-migration` — закрыты `5b`…`5f`, `6e-1`, `6e-a1`, `6e-a2`, `6e-a3`; следующий `6e-2` (зоны).
 - **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
 - **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
@@ -22,11 +22,12 @@
 6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
 6e-1 — Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize.
 6e-a1 — Mobile: экран сессии OCR (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
-6e-a2 — Mobile: замена входа «Оцифровка» на сессионный экран, удаление `OcrNewScreen`. (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
+6e-a2 — Mobile: замена входа «Оцифровка» на сессионный экран, удаление OcrNewScreen; один пункт drawer (6e-a2-fix).
+6e-a3 — Mobile: отправка сессии (recognize→sendBatch→clear) + прогресс; Web: метка SENT + stay-after-approve; Backend: PATCH batches→SENT, ASCII-safe runner (6e-a3-pre).
 
-**Backend: 985 тестов** (в т.ч. **81** в `apps.ocr`).
+**Backend: 988 тестов** (в т.ч. **84** в `apps.ocr`).
 **Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
-**Mobile: 244 юнит-тестов.**
+**Mobile: 246 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
 **Серия `2.x-lifecycle`** — закрыта (5/5 пачек).
@@ -57,13 +58,12 @@
 
 ### Что осталось (OCR)
 
-- **`c-3.x-migration-6e-a2`** — Mobile: заменить вход «Оцифровка» на сессионный экран + перенести функционал batch-экрана (ТД-90).
-- **`c-3.x-migration-6e-a3`** — Mobile: отправка сессии (`_uploadSession`) + `Provider<OcrService>`; бэкенд `6e-1a` готов. SyncQueue для зон — `6e-3`.
 - **`c-3.x-migration-8`** — Web: fallback без зон (regex по всему тексту).
 - **ТД-78/79** — `apps/ocr/services/` спящие файлы; `ocr_runner.py` python_exe хардкод.
 - **ТД-80** — расхождение формата `sample_number` (DATABASE.md vs код vs UI).
 - **ТД-82** — связь номера тары ↔ диапазон проб.
 - **ТД-83** — мёртвый `parseSampleGroups.ts` после 5f.
+- **`c-3.x-migration-6e-2`** — Mobile: разметка зон; **`6e-4`** — качество фото при съёмке (идея).#
 
 ### Что было закрыто до OCR (2.x-lifecycle, для истории)
 
@@ -77,6 +77,7 @@
 - **`mark_received`:** проверяет роль, `is_superuser` не проверяется (ТД-72, оставлено).
 - **`npm run build`** — `rc=2` из-за pre-existing MUI 9 breaking changes в 5 файлах (`PoolPage`, `ShipmentsPage`, `TopologyPage`, `ContainersPage`, `SamplesTreeTable`). ТД-81. Dev (`npm run dev`) работает.
 - **`ocr_runner.py`** — `python_exe = r"D:\Dev\python312\python.exe"` захардкожен (ТД-79). На другой машине не заведётся.
+  - **Буфер чата:** `wms_report` шлёт base64 через stdin; аргумент командной строки powershell.exe ограничен 32767 символами → сводки >24 КБ молча не копируются (починено 2026-11-18).#
   - **Сборка на рабочем ПК** — без `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` в каждом окне Gradle тянет движок с storage.googleapis.com → прокси ломает сертификат (PKIX). Артефакты лежат в `D:/Dev/maven-local`, среда разворачивается `install_build_env.ps1`.
 
 ---
@@ -138,7 +139,7 @@
 | Карточка тары | 3 вкладки, `ContainerEditForm`, `FillContainerContent`, история. |
 | Пробы | Поиск, чекбоксы, bulk-статус, офлайн-редактирование через `sync_queue`. |
 | PDF | Online + offline на Dart. |
-| **OCR** | **нет UI (удалён в `c-3.x-migration-1/2`). Планируется `c-3.x-migration-6`.** |
+| **OCR** | **OcrSessionScreen / OcrCellScreen, отправка сессии, прогресс; один вход «Оцифровка».** |
 
 ### Документация
 - `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
