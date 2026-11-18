@@ -2,6 +2,7 @@
 ///
 /// c-9-fill-offline-2c-3-fix-3b: в офлайне счётчик показывается в скобках
 /// («Синхронизация (3, нет связи)») и `Badge` поверх `cloud_off`.
+/// 6e-a2-fix: единственный вход «Оцифровка» → OcrSessionScreen (ТД-90).
 library;
 
 import 'package:flutter/material.dart';
@@ -83,11 +84,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openContainers() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const ContainersListScreen()));
-  }
-
-  Future<void> _openOcr() async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const OcrSessionScreen()));
   }
 
   Future<void> _openOcrSession() async {
@@ -300,19 +296,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
           ListTile(
             leading: const Icon(Icons.photo_library_outlined),
-            title: const Text('Оцифровка (сессия)'),
-            onTap: () {
-              Navigator.of(context).pop();
-              _openOcrSession();
-            },
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.document_scanner_outlined),
             title: const Text('Оцифровка'),
             onTap: () {
               Navigator.of(context).pop();
-              _openOcr();
+              _openOcrSession();
             },
           ),
 
