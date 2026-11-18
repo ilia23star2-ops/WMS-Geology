@@ -1,17 +1,16 @@
 /**
  * Экран проверки OCR.
  *
- * c-3.x-migration-5c/5d: layout, approve, SmartAutocomplete, suggestions.
- * c-3.x-migration-5f:
- *   - Предзаполнение из task.raw_ocr_data.extracted.
- *   - Двусторонняя подсветка bbox ↔ поля (activeField).
- *   - Пробы: диапазон через SmartAutocomplete + RangeEditDialog (как в
- *     FillContainerContent: skipped / selected).
- *   - Подсказки в поле «Диапазон проб» — baseSampleOptions из suggestions.samples.
+ * c-3.x-migration-5c/5d/5f: layout, approve, SmartAutocomplete, подсветка bbox ↔ поля.
  * c-3.x-migration-6e-a3-web-fix: после approve остаёмся на окне.
- * c-3.x-migration-6e-2-web: переключатель показа зон + кнопка «Открыть тару».
+ * c-3.x-migration-6e-2-web: переключатель зон + «Открыть тару».
+ * c-3.x-migration-6e-2-web-fix…fix4:
+ *   - легенда вместо подписей, аудит проб, нормализация OCR-токенов;
+ *   - мини-зоны проб: клик по пробе на фото → строка списка, и обратно;
+ *   - цвет строки = цвет её бокса (зелёный / жёлтый / малиновый пунктир);
+ *   - динамическая готовность к подтверждению + зелёный сигнал.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     Alert,
@@ -19,6 +18,7 @@ import {
     Button,
     Card,
     CardContent,
+    Chip,
     CircularProgress,
     FormControlLabel,
     IconButton,
@@ -62,6 +62,41 @@ import {
     parseSampleInput,
     type ParsedSampleRange,
 } from "../utils/parseSampleInput";
+import {
+    auditSamples,
+    linkSampleWords,
+    matchesSampleNumber,
+    normalizeToken,
+    rangeNumbers,
+    rangeNumberSet,
+    type SampleWordLink,
+    type SampleWordStatus,
+} from "../utils/ocrSampleAudit";
+import { checkReadiness } from "../utils/ocrReadiness";
+
+/** Цвета зон — совпадают с мобильной разметкой. */
+const ZONE_COLORS: Record<string, string> = {
+    work_order_coded: "#1E88E5",
+    work_order_incoming: "#00897B",
+    container_number: "#FB8C00",
+    research_type: "#8E24AA",
+    sample: "#43A047",
+    well: "#6D4C41",
+    site: "#3949AB",
+};
+
+/** Статусы проб: жёлтый и малиновый разведены далеко друг от друга. */
+const STATUS_COLORS: Record<SampleWordStatus, string> = {
+    covered: "#2E7D32",
+    anomaly: "#F9A825",
+    missing: "#D81B60",
+};
+
+const STATUS_LABELS: Record<SampleWordStatus, string> = {
+    covered: "есть в списке",
+    anomaly: "выбивается из группы",
+    missing: "нет в списке",
+};
 
 // ---------- типы ----------
 interface RangeEntry extends ParsedSampleRange {
@@ -144,6 +179,10 @@ export default function OcrReviewPage() {
         () => (sites.data ?? []).flatMap((s) => s.match_patterns ?? []),
         [sites.data],
     );
+    const validPrefixes = useMemo(() => {
+        const codes = (sites.data ?? []).map((s) => s.code);
+        return [...codes, ...siteMatchPatterns, ...laboratoryPrefixes];
+    }, [sites.data, siteMatchPatterns, laboratoryPrefixes]);
 
     const [siteName, setSiteName] = useState("");
     const [researchTypeName, setResearchTypeName] = useState("");
@@ -158,13 +197,16 @@ export default function OcrReviewPage() {
     const [editingRange, setEditingRange] = useState<RangeEntry | null>(null);
 
     const [activeField, setActiveField] = useState<string | null>(null);
+    const [activeSample, setActiveSample] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitOk, setSubmitOk] = useState<string | null>(null);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [prefilled, setPrefilled] = useState(false);
-    // 6e-2-web: показ зон на фото + id созданной тары.
     const [showZones, setShowZones] = useState(true);
     const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
+
+    const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
+    const wordRefs = useRef<Map<number, SVGPolygonElement | null>>(new Map());
 
     const siteId = useMemo(() => {
         if (!siteName) return null;
@@ -233,12 +275,10 @@ export default function OcrReviewPage() {
         }
         if (ex.work_order_coded) setWorkOrderCoded(ex.work_order_coded);
         if (ex.work_order_incoming) setWorkOrderIncoming(ex.work_order_incoming);
-        // c-6a-fix5c: ждём все справочники, иначе mapping code→name не сработает
         if (!sites.data || !researchTypes.data || !containerTypes.data) {
             return;
         }
         if (ex.container_number) setContainerNumber(ex.container_number);
-        // c-6a-fix5c: участок — code → "code — name"
         if (ex.site) {
             const s = sites.data.find((x) => x.code === ex.site);
             setSiteName(s ? `${s.code} — ${s.name}` : ex.site);
@@ -306,8 +346,90 @@ export default function OcrReviewPage() {
             if (!map.has(key)) map.set(key, []);
             map.get(key)!.push(r);
         }
-        return map;
+        const entries = Array.from(map.entries()).sort((a, b) =>
+            a[0].localeCompare(b[0], "ru", { numeric: true }),
+        );
+        for (const [, list] of entries) {
+            list.sort((a, b) =>
+                a.rawInput.localeCompare(b.rawInput, "ru", { numeric: true }),
+            );
+        }
+        return entries;
     }, [ranges]);
+
+    const audit = useMemo(
+        () => auditSamples(task?.raw_ocr_data?.words ?? [], ranges, validPrefixes),
+        [task, ranges, validPrefixes],
+    );
+    const anomalySet = useMemo(() => new Set(audit.anomalyIds), [audit]);
+    const sampleNumbers = useMemo(() => rangeNumberSet(ranges), [ranges]);
+
+    const links = useMemo(
+        () => linkSampleWords(
+            task?.raw_ocr_data?.words ?? [],
+            ranges,
+            audit.anomalyIds,
+            validPrefixes,
+        ),
+        [task, ranges, audit.anomalyIds, validPrefixes],
+    );
+    const linksByRange = useMemo(() => {
+        const m = new Map<string, SampleWordLink[]>();
+        for (const l of links) {
+            if (!l.rangeId) continue;
+            const arr = m.get(l.rangeId);
+            if (arr) arr.push(l);
+            else m.set(l.rangeId, [l]);
+        }
+        return m;
+    }, [links]);
+    const numbersByRange = useMemo(() => {
+        const m = new Map<string, string[]>();
+        for (const r of ranges) {
+            m.set(r.id, rangeNumbers(r).map((n) => normalizeToken(n)));
+        }
+        return m;
+    }, [ranges]);
+
+    const readiness = useMemo(
+        () => checkReadiness({
+            siteName,
+            researchTypeName,
+            workOrderCoded,
+            containerTypeName,
+            containerNumber,
+            rangesCount: ranges.length,
+            missingCount: audit.missing.length,
+            anomalyCount: audit.anomalyIds.length,
+        }),
+        [siteName, researchTypeName, workOrderCoded, containerTypeName,
+            containerNumber, ranges.length, audit.missing.length, audit.anomalyIds.length],
+    );
+
+    const focusSampleFromPhoto = (link: SampleWordLink) => {
+        setActiveSample(link.number);
+        setActiveField("sample");
+        if (link.rangeId) {
+            rowRefs.current.get(link.rangeId)?.scrollIntoView({
+                block: "nearest",
+                behavior: "smooth",
+            });
+        }
+    };
+
+    const focusSampleFromRow = (rangeId: string) => {
+        const ls = linksByRange.get(rangeId) ?? [];
+        const first = ls[0];
+        setActiveSample(first ? first.number : numbersByRange.get(rangeId)?.[0] ?? null);
+        setActiveField("sample");
+        if (first) {
+            wordRefs.current.get(first.index)?.scrollIntoView({
+                block: "center",
+                inline: "center",
+                behavior: "smooth",
+            });
+        }
+    };
 
     const handleAddRange = () => {
         const result = parseSampleInput(rangeInput, {
@@ -408,8 +530,16 @@ export default function OcrReviewPage() {
             setSubmitError("Тип тары не найден — выбери из списка.");
             return;
         }
+        if (containerNumber.trim() === "") {
+            setSubmitError("Номер тары обязателен.");
+            return;
+        }
         if (researchTypeId === null) {
             setSubmitError("Тип исследования не найден — выбери из списка.");
+            return;
+        }
+        if (workOrderCoded.trim() === "") {
+            setSubmitError("Н/З (текущий) обязателен.");
             return;
         }
         const hasIncoming = workOrderIncoming.trim() !== "";
@@ -485,12 +615,28 @@ export default function OcrReviewPage() {
                     alignItems: "start",
                 }}
             >
-                <ImageWithBboxes
-                    task={task}
-                    activeField={activeField}
-                    showZones={showZones}
-                    onBboxClick={(type) => setActiveField(type)}
-                />
+                <Box
+                    sx={{
+                        position: { md: "sticky" },
+                        top: { md: 8 },
+                        alignSelf: "start",
+                        maxHeight: { md: "calc(100vh - 110px)" },
+                        overflow: { md: "auto" },
+                    }}
+                >
+                    <ImageWithBboxes
+                        task={task}
+                        activeField={activeField}
+                        activeSample={activeSample}
+                        showZones={showZones}
+                        sampleNumbers={sampleNumbers}
+                        validPrefixes={validPrefixes}
+                        links={links}
+                        wordRefs={wordRefs}
+                        onBboxClick={(type) => setActiveField(type)}
+                        onSampleClick={focusSampleFromPhoto}
+                    />
+                </Box>
                 <Paper sx={{ p: 2 }}>
                     <Stack spacing={2}>
                         <Typography variant="subtitle1">Шапка тары</Typography>
@@ -571,12 +717,24 @@ export default function OcrReviewPage() {
                                 onChange={(e) => setContainerNumber(e.target.value)}
                                 fullWidth
                                 size="small"
+                                required
+                                error={containerNumber.trim() === ""}
+                                helperText={
+                                    containerNumber.trim() === ""
+                                        ? "Обязательно — например 1 или T-001"
+                                        : undefined
+                                }
                             />
                         </Box>
 
-                        <Typography variant="subtitle1" sx={{ pt: 1 }}>
-                            Пробы ({ranges.length})
-                        </Typography>
+                        <Box>
+                            <Typography variant="subtitle1" sx={{ pt: 1 }}>
+                                Пробы ({ranges.length})
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                На фото распознано проб: {audit.photoSamples.length} · в списке: {ranges.length}
+                            </Typography>
+                        </Box>
 
                         <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
                             <Box sx={{ flexGrow: 1 }} onFocus={() => focusField("sample")} onBlur={blurField}>
@@ -614,18 +772,18 @@ export default function OcrReviewPage() {
                         </Box>
 
                         {ranges.length > 0 && (
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Диапазон</TableCell>
-                                        <TableCell>Скважина</TableCell>
-                                        <TableCell align="right">Проб</TableCell>
-                                        <TableCell align="right"></TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {Array.from(rangesByWell.entries()).map(
-                                        ([wellKey, wellRanges]) => (
+                            <Box sx={{ maxHeight: 340, overflow: "auto" }}>
+                                <Table size="small" stickyHeader>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Диапазон</TableCell>
+                                            <TableCell>Скважина</TableCell>
+                                            <TableCell align="right">Проб</TableCell>
+                                            <TableCell align="right"></TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {rangesByWell.map(([wellKey, wellRanges]) => (
                                             <Fragment key={wellKey}>
                                                 <TableRow>
                                                     <TableCell
@@ -644,15 +802,56 @@ export default function OcrReviewPage() {
                                                 {wellRanges.map((r) => {
                                                     const validCount =
                                                         r.allSeqs.length - r.skippedSeqs.length;
+                                                    const isAnomaly = anomalySet.has(r.id);
+                                                    const rowLinks = linksByRange.get(r.id) ?? [];
+                                                    const nums = numbersByRange.get(r.id) ?? [];
+                                                    const isActiveRow =
+                                                        activeSample !== null && nums.includes(activeSample);
+                                                    const rowStatus: SampleWordStatus | null = isAnomaly
+                                                        ? "anomaly"
+                                                        : rowLinks.length > 0
+                                                            ? "covered"
+                                                            : null;
+                                                    const rowColor = rowStatus
+                                                        ? STATUS_COLORS[rowStatus]
+                                                        : null;
                                                     return (
-                                                        <TableRow key={r.id}>
+                                                        <TableRow
+                                                            key={r.id}
+                                                            ref={(el) => {
+                                                                rowRefs.current.set(r.id, el);
+                                                            }}
+                                                            onClick={() => focusSampleFromRow(r.id)}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                bgcolor: rowColor ? `${rowColor}1F` : undefined,
+                                                                boxShadow: isActiveRow
+                                                                    ? `inset 0 0 0 2px ${rowColor ?? "#1E88E5"}`
+                                                                    : undefined,
+                                                                "&:hover": {
+                                                                    bgcolor: rowColor ? `${rowColor}33` : "action.hover",
+                                                                },
+                                                            }}
+                                                        >
                                                             <TableCell>
-                                                                <Typography
-                                                                    variant="body2"
-                                                                    sx={{ fontFamily: "monospace" }}
+                                                                <Tooltip
+                                                                    title={
+                                                                        rowStatus
+                                                                            ? `Проба ${STATUS_LABELS[rowStatus]} — клик ведёт к боксу на фото`
+                                                                            : "Клик ведёт к боксу на фото"
+                                                                    }
                                                                 >
-                                                                    {r.rawInput}
-                                                                </Typography>
+                                                                    <Typography
+                                                                        variant="body2"
+                                                                        sx={{
+                                                                            fontFamily: "monospace",
+                                                                            fontWeight: isAnomaly ? 700 : 400,
+                                                                            color: rowColor ?? "text.primary",
+                                                                        }}
+                                                                    >
+                                                                        {isAnomaly ? "⚠ " : ""}{r.rawInput}
+                                                                    </Typography>
+                                                                </Tooltip>
                                                                 {(r.skippedSeqs.length > 0 ||
                                                                     r.selectedSeqs.length > 0) && (
                                                                         <Typography
@@ -679,7 +878,10 @@ export default function OcrReviewPage() {
                                                                 <Tooltip title="Редактировать">
                                                                     <IconButton
                                                                         size="small"
-                                                                        onClick={() => setEditingRange(r)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setEditingRange(r);
+                                                                        }}
                                                                     >
                                                                         <EditIcon fontSize="small" />
                                                                     </IconButton>
@@ -687,7 +889,10 @@ export default function OcrReviewPage() {
                                                                 <Tooltip title="Удалить">
                                                                     <IconButton
                                                                         size="small"
-                                                                        onClick={() => removeRange(r.id)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            removeRange(r.id);
+                                                                        }}
                                                                     >
                                                                         <DeleteIcon fontSize="small" />
                                                                     </IconButton>
@@ -697,10 +902,39 @@ export default function OcrReviewPage() {
                                                     );
                                                 })}
                                             </Fragment>
-                                        ),
-                                    )}
-                                </TableBody>
-                            </Table>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Box>
+                        )}
+
+                        {audit.missing.length > 0 && (
+                            <Alert severity="warning">
+                                На фото есть пробы, которых нет в списке ({audit.missing.length}).
+                                Нажми на номер — он подставится в поле ввода, затем «Добавить».
+                                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
+                                    {audit.missing.map((m) => (
+                                        <Chip
+                                            key={m}
+                                            size="small"
+                                            variant="outlined"
+                                            label={m}
+                                            onClick={() => setRangeInput(m)}
+                                            sx={{
+                                                borderColor: STATUS_COLORS.missing,
+                                                color: STATUS_COLORS.missing,
+                                            }}
+                                        />
+                                    ))}
+                                </Box>
+                            </Alert>
+                        )}
+
+                        {audit.anomalyIds.length > 0 && (
+                            <Alert severity="warning">
+                                Проб, выбивающихся из основной группы: {audit.anomalyIds.length}.
+                                Проверь номер — возможна ошибка распознавания.
+                            </Alert>
                         )}
 
                         {parseErrors.length > 0 && (
@@ -709,14 +943,79 @@ export default function OcrReviewPage() {
                                 Введены как есть — проверь номер и скважину.
                             </Alert>
                         )}
+
+                        {/* Динамическая готовность к подтверждению */}
+                        <Box
+                            sx={{
+                                border: "1px solid",
+                                borderColor: readiness.ready ? "success.main" : "divider",
+                                borderRadius: 1,
+                                p: 1.5,
+                                bgcolor: readiness.ready ? "rgba(46,125,50,0.06)" : undefined,
+                            }}
+                        >
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                Готовность к подтверждению
+                            </Typography>
+                            <Stack spacing={0.5}>
+                                {readiness.items.map((it) => (
+                                    <Box
+                                        key={it.key}
+                                        sx={{ display: "flex", gap: 1, alignItems: "baseline" }}
+                                    >
+                                        <Typography
+                                            component="span"
+                                            sx={{
+                                                fontWeight: 700,
+                                                color: it.ok
+                                                    ? "success.main"
+                                                    : it.required
+                                                        ? "error.main"
+                                                        : "warning.main",
+                                            }}
+                                        >
+                                            {it.ok ? "✓" : it.required ? "✗" : "⚠"}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            {it.label}{it.required ? " *" : ""}
+                                        </Typography>
+                                        {!it.ok && (
+                                            <Typography variant="caption" color="text.secondary">
+                                                — {it.hint}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                ))}
+                            </Stack>
+                        </Box>
+
+                        {readiness.ready ? (
+                            <Alert severity="success">
+                                Всё заполнено и сходится с фото — можно подтверждать.
+                            </Alert>
+                        ) : readiness.blockers > 0 ? (
+                            <Alert severity="error">
+                                Не заполнено обязательных полей: {readiness.blockers}.
+                            </Alert>
+                        ) : (
+                            <Alert severity="warning">
+                                Обязательные заполнены, но есть замечания по пробам — проверь перед подтверждением.
+                            </Alert>
+                        )}
+
                         {submitError && <Alert severity="error">{submitError}</Alert>}
                         {submitOk && <Alert severity="success">{submitOk}</Alert>}
 
                         <Stack direction="row" spacing={2}>
                             <Button
                                 variant="contained"
+                                color={readiness.ready ? "success" : "primary"}
                                 onClick={onSubmit}
-                                disabled={approve.isPending || submitOk !== null}
+                                disabled={
+                                    approve.isPending ||
+                                    submitOk !== null ||
+                                    readiness.blockers > 0
+                                }
                             >
                                 {approve.isPending ? "Сохраняем…" : submitOk ? "Подтверждено" : "Подтвердить"}
                             </Button>
@@ -752,13 +1051,25 @@ export default function OcrReviewPage() {
 function ImageWithBboxes({
     task,
     activeField,
+    activeSample,
     showZones,
+    sampleNumbers,
+    validPrefixes,
+    links,
+    wordRefs,
     onBboxClick,
+    onSampleClick,
 }: {
     task: OcrTask;
     activeField: string | null;
+    activeSample: string | null;
     showZones: boolean;
+    sampleNumbers: Set<string>;
+    validPrefixes: string[];
+    links: SampleWordLink[];
+    wordRefs: MutableRefObject<Map<number, SVGPolygonElement | null>>;
     onBboxClick: (type: string) => void;
+    onSampleClick: (link: SampleWordLink) => void;
 }) {
     const imgRef = useRef<HTMLImageElement | null>(null);
     const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
@@ -766,11 +1077,14 @@ function ImageWithBboxes({
 
     const zones: OcrZone[] = task.zones ?? [];
     const ex = task.raw_ocr_data?.extracted;
+    const zoneTypes = Array.from(new Set(zones.map((z) => z.type)));
+    const linkByIndex = new Map(links.map((l) => [l.index, l]));
 
-    // 6a-fix5b: слово → к какому полю относится (для клика).
     function fieldForWord(text: string): string | null {
         const t = text.trim().toUpperCase();
-        if (!t || !ex) return null;
+        if (!t) return null;
+        if (matchesSampleNumber(t, sampleNumbers, validPrefixes)) return "sample";
+        if (!ex) return null;
         if (ex.work_order_coded && ex.work_order_coded.toUpperCase().includes(t)) return 'work_order_coded';
         if (ex.work_order_incoming && ex.work_order_incoming.toUpperCase().includes(t)) return 'work_order_incoming';
         if (ex.container_number && ex.container_number.toUpperCase().includes(t)) return 'container_number';
@@ -781,9 +1095,26 @@ function ImageWithBboxes({
         return null;
     }
 
+    function zoneForWord(bbox: number[][]): string | null {
+        if (!bbox?.length) return null;
+        const cx = bbox.reduce((s, p) => s + p[0], 0) / bbox.length;
+        const cy = bbox.reduce((s, p) => s + p[1], 0) / bbox.length;
+        for (const z of zones) {
+            const xs = z.bbox.map((p) => p[0]);
+            const ys = z.bbox.map((p) => p[1]);
+            if (
+                cx >= Math.min(...xs) && cx <= Math.max(...xs) &&
+                cy >= Math.min(...ys) && cy <= Math.max(...ys)
+            ) {
+                return z.type;
+            }
+        }
+        return null;
+    }
+
     return (
-        <Card sx={{ height: "100%" }}>
-            <CardContent sx={{ position: "relative", overflow: "auto" }}>
+        <Card>
+            <CardContent sx={{ position: "relative" }}>
                 <div style={{ position: "relative", display: "inline-block" }}>
                     <img
                         ref={imgRef}
@@ -810,91 +1141,108 @@ function ImageWithBboxes({
                         >
                             {zones.map((zone, i) => {
                                 const active = activeField === zone.type;
+                                const color = ZONE_COLORS[zone.type] ?? "#1E3A5F";
                                 return (
                                     <polygon
                                         key={`zone-${i}`}
                                         points={zone.bbox
                                             .map(([x, y]) => `${x},${y}`)
                                             .join(" ")}
-                                        fill={
-                                            active
-                                                ? "rgba(255, 152, 0, 0.3)"
-                                                : "rgba(30, 58, 95, 0.08)"
-                                        }
-                                        stroke={
-                                            active
-                                                ? "rgba(255, 152, 0, 0.95)"
-                                                : "rgba(30, 58, 95, 0.7)"
-                                        }
-                                        strokeWidth={active ? 3 : 1.5}
+                                        fill={active ? "rgba(255, 152, 0, 0.22)" : `${color}18`}
+                                        stroke={active ? "rgba(255, 152, 0, 0.95)" : color}
+                                        strokeWidth={active ? 3 : 2}
                                         style={{ pointerEvents: "all", cursor: "pointer" }}
                                         onClick={() => onBboxClick(zone.type)}
                                     />
                                 );
                             })}
                             {task.raw_ocr_data?.words.map((w, i) => {
-                                const targetField = fieldForWord(w.text);
+                                const link = linkByIndex.get(i);
+                                const status = link?.status ?? null;
+                                const statusColor = status ? STATUS_COLORS[status] : null;
+                                const isActiveSample =
+                                    link != null && activeSample === link.number;
+                                const targetField = link
+                                    ? "sample"
+                                    : fieldForWord(w.text) ?? zoneForWord(w.bbox);
                                 const isActive =
-                                    targetField !== null && activeField === targetField;
+                                    isActiveSample ||
+                                    (targetField !== null && activeField === targetField);
+                                const fill = statusColor
+                                    ? `${statusColor}${isActiveSample ? "66" : isActive ? "44" : "24"}`
+                                    : isActive
+                                        ? "rgba(255,152,0,0.28)"
+                                        : "rgba(30,58,95,0.10)";
+                                const stroke =
+                                    statusColor ??
+                                    (isActive ? "rgba(255,152,0,0.95)" : "rgba(30,58,95,0.45)");
+                                const width = isActiveSample ? 4 : isActive ? 3 : statusColor ? 2 : 1;
+                                const dash = status === "missing" ? "6 3" : undefined;
                                 return (
                                     <polygon
                                         key={`word-${i}`}
+                                        ref={(el) => {
+                                            wordRefs.current.set(i, el);
+                                        }}
                                         points={w.bbox
                                             .map(([x, y]) => `${x},${y}`)
                                             .join(" ")}
-                                        fill={
-                                            isActive
-                                                ? "rgba(76, 175, 80, 0.3)"
-                                                : "rgba(30, 58, 95, 0.15)"
-                                        }
-                                        stroke={
-                                            isActive
-                                                ? "rgba(76, 175, 80, 0.95)"
-                                                : "rgba(30, 58, 95, 0.5)"
-                                        }
-                                        strokeWidth={isActive ? 2.5 : 1}
+                                        fill={fill}
+                                        stroke={stroke}
+                                        strokeWidth={width}
+                                        strokeDasharray={dash}
                                         style={{ pointerEvents: "all", cursor: "pointer" }}
                                         onClick={() => {
-                                            if (targetField) onBboxClick(targetField);
+                                            if (link) onSampleClick(link);
+                                            else if (targetField) onBboxClick(targetField);
                                         }}
                                     >
-                                        <title>{w.text}</title>
+                                        <title>
+                                            {link
+                                                ? `${w.text} — ${STATUS_LABELS[link.status]}`
+                                                : w.text}
+                                        </title>
                                     </polygon>
                                 );
                             })}
                         </svg>
                     )}
-                    {dims && zones.length > 0 && zones.map((zone, i) => {
-                        const active = activeField === zone.type;
-                        const xs = zone.bbox.map((p) => p[0]);
-                        const ys = zone.bbox.map((p) => p[1]);
-                        const minX = Math.min(...xs);
-                        const minY = Math.min(...ys);
-                        return (
-                            <div
-                                key={`label-${i}`}
-                                onClick={() => onBboxClick(zone.type)}
-                                style={{
-                                    position: "absolute",
-                                    left: `${(minX / dims.w) * 100}%`,
-                                    top: `${(minY / dims.h) * 100}%`,
-                                    transform: "translateY(-100%)",
-                                    background: active ? "orange" : "#1E3A5F",
-                                    color: "white",
-                                    fontSize: 10,
-                                    padding: "1px 4px",
-                                    borderRadius: 2,
-                                    cursor: "pointer",
-                                    whiteSpace: "nowrap",
-                                    zIndex: 10,
-                                    visibility: showZones ? "visible" : "hidden",
-                                }}
-                            >
-                                {OCR_ZONE_LABELS[zone.type as OcrZoneType] ?? zone.type}
-                            </div>
-                        );
-                    })}
                 </div>
+                {showZones && zoneTypes.length > 0 && (
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 1 }}>
+                        {zoneTypes.map((type) => {
+                            const color = ZONE_COLORS[type] ?? "#1E3A5F";
+                            const active = activeField === type;
+                            return (
+                                <Chip
+                                    key={type}
+                                    size="small"
+                                    variant="outlined"
+                                    label={OCR_ZONE_LABELS[type as OcrZoneType] ?? type}
+                                    onClick={() => onBboxClick(type)}
+                                    sx={{
+                                        borderColor: color,
+                                        color: active ? "#fff" : color,
+                                        bgcolor: active ? color : `${color}1A`,
+                                        fontWeight: active ? 700 : 400,
+                                    }}
+                                />
+                            );
+                        })}
+                    </Box>
+                )}
+                {showZones && (
+                    <Typography
+                        variant="caption"
+                        sx={{ display: "block", mt: 0.5, color: "text.secondary" }}
+                    >
+                        Пробы:{" "}
+                        <b style={{ color: STATUS_COLORS.covered }}>зелёный</b> — есть в списке ·{" "}
+                        <b style={{ color: STATUS_COLORS.anomaly }}>жёлтый</b> — выбивается ·{" "}
+                        <b style={{ color: STATUS_COLORS.missing }}>малиновый пунктир</b> — нет в списке.
+                        Клик по пробе ведёт к её строке, клик по строке — к боксу.
+                    </Typography>
+                )}
             </CardContent>
         </Card>
     );
