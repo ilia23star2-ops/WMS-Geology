@@ -6,6 +6,7 @@
  * c-3.x-migration-5e: zones, extracted fields.
  * c-3.x-migration-5f: типизация для подсветки bbox ↔ поля.
  * c-3.x-migration-6a-fix5b: +site, +container_type в ExtractedFields.
+ * c-3.x-migration-6e-a3: +SENT — сессия отправлена с мобильного.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -21,6 +22,7 @@ export type OcrTaskStatus =
 
 export type OcrBatchStatus =
     | "DRAFT"
+    | "SENT"
     | "UPLOADING"
     | "PROCESSING"
     | "REVIEW"
@@ -29,6 +31,8 @@ export type OcrBatchStatus =
 
 export const OCR_BATCH_STATUS_LABELS: Record<OcrBatchStatus, string> = {
     DRAFT: "Черновик",
+    // 6e-a3: мобильная сессия отправлена на сервер
+    SENT: "Отправлено",
     UPLOADING: "Загрузка фото",
     PROCESSING: "Распознавание",
     REVIEW: "Готово к проверке",

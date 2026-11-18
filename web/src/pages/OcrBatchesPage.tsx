@@ -36,6 +36,7 @@ const BATCH_STATUS_COLORS: Record<
     "default" | "info" | "success" | "warning" | "error"
 > = {
     DRAFT: "default",
+    SENT: "info",
     UPLOADING: "info",
     PROCESSING: "info",
     REVIEW: "warning",
