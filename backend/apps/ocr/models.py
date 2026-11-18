@@ -52,6 +52,7 @@ class OcrTask(models.Model):
         ('container_number', 'Номер тары'),
         ('research_type', 'Тип исследования'),
         ('sample', 'Проба'),
+        ('site', 'Участок'),
     ]
 
     batch = models.ForeignKey(OcrBatch, on_delete=models.CASCADE, related_name='tasks', verbose_name='Пакет')

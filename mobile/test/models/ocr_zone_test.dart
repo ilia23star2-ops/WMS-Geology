@@ -81,21 +81,26 @@ void main() {
     expect(rect[3], closeTo(40, 1e-6));
   });
 
-  test('labels покрывают все 6 типов зон', () {
-    expect(OcrZoneTypes.order.length, 6);
+  test('labels покрывают все 7 типов контракта', () {
+    expect(OcrZoneTypes.order.length, 7);
     for (final t in OcrZoneTypes.order) {
       expect(OcrZoneTypes.labels[t], isNotNull);
     }
   });
 
-  test('uiOrder: 5 типов, без well (6e-2-fix)', () {
-    expect(OcrZoneTypes.uiOrder.length, 5);
+  test('uiOrder: 6 типов, без well, с site (6e-2-site)', () {
+    expect(OcrZoneTypes.uiOrder.length, 6);
     expect(OcrZoneTypes.uiOrder.contains(OcrZoneTypes.well), isFalse);
     expect(OcrZoneTypes.uiOrder.contains(OcrZoneTypes.sample), isTrue);
+    expect(OcrZoneTypes.uiOrder.contains(OcrZoneTypes.site), isTrue);
   });
 
   test('label sample = Пробы (6e-2-fix)', () {
     expect(OcrZoneTypes.labels[OcrZoneTypes.sample], 'Пробы');
+  });
+
+  test('label site = Участок (6e-2-site)', () {
+    expect(OcrZoneTypes.labels[OcrZoneTypes.site], 'Участок');
   });
 
   test('separateZone: без пересечения — зона не меняется', () {

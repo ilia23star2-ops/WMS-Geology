@@ -1,4 +1,4 @@
-/// Зоны разметки фото OCR (6e-2).
+/// Зоны разметки фото OCR (6e-2, 6e-2-site).
 ///
 /// Координаты — пиксели ОРИГИНАЛА: backend `OcrZoneSerializer` принимает
 /// `rect = [x, y, w, h]` (w, h > 0) или `bbox` (4 точки), `source = manual`.
@@ -16,8 +16,9 @@ class OcrZoneTypes {
   static const String researchType = 'research_type';
   static const String sample = 'sample';
   static const String well = 'well';
+  static const String site = 'site';
 
-  /// Порядок в UI выбора типа.
+  /// Полный контракт типов (включая legacy well).
   static const List<String> order = [
     workOrderCoded,
     workOrderIncoming,
@@ -25,15 +26,17 @@ class OcrZoneTypes {
     researchType,
     sample,
     well,
+    site,
   ];
 
-  /// Порядок в UI разметки (6e-2-fix): без well — скважина не размечается вручную.
+  /// Порядок в UI разметки: без well, с участком (6e-2-site).
   static const List<String> uiOrder = [
     workOrderCoded,
     workOrderIncoming,
     containerNumber,
     researchType,
     sample,
+    site,
   ];
 
   /// Подписи для UI (русский, как в web OCR_ZONE_LABELS).
@@ -44,6 +47,7 @@ class OcrZoneTypes {
     researchType: 'Тип исследования',
     sample: 'Пробы',
     well: 'Скважина',
+    site: 'Участок',
   };
 }
 

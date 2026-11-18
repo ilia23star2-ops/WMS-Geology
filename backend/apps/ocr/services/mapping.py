@@ -198,6 +198,26 @@ def _has_valid_prefix(s: str, valid_prefixes: set) -> bool:
     return False
 
 
+def _pick_scalar(t: str, text: str, research_types: list) -> str:
+    """6e-2-site-fix: зона захватила соседнюю строку → берём токен формата.
+    Одна лексема — значение как есть (не ломаем 02-Исх001)."""
+    if not text or len(text.split()) == 1:
+        return text
+    if t in ("work_order_coded", "work_order_incoming"):
+        m = re.search(r"\b(?:\d{1,3}-)?[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?[0-9OIl]{2,4}\b", text)
+        if m:
+            return m.group()
+    if t == "container_number":
+        m = re.search(r"\b[TТ][-–]?\d{2,6}\b", text)
+        if m:
+            return m.group()
+    if t == "research_type":
+        code = _find_research_type(text, research_types)
+        if code:
+            return code
+    return text
+
+
 def extract_fields(
     zones: list,
     ocr_data: dict,
@@ -237,7 +257,18 @@ def extract_fields(
         if t in scalar_types:
             val = _extract_scalar(words, zone)
             if val:
-                result[t] = val
+                result[t] = _pick_scalar(t, val, research_types or [])
+
+    # 1b. 6e-2-site: участок из зоны → code через fuzzy по тексту зоны
+    site_from_zone = False
+    for zone in zones or []:
+        if zone.get("type") == "site":
+            val = _extract_scalar(words, zone)
+            if val:
+                code = _find_site(val, sites or [])
+                if code:
+                    result["site"] = code
+                    site_from_zone = True
 
     # 2. Samples
     samples_set: set = set()
@@ -293,7 +324,7 @@ def extract_fields(
 
     # 6. Источник
     has_zones = bool(zones)
-    has_zones_data = any(result[k] for k in scalar_types)
+    has_zones_data = any(result[k] for k in scalar_types) or site_from_zone
     has_fallback = bool(
         result["samples"] or result["wells"] or result["work_order_coded"]
         or result["site"] or result["research_type"] or result["container_type"]

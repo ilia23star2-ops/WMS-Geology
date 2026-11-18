@@ -39,6 +39,7 @@ class _OcrZoneMarkingScreenState extends State<OcrZoneMarkingScreen> {
     OcrZoneTypes.researchType: Color(0xFF8E24AA),
     OcrZoneTypes.sample: Color(0xFF43A047),
     OcrZoneTypes.well: Color(0xFF6D4C41),
+    OcrZoneTypes.site: Color(0xFF3949AB),
   };
 
   late List<OcrZoneMark> _zones;
