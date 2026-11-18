@@ -55,7 +55,8 @@
 | c-3.x-migration-6e-a3 | Mobile: отправка сессии (recognize-sendBatch-clear), прогресс Фото N/M, Provider<OcrService>; web: SENT + stay-after-approve | ✅ |
 | c-3.x-migration-6f-2 | Web: `OcrBatchReviewPage` | `/ocr/batches/:id/review` → `?batch=N&index=K`, стрелки + счётчик. `OcrBatchDetailPage`: delete task + фильтр. | ⬜ |
 | c-3.x-migration-6e-2 | Mobile: разметка зон (drag, zoom/pan жестами, легенда-чипы, авторазграничение с зазором) | ✅ |
-| c-3.x-migration-6e-2-site | Backend+Mobile: тип зоны Участок (ZONE_TYPES+mapping+UI) | ⬜ |
+| c-3.x-migration-6e-2-site | Backend+Mobile: тип зоны Участок + _pick_scalar (токен формата из зоны) | ✅ |
+| c-3.x-migration-6e-2-site-fix2 | Backend: T→1 в trailing OCR; диагностика container_number из зоны | ⬜ |
 | c-3.x-migration-6e-2-web | Web: переключатель показа зон в проверке | ⬜ |
 | c-3.x-migration-6e-4 | Mobile: оценка качества фото при съёмке (резкость, яркость, разрешение) + подсказки | ⬜ |
 | c-3.x-migration-6f-3 | Web: интерактивные bbox | 4 цвета (серая/синяя/жёлтая/зелёная), тап ↔ список, scroll-to-field. | ⬜ |
