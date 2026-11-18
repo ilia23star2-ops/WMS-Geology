@@ -13,6 +13,7 @@ class _FakeApiClient implements ApiClient {
   String? lastPath;
   String? lastImagePath;
   Map<String, dynamic>? lastFields;
+  Object? lastData;
 
   @override
   Future<Response<T>> uploadMultipart<T>(
@@ -23,6 +24,23 @@ class _FakeApiClient implements ApiClient {
     lastPath = path;
     lastImagePath = imagePath;
     lastFields = fields;
+    if (failNetwork) {
+      throw ApiException(
+        message: 'Не удалось подключиться',
+        isNetworkError: true,
+      );
+    }
+    return Response<T>(
+      data: response as T,
+      statusCode: 200,
+      requestOptions: RequestOptions(path: path),
+    );
+  }
+
+  @override
+  Future<Response<T>> patch<T>(String path, {Object? data}) async {
+    lastPath = path;
+    lastData = data;
     if (failNetwork) {
       throw ApiException(
         message: 'Не удалось подключиться',
@@ -112,5 +130,22 @@ void main() {
       () => service.recognize(imagePath: '/tmp/x.jpg'),
       throwsA(isA<ApiException>()),
     );
+  });
+
+  test('sendBatch: PATCH /ocr/batches/3/ со status=SENT', () async {
+    final fake = _FakeApiClient(response: {'id': 3, 'status': 'SENT'});
+    final service = OcrService(fake);
+
+    await service.sendBatch(3);
+
+    expect(fake.lastPath, '/ocr/batches/3/');
+    expect(fake.lastData, {'status': 'SENT'});
+  });
+
+  test('sendBatch: сетевая ошибка → ApiException', () async {
+    final fake = _FakeApiClient(failNetwork: true);
+    final service = OcrService(fake);
+
+    expect(() => service.sendBatch(3), throwsA(isA<ApiException>()));
   });
 }

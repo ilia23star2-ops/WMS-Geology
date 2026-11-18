@@ -26,6 +26,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/catalog_service.dart';
 import 'services/container_service.dart';
+import 'services/ocr_service.dart';
 import 'services/sample_service.dart';
 import 'services/sync_pusher.dart';
 import 'services/sync_service.dart';
@@ -75,6 +76,10 @@ class WmsGeologyApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider<OcrSession>(create: (_) => OcrSession()),
+        Provider<OcrService>(
+          create: (ctx) =>
+              OcrService(ctx.read<AuthProvider>().service.apiClient),
+        ),
       ],
       child: MaterialApp(
         title: 'WMS Geology',

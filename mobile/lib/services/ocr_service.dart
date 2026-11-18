@@ -40,4 +40,12 @@ class OcrService {
     }
     return OcrRecognizeResult.fromJson(data);
   }
+
+  /// Отправить батч в обработку (статус SENT).
+  Future<void> sendBatch(int batchId) async {
+    await _client.patch<Map<String, dynamic>>(
+      '/ocr/batches/$batchId/',
+      data: {'status': 'SENT'},
+    );
+  }
 }

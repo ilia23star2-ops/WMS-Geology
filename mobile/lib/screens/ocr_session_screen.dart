@@ -1,6 +1,8 @@
-/// Главный экран сессии оцифровки (6e-1b).
+/// Главный экран сессии оцифровки (6e-1b, 6e-a3).
 ///
 /// Список ячеек со счётчиком фото + кнопка "Отправить на сервер".
+/// 6e-a3: `_uploadSession` — фото → recognize (один батч) → sendBatch → clear.
+/// 6e-a3-fix: информативный прогресс «Фото N/M · адрес ячейки».
 library;
 
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../models/ocr_session.dart';
 import '../providers/auth_provider.dart';
+import '../services/ocr_service.dart';
 import 'ocr_cell_screen.dart';
 import '../widgets/qr_cell_scanner.dart';
 
@@ -19,6 +22,9 @@ class OcrSessionScreen extends StatefulWidget {
 }
 
 class _OcrSessionScreenState extends State<OcrSessionScreen> {
+  bool _isUploading = false;
+  String _uploadLabel = '';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,7 +51,9 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
                       child: FilledButton.icon(
                         icon: const Icon(Icons.grid_view),
                         label: const Text('Выбрать ячейку'),
-                        onPressed: () => _selectCell(context, session),
+                        onPressed: _isUploading
+                            ? null
+                            : () => _selectCell(context, session),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -53,7 +61,9 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
                       child: OutlinedButton.icon(
                         icon: const Icon(Icons.qr_code_scanner),
                         label: const Text('Сканировать QR'),
-                        onPressed: () => _scanQr(context, session),
+                        onPressed: _isUploading
+                            ? null
+                            : () => _scanQr(context, session),
                       ),
                     ),
                   ],
@@ -110,8 +120,9 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
                                 ],
                               ),
                               trailing: FilledButton(
-                                onPressed: () =>
-                                    _openCellInspection(context, cell),
+                                onPressed: _isUploading
+                                    ? null
+                                    : () => _openCellInspection(context, cell),
                                 child: const Text('Осмотреть'),
                               ),
                             ),
@@ -121,17 +132,40 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
               ),
 
               // Кнопка отправки
-              if (totalPhotos > 0)
+              if (totalPhotos > 0 || _isUploading)
                 Padding(
-                  padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + MediaQuery.paddingOf(context).bottom + MediaQuery.viewInsetsOf(context).bottom),
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 16,
+                    bottom:
+                        16 +
+                        MediaQuery.paddingOf(context).bottom +
+                        MediaQuery.viewInsetsOf(context).bottom,
+                  ),
                   child: SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      icon: const Icon(Icons.cloud_upload),
+                      icon: _isUploading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.cloud_upload),
                       label: Text(
-                        'Отправить на сервер ($totalPhotos фото в ${cells.length} ячейках)',
+                        _isUploading
+                            ? (_uploadLabel.isEmpty
+                                  ? 'Отправка…'
+                                  : _uploadLabel)
+                            : 'Отправить на сервер ($totalPhotos фото в ${cells.length} ячейках)',
                       ),
-                      onPressed: () => _uploadSession(context, session),
+                      onPressed: _isUploading
+                          ? null
+                          : () => _uploadSession(context, session),
                     ),
                   ),
                 ),
@@ -176,10 +210,57 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
     );
   }
 
+  /// 6e-a3: все фото сессии → один батч → статус SENT → очистка.
+  ///
+  /// Успешно отправленные фото удаляются сразу — при ошибке повтор
+  /// отправит только оставшиеся (без дублей задач на сервере).
   Future<void> _uploadSession(BuildContext context, OcrSession session) async {
-    // TODO: отправка сессии на сервер
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Отправка сессии — в разработке')),
-    );
+    if (_isUploading || session.totalPhotos == 0) return;
+    setState(() => _isUploading = true);
+
+    final ocrService = context.read<OcrService>();
+    final messenger = ScaffoldMessenger.of(context);
+    final total = session.totalPhotos;
+    var sent = 0;
+    int? batchId;
+
+    try {
+      for (final cell in session.cells) {
+        final photos = List.of(cell.photos);
+        for (final photo in photos) {
+          setState(
+            () =>
+                _uploadLabel = 'Фото ${sent + 1}/$total · ${cell.fullAddress}',
+          );
+          final result = await ocrService.recognize(
+            imagePath: photo.path,
+            cellId: cell.cellId,
+            batchId: batchId,
+          );
+          batchId ??= result.batchId;
+          cell.removePhoto(0);
+          sent++;
+        }
+      }
+      setState(() => _uploadLabel = 'Завершение батча…');
+      if (batchId != null) {
+        await ocrService.sendBatch(batchId);
+      }
+      session.clear();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Отправлено на сервер: $sent фото')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Ошибка отправки (успешно $sent): $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadLabel = '';
+        });
+      }
+    }
   }
 }
