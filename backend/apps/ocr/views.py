@@ -171,7 +171,8 @@ class OcrBatchListCreateView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user, status='DRAFT')
 
 
-class OcrBatchDetailView(generics.RetrieveAPIView):
+class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
+    """GET + PATCH {status: "SENT"} → sent_at = now (6e-a3)."""
     serializer_class = OcrBatchSerializer
     permission_classes = [IsAuthenticated]
 
@@ -181,6 +182,24 @@ class OcrBatchDetailView(generics.RetrieveAPIView):
             return OcrBatch.objects.all().prefetch_related('tasks')
         return OcrBatch.objects.filter(user=user).prefetch_related('tasks')
 
+    def update(self, request, *args, **kwargs):
+        batch = self.get_object()
+        new_status = request.data.get('status')
+        if new_status != 'SENT':
+            return Response(
+                {'error': 'PATCH поддерживает только {status: "SENT"}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if batch.status != 'DRAFT':
+            return Response(
+                {'error': f'Нельзя отправить из статуса {batch.status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from django.utils import timezone
+        batch.status = 'SENT'
+        batch.sent_at = timezone.now()
+        batch.save(update_fields=['status', 'sent_at'])
+        return Response(OcrBatchSerializer(batch).data)
 
 class OcrTaskDetailView(generics.RetrieveAPIView):
     serializer_class = OcrTaskSerializer
