@@ -89,3 +89,68 @@ OcrZoneMark? zoneFromNormalized({
     h: h,
   );
 }
+
+/// Рамка отображения фото по BoxFit.contain (6e-2c).
+///
+/// связывает три системы координат: пиксели оригинала ↔ координаты
+/// области просмотра ↔ нормализованные 0..1. Чистая математика, без UI.
+class ImageFrame {
+  final double scale;
+  final double offsetX;
+  final double offsetY;
+  final double displayWidth;
+  final double displayHeight;
+
+  const ImageFrame({
+    required this.scale,
+    required this.offsetX,
+    required this.offsetY,
+    required this.displayWidth,
+    required this.displayHeight,
+  });
+
+  /// Вырожденные размеры → нулевая рамка (рисование запрещено).
+  factory ImageFrame.contain({
+    required int imageWidth,
+    required int imageHeight,
+    required double areaWidth,
+    required double areaHeight,
+  }) {
+    if (imageWidth <= 0 ||
+        imageHeight <= 0 ||
+        areaWidth <= 0 ||
+        areaHeight <= 0) {
+      return const ImageFrame(
+        scale: 0,
+        offsetX: 0,
+        offsetY: 0,
+        displayWidth: 0,
+        displayHeight: 0,
+      );
+    }
+    final double sx = areaWidth / imageWidth;
+    final double sy = areaHeight / imageHeight;
+    final double s = sx < sy ? sx : sy;
+    final double dw = imageWidth * s;
+    final double dh = imageHeight * s;
+    return ImageFrame(
+      scale: s,
+      offsetX: (areaWidth - dw) / 2,
+      offsetY: (areaHeight - dh) / 2,
+      displayWidth: dw,
+      displayHeight: dh,
+    );
+  }
+
+  /// Пиксели оригинала → координаты области (для overlay зон).
+  double toAreaX(double x) => offsetX + x * scale;
+  double toAreaY(double y) => offsetY + y * scale;
+
+  /// Координаты области → нормализованные 0..1 (clamp по границам фото).
+  double toNormalizedX(double areaX) => displayWidth <= 0
+      ? 0
+      : ((areaX - offsetX) / displayWidth).clamp(0.0, 1.0);
+  double toNormalizedY(double areaY) => displayHeight <= 0
+      ? 0
+      : ((areaY - offsetY) / displayHeight).clamp(0.0, 1.0);
+}

@@ -87,4 +87,71 @@ void main() {
       expect(OcrZoneTypes.labels[t], isNotNull);
     }
   });
+
+  test('ImageFrame.contain: landscape фото в квадратной области', () {
+    final f = ImageFrame.contain(
+      imageWidth: 1000,
+      imageHeight: 500,
+      areaWidth: 400,
+      areaHeight: 400,
+    );
+    expect(f.scale, closeTo(0.4, 1e-9));
+    expect(f.displayWidth, closeTo(400, 1e-6));
+    expect(f.displayHeight, closeTo(200, 1e-6));
+    expect(f.offsetX, closeTo(0, 1e-6));
+    expect(f.offsetY, closeTo(100, 1e-6));
+  });
+
+  test('ImageFrame.contain: portrait фото в landscape области', () {
+    final f = ImageFrame.contain(
+      imageWidth: 500,
+      imageHeight: 1000,
+      areaWidth: 400,
+      areaHeight: 200,
+    );
+    expect(f.scale, closeTo(0.2, 1e-9));
+    expect(f.displayWidth, closeTo(100, 1e-6));
+    expect(f.displayHeight, closeTo(200, 1e-6));
+    expect(f.offsetX, closeTo(150, 1e-6));
+    expect(f.offsetY, closeTo(0, 1e-6));
+  });
+
+  test('ImageFrame: пиксели → область → нормализованные (roundtrip)', () {
+    final f = ImageFrame.contain(
+      imageWidth: 1000,
+      imageHeight: 500,
+      areaWidth: 400,
+      areaHeight: 400,
+    );
+    expect(f.toAreaX(100), closeTo(40, 1e-6));
+    expect(f.toAreaY(100), closeTo(140, 1e-6));
+    expect(f.toNormalizedX(40), closeTo(0.1, 1e-6));
+    expect(f.toNormalizedY(140), closeTo(0.2, 1e-6));
+  });
+
+  test('ImageFrame: координаты вне фото clamp в 0..1', () {
+    final f = ImageFrame.contain(
+      imageWidth: 1000,
+      imageHeight: 500,
+      areaWidth: 400,
+      areaHeight: 400,
+    );
+    expect(f.toNormalizedX(-50), 0);
+    expect(f.toNormalizedX(10000), 1);
+    expect(f.toNormalizedY(-50), 0);
+    expect(f.toNormalizedY(10000), 1);
+  });
+
+  test('ImageFrame: вырожденные размеры → нулевая рамка', () {
+    final f = ImageFrame.contain(
+      imageWidth: 0,
+      imageHeight: 500,
+      areaWidth: 400,
+      areaHeight: 400,
+    );
+    expect(f.scale, 0);
+    expect(f.displayWidth, 0);
+    expect(f.toNormalizedX(123), 0);
+    expect(f.toNormalizedY(123), 0);
+  });
 }
