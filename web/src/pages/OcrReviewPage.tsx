@@ -379,7 +379,7 @@ export default function OcrReviewPage() {
             </Alert>
         );
     }
-    if (task.status === "DONE") {
+    if (task.status === "DONE" && submitOk === null) {
         return <Alert severity="info" sx={{ m: 2 }}>Задача уже подтверждена.</Alert>;
     }
     if (task.status === "ERROR") {
@@ -434,10 +434,6 @@ export default function OcrReviewPage() {
                 setSubmitOk(
                     `Создана тара #${res.container_id}, проб: ${res.samples_created}.` +
                     (res.batch_completed ? " Батч закрыт." : ""),
-                );
-                setTimeout(
-                    () => navigate(`/containers?highlight=${res.container_id}`),
-                    1500,
                 );
             },
             onError: (e) => {
@@ -700,9 +696,9 @@ export default function OcrReviewPage() {
                             <Button
                                 variant="contained"
                                 onClick={onSubmit}
-                                disabled={approve.isPending}
+                                disabled={approve.isPending || submitOk !== null}
                             >
-                                {approve.isPending ? "Сохраняем…" : "Подтвердить"}
+                                {approve.isPending ? "Сохраняем…" : submitOk ? "Подтверждено" : "Подтвердить"}
                             </Button>
                             <Button onClick={() => navigate(-1)}>Отмена</Button>
                         </Stack>
