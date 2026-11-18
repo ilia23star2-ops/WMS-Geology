@@ -1,6 +1,7 @@
-/// Экран осмотра ячейки (6e-1b).
+/// Экран осмотра ячейки (6e-1b, 6e-2c).
 ///
 /// Добавление/удаление фото для конкретной ячейки.
+/// 6e-2c: «Разметить зоны» → экран разметки; бейдж «Зоны: N».
 library;
 
 import 'dart:io';
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/ocr_session.dart';
+import 'ocr_zone_marking_screen.dart';
 
 class OcrCellScreen extends StatefulWidget {
   final CellPhotos cell;
@@ -86,6 +88,9 @@ class _OcrCellScreenState extends State<OcrCellScreen> {
                     itemCount: widget.cell.photos.length,
                     itemBuilder: (context, index) {
                       final photo = widget.cell.photos[index];
+                      final zonesCount = widget.cell
+                          .zonesFor(photo.path)
+                          .length;
                       return Stack(
                         fit: StackFit.expand,
                         children: [
@@ -127,12 +132,16 @@ class _OcrCellScreenState extends State<OcrCellScreen> {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.black54,
+                                  color: zonesCount > 0
+                                      ? Colors.green.shade700
+                                      : Colors.black54,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text(
-                                  'Разметить зоны',
-                                  style: TextStyle(
+                                child: Text(
+                                  zonesCount > 0
+                                      ? 'Зоны: $zonesCount'
+                                      : 'Разметить зоны',
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 12,
                                   ),
@@ -149,7 +158,15 @@ class _OcrCellScreenState extends State<OcrCellScreen> {
           // Кнопка сохранения
           if (widget.cell.photos.isNotEmpty)
             Padding(
-              padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16 + MediaQuery.paddingOf(context).bottom + MediaQuery.viewInsetsOf(context).bottom),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom:
+                    16 +
+                    MediaQuery.paddingOf(context).bottom +
+                    MediaQuery.viewInsetsOf(context).bottom,
+              ),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -206,10 +223,13 @@ class _OcrCellScreenState extends State<OcrCellScreen> {
     });
   }
 
-  void _openZoneMarking(BuildContext context, XFile photo) {
-    // TODO: открыть экран разметки зон (6e-2)
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Разметка зон — в разработке (6e-2)')),
+  Future<void> _openZoneMarking(BuildContext context, XFile photo) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OcrZoneMarkingScreen(cell: widget.cell, photo: photo),
+      ),
     );
+    if (mounted) setState(() {});
   }
 }
