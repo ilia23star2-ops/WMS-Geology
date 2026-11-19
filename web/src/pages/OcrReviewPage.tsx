@@ -5,10 +5,10 @@
  * c-3.x-migration-6e-a3-web-fix: после approve остаёмся на окне.
  * c-3.x-migration-6e-2-web…fix4: легенда зон, аудит проб, мини-зоны фото ↔ строка,
  *   цвета статусов, динамическая готовность + зелёный сигнал.
- * 6e-2-web-fix5: фото, готовность, таблица проб, шапка тары и алерты аудита
- *   вынесены в components/ocr; предзаполнение — useOcrTaskPrefill,
- *   список проб — useOcrRanges, хелперы — utils/ocrRangeHelpers,
- *   ввод диапазона — SampleInputBar.
+ * 6e-2-web-fix5: компоненты в components/ocr, хуки предзаполнения и проб.
+ * 6e-2-web-fix6: обратный аудит «нет на фото», дубли как блокер.
+ * 6e-2-web-fix7: вкладки «Шапка тары» / «Пробы», подсказки под полями,
+ *   компактная строка-статус; клик по зоне переключает нужную вкладку.
  */
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -16,11 +16,14 @@ import {
     Alert,
     Box,
     Button,
+    Chip,
     CircularProgress,
     FormControlLabel,
     Paper,
     Stack,
     Switch,
+    Tab,
+    Tabs,
     Typography,
 } from "@mui/material";
 
@@ -45,17 +48,24 @@ import {
     rangeNumberSet,
     type SampleWordLink,
 } from "../utils/ocrSampleAudit";
-import { checkReadiness } from "../utils/ocrReadiness";
+import { checkReadiness, readinessByKey } from "../utils/ocrReadiness";
 import { buildSampleGroups } from "../utils/ocrRangeHelpers";
 import { useOcrRanges } from "../hooks/useOcrRanges";
 import { useOcrTaskPrefill } from "../hooks/useOcrTaskPrefill";
 import { useSampleBaseOptions } from "../hooks/useSampleBaseOptions";
 import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
-import RangesTable from "../components/ocr/RangesTable";
 import ReadinessPanel from "../components/ocr/ReadinessPanel";
 import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
-import AuditAlerts from "../components/ocr/AuditAlerts";
-import SampleInputBar from "../components/ocr/SampleInputBar";
+import SamplesPanel from "../components/ocr/SamplesPanel";
+
+const HEADER_KEYS = [
+    "site",
+    "research_type",
+    "work_order_coded",
+    "container_type",
+    "container_number",
+    "container_number_photo",
+];
 
 export default function OcrReviewPage() {
     const { id } = useParams<{ id: string }>();
@@ -97,6 +107,7 @@ export default function OcrReviewPage() {
     const [submitOk, setSubmitOk] = useState<string | null>(null);
     const [showZones, setShowZones] = useState(true);
     const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
+    const [tab, setTab] = useState<"header" | "samples">("header");
 
     const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
     const wordRefs = useRef<Map<number, SVGPolygonElement | null>>(new Map());
@@ -177,6 +188,8 @@ export default function OcrReviewPage() {
         [task, ranges, validPrefixes],
     );
     const anomalySet = useMemo(() => new Set(audit.anomalyIds), [audit]);
+    const notOnPhotoSet = useMemo(() => new Set(audit.notOnPhotoIds), [audit]);
+    const duplicateSet = useMemo(() => new Set(audit.duplicateIds), [audit]);
     const sampleNumbers = useMemo(() => rangeNumberSet(ranges), [ranges]);
 
     const links = useMemo(
@@ -217,19 +230,36 @@ export default function OcrReviewPage() {
             rangesCount: ranges.length,
             missingCount: audit.missing.length,
             anomalyCount: audit.anomalyIds.length,
+            duplicateCount: audit.duplicateNumbers.length,
+            notOnPhotoCount: audit.notOnPhotoIds.length,
         }),
         [siteName, researchTypeName, workOrderCoded, containerTypeName,
-            task, containerNumber, ranges.length, audit.missing.length, audit.anomalyIds.length],
+            task, containerNumber, ranges.length, audit],
     );
+    const issuesByKey = useMemo(() => readinessByKey(readiness), [readiness]);
+
+    const headerProblems = HEADER_KEYS.filter(
+        (k) => issuesByKey[k] && !issuesByKey[k].ok,
+    ).length;
+    const sampleProblems =
+        audit.duplicateNumbers.length +
+        audit.missing.length +
+        audit.notOnPhotoIds.length +
+        audit.anomalyIds.length +
+        (ranges.length === 0 ? 1 : 0);
 
     const focusSampleFromPhoto = (link: SampleWordLink) => {
         setActiveSample(link.number);
         setActiveField("sample");
+        setTab("samples");
         if (link.rangeId) {
-            rowRefs.current.get(link.rangeId)?.scrollIntoView({
-                block: "nearest",
-                behavior: "smooth",
-            });
+            const rid = link.rangeId;
+            window.setTimeout(() => {
+                rowRefs.current.get(rid)?.scrollIntoView({
+                    block: "nearest",
+                    behavior: "smooth",
+                });
+            }, 60);
         }
     };
 
@@ -245,6 +275,11 @@ export default function OcrReviewPage() {
                 behavior: "smooth",
             });
         }
+    };
+
+    const handleBboxClick = (type: string) => {
+        setActiveField(type);
+        setTab(type === "sample" ? "samples" : "header");
     };
 
     if (isLoading) {
@@ -371,68 +406,104 @@ export default function OcrReviewPage() {
                         validPrefixes={validPrefixes}
                         links={links}
                         wordRefs={wordRefs}
-                        onBboxClick={(type) => setActiveField(type)}
+                        onBboxClick={handleBboxClick}
                         onSampleClick={focusSampleFromPhoto}
                     />
                 </Box>
                 <Paper sx={{ p: 2 }}>
+                    <Tabs
+                        value={tab}
+                        onChange={(_, v) => setTab(v)}
+                        sx={{ mb: 2, minHeight: 40 }}
+                        variant="fullWidth"
+                    >
+                        <Tab
+                            value="header"
+                            sx={{ minHeight: 40, textTransform: "none" }}
+                            label={
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <span>Шапка тары</span>
+                                    {headerProblems > 0 && (
+                                        <Chip
+                                            size="small"
+                                            color="warning"
+                                            label={headerProblems}
+                                            sx={{ height: 18, fontSize: 11 }}
+                                        />
+                                    )}
+                                </Stack>
+                            }
+                        />
+                        <Tab
+                            value="samples"
+                            sx={{ minHeight: 40, textTransform: "none" }}
+                            label={
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <span>Пробы ({ranges.length})</span>
+                                    {sampleProblems > 0 && (
+                                        <Chip
+                                            size="small"
+                                            color={audit.duplicateNumbers.length > 0 ? "error" : "warning"}
+                                            label={sampleProblems}
+                                            sx={{ height: 18, fontSize: 11 }}
+                                        />
+                                    )}
+                                </Stack>
+                            }
+                        />
+                    </Tabs>
+
                     <Stack spacing={2}>
-                        <ContainerHeaderFields
-                            siteName={siteName}
-                            onSiteNameChange={setSiteName}
-                            researchTypeName={researchTypeName}
-                            onResearchTypeNameChange={setResearchTypeName}
-                            workOrderCoded={workOrderCoded}
-                            onWorkOrderCodedChange={setWorkOrderCoded}
-                            workOrderIncoming={workOrderIncoming}
-                            onWorkOrderIncomingChange={setWorkOrderIncoming}
-                            containerTypeName={containerTypeName}
-                            onContainerTypeNameChange={setContainerTypeName}
-                            containerNumber={containerNumber}
-                            onContainerNumberChange={setContainerNumber}
-                            siteOptions={(sites.data ?? []).map((s) => `${s.code} — ${s.name}`)}
-                            sitesLoading={sites.isLoading}
-                            researchTypeOptions={(researchTypes.data ?? []).map((r) => `${r.code} — ${r.name}`)}
-                            researchTypesLoading={researchTypes.isLoading}
-                            containerTypeOptions={(containerTypes.data ?? []).map((c) => c.name)}
-                            containerTypesLoading={containerTypes.isLoading}
-                            workOrderOptions={suggestions.data?.work_orders ?? []}
-                            workOrderIncomingOptions={suggestions.data?.work_orders_incoming ?? []}
-                            suggestionsLoading={suggestions.isFetching}
-                            siteId={siteId}
-                            researchTypeId={researchTypeId}
-                            activeField={activeField}
-                            onFocusField={focusField}
-                            onBlurField={blurField}
-                        />
-
-                        <Box>
-                            <Typography variant="subtitle1" sx={{ pt: 1 }}>
-                                Пробы ({ranges.length})
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                                На фото распознано проб: {audit.photoSamples.length} · в списке: {ranges.length}
-                            </Typography>
-                        </Box>
-
-                        <SampleInputBar
-                            value={rangeInput}
-                            onChange={(v) => {
-                                setRangeInput(v);
-                                setRangeInputError(null);
-                            }}
-                            options={baseSampleOptions}
-                            loading={suggestions.isFetching}
-                            error={rangeInputError}
-                            onAdd={handleAddRange}
-                            onFocus={() => focusField("sample")}
-                            onBlur={blurField}
-                        />
-
-                        {ranges.length > 0 && (
-                            <RangesTable
+                        {tab === "header" ? (
+                            <ContainerHeaderFields
+                                siteName={siteName}
+                                onSiteNameChange={setSiteName}
+                                researchTypeName={researchTypeName}
+                                onResearchTypeNameChange={setResearchTypeName}
+                                workOrderCoded={workOrderCoded}
+                                onWorkOrderCodedChange={setWorkOrderCoded}
+                                workOrderIncoming={workOrderIncoming}
+                                onWorkOrderIncomingChange={setWorkOrderIncoming}
+                                containerTypeName={containerTypeName}
+                                onContainerTypeNameChange={setContainerTypeName}
+                                containerNumber={containerNumber}
+                                onContainerNumberChange={setContainerNumber}
+                                siteOptions={(sites.data ?? []).map((s) => `${s.code} — ${s.name}`)}
+                                sitesLoading={sites.isLoading}
+                                researchTypeOptions={(researchTypes.data ?? []).map((r) => `${r.code} — ${r.name}`)}
+                                researchTypesLoading={researchTypes.isLoading}
+                                containerTypeOptions={(containerTypes.data ?? []).map((c) => c.name)}
+                                containerTypesLoading={containerTypes.isLoading}
+                                workOrderOptions={suggestions.data?.work_orders ?? []}
+                                workOrderIncomingOptions={suggestions.data?.work_orders_incoming ?? []}
+                                suggestionsLoading={suggestions.isFetching}
+                                siteId={siteId}
+                                researchTypeId={researchTypeId}
+                                activeField={activeField}
+                                issues={issuesByKey}
+                                onFocusField={focusField}
+                                onBlurField={blurField}
+                            />
+                        ) : (
+                            <SamplesPanel
+                                rangesCount={ranges.length}
+                                audit={audit}
+                                parseErrors={parseErrors}
+                                rangeInput={rangeInput}
+                                onRangeInputChange={(v) => {
+                                    setRangeInput(v);
+                                    setRangeInputError(null);
+                                }}
+                                rangeInputError={rangeInputError}
+                                baseSampleOptions={baseSampleOptions}
+                                suggestionsLoading={suggestions.isFetching}
+                                onAddRange={handleAddRange}
+                                onFocusInput={() => focusField("sample")}
+                                onBlurInput={blurField}
                                 rangesByWell={rangesByWell}
                                 anomalySet={anomalySet}
+                                notOnPhotoSet={notOnPhotoSet}
+                                duplicateSet={duplicateSet}
                                 linksByRange={linksByRange}
                                 numbersByRange={numbersByRange}
                                 activeSample={activeSample}
@@ -442,13 +513,6 @@ export default function OcrReviewPage() {
                                 onRemove={removeRange}
                             />
                         )}
-
-                        <AuditAlerts
-                            missing={audit.missing}
-                            anomalyCount={audit.anomalyIds.length}
-                            parseErrors={parseErrors}
-                            onMissingClick={setRangeInput}
-                        />
 
                         <ReadinessPanel readiness={readiness} />
 

@@ -26,6 +26,12 @@ export interface SampleAudit {
     missing: string[];
     anomalyIds: string[];
     dominantBase: string | null;
+    /** fix6: строки списка, не найденные на фото. */
+    notOnPhotoIds: string[];
+    /** fix6: номера, встречающиеся в списке больше одного раза. */
+    duplicateNumbers: string[];
+    /** fix6: строки, содержащие дублирующиеся номера. */
+    duplicateIds: string[];
 }
 
 export type SampleWordStatus = "covered" | "anomaly" | "missing";
@@ -377,5 +383,25 @@ export function auditSamples(
                 similarity(a, dominantBase, validPrefixes) || a.localeCompare(b),
         );
 
-    return { photoSamples, missing, anomalyIds, dominantBase };
+    const photoSet = new Set(photoSamples);
+    const notOnPhotoIds = ranges
+        .filter((r) => !rangeNumbers(r).some((n) => matchesSampleNumber(n, photoSet, validPrefixes)))
+        .map((r) => r.id);
+    const counts = new Map<string, number>();
+    for (const r of ranges) {
+        for (const n of rangeNumbers(r)) {
+            const k = normalizeToken(n);
+            counts.set(k, (counts.get(k) ?? 0) + 1);
+        }
+    }
+    const duplicateNumbers = Array.from(counts.entries())
+        .filter(([, c]) => c > 1)
+        .map(([n]) => n)
+        .sort();
+    const dupSet = new Set(duplicateNumbers);
+    const duplicateIds = ranges
+        .filter((r) => rangeNumbers(r).some((n) => dupSet.has(normalizeToken(n))))
+        .map((r) => r.id);
+
+    return { photoSamples, missing, anomalyIds, dominantBase, notOnPhotoIds, duplicateNumbers, duplicateIds };
 }

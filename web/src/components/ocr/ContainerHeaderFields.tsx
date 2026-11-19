@@ -1,12 +1,18 @@
 /**
  * Шапка тары: участок, тип исследования, Н/З текущий и входящий, тип тары,
  * номер тары (вынесено из OcrReviewPage, 6e-2-web-fix5).
- * Подсветка активного поля и фокус-обработчики — как на странице;
- * значения, options/loading и сеттеры передаются пропсами.
+ * fix7: подсказки готовности показываются inline под каждым полем —
+ * расхождение номера с фото видно сразу, без прокрутки к итоговому блоку.
  */
+import type { ReactNode } from "react";
 import { Box, TextField, Typography } from "@mui/material";
 
 import SmartAutocomplete from "../SmartAutocomplete";
+import type { ReadinessItem } from "../../utils/ocrReadiness";
+
+const ERROR_COLOR = "#C62828";
+const WARNING_COLOR = "#EF6C00";
+const OK_COLOR = "#2E7D32";
 
 export default function ContainerHeaderFields({
     siteName,
@@ -33,6 +39,7 @@ export default function ContainerHeaderFields({
     siteId,
     researchTypeId,
     activeField,
+    issues,
     onFocusField,
     onBlurField,
 }: {
@@ -60,6 +67,7 @@ export default function ContainerHeaderFields({
     siteId: number | null;
     researchTypeId: number | null;
     activeField: string | null;
+    issues: Record<string, ReadinessItem>;
     onFocusField: (name: string) => void;
     onBlurField: () => void;
 }) {
@@ -68,6 +76,32 @@ export default function ContainerHeaderFields({
         transition: "background-color 200ms",
         borderRadius: 1,
     });
+
+    /** Проблема пункта готовности → цветная подсказка под полем. */
+    const problem = (key: string): ReactNode | null => {
+        const it = issues[key];
+        if (!it || it.ok) return null;
+        const color = it.required ? ERROR_COLOR : WARNING_COLOR;
+        return (
+            <span style={{ color }}>
+                {it.required ? "✗ " : "⚠ "}
+                {it.hint}
+            </span>
+        );
+    };
+
+    const isBad = (key: string): boolean => {
+        const it = issues[key];
+        return !!it && !it.ok && it.required;
+    };
+
+    const okHint = (text: string): ReactNode => (
+        <span style={{ color: OK_COLOR }}>✓ {text}</span>
+    );
+
+    const cnProblem = problem("container_number");
+    const photoProblem = problem("container_number_photo");
+    const photoItem = issues.container_number_photo;
 
     return (
         <>
@@ -80,6 +114,7 @@ export default function ContainerHeaderFields({
                     onChange={onSiteNameChange}
                     options={siteOptions}
                     loading={sitesLoading}
+                    helperText={problem("site")}
                 />
             </Box>
 
@@ -91,6 +126,8 @@ export default function ContainerHeaderFields({
                     options={researchTypeOptions}
                     loading={researchTypesLoading}
                     required
+                    error={isBad("research_type")}
+                    helperText={problem("research_type")}
                 />
             </Box>
 
@@ -102,12 +139,14 @@ export default function ContainerHeaderFields({
                     options={workOrderOptions}
                     loading={suggestionsLoading}
                     required
+                    error={isBad("work_order_coded")}
                     helperText={
-                        siteId === null && researchTypeId === null
+                        problem("work_order_coded") ??
+                        (siteId === null && researchTypeId === null
                             ? "Выбери участок или ТИ — появятся подсказки"
                             : workOrderOptions.length
                                 ? `Подсказок: ${workOrderOptions.length}`
-                                : "Подсказок нет — введи вручную"
+                                : "Подсказок нет — введи вручную")
                     }
                 />
             </Box>
@@ -127,7 +166,7 @@ export default function ContainerHeaderFields({
                 />
             </Box>
 
-            <Box sx={fieldSx("container_type")}>
+            <Box sx={fieldSx("container_type")} onFocus={() => onFocusField("container_type")} onBlur={onBlurField}>
                 <SmartAutocomplete
                     label="Тип тары"
                     value={containerTypeName}
@@ -135,6 +174,8 @@ export default function ContainerHeaderFields({
                     options={containerTypeOptions}
                     loading={containerTypesLoading}
                     required
+                    error={isBad("container_type")}
+                    helperText={problem("container_type")}
                 />
             </Box>
 
@@ -146,11 +187,11 @@ export default function ContainerHeaderFields({
                     fullWidth
                     size="small"
                     required
-                    error={containerNumber.trim() === ""}
+                    error={isBad("container_number")}
                     helperText={
-                        containerNumber.trim() === ""
-                            ? "Обязательно — например 1 или T-001"
-                            : undefined
+                        cnProblem ??
+                        photoProblem ??
+                        (photoItem && photoItem.ok ? okHint("совпадает с фото") : undefined)
                     }
                 />
             </Box>

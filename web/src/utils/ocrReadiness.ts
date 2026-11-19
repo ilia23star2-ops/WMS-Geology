@@ -1,7 +1,9 @@
 /**
- * Готовность задачи OCR к подтверждению (6e-2-web-fix4/fix5).
- * Динамические подсказки: что не заполнено / на что обратить внимание.
- * fix5: номер тары сверяется с распознанным на фото — иначе зелёный сигнал врёт.
+ * Готовность задачи OCR к подтверждению (6e-2-web-fix4…fix7).
+ * fix5: номер тары сверяется с распознанным на фото.
+ * fix6: дубли проб — блокер; пробы списка, которых нет на фото — замечание.
+ * fix7: readinessByKey (inline-подсказки под полями) и readinessSummary
+ *   (компактная строка-статус вместо длинного блока).
  * Чистая логика, без UI — покрывается тестами.
  */
 export interface ReadinessItem {
@@ -33,12 +35,24 @@ export interface ReadinessInput {
     rangesCount: number;
     missingCount: number;
     anomalyCount: number;
+    /** fix6: сколько номеров встречается в списке больше одного раза. */
+    duplicateCount?: number;
+    /** fix6: сколько строк списка не найдены на фото. */
+    notOnPhotoCount?: number;
+}
+
+export type ReadinessTone = "success" | "warning" | "error";
+
+export interface ReadinessSummary {
+    tone: ReadinessTone;
+    text: string;
+    blockers: ReadinessItem[];
+    warnings: ReadinessItem[];
 }
 
 /**
  * Нормализация номера тары: сначала верхний регистр, потом OCR-замены.
  * Порядок важен: иначе строчные o/i/l не приводятся к цифрам.
- * Убираются пробелы, дефисы, тире и точки; O/О→0, I/L/І→1.
  */
 function normalizeContainerNumber(s: string): string {
     return (s ?? "")
@@ -50,6 +64,8 @@ function normalizeContainerNumber(s: string): string {
 
 export function checkReadiness(i: ReadinessInput): Readiness {
     const photoCn = i.photoContainerNumber;
+    const dupCount = i.duplicateCount ?? 0;
+    const notOnPhoto = i.notOnPhotoCount ?? 0;
     const photoCnMatches =
         photoCn !== null &&
         normalizeContainerNumber(photoCn) === normalizeContainerNumber(i.containerNumber);
@@ -107,11 +123,25 @@ export function checkReadiness(i: ReadinessInput): Readiness {
             hint: "добавь хотя бы одну группу проб",
         },
         {
+            key: "duplicates",
+            label: "Нет дублей проб",
+            ok: dupCount === 0,
+            required: true,
+            hint: `одинаковых номеров: ${dupCount} — удали лишнюю строку`,
+        },
+        {
             key: "photo_match",
             label: "Все пробы с фото внесены",
             ok: i.missingCount === 0,
             required: false,
             hint: `не внесено: ${i.missingCount}`,
+        },
+        {
+            key: "not_on_photo",
+            label: "Все пробы списка есть на фото",
+            ok: notOnPhoto === 0,
+            required: false,
+            hint: `нет на фото: ${notOnPhoto} — проверь, те ли это пробы`,
         },
         {
             key: "anomalies",
@@ -129,6 +159,42 @@ export function checkReadiness(i: ReadinessInput): Readiness {
         items,
         blockers,
         warnings,
-        ready: blockers === 0 && i.missingCount === 0 && i.anomalyCount === 0 && photoCnMatches,
+        ready:
+            blockers === 0 &&
+            i.missingCount === 0 &&
+            i.anomalyCount === 0 &&
+            notOnPhoto === 0 &&
+            photoCnMatches,
     };
+}
+
+/** fix7: доступ к пунктам по ключу — для inline-подсказок под полями. */
+export function readinessByKey(r: Readiness): Record<string, ReadinessItem> {
+    const out: Record<string, ReadinessItem> = {};
+    for (const it of r.items) out[it.key] = it;
+    return out;
+}
+
+/** fix7: компактная сводка для строки-статуса внизу. */
+export function readinessSummary(r: Readiness): ReadinessSummary {
+    const blockers = r.items.filter((x) => x.required && !x.ok);
+    const warnings = r.items.filter((x) => !x.required && !x.ok);
+    if (blockers.length > 0) {
+        return {
+            tone: "error",
+            text: `Не готово · обязательных: ${blockers.length}` +
+                (warnings.length > 0 ? ` · замечаний: ${warnings.length}` : ""),
+            blockers,
+            warnings,
+        };
+    }
+    if (warnings.length > 0) {
+        return {
+            tone: "warning",
+            text: `Можно подтвердить · замечаний: ${warnings.length}`,
+            blockers,
+            warnings,
+        };
+    }
+    return { tone: "success", text: "Готово к подтверждению", blockers, warnings };
 }

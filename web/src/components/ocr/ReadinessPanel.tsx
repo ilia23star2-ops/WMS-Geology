@@ -1,72 +1,73 @@
 /**
- * Готовность к подтверждению + итоговый сигнал (вынесено из OcrReviewPage, 6e-2-web).
- * Чистый презентационный блок: всё считает checkReadiness на странице.
+ * Итоговая готовность (6e-2-web-fix7): компактная строка-статус вместо
+ * длинного списка. Детали раскрываются по кнопке и показывают только проблемы.
+ * Всё считает checkReadiness на странице — блок презентационный.
  */
-import { Alert, Box, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, Button, Collapse, Stack, Typography } from "@mui/material";
 
-import type { Readiness } from "../../utils/ocrReadiness";
+import { readinessSummary, type Readiness } from "../../utils/ocrReadiness";
+
+const TONE_COLOR = {
+    success: "#2E7D32",
+    warning: "#EF6C00",
+    error: "#C62828",
+} as const;
+
+const TONE_MARK = {
+    success: "✓",
+    warning: "⚠",
+    error: "✗",
+} as const;
 
 export default function ReadinessPanel({ readiness }: { readiness: Readiness }) {
+    const [open, setOpen] = useState(false);
+    const summary = readinessSummary(readiness);
+    const color = TONE_COLOR[summary.tone];
+    const problems = [...summary.blockers, ...summary.warnings];
+
     return (
-        <>
-            {/* Динамическая готовность к подтверждению */}
-            <Box
-                sx={{
-                    border: "1px solid",
-                    borderColor: readiness.ready ? "success.main" : "divider",
-                    borderRadius: 1,
-                    p: 1.5,
-                    bgcolor: readiness.ready ? "rgba(46,125,50,0.06)" : undefined,
-                }}
-            >
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Готовность к подтверждению
+        <Box
+            sx={{
+                border: "1px solid",
+                borderColor: color,
+                borderRadius: 1,
+                bgcolor: `${color}12`,
+                px: 1.5,
+                py: 0.75,
+            }}
+        >
+            <Stack direction="row" spacing={1} alignItems="center">
+                <Typography component="span" sx={{ color, fontWeight: 700, lineHeight: 1 }}>
+                    {TONE_MARK[summary.tone]}
                 </Typography>
-                <Stack spacing={0.5}>
-                    {readiness.items.map((it) => (
-                        <Box
-                            key={it.key}
-                            sx={{ display: "flex", gap: 1, alignItems: "baseline" }}
-                        >
-                            <Typography
-                                component="span"
-                                sx={{
-                                    fontWeight: 700,
-                                    color: it.ok
-                                        ? "success.main"
-                                        : it.required
-                                            ? "error.main"
-                                            : "warning.main",
-                                }}
-                            >
-                                {it.ok ? "✓" : it.required ? "✗" : "⚠"}
-                            </Typography>
-                            <Typography variant="body2">
-                                {it.label}{it.required ? " *" : ""}
-                            </Typography>
-                            {!it.ok && (
-                                <Typography variant="caption" color="text.secondary">
-                                    — {it.hint}
-                                </Typography>
-                            )}
-                        </Box>
+                <Typography variant="body2" sx={{ fontWeight: 600, color }}>
+                    {summary.text}
+                </Typography>
+                <Box sx={{ flexGrow: 1 }} />
+                {problems.length > 0 && (
+                    <Button
+                        size="small"
+                        onClick={() => setOpen((v) => !v)}
+                        sx={{ minWidth: 0, py: 0, color, textTransform: "none" }}
+                    >
+                        {open ? "Свернуть" : "Детали"}
+                    </Button>
+                )}
+            </Stack>
+
+            <Collapse in={open} unmountOnExit>
+                <Stack spacing={0.25} sx={{ mt: 0.75 }}>
+                    {problems.map((it) => (
+                        <Typography key={it.key} variant="caption" sx={{ display: "block" }}>
+                            <span style={{ color: it.required ? TONE_COLOR.error : TONE_COLOR.warning }}>
+                                {it.required ? "✗" : "⚠"} {it.label}
+                            </span>
+                            <span style={{ opacity: 0.75 }}> — {it.hint}</span>
+                        </Typography>
                     ))}
                 </Stack>
-            </Box>
-
-            {readiness.ready ? (
-                <Alert severity="success">
-                    Всё заполнено и сходится с фото — можно подтверждать.
-                </Alert>
-            ) : readiness.blockers > 0 ? (
-                <Alert severity="error">
-                    Не заполнено обязательных полей: {readiness.blockers}.
-                </Alert>
-            ) : (
-                <Alert severity="warning">
-                    Обязательные заполнены, но есть замечания по пробам — проверь перед подтверждением.
-                </Alert>
-            )}
-        </>
+            </Collapse>
+        </Box>
     );
 }
