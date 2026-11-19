@@ -10,11 +10,9 @@
 import type { OcrWord, OcrZone, OcrZoneType } from "../api/ocr";
 import { looksLikeSample, parseContainerLabel } from "./zoneExtract";
 import {
-    ZONE_GAP,
     bboxToRect,
     clampRect,
     rectToBbox,
-    resolveOverlap,
     type Rect,
     type Size,
 } from "./zoneDraw";
@@ -264,13 +262,10 @@ export function detectZones(
     }
 
     const zones: OcrZone[] = [];
-    const accepted: Rect[] = [];
     for (const r of raw) {
         const padded = clampRect(padRect(r.rect, PAD), bounds);
         if (padded.w < 4 || padded.h < 4) continue;
-        const placed = resolveOverlap(padded, accepted, bounds, ZONE_GAP);
-        accepted.push(placed);
-        zones.push({ type: r.type, bbox: rectToBbox(placed), source: "manual" });
+        zones.push({ type: r.type, bbox: rectToBbox(padded), source: "manual" });
     }
 
     const found = Array.from(new Set(zones.map((z) => z.type)));

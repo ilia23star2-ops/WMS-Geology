@@ -12,6 +12,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuthStore } from "./stores/authStore";
 import OcrReviewPage from "./pages/OcrReviewPage";
 import OcrBatchesPage from "./pages/OcrBatchesPage";
+import OcrSessionPage from "./pages/OcrSessionPage";
 import OcrBatchDetailPage from "./pages/OcrBatchDetailPage";
 
 // Ленивая загрузка страниц
@@ -89,6 +90,7 @@ function AppRoutes() {
                         <Route path="/pool" element={<PoolPage />} />
                         <Route path="/containers" element={<ContainersPage />} />
                         <Route path="/ocr/review/:id" element={<OcrReviewPage />} />
+                        <Route path="/ocr/session" element={<OcrSessionPage />} />
                         <Route path="/ocr/batches" element={<OcrBatchesPage />} />
                         <Route path="/ocr/batches/:id" element={<OcrBatchDetailPage />} />
                         <Route path="/samples" element={<SamplesPage />} />
