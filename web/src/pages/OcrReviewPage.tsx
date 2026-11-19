@@ -536,7 +536,7 @@ export default function OcrReviewPage() {
                                 <Button
                                     variant="outlined"
                                     onClick={() =>
-                                        navigate(`/containers?highlight=${approvedContainerId}`)
+                                        navigate(`/containers?open=${approvedContainerId}`)
                                     }
                                 >
                                     Открыть тару

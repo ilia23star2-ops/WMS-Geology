@@ -3,6 +3,8 @@
  *
  * c-3.x-migration-5c.
  * c-3.x-migration-6e-2-web: кнопка «Тара» — открыть созданную тару.
+ * c-3.x-migration-6e-2-web-fix8: «Тара» — иконка с подсказкой, ведёт по
+ *   deep-link /containers?open=<id> и сразу открывает карточку тары.
  * MUI 9: без <Stack justifyContent=...> — используем Box display:flex.
  */
 import { useNavigate, useParams } from "react-router-dom";
@@ -12,13 +14,16 @@ import {
     Button,
     Chip,
     CircularProgress,
+    IconButton,
     Table,
     TableBody,
     TableCell,
     TableHead,
     TableRow,
+    Tooltip,
     Typography,
 } from "@mui/material";
+import Inventory2Icon from "@mui/icons-material/Inventory2";
 
 import {
     approvedContainerId,
@@ -137,6 +142,7 @@ export default function OcrBatchDetailPage() {
                                                 display: "flex",
                                                 gap: 1,
                                                 justifyContent: "flex-end",
+                                                alignItems: "center",
                                             }}
                                         >
                                             <Button
@@ -150,15 +156,18 @@ export default function OcrBatchDetailPage() {
                                                 Проверить
                                             </Button>
                                             {containerId !== null && (
-                                                <Button
-                                                    size="small"
-                                                    variant="outlined"
-                                                    onClick={() =>
-                                                        navigate(`/containers?highlight=${containerId}`)
-                                                    }
-                                                >
-                                                    Тара
-                                                </Button>
+                                                <Tooltip title={`Открыть тару #${containerId}`}>
+                                                    <IconButton
+                                                        size="small"
+                                                        color="primary"
+                                                        aria-label={`Открыть тару #${containerId}`}
+                                                        onClick={() =>
+                                                            navigate(`/containers?open=${containerId}`)
+                                                        }
+                                                    >
+                                                        <Inventory2Icon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
                                             )}
                                         </Box>
                                     </TableCell>

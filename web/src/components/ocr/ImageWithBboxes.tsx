@@ -1,6 +1,8 @@
 /**
  * Фото задачи OCR с overlay зон и слов (вынесено из OcrReviewPage в 6e-2-web-fix5).
  * Клик по зоне/слову — подсветка поля; клик по слове-пробе — переход к строке списка.
+ * fix8: активная проба обводится голубым поверх статуса — зелёный по зелёному
+ *   не читался; статус остаётся видимым по заливке.
  */
 import { useRef, useState, type MutableRefObject } from "react";
 import { Box, Card, CardContent, Chip, Typography } from "@mui/material";
@@ -37,6 +39,9 @@ export const STATUS_LABELS: Record<SampleWordStatus, string> = {
     anomaly: "выбивается из группы",
     missing: "нет в списке",
 };
+
+/** fix8: контрастная обводка выбранной пробы (не совпадает ни с одним статусом). */
+export const ACTIVE_SAMPLE_COLOR = "#00E5FF";
 
 type SampleWordStatus = "covered" | "anomaly" | "missing";
 
@@ -160,16 +165,18 @@ export default function ImageWithBboxes({
                                 const isActive =
                                     isActiveSample ||
                                     (targetField !== null && activeField === targetField);
+                                // fix8: выбранная проба — светлая заливка статуса + голубая рамка.
                                 const fill = statusColor
-                                    ? `${statusColor}${isActiveSample ? "66" : isActive ? "44" : "24"}`
+                                    ? `${statusColor}${isActiveSample ? "2E" : isActive ? "44" : "24"}`
                                     : isActive
                                         ? "rgba(255,152,0,0.28)"
                                         : "rgba(30,58,95,0.10)";
-                                const stroke =
-                                    statusColor ??
+                                const stroke = isActiveSample
+                                    ? ACTIVE_SAMPLE_COLOR
+                                    : statusColor ??
                                     (isActive ? "rgba(255,152,0,0.95)" : "rgba(30,58,95,0.45)");
                                 const width = isActiveSample ? 4 : isActive ? 3 : statusColor ? 2 : 1;
-                                const dash = status === "missing" ? "6 3" : undefined;
+                                const dash = status === "missing" && !isActiveSample ? "6 3" : undefined;
                                 return (
                                     <polygon
                                         key={`word-${i}`}
@@ -232,6 +239,8 @@ export default function ImageWithBboxes({
                         <b style={{ color: STATUS_COLORS.covered }}>зелёный</b> — есть в списке ·{" "}
                         <b style={{ color: STATUS_COLORS.anomaly }}>жёлтый</b> — выбивается ·{" "}
                         <b style={{ color: STATUS_COLORS.missing }}>малиновый пунктир</b> — нет в списке.
+                        Выбранная проба —{" "}
+                        <b style={{ color: "#0097A7" }}>голубая рамка</b>.
                         Клик по пробе ведёт к её строке, клик по строке — к боксу.
                     </Typography>
                 )}
