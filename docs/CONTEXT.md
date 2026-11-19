@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** пачка 6e-2-web, ветка fix/3.x-migration-6e-2-web — закоммичена, НЕ смержена. Дома: fix5 (номер тары vs фото; аномалии внутри скважины; разбить OcrReviewPage) → тесты → норм → merge → docs. Далее web-2, dup, 6k, 6e-4.
+**Текущий заход:** docs-пачка после 6e-2-web (смержена, d49e09b). Далее: 6e-2-web-2 (инлайн-правка OCR-токена) → 6e-2-dup (дубли по БД) → 6k (без ячейки) → 6e-4 (качество фото).
 - **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
 - **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
@@ -30,7 +30,7 @@
 6e-2-web 🟡 (ветка fix/3.x-migration-6e-2-web, НЕ смержена): labels Участок/Пробы, переключатель зон, кнопка Тара (container_id в reviewed_data), легенда вместо подписей, аудит проб (нормализация, склейка строк, ранжирование), мини-зоны проб фото-строка, цвета статусов (зелёный/жёлтый/малиновый пунктир), панель готовности. Тесты: Web 64, Backend 1001 (97 apps/ocr), Mobile 270.
 
 **Backend: 1001 тестов** (в т.ч. **97** в `apps.ocr`).
-**Web: 30 юнит-тестов** (в т.ч. 6 `parseSampleGroups`).
+**Web: 86 юнит-тестов** (13 файлов).
 **Mobile: 270 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
@@ -67,7 +67,7 @@
 - **ТД-80** — расхождение формата `sample_number` (DATABASE.md vs код vs UI).
 - **ТД-82** — связь номера тары ↔ диапазон проб.
 - **ТД-83** — мёртвый `parseSampleGroups.ts` после 5f.
-- **Баги fix5 (6e-2-web):** ввёл номер тары 2, на фото 1 — readiness даёт ложный зелёный (нет сверки с extracted/words зоны №); аномалии срабатывают на другие скважины той же тары (разные middle легитимны — сравнивать только внутри группы скважины).
+- **Закрыто fix5–fix8:** номер тары сверяется с фото; аномалии только внутри скважины; пробы не с фото помечены; дубли блокируют подтверждение; вкладки и подсказки под полями; deep-link тары.
 
 ### Что было закрыто до OCR (2.x-lifecycle, для истории)
 
@@ -107,7 +107,7 @@
 - Flutter 3.47 + Dart 3.13 + mobile_scanner 7.4.2.
 - EasyOCR на портативном Python 3.12 (`D:\Dev\python312`, только рабочий ПК).
 
-### Backend (985 тестов)
+### Backend (1001 тестов)
 
 | Приложение | Что внутри |
 |---|---|
@@ -122,7 +122,7 @@
 | `labels` | QR-сервис, PDF-этикетки, PrintBatch, act_service |
 | **`ocr`** | **`OcrBatch`, `OcrTask` (+zones), `POST /recognize/` (+zones_json), `POST /zones/`, `POST /approve/`, `GET /batches/`, `mapping.py`, `approve.py`, `ocr_runner.py`** |
 
-### Web (React, 30 юнит-тестов)
+### Web (React, 86 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|
@@ -133,7 +133,7 @@
 | Отправка | `ShipmentsPage`, `ShipmentDetailPage`, `CreateShipmentDialog`, `AddContainersToShipmentDialog`. |
 | **OCR** | **`OcrBatchesPage`, `OcrBatchDetailPage`, `OcrReviewPage` (v10), `RangeEditDialog`, `SmartAutocomplete`, `api/ocr.ts`** |
 
-### Mobile (Flutter, 244 юнит-тестов)
+### Mobile (Flutter, 270 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|

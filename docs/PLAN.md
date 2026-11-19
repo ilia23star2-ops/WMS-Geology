@@ -57,8 +57,11 @@
 | c-3.x-migration-6e-2 | Mobile: разметка зон (drag, zoom/pan жестами, легенда-чипы, авторазграничение с зазором) | ✅ |
 | c-3.x-migration-6e-2-site | Backend+Mobile: тип зоны Участок + _pick_scalar (токен формата из зоны) | ✅ |
 | c-3.x-migration-6e-2-site-fix2 | Backend: T→1 сразу после валидного префикса; container_number подтверждён device-check | ✅ |
-| c-3.x-migration-6e-2-web | Web: переключатель зон, легенда, кнопка Тара, аудит проб, мини-зоны фото-строка, готовность | 🟡 |
-| c-3.x-migration-6e-2-web-fix5 | Web: сверка номера тары с фото (ложный зелёный); аномалии только внутри скважины; разбить OcrReviewPage (>500 строк) | ⬜ |
+| c-3.x-migration-6e-2-web | Web: зоны, легенда, Тара, аудит проб, мини-зоны, готовность, вкладки, deep-link | ✅ |
+| c-3.x-migration-6e-2-web-fix5 | Web: номер тары vs фото, аномалии внутри скважины, рефактор страницы 496 строк | ✅ |
+| c-3.x-migration-6e-2-web-fix6 | Web: обратный аудит «нет на фото», дубли проб как блокер | ✅ |
+| c-3.x-migration-6e-2-web-fix7 | Web: вкладки Шапка/Пробы, подсказки под полями, компактный статус | ✅ |
+| c-3.x-migration-6e-2-web-fix8 | Web: deep-link ?open → карточка тары, иконка, голубая рамка активной пробы | ✅ |
 | c-3.x-migration-6e-2-web-2 | Web: инлайн-правка OCR-токена (убрал пробел — проба определилась) | ⬜ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
@@ -342,3 +345,4 @@
 | ТД-89 | Решить судьбу well в ZONE_TYPES (остаток плана 6f-1) | средний | 6e-1 |
 | ТД-90 | Mobile: два входа в OCR (batch-экран и сессия) — склеить, перенести функционал | средний | 6e-a2 |
 | ТД-91 | Короткие ошибки OCR: views отдаёт весь stderr в 500, mobile SnackBar не обрезает текст | средний | следующая ревизия OCR |
+| ТД-92 | Web tsc: 3 TS2769 — ContainersPage:249, OcrReviewPage:424/441 (MUI v9 Tabs/Chip/Grid). Dev работает, build падает. | средний | следующая ревизия web |
