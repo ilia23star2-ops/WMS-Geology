@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { parseContainerDeepLink, stripContainerDeepLink } from "../utils/containerDeepLink";
 import {
     Box,
     Button,
@@ -146,6 +148,15 @@ export default function ContainersPage() {
     const [createMessage, setCreateMessage] = useState<string | null>(null);
 
     const [detailContainerId, setDetailContainerId] = useState<number | null>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // fix8: deep-link /containers?open=<id> — сразу открыть карточку тары.
+    useEffect(() => {
+        const target = parseContainerDeepLink(searchParams);
+        if (target === null) return;
+        setDetailContainerId(target);
+        setSearchParams(stripContainerDeepLink(searchParams), { replace: true });
+    }, [searchParams, setSearchParams]);
     const [editContainer, setEditContainer] = useState<Container | null>(null);
     const [editMessage, setEditMessage] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
