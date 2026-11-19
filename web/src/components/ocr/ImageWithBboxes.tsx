@@ -1,11 +1,12 @@
 /**
  * Фото задачи OCR с overlay зон и слов (вынесено из OcrReviewPage в 6e-2-web-fix5).
  * Клик по зоне/слову — подсветка поля; клик по слове-пробе — переход к строке списка.
- * fix8: активная проба обводится голубым поверх статуса — зелёный по зелёному
- *   не читался; статус остаётся видимым по заливке.
+ * fix8: активная проба обводится голубым поверх статуса.
+ * 6e-2-web-2: двойной клик по слову — инлайн-правка текста прямо над боксом
+ *   (Enter — применить, Esc — отмена); исправленные слова помечены ✎.
  */
 import { useRef, useState, type MutableRefObject } from "react";
-import { Box, Card, CardContent, Chip, Typography } from "@mui/material";
+import { Box, Card, CardContent, Chip, TextField, Typography } from "@mui/material";
 
 import {
     OCR_ZONE_LABELS,
@@ -43,7 +44,18 @@ export const STATUS_LABELS: Record<SampleWordStatus, string> = {
 /** fix8: контрастная обводка выбранной пробы (не совпадает ни с одним статусом). */
 export const ACTIVE_SAMPLE_COLOR = "#00E5FF";
 
+/** 6e-2-web-2: цвет правки токена. */
+const EDIT_COLOR = "#00838F";
+
 type SampleWordStatus = "covered" | "anomaly" | "missing";
+
+interface EditorState {
+    index: number;
+    text: string;
+    left: number;
+    top: number;
+    width: number;
+}
 
 export default function ImageWithBboxes({
     task,
@@ -54,6 +66,8 @@ export default function ImageWithBboxes({
     validPrefixes,
     links,
     wordRefs,
+    edits,
+    onEditWord,
     onBboxClick,
     onSampleClick,
 }: {
@@ -65,11 +79,15 @@ export default function ImageWithBboxes({
     validPrefixes: string[];
     links: SampleWordLink[];
     wordRefs: MutableRefObject<Map<number, SVGPolygonElement | null>>;
+    edits: Map<number, string>;
+    onEditWord: (index: number, text: string) => void;
     onBboxClick: (type: string) => void;
     onSampleClick: (link: SampleWordLink) => void;
 }) {
     const imgRef = useRef<HTMLImageElement | null>(null);
     const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+    const [editor, setEditor] = useState<EditorState | null>(null);
+    const committedRef = useRef(false);
     const src = resolveImageUrl(task.image);
 
     const zones: OcrZone[] = task.zones ?? [];
@@ -107,6 +125,31 @@ export default function ImageWithBboxes({
             }
         }
         return null;
+    }
+
+    /** Открыть поле правки под боксом слова (координаты в процентах фото). */
+    function openEditor(index: number, text: string, bbox: number[][]) {
+        if (!dims || !bbox?.length) return;
+        const xs = bbox.map((p) => p[0]);
+        const ys = bbox.map((p) => p[1]);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        committedRef.current = false;
+        setEditor({
+            index,
+            text,
+            left: (minX / dims.w) * 100,
+            top: (maxY / dims.h) * 100,
+            width: Math.max(((maxX - minX) / dims.w) * 100, 22),
+        });
+    }
+
+    function applyEditor() {
+        if (!editor || committedRef.current) return;
+        committedRef.current = true;
+        onEditWord(editor.index, editor.text);
+        setEditor(null);
     }
 
     return (
@@ -154,6 +197,8 @@ export default function ImageWithBboxes({
                                 );
                             })}
                             {task.raw_ocr_data?.words.map((w, i) => {
+                                const text = edits.get(i) ?? w.text;
+                                const isEdited = edits.has(i) && edits.get(i) !== w.text;
                                 const link = linkByIndex.get(i);
                                 const status = link?.status ?? null;
                                 const statusColor = status ? STATUS_COLORS[status] : null;
@@ -161,11 +206,10 @@ export default function ImageWithBboxes({
                                     link != null && activeSample === link.number;
                                 const targetField = link
                                     ? "sample"
-                                    : fieldForWord(w.text) ?? zoneForWord(w.bbox);
+                                    : fieldForWord(text) ?? zoneForWord(w.bbox);
                                 const isActive =
                                     isActiveSample ||
                                     (targetField !== null && activeField === targetField);
-                                // fix8: выбранная проба — светлая заливка статуса + голубая рамка.
                                 const fill = statusColor
                                     ? `${statusColor}${isActiveSample ? "2E" : isActive ? "44" : "24"}`
                                     : isActive
@@ -177,34 +221,95 @@ export default function ImageWithBboxes({
                                     (isActive ? "rgba(255,152,0,0.95)" : "rgba(30,58,95,0.45)");
                                 const width = isActiveSample ? 4 : isActive ? 3 : statusColor ? 2 : 1;
                                 const dash = status === "missing" && !isActiveSample ? "6 3" : undefined;
+                                const xs = w.bbox.map((p) => p[0]);
+                                const ys = w.bbox.map((p) => p[1]);
                                 return (
-                                    <polygon
-                                        key={`word-${i}`}
-                                        ref={(el) => {
-                                            wordRefs.current.set(i, el);
-                                        }}
-                                        points={w.bbox
-                                            .map(([x, y]) => `${x},${y}`)
-                                            .join(" ")}
-                                        fill={fill}
-                                        stroke={stroke}
-                                        strokeWidth={width}
-                                        strokeDasharray={dash}
-                                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                                        onClick={() => {
-                                            if (link) onSampleClick(link);
-                                            else if (targetField) onBboxClick(targetField);
-                                        }}
-                                    >
-                                        <title>
-                                            {link
-                                                ? `${w.text} — ${STATUS_LABELS[link.status]}`
-                                                : w.text}
-                                        </title>
-                                    </polygon>
+                                    <g key={`word-${i}`}>
+                                        <polygon
+                                            ref={(el) => {
+                                                wordRefs.current.set(i, el);
+                                            }}
+                                            points={w.bbox
+                                                .map(([x, y]) => `${x},${y}`)
+                                                .join(" ")}
+                                            fill={fill}
+                                            stroke={stroke}
+                                            strokeWidth={width}
+                                            strokeDasharray={dash}
+                                            style={{ pointerEvents: "all", cursor: "pointer" }}
+                                            onClick={() => {
+                                                if (link) onSampleClick(link);
+                                                else if (targetField) onBboxClick(targetField);
+                                            }}
+                                            onDoubleClick={() => openEditor(i, text, w.bbox)}
+                                        >
+                                            <title>
+                                                {link
+                                                    ? `${text} — ${STATUS_LABELS[link.status]}`
+                                                    : text}
+                                                {isEdited ? " (исправлено)" : ""}
+                                                {" · двойной клик — правка"}
+                                            </title>
+                                        </polygon>
+                                        {isEdited && (
+                                            <text
+                                                x={Math.min(...xs)}
+                                                y={Math.min(...ys) - dims.h / 200}
+                                                fill={EDIT_COLOR}
+                                                fontSize={dims.h / 40}
+                                                style={{ pointerEvents: "none" }}
+                                            >
+                                                ✎
+                                            </text>
+                                        )}
+                                    </g>
                                 );
                             })}
                         </svg>
+                    )}
+                    {editor && (
+                        <Box
+                            sx={{
+                                position: "absolute",
+                                left: `${editor.left}%`,
+                                top: `${editor.top}%`,
+                                width: `${editor.width}%`,
+                                minWidth: 170,
+                                zIndex: 5,
+                                bgcolor: "background.paper",
+                                border: "2px solid",
+                                borderColor: EDIT_COLOR,
+                                borderRadius: 1,
+                                p: 0.5,
+                                boxShadow: 3,
+                            }}
+                        >
+                            <TextField
+                                size="small"
+                                fullWidth
+                                autoFocus
+                                value={editor.text}
+                                onChange={(e) =>
+                                    setEditor({ ...editor, text: e.target.value })
+                                }
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        applyEditor();
+                                    } else if (e.key === "Escape") {
+                                        committedRef.current = true;
+                                        setEditor(null);
+                                    }
+                                }}
+                                onBlur={applyEditor}
+                                helperText="Enter — применить · Esc — отмена"
+                                slotProps={{
+                                    htmlInput: {
+                                        sx: { fontFamily: "monospace", fontSize: 13, py: 0.5 },
+                                    },
+                                }}
+                            />
+                        </Box>
                     )}
                 </div>
                 {showZones && zoneTypes.length > 0 && (
@@ -241,7 +346,9 @@ export default function ImageWithBboxes({
                         <b style={{ color: STATUS_COLORS.missing }}>малиновый пунктир</b> — нет в списке.
                         Выбранная проба —{" "}
                         <b style={{ color: "#0097A7" }}>голубая рамка</b>.
-                        Клик по пробе ведёт к её строке, клик по строке — к боксу.
+                        Клик по пробе ведёт к её строке, клик по строке — к боксу.{" "}
+                        <b style={{ color: EDIT_COLOR }}>Двойной клик по слову — правка текста</b>{" "}
+                        (исправленные помечены ✎).
                     </Typography>
                 )}
             </CardContent>

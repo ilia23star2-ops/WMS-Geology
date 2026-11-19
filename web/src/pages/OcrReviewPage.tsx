@@ -9,6 +9,9 @@
  * 6e-2-web-fix6: обратный аудит «нет на фото», дубли как блокер.
  * 6e-2-web-fix7: вкладки «Шапка тары» / «Пробы», подсказки под полями,
  *   компактная строка-статус; клик по зоне переключает нужную вкладку.
+ * 6e-2-web-fix8: deep-link ?open → карточка тары.
+ * 6e-2-web-2: инлайн-правка OCR-токенов на фото — аудит считается по правкам,
+ *   исправленная проба добавляется сама (с отменой), вкладки вынесены в ReviewTabs.
  */
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -16,14 +19,11 @@ import {
     Alert,
     Box,
     Button,
-    Chip,
     CircularProgress,
     FormControlLabel,
     Paper,
     Stack,
     Switch,
-    Tab,
-    Tabs,
     Typography,
 } from "@mui/material";
 
@@ -53,10 +53,13 @@ import { buildSampleGroups } from "../utils/ocrRangeHelpers";
 import { useOcrRanges } from "../hooks/useOcrRanges";
 import { useOcrTaskPrefill } from "../hooks/useOcrTaskPrefill";
 import { useSampleBaseOptions } from "../hooks/useSampleBaseOptions";
+import { useOcrTokenEdits } from "../hooks/useOcrTokenEdits";
 import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
 import ReadinessPanel from "../components/ocr/ReadinessPanel";
 import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
 import SamplesPanel from "../components/ocr/SamplesPanel";
+import TokenEditsPanel from "../components/ocr/TokenEditsPanel";
+import ReviewTabs, { type ReviewTab } from "../components/ocr/ReviewTabs";
 
 const HEADER_KEYS = [
     "site",
@@ -93,6 +96,7 @@ export default function OcrReviewPage() {
         const codes = (sites.data ?? []).map((s) => s.code);
         return [...codes, ...siteMatchPatterns, ...laboratoryPrefixes];
     }, [sites.data, siteMatchPatterns, laboratoryPrefixes]);
+    const photoWords = useMemo(() => task?.raw_ocr_data?.words ?? [], [task]);
 
     const [siteName, setSiteName] = useState("");
     const [researchTypeName, setResearchTypeName] = useState("");
@@ -107,7 +111,7 @@ export default function OcrReviewPage() {
     const [submitOk, setSubmitOk] = useState<string | null>(null);
     const [showZones, setShowZones] = useState(true);
     const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
-    const [tab, setTab] = useState<"header" | "samples">("header");
+    const [tab, setTab] = useState<ReviewTab>("header");
 
     const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
     const wordRefs = useRef<Map<number, SVGPolygonElement | null>>(new Map());
@@ -152,6 +156,15 @@ export default function OcrReviewPage() {
         setParseErrors,
     });
 
+    const tokenEdits = useOcrTokenEdits({
+        words: photoWords,
+        ranges,
+        setRanges,
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        workOrderIncoming,
+    });
+
     const siteId = useMemo(() => {
         if (!siteName) return null;
         const s = sites.data?.find((x) => x.name === siteName || x.code === siteName);
@@ -184,8 +197,8 @@ export default function OcrReviewPage() {
     const baseSampleOptions = useSampleBaseOptions(suggestions.data?.samples, ranges);
 
     const audit = useMemo(
-        () => auditSamples(task?.raw_ocr_data?.words ?? [], ranges, validPrefixes),
-        [task, ranges, validPrefixes],
+        () => auditSamples(photoWords, ranges, validPrefixes),
+        [photoWords, ranges, validPrefixes],
     );
     const anomalySet = useMemo(() => new Set(audit.anomalyIds), [audit]);
     const notOnPhotoSet = useMemo(() => new Set(audit.notOnPhotoIds), [audit]);
@@ -194,12 +207,12 @@ export default function OcrReviewPage() {
 
     const links = useMemo(
         () => linkSampleWords(
-            task?.raw_ocr_data?.words ?? [],
+            photoWords,
             ranges,
             audit.anomalyIds,
             validPrefixes,
         ),
-        [task, ranges, audit.anomalyIds, validPrefixes],
+        [photoWords, ranges, audit.anomalyIds, validPrefixes],
     );
     const linksByRange = useMemo(() => {
         const m = new Map<string, SampleWordLink[]>();
@@ -232,9 +245,10 @@ export default function OcrReviewPage() {
             anomalyCount: audit.anomalyIds.length,
             duplicateCount: audit.duplicateNumbers.length,
             notOnPhotoCount: audit.notOnPhotoIds.length,
+            unconfirmedEditCount: tokenEdits.unconfirmedCount,
         }),
         [siteName, researchTypeName, workOrderCoded, containerTypeName,
-            task, containerNumber, ranges.length, audit],
+            task, containerNumber, ranges.length, audit, tokenEdits.unconfirmedCount],
     );
     const issuesByKey = useMemo(() => readinessByKey(readiness), [readiness]);
 
@@ -406,54 +420,48 @@ export default function OcrReviewPage() {
                         validPrefixes={validPrefixes}
                         links={links}
                         wordRefs={wordRefs}
+                        edits={tokenEdits.edits}
+                        onEditWord={tokenEdits.commitEdit}
                         onBboxClick={handleBboxClick}
                         onSampleClick={focusSampleFromPhoto}
                     />
                 </Box>
                 <Paper sx={{ p: 2 }}>
-                    <Tabs
+                    <ReviewTabs
                         value={tab}
-                        onChange={(_, v) => setTab(v)}
-                        sx={{ mb: 2, minHeight: 40 }}
-                        variant="fullWidth"
-                    >
-                        <Tab
-                            value="header"
-                            sx={{ minHeight: 40, textTransform: "none" }}
-                            label={
-                                <Stack direction="row" spacing={0.5} alignItems="center">
-                                    <span>Шапка тары</span>
-                                    {headerProblems > 0 && (
-                                        <Chip
-                                            size="small"
-                                            color="warning"
-                                            label={headerProblems}
-                                            sx={{ height: 18, fontSize: 11 }}
-                                        />
-                                    )}
-                                </Stack>
-                            }
-                        />
-                        <Tab
-                            value="samples"
-                            sx={{ minHeight: 40, textTransform: "none" }}
-                            label={
-                                <Stack direction="row" spacing={0.5} alignItems="center">
-                                    <span>Пробы ({ranges.length})</span>
-                                    {sampleProblems > 0 && (
-                                        <Chip
-                                            size="small"
-                                            color={audit.duplicateNumbers.length > 0 ? "error" : "warning"}
-                                            label={sampleProblems}
-                                            sx={{ height: 18, fontSize: 11 }}
-                                        />
-                                    )}
-                                </Stack>
-                            }
-                        />
-                    </Tabs>
+                        onChange={setTab}
+                        rangesCount={ranges.length}
+                        headerProblems={headerProblems}
+                        sampleProblems={sampleProblems}
+                        hasDuplicates={audit.duplicateNumbers.length > 0}
+                    />
 
                     <Stack spacing={2}>
+                        {tokenEdits.notice && (
+                            <Alert
+                                severity="success"
+                                action={
+                                    <Button
+                                        size="small"
+                                        color="inherit"
+                                        onClick={tokenEdits.undoAutoAdd}
+                                    >
+                                        Отменить
+                                    </Button>
+                                }
+                            >
+                                {tokenEdits.notice}
+                            </Alert>
+                        )}
+
+                        <TokenEditsPanel
+                            edits={tokenEdits.editList}
+                            onRevert={tokenEdits.revertEdit}
+                            verdicts={tokenEdits.verdicts}
+                            acknowledged={tokenEdits.acknowledged}
+                            onAcknowledge={tokenEdits.acknowledge}
+                        />
+
                         {tab === "header" ? (
                             <ContainerHeaderFields
                                 siteName={siteName}

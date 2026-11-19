@@ -1,9 +1,9 @@
 /**
- * Готовность задачи OCR к подтверждению (6e-2-web-fix4…fix7).
+ * Готовность задачи OCR к подтверждению (6e-2-web-fix4…fix7, 6e-2-web-2-fix3).
  * fix5: номер тары сверяется с распознанным на фото.
  * fix6: дубли проб — блокер; пробы списка, которых нет на фото — замечание.
- * fix7: readinessByKey (inline-подсказки под полями) и readinessSummary
- *   (компактная строка-статус вместо длинного блока).
+ * fix7: readinessByKey (inline-подсказки) и readinessSummary (строка-статус).
+ * 6e-2-web-2-fix3: правки, отличные от фото, требуют явного подтверждения.
  * Чистая логика, без UI — покрывается тестами.
  */
 export interface ReadinessItem {
@@ -16,11 +16,8 @@ export interface ReadinessItem {
 
 export interface Readiness {
     items: ReadinessItem[];
-    /** Незаполненные обязательные — подтверждение заблокировано. */
     blockers: number;
-    /** Необязательные замечания (участок, пробы с фото, аномалии). */
     warnings: number;
-    /** Зелёный сигнал: обязательные заполнены и замечаний нет. */
     ready: boolean;
 }
 
@@ -30,15 +27,14 @@ export interface ReadinessInput {
     workOrderCoded: string;
     containerTypeName: string;
     containerNumber: string;
-    /** Номер тары, распознанный на фото (null — не распознан). */
     photoContainerNumber: string | null;
     rangesCount: number;
     missingCount: number;
     anomalyCount: number;
-    /** fix6: сколько номеров встречается в списке больше одного раза. */
     duplicateCount?: number;
-    /** fix6: сколько строк списка не найдены на фото. */
     notOnPhotoCount?: number;
+    /** Сколько правок отличаются от фото и ещё не подтверждены человеком. */
+    unconfirmedEditCount?: number;
 }
 
 export type ReadinessTone = "success" | "warning" | "error";
@@ -66,6 +62,7 @@ export function checkReadiness(i: ReadinessInput): Readiness {
     const photoCn = i.photoContainerNumber;
     const dupCount = i.duplicateCount ?? 0;
     const notOnPhoto = i.notOnPhotoCount ?? 0;
+    const unconfirmed = i.unconfirmedEditCount ?? 0;
     const photoCnMatches =
         photoCn !== null &&
         normalizeContainerNumber(photoCn) === normalizeContainerNumber(i.containerNumber);
@@ -130,6 +127,13 @@ export function checkReadiness(i: ReadinessInput): Readiness {
             hint: `одинаковых номеров: ${dupCount} — удали лишнюю строку`,
         },
         {
+            key: "edits_confirmed",
+            label: "Правки, отличные от фото, подтверждены",
+            ok: unconfirmed === 0,
+            required: true,
+            hint: `не подтверждено: ${unconfirmed} — сверь номер с фото и нажми «Подтвердить»`,
+        },
+        {
             key: "photo_match",
             label: "Все пробы с фото внесены",
             ok: i.missingCount === 0,
@@ -168,14 +172,14 @@ export function checkReadiness(i: ReadinessInput): Readiness {
     };
 }
 
-/** fix7: доступ к пунктам по ключу — для inline-подсказок под полями. */
+/** Доступ к пунктам по ключу — для inline-подсказок под полями. */
 export function readinessByKey(r: Readiness): Record<string, ReadinessItem> {
     const out: Record<string, ReadinessItem> = {};
     for (const it of r.items) out[it.key] = it;
     return out;
 }
 
-/** fix7: компактная сводка для строки-статуса внизу. */
+/** Компактная сводка для строки-статуса внизу. */
 export function readinessSummary(r: Readiness): ReadinessSummary {
     const blockers = r.items.filter((x) => x.required && !x.ok);
     const warnings = r.items.filter((x) => !x.required && !x.ok);
