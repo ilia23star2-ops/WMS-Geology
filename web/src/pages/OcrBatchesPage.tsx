@@ -1,7 +1,7 @@
 /**
  * Список пакетов OCR (серверных), светлый стиль web.
- * c-3.x-migration-5c; 6e-3-web-rework: убран Drawer загрузки — загрузка
- * живёт в «Сессии оцифровки» (/ocr/session), здесь только просмотр пакетов.
+ * c-3.x-migration-5c; 6e-3-web-rework: загрузка живёт в «Сессии оцифровки».
+ * 6e-3-backend-3: колонка «Имя» с inline-переименованием (PATCH /batches/{id}/).
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,12 +10,16 @@ import {
     Button,
     Chip,
     FormControl,
+    IconButton,
     InputLabel,
     MenuItem,
     Select,
+    TextField,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import GridOnIcon from "@mui/icons-material/GridOn";
+import EditIcon from "@mui/icons-material/Edit";
 import {
     DataGrid,
     type GridColDef,
@@ -25,9 +29,11 @@ import {
 import {
     OCR_BATCH_STATUS_LABELS,
     useOcrBatches,
+    useRenameOcrBatch,
     type OcrBatch,
     type OcrBatchStatus,
 } from "../api/ocr";
+import { displayBatchName } from "../utils/batchName";
 
 const BATCH_STATUS_COLORS: Record<
     OcrBatchStatus,
@@ -45,7 +51,10 @@ const BATCH_STATUS_COLORS: Record<
 export default function OcrBatchesPage() {
     const navigate = useNavigate();
     const { data, isLoading } = useOcrBatches();
+    const rename = useRenameOcrBatch();
     const [statusFilter, setStatusFilter] = useState<OcrBatchStatus | "">("");
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editingName, setEditingName] = useState("");
     const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
         page: 0,
         pageSize: 25,
@@ -56,8 +65,51 @@ export default function OcrBatchesPage() {
         return statusFilter ? all.filter((b) => b.status === statusFilter) : all;
     }, [data, statusFilter]);
 
+    const commitRename = (id: number) => {
+        rename.mutate({ id, name: editingName.trim() });
+        setEditingId(null);
+    };
+
     const columns: GridColDef<OcrBatch>[] = [
         { field: "id", headerName: "#", width: 80, renderCell: (p) => `#${p.value}` },
+        {
+            field: "name",
+            headerName: "Имя",
+            width: 260,
+            sortable: false,
+            renderCell: (p) =>
+                editingId === p.row.id ? (
+                    <TextField
+                        size="small"
+                        autoFocus
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename(p.row.id);
+                            if (e.key === "Escape") setEditingId(null);
+                        }}
+                        onBlur={() => commitRename(p.row.id)}
+                        sx={{ width: "100%" }}
+                    />
+                ) : (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
+                        <Typography sx={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {displayBatchName(p.row.name, p.row.id)}
+                        </Typography>
+                        <Tooltip title="Переименовать">
+                            <IconButton
+                                size="small"
+                                onClick={() => {
+                                    setEditingId(p.row.id);
+                                    setEditingName(p.row.name ?? "");
+                                }}
+                            >
+                                <EditIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Box>
+                ),
+        },
         { field: "user", headerName: "Пользователь", width: 160, valueGetter: (_v, row) => `id=${row.user}` },
         {
             field: "status",

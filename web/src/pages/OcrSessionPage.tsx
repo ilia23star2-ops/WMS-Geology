@@ -1,10 +1,10 @@
 /**
- * Сессия оцифровки в web (6e-3-web-c), светлый стиль web.
+ * Сессия оцифровки в web (6e-3-web-c, +имя пакета 6e-3-backend).
  * Поток как в мобилке: «Добавить ячейку» → окно с поэтапным выбором
  * (комната → стеллаж → секция → ярус → ячейка) или «без ячейки» → запись
  * появляется в списке и переживает выход со страницы (Zustand) → раскрыть →
- * добавить несколько фото → «Отправить в OCR» → очередь со статусами,
- * пакет закрывается статусом SENT.
+ * добавить несколько фото → задать имя пакета (или оставить пустым для
+ * автоимени) → «Отправить в OCR» → очередь со статусами → SENT.
  */
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -25,6 +25,7 @@ import {
     LinearProgress,
     Paper,
     Stack,
+    TextField,
     Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
@@ -39,6 +40,7 @@ import GridOnIcon from "@mui/icons-material/GridOn";
 import CellCascadePicker, { type CellPick } from "../components/ocr/CellCascadePicker";
 import { useOcrSessionLocal } from "../hooks/useOcrSessionLocal";
 import { useOcrSessionStore, type SessionPhoto } from "../stores/ocrSessionStore";
+import { displayBatchName } from "../utils/batchName";
 import { STATUS_LABELS, formatBytes } from "../utils/uploadQueue";
 
 const STATUS_COLOR: Record<string, "default" | "info" | "success" | "warning" | "error"> = {
@@ -58,6 +60,8 @@ export default function OcrSessionPage() {
     const addPhotos = useOcrSessionStore((s) => s.addPhotos);
     const removePhoto = useOcrSessionStore((s) => s.removePhoto);
     const clearAll = useOcrSessionStore((s) => s.clearAll);
+    const batchName = useOcrSessionStore((s) => s.batchName);
+    const setBatchName = useOcrSessionStore((s) => s.setBatchName);
 
     const [pickerOpen, setPickerOpen] = useState(false);
     const [noCell, setNoCell] = useState(false);
@@ -88,6 +92,22 @@ export default function OcrSessionPage() {
                     Пакеты OCR
                 </Button>
             </Stack>
+
+            <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+                <TextField
+                    fullWidth
+                    size="small"
+                    label="Имя пакета (необязательно)"
+                    placeholder="Пусто — сервер поставит автоимя «адрес ячейки + дата»"
+                    value={batchName ?? ""}
+                    onChange={(e) => setBatchName(e.target.value || null)}
+                    helperText={
+                        session.batchId !== null
+                            ? `Пакет уже создан: ${displayBatchName(batchName, session.batchId)}. Имя уйдёт в следующий пакет.`
+                            : "Имя отправится с первым фото сессии."
+                    }
+                />
+            </Paper>
 
             {session.records.length === 0 ? (
                 <Paper sx={{ p: 4, textAlign: "center" }} variant="outlined">
@@ -139,7 +159,7 @@ export default function OcrSessionPage() {
                         {session.batchId !== null && (
                             <Chip
                                 icon={<Inventory2Icon />}
-                                label={`Пакет #${session.batchId} (SENT после отправки)`}
+                                label={displayBatchName(batchName, session.batchId)}
                                 color="primary"
                                 onClick={() => navigate(`/ocr/batches/${session.batchId}`)}
                             />
@@ -168,8 +188,8 @@ export default function OcrSessionPage() {
                         </Button>
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-                        Первое фото создаёт пакет, остальные идут в него же с cell_id своей записи;
-                        после отправки пакет переводится в SENT. Распознавание — до двух минут на фото.
+                        Первое фото создаёт пакет (с именем сессии или автоименем), остальные идут
+                        в него же с cell_id своей записи; после отправки пакет переводится в SENT.
                     </Typography>
                 </Paper>
             )}

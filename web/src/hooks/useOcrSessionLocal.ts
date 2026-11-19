@@ -1,8 +1,8 @@
 /**
- * Отправка сессии оцифровки (6e-3-web-c).
+ * Отправка сессии оцифровки (6e-3-web-c, +имя пакета 6e-3-backend).
  * Состояние живёт в ocrSessionStore (переживает навигацию); здесь только
- * оркестрация: первое фото создаёт пакет, остальные идут в него же с cell_id
- * записи; в конце пакет закрывается статусом SENT (как в мобилке).
+ * оркестрация: первое фото создаёт пакет (и несёт имя сессии), остальные
+ * идут в него же с cell_id записи; в конце пакет закрывается статусом SENT.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,6 +24,7 @@ export function useOcrSessionLocal() {
 
     const records = useOcrSessionStore((s) => s.records);
     const batchId = useOcrSessionStore((s) => s.batchId);
+    const batchName = useOcrSessionStore((s) => s.batchName);
     const updatePhoto = useOcrSessionStore((s) => s.updatePhoto);
     const setBatchId = useOcrSessionStore((s) => s.setBatchId);
 
@@ -72,6 +73,8 @@ export function useOcrSessionLocal() {
                         file,
                         cellId: r.cellId,
                         batchId: batchRef.current,
+                        // имя имеет смысл только когда пакет создаётся сейчас
+                        batchName: batchRef.current === null ? batchName : undefined,
                         onProgress: (percent: number) =>
                             updatePhoto(r.id, p.id, {
                                 progress: percent,
@@ -98,11 +101,12 @@ export function useOcrSessionLocal() {
             setSending(false);
             stopRef.current = false;
         }
-    }, [sending, records, batchId, updatePhoto, setBatchId, recognize, sendBatch, qc]);
+    }, [sending, records, batchId, batchName, updatePhoto, setBatchId, recognize, sendBatch, qc]);
 
     return {
         records,
         batchId,
+        batchName,
         sending,
         sentCount,
         totalCount,

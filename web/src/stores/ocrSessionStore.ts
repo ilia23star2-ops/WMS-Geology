@@ -1,6 +1,6 @@
 /**
- * Состояние сессии оцифровки (6e-3-web-c).
- * Zustand: записи и фото переживают переходы между страницами.
+ * Состояние сессии оцифровки (6e-3-web-c, +имя пакета 6e-3-backend).
+ * Zustand: записи, фото и имя пакета переживают переходы между страницами.
  * Сами File лежат в module-level Map (не сериализуются), превью — objectURL.
  */
 import { create } from "zustand";
@@ -34,18 +34,22 @@ const nid = (p: string) => `${p}-${Date.now()}-${++seq}`;
 interface OcrSessionState {
     records: SessionRecord[];
     batchId: number | null;
+    /** Имя будущего пакета; null = сервер поставит автоимя. */
+    batchName: string | null;
     addRecord: (cellId: number | null, cellLabel: string) => string;
     removeRecord: (id: string) => void;
     addPhotos: (recordId: string, files: File[]) => void;
     removePhoto: (recordId: string, photoId: string) => void;
     updatePhoto: (recordId: string, photoId: string, patch: Partial<SessionPhoto>) => void;
     setBatchId: (id: number | null) => void;
+    setBatchName: (name: string | null) => void;
     clearAll: () => void;
 }
 
 export const useOcrSessionStore = create<OcrSessionState>((set) => ({
     records: [],
     batchId: null,
+    batchName: null,
 
     addRecord: (cellId, cellLabel) => {
         const id = nid("rec");
@@ -116,12 +120,15 @@ export const useOcrSessionStore = create<OcrSessionState>((set) => ({
 
     setBatchId: (id) => set({ batchId: id }),
 
+    setBatchName: (name) =>
+        set({ batchName: name === null ? null : name.trim() || null }),
+
     clearAll: () =>
         set((s) => {
             s.records.forEach((r) => r.photos.forEach((p) => {
                 if (p.preview) URL.revokeObjectURL(p.preview);
                 sessionFiles.delete(p.id);
             }));
-            return { records: [], batchId: null };
+            return { records: [], batchId: null, batchName: null };
         }),
 }));
