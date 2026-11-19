@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** docs-пачка после 6e-2-web (смержена, d49e09b). Далее: 6e-2-web-2 (инлайн-правка OCR-токена) → 6e-2-dup (дубли по БД) → 6k (без ячейки) → 6e-4 (качество фото).
+**Текущий заход:** docs-пачка после 6e-2-web-2 и 6e-2-web-4/5/6 (смержены, 2fc52ba). Далее: 6e-3-web (создание пакетов и загрузка фото в web) → 6e-2-dup (дубли по БД) → 6k (без ячейки) → 6e-4 (качество фото).
 - **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
 - **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
 - **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
@@ -30,7 +30,7 @@
 6e-2-web 🟡 (ветка fix/3.x-migration-6e-2-web, НЕ смержена): labels Участок/Пробы, переключатель зон, кнопка Тара (container_id в reviewed_data), легенда вместо подписей, аудит проб (нормализация, склейка строк, ранжирование), мини-зоны проб фото-строка, цвета статусов (зелёный/жёлтый/малиновый пунктир), панель готовности. Тесты: Web 64, Backend 1001 (97 apps/ocr), Mobile 270.
 
 **Backend: 1001 тестов** (в т.ч. **97** в `apps.ocr`).
-**Web: 86 юнит-тестов** (13 файлов).
+**Web: 208 юнит-тестов** (21 файл).
 **Mobile: 270 юнит-тестов.**
 
 **Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
@@ -122,7 +122,7 @@
 | `labels` | QR-сервис, PDF-этикетки, PrintBatch, act_service |
 | **`ocr`** | **`OcrBatch`, `OcrTask` (+zones), `POST /recognize/` (+zones_json), `POST /zones/`, `POST /approve/`, `GET /batches/`, `mapping.py`, `approve.py`, `ocr_runner.py`** |
 
-### Web (React, 86 юнит-тестов)
+### Web (React, 208 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|
