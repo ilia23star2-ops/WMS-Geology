@@ -3,18 +3,14 @@
  *
  * c-3.x-migration-5c/5d/5f: layout, approve, SmartAutocomplete, подсветка bbox ↔ поля.
  * c-3.x-migration-6e-a3-web-fix: после approve остаёмся на окне.
- * c-3.x-migration-6e-2-web: переключатель зон + «Открыть тару».
- * c-3.x-migration-6e-2-web-fix…fix4:
- *   - легенда вместо подписей, аудит проб, нормализация OCR-токенов;
- *   - мини-зоны проб: клик по пробе на фото → строка списка, и обратно;
- *   - цвет строки = цвет её бокса (зелёный / жёлтый / малиновый пунктир);
- *   - динамическая готовность к подтверждению + зелёный сигнал.
- * 6e-2-web: фото (ImageWithBboxes), готовность (ReadinessPanel) и таблица проб
- *   (RangesTable) вынесены в components/ocr.
- * 6e-2-web-fix5: шапка тары (ContainerHeaderFields) и алерты аудита (AuditAlerts)
- *   вынесены в components/ocr.
+ * c-3.x-migration-6e-2-web…fix4: легенда зон, аудит проб, мини-зоны фото ↔ строка,
+ *   цвета статусов, динамическая готовность + зелёный сигнал.
+ * 6e-2-web-fix5: фото, готовность, таблица проб, шапка тары и алерты аудита
+ *   вынесены в components/ocr; предзаполнение — useOcrTaskPrefill,
+ *   список проб — useOcrRanges, хелперы — utils/ocrRangeHelpers,
+ *   ввод диапазона — SampleInputBar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     Alert,
@@ -27,7 +23,6 @@ import {
     Switch,
     Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
 
 import { useContainerTypes } from "../api/containerTypes";
 import {
@@ -39,12 +34,9 @@ import {
     useApproveOcrTask,
     useOcrTask,
     type OcrApprovePayload,
-    type SampleGroup,
 } from "../api/ocr";
 import { useSuggestions } from "../api/suggestions";
-import SmartAutocomplete from "../components/SmartAutocomplete";
 import RangeEditDialog from "../components/RangeEditDialog";
-import { parseSampleInput } from "../utils/parseSampleInput";
 import {
     auditSamples,
     linkSampleWords,
@@ -54,61 +46,16 @@ import {
     type SampleWordLink,
 } from "../utils/ocrSampleAudit";
 import { checkReadiness } from "../utils/ocrReadiness";
+import { buildSampleGroups } from "../utils/ocrRangeHelpers";
+import { useOcrRanges } from "../hooks/useOcrRanges";
+import { useOcrTaskPrefill } from "../hooks/useOcrTaskPrefill";
+import { useSampleBaseOptions } from "../hooks/useSampleBaseOptions";
 import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
-import RangesTable, { type RangeEntry } from "../components/ocr/RangesTable";
+import RangesTable from "../components/ocr/RangesTable";
 import ReadinessPanel from "../components/ocr/ReadinessPanel";
 import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
 import AuditAlerts from "../components/ocr/AuditAlerts";
-
-function newRangeId(): string {
-    return `r-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function makeAllSeqs(from: number, to: number): number[] {
-    const out: number[] = [];
-    for (let i = from; i <= to; i++) out.push(i);
-    return out;
-}
-
-function groupSeqsToRanges(
-    r: RangeEntry,
-    seqs: number[],
-    status: "NORMAL" | "SELECTED",
-    wellName: string | null,
-): SampleGroup[] {
-    if (seqs.length === 0) return [];
-    const sorted = [...seqs].sort((a, b) => a - b);
-    const groups: SampleGroup[] = [];
-    let start = sorted[0];
-    let prev = sorted[0];
-    for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] === prev + 1) {
-            prev = sorted[i];
-        } else {
-            groups.push({
-                prefix: r.prefix,
-                middle: r.middle,
-                sequence_from: start,
-                sequence_to: prev,
-                sequence_digits: r.sequenceDigits,
-                well_name: wellName,
-                status,
-            });
-            start = sorted[i];
-            prev = sorted[i];
-        }
-    }
-    groups.push({
-        prefix: r.prefix,
-        middle: r.middle,
-        sequence_from: start,
-        sequence_to: prev,
-        sequence_digits: r.sequenceDigits,
-        well_name: wellName,
-        status,
-    });
-    return groups;
-}
+import SampleInputBar from "../components/ocr/SampleInputBar";
 
 export default function OcrReviewPage() {
     const { id } = useParams<{ id: string }>();
@@ -144,22 +91,55 @@ export default function OcrReviewPage() {
     const [workOrderIncoming, setWorkOrderIncoming] = useState("");
     const [containerNumber, setContainerNumber] = useState("");
 
-    const [ranges, setRanges] = useState<RangeEntry[]>([]);
-    const [rangeInput, setRangeInput] = useState("");
-    const [rangeInputError, setRangeInputError] = useState<string | null>(null);
-    const [editingRange, setEditingRange] = useState<RangeEntry | null>(null);
-
     const [activeField, setActiveField] = useState<string | null>(null);
     const [activeSample, setActiveSample] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitOk, setSubmitOk] = useState<string | null>(null);
-    const [parseErrors, setParseErrors] = useState<string[]>([]);
-    const [prefilled, setPrefilled] = useState(false);
     const [showZones, setShowZones] = useState(true);
     const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
 
     const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
     const wordRefs = useRef<Map<number, SVGPolygonElement | null>>(new Map());
+
+    const {
+        ranges,
+        setRanges,
+        rangeInput,
+        setRangeInput,
+        rangeInputError,
+        setRangeInputError,
+        editingRange,
+        setEditingRange,
+        parseErrors,
+        setParseErrors,
+        rangesByWell,
+        handleAddRange,
+        handleRangeSave,
+        removeRange,
+    } = useOcrRanges({
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        workOrderIncoming,
+        onError: setSubmitError,
+    });
+
+    useOcrTaskPrefill({
+        task,
+        sites: sites.data,
+        researchTypes: researchTypes.data,
+        containerTypes: containerTypes.data,
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        containerNumber,
+        setSiteName,
+        setResearchTypeName,
+        setContainerTypeName,
+        setWorkOrderCoded,
+        setWorkOrderIncoming,
+        setContainerNumber,
+        setRanges,
+        setParseErrors,
+    });
 
     const siteId = useMemo(() => {
         if (!siteName) return null;
@@ -190,125 +170,7 @@ export default function OcrReviewPage() {
         siteId !== null || researchTypeId !== null,
     );
 
-    const usedSampleNumbers = useMemo(() => {
-        const set = new Set<string>();
-        for (const r of ranges) {
-            for (let i = r.sequenceFrom; i <= r.sequenceTo; i++) {
-                const seq = String(i).padStart(r.sequenceDigits, "0");
-                set.add(`${r.prefix}${r.middle}${seq}`);
-            }
-        }
-        return set;
-    }, [ranges]);
-
-    const baseSampleOptions = useMemo(() => {
-        const samples = suggestions.data?.samples ?? [];
-        const groups = new Map<string, string[]>();
-        for (const sampleNumber of samples) {
-            const base = sampleNumber.slice(0, -2);
-            const arr = groups.get(base);
-            if (arr) arr.push(sampleNumber);
-            else groups.set(base, [sampleNumber]);
-        }
-        const result: string[] = [];
-        for (const [base, sampleNumbers] of groups) {
-            const hasUnused = sampleNumbers.some((n) => !usedSampleNumbers.has(n));
-            if (hasUnused) result.push(base);
-        }
-        return result.sort();
-    }, [suggestions.data, usedSampleNumbers]);
-
-    // ---------- предзаполнение ----------
-    useEffect(() => {
-        if (!task || prefilled) return;
-        const ex = task.raw_ocr_data?.extracted;
-        if (!ex) {
-            setPrefilled(true);
-            return;
-        }
-        if (ex.work_order_coded) setWorkOrderCoded(ex.work_order_coded);
-        if (ex.work_order_incoming) setWorkOrderIncoming(ex.work_order_incoming);
-        if (!sites.data || !researchTypes.data || !containerTypes.data) {
-            return;
-        }
-        if (ex.container_number) setContainerNumber(ex.container_number);
-        if (ex.site) {
-            const s = sites.data.find((x) => x.code === ex.site);
-            setSiteName(s ? `${s.code} — ${s.name}` : ex.site);
-        }
-        if (ex.container_type) setContainerTypeName(ex.container_type);
-        if (ex.research_type) {
-            const rt = researchTypes.data.find(
-                (x) => x.code === ex.research_type || x.name === ex.research_type,
-            );
-            setResearchTypeName(rt ? `${rt.code} — ${rt.name}` : ex.research_type);
-        }
-        if (ex.samples && ex.samples.length > 0) {
-            const opts = {
-                laboratoryPrefixes,
-                siteMatchPatterns,
-                hasIncomingWorkOrder: (ex.work_order_incoming ?? "").trim() !== "",
-            };
-            const parsed: RangeEntry[] = [];
-            const errors: string[] = [];
-            for (const num of ex.samples) {
-                const r = parseSampleInput(num, opts);
-                if (r.ok) {
-                    parsed.push({
-                        id: newRangeId(),
-                        rawInput: num,
-                        ...r.value,
-                        allSeqs: makeAllSeqs(r.value.sequenceFrom, r.value.sequenceTo),
-                        skippedSeqs: [],
-                        selectedSeqs: [],
-                    });
-                } else {
-                    errors.push(num);
-                    parsed.push({
-                        id: newRangeId(),
-                        rawInput: num,
-                        prefix: "",
-                        middle: num,
-                        sequenceFrom: 1,
-                        sequenceTo: 1,
-                        sequenceDigits: 1,
-                        wellName: null,
-                        allSeqs: [1],
-                        skippedSeqs: [],
-                        selectedSeqs: [],
-                    });
-                }
-            }
-            setRanges(parsed);
-            setParseErrors(errors);
-        }
-        setPrefilled(true);
-    }, [task, prefilled, sites.data, researchTypes.data, containerTypes.data, laboratoryPrefixes, siteMatchPatterns]);
-
-    useEffect(() => {
-        if (!task?.raw_ocr_data?.text) return;
-        if (containerNumber) return;
-        const m = task.raw_ocr_data.text.match(/\b[TТ][-–]?\d{2,6}\b/);
-        if (m) setContainerNumber(m[0]);
-    }, [task, containerNumber]);
-
-    const rangesByWell = useMemo(() => {
-        const map = new Map<string, RangeEntry[]>();
-        for (const r of ranges) {
-            const key = r.wellName ?? "__none__";
-            if (!map.has(key)) map.set(key, []);
-            map.get(key)!.push(r);
-        }
-        const entries = Array.from(map.entries()).sort((a, b) =>
-            a[0].localeCompare(b[0], "ru", { numeric: true }),
-        );
-        for (const [, list] of entries) {
-            list.sort((a, b) =>
-                a.rawInput.localeCompare(b.rawInput, "ru", { numeric: true }),
-            );
-        }
-        return entries;
-    }, [ranges]);
+    const baseSampleOptions = useSampleBaseOptions(suggestions.data?.samples, ranges);
 
     const audit = useMemo(
         () => auditSamples(task?.raw_ocr_data?.words ?? [], ranges, validPrefixes),
@@ -351,7 +213,7 @@ export default function OcrReviewPage() {
             workOrderCoded,
             containerTypeName,
             containerNumber,
-            photoContainerNumber: task.raw_ocr_data?.extracted?.container_number ?? null,
+            photoContainerNumber: task?.raw_ocr_data?.extracted?.container_number ?? null,
             rangesCount: ranges.length,
             missingCount: audit.missing.length,
             anomalyCount: audit.anomalyIds.length,
@@ -383,69 +245,6 @@ export default function OcrReviewPage() {
                 behavior: "smooth",
             });
         }
-    };
-
-    const handleAddRange = () => {
-        const result = parseSampleInput(rangeInput, {
-            laboratoryPrefixes,
-            siteMatchPatterns,
-            hasIncomingWorkOrder: workOrderIncoming.trim() !== "",
-        });
-        if (!result.ok) {
-            setRangeInputError(result.error);
-            return;
-        }
-        setRanges((prev) => [
-            ...prev,
-            {
-                id: newRangeId(),
-                rawInput: rangeInput.trim(),
-                ...result.value,
-                allSeqs: makeAllSeqs(result.value.sequenceFrom, result.value.sequenceTo),
-                skippedSeqs: [],
-                selectedSeqs: [],
-            },
-        ]);
-        setRangeInput("");
-        setRangeInputError(null);
-    };
-
-    const handleRangeSave = (raw: string, skipped: number[], selected: number[]) => {
-        if (!editingRange) return;
-        const result = parseSampleInput(raw, {
-            laboratoryPrefixes,
-            siteMatchPatterns,
-            hasIncomingWorkOrder: workOrderIncoming.trim() !== "",
-        });
-        if (!result.ok) {
-            setSubmitError(result.error);
-            return;
-        }
-        const validSkipped = skipped.filter(
-            (s) => s >= result.value.sequenceFrom && s <= result.value.sequenceTo,
-        );
-        const validSelected = selected.filter(
-            (s) => s >= result.value.sequenceFrom && s <= result.value.sequenceTo,
-        );
-        setRanges((prev) =>
-            prev.map((r) =>
-                r.id === editingRange.id
-                    ? {
-                        id: r.id,
-                        rawInput: raw.trim(),
-                        ...result.value,
-                        allSeqs: makeAllSeqs(result.value.sequenceFrom, result.value.sequenceTo),
-                        skippedSeqs: validSkipped,
-                        selectedSeqs: validSelected,
-                    }
-                    : r,
-            ),
-        );
-        setEditingRange(null);
-    };
-
-    const removeRange = (id: string) => {
-        setRanges((prev) => prev.filter((r) => r.id !== id));
     };
 
     if (isLoading) {
@@ -496,17 +295,7 @@ export default function OcrReviewPage() {
             setSubmitError("Н/З (текущий) обязателен.");
             return;
         }
-        const hasIncoming = workOrderIncoming.trim() !== "";
-        const sampleGroups: SampleGroup[] = [];
-        for (const r of ranges) {
-            const wellName = hasIncoming ? null : r.middle;
-            const skipped = new Set(r.skippedSeqs);
-            const selected = new Set(r.selectedSeqs);
-            const normal = r.allSeqs.filter((s) => !skipped.has(s) && !selected.has(s));
-            const selArr = r.allSeqs.filter((s) => selected.has(s) && !skipped.has(s));
-            sampleGroups.push(...groupSeqsToRanges(r, normal, "NORMAL", wellName));
-            sampleGroups.push(...groupSeqsToRanges(r, selArr, "SELECTED", wellName));
-        }
+        const sampleGroups = buildSampleGroups(ranges, workOrderIncoming.trim() !== "");
         if (sampleGroups.length === 0) {
             setSubmitError("Все пробы пропущены — оставь хотя бы одну.");
             return;
@@ -626,40 +415,19 @@ export default function OcrReviewPage() {
                             </Typography>
                         </Box>
 
-                        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                            <Box sx={{ flexGrow: 1 }} onFocus={() => focusField("sample")} onBlur={blurField}>
-                                <SmartAutocomplete
-                                    label="Диапазон проб"
-                                    value={rangeInput}
-                                    onChange={(v) => {
-                                        setRangeInput(v);
-                                        setRangeInputError(null);
-                                    }}
-                                    options={baseSampleOptions}
-                                    loading={suggestions.isFetching}
-                                    appendOnSelect="-"
-                                    error={Boolean(rangeInputError)}
-                                    helperText={
-                                        rangeInputError ??
-                                        "Выбери базу из подсказок (клик → «-») или введи вручную: TAA-A34076001-031"
-                                    }
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            handleAddRange();
-                                        }
-                                    }}
-                                />
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                startIcon={<AddIcon />}
-                                onClick={handleAddRange}
-                                sx={{ whiteSpace: "nowrap", height: 40 }}
-                            >
-                                Добавить
-                            </Button>
-                        </Box>
+                        <SampleInputBar
+                            value={rangeInput}
+                            onChange={(v) => {
+                                setRangeInput(v);
+                                setRangeInputError(null);
+                            }}
+                            options={baseSampleOptions}
+                            loading={suggestions.isFetching}
+                            error={rangeInputError}
+                            onAdd={handleAddRange}
+                            onFocus={() => focusField("sample")}
+                            onBlur={blurField}
+                        />
 
                         {ranges.length > 0 && (
                             <RangesTable
