@@ -1,10 +1,7 @@
 /**
- * Список пакетов OCR.
- *
- * c-3.x-migration-5c. Открывается из sidebar «Оцифровка».
- * Client-side пагинация и фильтр по статусу.
- *
- * MUI 9: без <Stack justifyContent=...> — используем Box display:flex.
+ * Список пакетов OCR (серверных), светлый стиль web.
+ * c-3.x-migration-5c; 6e-3-web-rework: убран Drawer загрузки — загрузка
+ * живёт в «Сессии оцифровки» (/ocr/session), здесь только просмотр пакетов.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +15,7 @@ import {
     Select,
     Typography,
 } from "@mui/material";
+import GridOnIcon from "@mui/icons-material/GridOn";
 import {
     DataGrid,
     type GridColDef,
@@ -55,58 +53,29 @@ export default function OcrBatchesPage() {
 
     const rows = useMemo(() => {
         const all = data?.results ?? [];
-        return statusFilter
-            ? all.filter((b) => b.status === statusFilter)
-            : all;
+        return statusFilter ? all.filter((b) => b.status === statusFilter) : all;
     }, [data, statusFilter]);
 
     const columns: GridColDef<OcrBatch>[] = [
-        {
-            field: "id",
-            headerName: "#",
-            width: 80,
-            renderCell: (p) => `#${p.value}`,
-        },
-        {
-            field: "user",
-            headerName: "Пользователь",
-            width: 160,
-            valueGetter: (_v, row) => `id=${row.user}`,
-        },
+        { field: "id", headerName: "#", width: 80, renderCell: (p) => `#${p.value}` },
+        { field: "user", headerName: "Пользователь", width: 160, valueGetter: (_v, row) => `id=${row.user}` },
         {
             field: "status",
             headerName: "Статус",
             width: 180,
             renderCell: (p) => (
-                <Chip
-                    label={OCR_BATCH_STATUS_LABELS[p.row.status]}
-                    color={BATCH_STATUS_COLORS[p.row.status]}
-                    size="small"
-                />
+                <Chip label={OCR_BATCH_STATUS_LABELS[p.row.status]} color={BATCH_STATUS_COLORS[p.row.status]} size="small" />
             ),
         },
-        {
-            field: "tasks_count",
-            headerName: "Задач",
-            width: 100,
-            valueGetter: (_v, row) => row.tasks?.length ?? 0,
-        },
-        {
-            field: "created_at",
-            headerName: "Создан",
-            width: 180,
-            valueGetter: (v) => (v ? new Date(v).toLocaleString("ru-RU") : "—"),
-        },
+        { field: "tasks_count", headerName: "Задач", width: 100, valueGetter: (_v, row) => row.tasks?.length ?? 0 },
+        { field: "created_at", headerName: "Создан", width: 180, valueGetter: (v) => (v ? new Date(v).toLocaleString("ru-RU") : "—") },
         {
             field: "actions",
             headerName: "",
             width: 140,
             sortable: false,
             renderCell: (p) => (
-                <Button
-                    size="small"
-                    onClick={() => navigate(`/ocr/batches/${p.row.id}`)}
-                >
+                <Button size="small" onClick={() => navigate(`/ocr/batches/${p.row.id}`)}>
                     Открыть
                 </Button>
             ),
@@ -115,40 +84,23 @@ export default function OcrBatchesPage() {
 
     return (
         <Box sx={{ p: 2 }}>
-            <Box
-                sx={{
-                    display: "flex",
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    mb: 2,
-                }}
-            >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 1, flexWrap: "wrap" }}>
                 <Typography variant="h5">Пакеты OCR</Typography>
-                <FormControl size="small" sx={{ minWidth: 200 }}>
-                    <InputLabel>Статус</InputLabel>
-                    <Select
-                        value={statusFilter}
-                        onChange={(e) =>
-                            setStatusFilter(e.target.value as OcrBatchStatus | "")
-                        }
-                        label="Статус"
-                    >
-                        <MenuItem value="">Все</MenuItem>
-                        {(
-                            Object.entries(OCR_BATCH_STATUS_LABELS) as [
-                                OcrBatchStatus,
-                                string,
-                            ][]
-                        ).map(([key, label]) => (
-                            <MenuItem key={key} value={key}>
-                                {label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <Button variant="contained" startIcon={<GridOnIcon />} onClick={() => navigate("/ocr/session")}>
+                        Сессия оцифровки
+                    </Button>
+                    <FormControl size="small" sx={{ minWidth: 200 }}>
+                        <InputLabel>Статус</InputLabel>
+                        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as OcrBatchStatus | "")} label="Статус">
+                            <MenuItem value="">Все</MenuItem>
+                            {(Object.entries(OCR_BATCH_STATUS_LABELS) as [OcrBatchStatus, string][]).map(([k, l]) => (
+                                <MenuItem key={k} value={k}>{l}</MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                </Box>
             </Box>
-
             <Box sx={{ height: "calc(100vh - 200px)", width: "100%" }}>
                 <DataGrid
                     rows={rows}
