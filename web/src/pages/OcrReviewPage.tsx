@@ -54,12 +54,14 @@ import { useOcrRanges } from "../hooks/useOcrRanges";
 import { useOcrTaskPrefill } from "../hooks/useOcrTaskPrefill";
 import { useSampleBaseOptions } from "../hooks/useSampleBaseOptions";
 import { useOcrTokenEdits } from "../hooks/useOcrTokenEdits";
+import { useSampleHints } from "../hooks/useSampleHints";
 import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
 import ReadinessPanel from "../components/ocr/ReadinessPanel";
 import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
 import SamplesPanel from "../components/ocr/SamplesPanel";
 import TokenEditsPanel from "../components/ocr/TokenEditsPanel";
 import ReviewTabs, { type ReviewTab } from "../components/ocr/ReviewTabs";
+import { useZoneDrawing } from "../hooks/useZoneDrawing";
 
 const HEADER_KEYS = [
     "site",
@@ -165,6 +167,25 @@ export default function OcrReviewPage() {
         workOrderIncoming,
     });
 
+    const zoneDrawing = useZoneDrawing({
+        containerTypes: (containerTypes.data ?? []).map((c) => c.name),
+        setContainerTypeName,
+        task,
+        words: photoWords,
+        ranges,
+        setRanges,
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        workOrderIncoming,
+        sites: sites.data,
+        researchTypes: researchTypes.data,
+        setSiteName,
+        setResearchTypeName,
+        setWorkOrderCoded,
+        setWorkOrderIncoming,
+        setContainerNumber,
+    });
+
     const siteId = useMemo(() => {
         if (!siteName) return null;
         const s = sites.data?.find((x) => x.name === siteName || x.code === siteName);
@@ -232,6 +253,23 @@ export default function OcrReviewPage() {
         return m;
     }, [ranges]);
 
+    const sampleHints = useSampleHints({
+        ranges,
+        setRanges,
+        missing: audit.missing,
+        validPrefixes,
+        photoSampleCount: audit.photoSamples.length,
+        anomalyIds: audit.anomalyIds,
+        links,
+        words: photoWords,
+        wordRefs,
+        setActiveSample,
+        setActiveField,
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        workOrderIncoming,
+    });
+
     const readiness = useMemo(
         () => checkReadiness({
             siteName,
@@ -263,7 +301,7 @@ export default function OcrReviewPage() {
         (ranges.length === 0 ? 1 : 0);
 
     const focusSampleFromPhoto = (link: SampleWordLink) => {
-        setActiveSample(link.number);
+        sampleHints.focusWord(link.index, link.number);
         setActiveField("sample");
         setTab("samples");
         if (link.rangeId) {
@@ -280,7 +318,7 @@ export default function OcrReviewPage() {
     const focusSampleFromRow = (rangeId: string) => {
         const ls = linksByRange.get(rangeId) ?? [];
         const first = ls[0];
-        setActiveSample(first ? first.number : numbersByRange.get(rangeId)?.[0] ?? null);
+        sampleHints.focusRange(rangeId);
         setActiveField("sample");
         if (first) {
             wordRefs.current.get(first.index)?.scrollIntoView({
@@ -292,6 +330,7 @@ export default function OcrReviewPage() {
     };
 
     const handleBboxClick = (type: string) => {
+        sampleHints.clearFocus();
         setActiveField(type);
         setTab(type === "sample" ? "samples" : "header");
     };
@@ -375,7 +414,7 @@ export default function OcrReviewPage() {
         });
     };
 
-    const focusField = (name: string) => setActiveField(name);
+    const focusField = (name: string) => { sampleHints.clearFocus(); setActiveField(name); };
     const blurField = () => setActiveField(null);
 
     return (
@@ -421,9 +460,11 @@ export default function OcrReviewPage() {
                         links={links}
                         wordRefs={wordRefs}
                         edits={tokenEdits.edits}
+                        activeWordIndex={sampleHints.activeWordIndex}
                         onEditWord={tokenEdits.commitEdit}
                         onBboxClick={handleBboxClick}
                         onSampleClick={focusSampleFromPhoto}
+                        drawing={zoneDrawing}
                     />
                 </Box>
                 <Paper sx={{ p: 2 }}>
@@ -519,6 +560,14 @@ export default function OcrReviewPage() {
                                 onRowClick={focusSampleFromRow}
                                 onEdit={setEditingRange}
                                 onRemove={removeRange}
+                                anomalies={sampleHints.anomalies}
+                                hints={sampleHints.hints}
+                                onAnomalyClick={sampleHints.focusRange}
+                                onHintView={sampleHints.focusRange}
+                                onHintFix={sampleHints.fixHint}
+                                prefixIssues={sampleHints.prefixIssues}
+                                countMismatch={sampleHints.countMismatch}
+                                onPrefixClick={sampleHints.focusRange}
                             />
                         )}
 
