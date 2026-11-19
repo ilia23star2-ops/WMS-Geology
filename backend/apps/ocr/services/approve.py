@@ -67,7 +67,7 @@ def approve_task(task, payload, user):
                 raise ValueError(error.get('error', 'Ошибка размещения.'))
             container.refresh_from_db()
 
-        task.reviewed_data = payload
+        task.reviewed_data = {**payload, 'container_id': container.pk}
         task.status = 'DONE'
         task.save(update_fields=['reviewed_data', 'status'])
 

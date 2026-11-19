@@ -2,6 +2,7 @@
  * Детали пакета OCR: список задач + переход на проверку.
  *
  * c-3.x-migration-5c.
+ * c-3.x-migration-6e-2-web: кнопка «Тара» — открыть созданную тару.
  * MUI 9: без <Stack justifyContent=...> — используем Box display:flex.
  */
 import { useNavigate, useParams } from "react-router-dom";
@@ -20,6 +21,7 @@ import {
 } from "@mui/material";
 
 import {
+    approvedContainerId,
     OCR_BATCH_STATUS_LABELS,
     OCR_TASK_STATUS_LABELS,
     resolveImageUrl,
@@ -99,48 +101,70 @@ export default function OcrBatchDetailPage() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {data.tasks.map((t) => (
-                            <TableRow key={t.id}>
-                                <TableCell>#{t.id}</TableCell>
-                                <TableCell>
-                                    <Chip
-                                        label={OCR_TASK_STATUS_LABELS[t.status]}
-                                        color={TASK_STATUS_COLORS[t.status]}
-                                        size="small"
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    {t.image ? (
-                                        <img
-                                            src={resolveImageUrl(t.image)}
-                                            alt=""
-                                            style={{
-                                                maxHeight: 48,
-                                                maxWidth: 80,
-                                                borderRadius: 4,
-                                            }}
+                        {data.tasks.map((t) => {
+                            const containerId = approvedContainerId(t);
+                            return (
+                                <TableRow key={t.id}>
+                                    <TableCell>#{t.id}</TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            label={OCR_TASK_STATUS_LABELS[t.status]}
+                                            color={TASK_STATUS_COLORS[t.status]}
+                                            size="small"
                                         />
-                                    ) : (
-                                        "—"
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    {new Date(t.created_at).toLocaleString("ru-RU")}
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Button
-                                        size="small"
-                                        variant={
-                                            t.status === "READY" ? "contained" : "outlined"
-                                        }
-                                        disabled={t.status !== "READY"}
-                                        onClick={() => navigate(`/ocr/review/${t.id}`)}
-                                    >
-                                        Проверить
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                                    </TableCell>
+                                    <TableCell>
+                                        {t.image ? (
+                                            <img
+                                                src={resolveImageUrl(t.image)}
+                                                alt=""
+                                                style={{
+                                                    maxHeight: 48,
+                                                    maxWidth: 80,
+                                                    borderRadius: 4,
+                                                }}
+                                            />
+                                        ) : (
+                                            "—"
+                                        )}
+                                    </TableCell>
+                                    <TableCell>
+                                        {new Date(t.created_at).toLocaleString("ru-RU")}
+                                    </TableCell>
+                                    <TableCell align="right">
+                                        <Box
+                                            sx={{
+                                                display: "flex",
+                                                gap: 1,
+                                                justifyContent: "flex-end",
+                                            }}
+                                        >
+                                            <Button
+                                                size="small"
+                                                variant={
+                                                    t.status === "READY" ? "contained" : "outlined"
+                                                }
+                                                disabled={t.status !== "READY"}
+                                                onClick={() => navigate(`/ocr/review/${t.id}`)}
+                                            >
+                                                Проверить
+                                            </Button>
+                                            {containerId !== null && (
+                                                <Button
+                                                    size="small"
+                                                    variant="outlined"
+                                                    onClick={() =>
+                                                        navigate(`/containers?highlight=${containerId}`)
+                                                    }
+                                                >
+                                                    Тара
+                                                </Button>
+                                            )}
+                                        </Box>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
                     </TableBody>
                 </Table>
             )}

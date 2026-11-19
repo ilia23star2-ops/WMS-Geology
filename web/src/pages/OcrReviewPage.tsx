@@ -1,38 +1,31 @@
 /**
  * Экран проверки OCR.
  *
- * c-3.x-migration-5c/5d: layout, approve, SmartAutocomplete, suggestions.
- * c-3.x-migration-5f:
- *   - Предзаполнение из task.raw_ocr_data.extracted.
- *   - Двусторонняя подсветка bbox ↔ поля (activeField).
- *   - Пробы: диапазон через SmartAutocomplete + RangeEditDialog (как в
- *     FillContainerContent: skipped / selected).
- *   - Подсказки в поле «Диапазон проб» — baseSampleOptions из suggestions.samples.
+ * c-3.x-migration-5c/5d/5f: layout, approve, SmartAutocomplete, подсветка bbox ↔ поля.
+ * c-3.x-migration-6e-a3-web-fix: после approve остаёмся на окне.
+ * c-3.x-migration-6e-2-web…fix4: легенда зон, аудит проб, мини-зоны фото ↔ строка,
+ *   цвета статусов, динамическая готовность + зелёный сигнал.
+ * 6e-2-web-fix5: компоненты в components/ocr, хуки предзаполнения и проб.
+ * 6e-2-web-fix6: обратный аудит «нет на фото», дубли как блокер.
+ * 6e-2-web-fix7: вкладки «Шапка тары» / «Пробы», подсказки под полями,
+ *   компактная строка-статус; клик по зоне переключает нужную вкладку.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     Alert,
     Box,
     Button,
-    Card,
-    CardContent,
+    Chip,
     CircularProgress,
-    IconButton,
+    FormControlLabel,
     Paper,
     Stack,
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableRow,
-    TextField,
-    Tooltip,
+    Switch,
+    Tab,
+    Tabs,
     Typography,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import DeleteIcon from "@mui/icons-material/Delete";
-import EditIcon from "@mui/icons-material/Edit";
 
 import { useContainerTypes } from "../api/containerTypes";
 import {
@@ -41,82 +34,38 @@ import {
     useSites,
 } from "../api/catalogs";
 import {
-    OCR_ZONE_LABELS,
-    resolveImageUrl,
     useApproveOcrTask,
     useOcrTask,
     type OcrApprovePayload,
-    type OcrTask,
-    type OcrZone,
-    type OcrZoneType,
-    type SampleGroup,
 } from "../api/ocr";
 import { useSuggestions } from "../api/suggestions";
-import SmartAutocomplete from "../components/SmartAutocomplete";
 import RangeEditDialog from "../components/RangeEditDialog";
 import {
-    parseSampleInput,
-    type ParsedSampleRange,
-} from "../utils/parseSampleInput";
+    auditSamples,
+    linkSampleWords,
+    normalizeToken,
+    rangeNumbers,
+    rangeNumberSet,
+    type SampleWordLink,
+} from "../utils/ocrSampleAudit";
+import { checkReadiness, readinessByKey } from "../utils/ocrReadiness";
+import { buildSampleGroups } from "../utils/ocrRangeHelpers";
+import { useOcrRanges } from "../hooks/useOcrRanges";
+import { useOcrTaskPrefill } from "../hooks/useOcrTaskPrefill";
+import { useSampleBaseOptions } from "../hooks/useSampleBaseOptions";
+import ImageWithBboxes from "../components/ocr/ImageWithBboxes";
+import ReadinessPanel from "../components/ocr/ReadinessPanel";
+import ContainerHeaderFields from "../components/ocr/ContainerHeaderFields";
+import SamplesPanel from "../components/ocr/SamplesPanel";
 
-// ---------- типы ----------
-interface RangeEntry extends ParsedSampleRange {
-    id: string;
-    rawInput: string;
-    allSeqs: number[];
-    skippedSeqs: number[];
-    selectedSeqs: number[];
-}
-
-function newRangeId(): string {
-    return `r-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function makeAllSeqs(from: number, to: number): number[] {
-    const out: number[] = [];
-    for (let i = from; i <= to; i++) out.push(i);
-    return out;
-}
-
-function groupSeqsToRanges(
-    r: RangeEntry,
-    seqs: number[],
-    status: "NORMAL" | "SELECTED",
-    wellName: string | null,
-): SampleGroup[] {
-    if (seqs.length === 0) return [];
-    const sorted = [...seqs].sort((a, b) => a - b);
-    const groups: SampleGroup[] = [];
-    let start = sorted[0];
-    let prev = sorted[0];
-    for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] === prev + 1) {
-            prev = sorted[i];
-        } else {
-            groups.push({
-                prefix: r.prefix,
-                middle: r.middle,
-                sequence_from: start,
-                sequence_to: prev,
-                sequence_digits: r.sequenceDigits,
-                well_name: wellName,
-                status,
-            });
-            start = sorted[i];
-            prev = sorted[i];
-        }
-    }
-    groups.push({
-        prefix: r.prefix,
-        middle: r.middle,
-        sequence_from: start,
-        sequence_to: prev,
-        sequence_digits: r.sequenceDigits,
-        well_name: wellName,
-        status,
-    });
-    return groups;
-}
+const HEADER_KEYS = [
+    "site",
+    "research_type",
+    "work_order_coded",
+    "container_type",
+    "container_number",
+    "container_number_photo",
+];
 
 export default function OcrReviewPage() {
     const { id } = useParams<{ id: string }>();
@@ -140,6 +89,10 @@ export default function OcrReviewPage() {
         () => (sites.data ?? []).flatMap((s) => s.match_patterns ?? []),
         [sites.data],
     );
+    const validPrefixes = useMemo(() => {
+        const codes = (sites.data ?? []).map((s) => s.code);
+        return [...codes, ...siteMatchPatterns, ...laboratoryPrefixes];
+    }, [sites.data, siteMatchPatterns, laboratoryPrefixes]);
 
     const [siteName, setSiteName] = useState("");
     const [researchTypeName, setResearchTypeName] = useState("");
@@ -148,16 +101,56 @@ export default function OcrReviewPage() {
     const [workOrderIncoming, setWorkOrderIncoming] = useState("");
     const [containerNumber, setContainerNumber] = useState("");
 
-    const [ranges, setRanges] = useState<RangeEntry[]>([]);
-    const [rangeInput, setRangeInput] = useState("");
-    const [rangeInputError, setRangeInputError] = useState<string | null>(null);
-    const [editingRange, setEditingRange] = useState<RangeEntry | null>(null);
-
     const [activeField, setActiveField] = useState<string | null>(null);
+    const [activeSample, setActiveSample] = useState<string | null>(null);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitOk, setSubmitOk] = useState<string | null>(null);
-    const [parseErrors, setParseErrors] = useState<string[]>([]);
-    const [prefilled, setPrefilled] = useState(false);
+    const [showZones, setShowZones] = useState(true);
+    const [approvedContainerId, setApprovedContainerId] = useState<number | null>(null);
+    const [tab, setTab] = useState<"header" | "samples">("header");
+
+    const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map());
+    const wordRefs = useRef<Map<number, SVGPolygonElement | null>>(new Map());
+
+    const {
+        ranges,
+        setRanges,
+        rangeInput,
+        setRangeInput,
+        rangeInputError,
+        setRangeInputError,
+        editingRange,
+        setEditingRange,
+        parseErrors,
+        setParseErrors,
+        rangesByWell,
+        handleAddRange,
+        handleRangeSave,
+        removeRange,
+    } = useOcrRanges({
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        workOrderIncoming,
+        onError: setSubmitError,
+    });
+
+    useOcrTaskPrefill({
+        task,
+        sites: sites.data,
+        researchTypes: researchTypes.data,
+        containerTypes: containerTypes.data,
+        laboratoryPrefixes,
+        siteMatchPatterns,
+        containerNumber,
+        setSiteName,
+        setResearchTypeName,
+        setContainerTypeName,
+        setWorkOrderCoded,
+        setWorkOrderIncoming,
+        setContainerNumber,
+        setRanges,
+        setParseErrors,
+    });
 
     const siteId = useMemo(() => {
         if (!siteName) return null;
@@ -188,181 +181,105 @@ export default function OcrReviewPage() {
         siteId !== null || researchTypeId !== null,
     );
 
-    const usedSampleNumbers = useMemo(() => {
-        const set = new Set<string>();
-        for (const r of ranges) {
-            for (let i = r.sequenceFrom; i <= r.sequenceTo; i++) {
-                const seq = String(i).padStart(r.sequenceDigits, "0");
-                set.add(`${r.prefix}${r.middle}${seq}`);
-            }
+    const baseSampleOptions = useSampleBaseOptions(suggestions.data?.samples, ranges);
+
+    const audit = useMemo(
+        () => auditSamples(task?.raw_ocr_data?.words ?? [], ranges, validPrefixes),
+        [task, ranges, validPrefixes],
+    );
+    const anomalySet = useMemo(() => new Set(audit.anomalyIds), [audit]);
+    const notOnPhotoSet = useMemo(() => new Set(audit.notOnPhotoIds), [audit]);
+    const duplicateSet = useMemo(() => new Set(audit.duplicateIds), [audit]);
+    const sampleNumbers = useMemo(() => rangeNumberSet(ranges), [ranges]);
+
+    const links = useMemo(
+        () => linkSampleWords(
+            task?.raw_ocr_data?.words ?? [],
+            ranges,
+            audit.anomalyIds,
+            validPrefixes,
+        ),
+        [task, ranges, audit.anomalyIds, validPrefixes],
+    );
+    const linksByRange = useMemo(() => {
+        const m = new Map<string, SampleWordLink[]>();
+        for (const l of links) {
+            if (!l.rangeId) continue;
+            const arr = m.get(l.rangeId);
+            if (arr) arr.push(l);
+            else m.set(l.rangeId, [l]);
         }
-        return set;
+        return m;
+    }, [links]);
+    const numbersByRange = useMemo(() => {
+        const m = new Map<string, string[]>();
+        for (const r of ranges) {
+            m.set(r.id, rangeNumbers(r).map((n) => normalizeToken(n)));
+        }
+        return m;
     }, [ranges]);
 
-    const baseSampleOptions = useMemo(() => {
-        const samples = suggestions.data?.samples ?? [];
-        const groups = new Map<string, string[]>();
-        for (const sampleNumber of samples) {
-            const base = sampleNumber.slice(0, -2);
-            const arr = groups.get(base);
-            if (arr) arr.push(sampleNumber);
-            else groups.set(base, [sampleNumber]);
-        }
-        const result: string[] = [];
-        for (const [base, sampleNumbers] of groups) {
-            const hasUnused = sampleNumbers.some((n) => !usedSampleNumbers.has(n));
-            if (hasUnused) result.push(base);
-        }
-        return result.sort();
-    }, [suggestions.data, usedSampleNumbers]);
+    const readiness = useMemo(
+        () => checkReadiness({
+            siteName,
+            researchTypeName,
+            workOrderCoded,
+            containerTypeName,
+            containerNumber,
+            photoContainerNumber: task?.raw_ocr_data?.extracted?.container_number ?? null,
+            rangesCount: ranges.length,
+            missingCount: audit.missing.length,
+            anomalyCount: audit.anomalyIds.length,
+            duplicateCount: audit.duplicateNumbers.length,
+            notOnPhotoCount: audit.notOnPhotoIds.length,
+        }),
+        [siteName, researchTypeName, workOrderCoded, containerTypeName,
+            task, containerNumber, ranges.length, audit],
+    );
+    const issuesByKey = useMemo(() => readinessByKey(readiness), [readiness]);
 
-    // ---------- предзаполнение ----------
-    useEffect(() => {
-        if (!task || prefilled) return;
-        const ex = task.raw_ocr_data?.extracted;
-        if (!ex) {
-            setPrefilled(true);
-            return;
-        }
-        if (ex.work_order_coded) setWorkOrderCoded(ex.work_order_coded);
-        if (ex.work_order_incoming) setWorkOrderIncoming(ex.work_order_incoming);
-        // c-6a-fix5c: ждём все справочники, иначе mapping code→name не сработает
-        if (!sites.data || !researchTypes.data || !containerTypes.data) {
-            return;
-        }
-        if (ex.container_number) setContainerNumber(ex.container_number);
-        // c-6a-fix5c: участок — code → "code — name"
-        if (ex.site) {
-            const s = sites.data.find((x) => x.code === ex.site);
-            setSiteName(s ? `${s.code} — ${s.name}` : ex.site);
-        }
-        if (ex.container_type) setContainerTypeName(ex.container_type);
-        if (ex.research_type) {
-            const rt = researchTypes.data.find(
-                (x) => x.code === ex.research_type || x.name === ex.research_type,
-            );
-            setResearchTypeName(rt ? `${rt.code} — ${rt.name}` : ex.research_type);
-        }
-        if (ex.samples && ex.samples.length > 0) {
-            const opts = {
-                laboratoryPrefixes,
-                siteMatchPatterns,
-                hasIncomingWorkOrder: (ex.work_order_incoming ?? "").trim() !== "",
-            };
-            const parsed: RangeEntry[] = [];
-            const errors: string[] = [];
-            for (const num of ex.samples) {
-                const r = parseSampleInput(num, opts);
-                if (r.ok) {
-                    parsed.push({
-                        id: newRangeId(),
-                        rawInput: num,
-                        ...r.value,
-                        allSeqs: makeAllSeqs(r.value.sequenceFrom, r.value.sequenceTo),
-                        skippedSeqs: [],
-                        selectedSeqs: [],
-                    });
-                } else {
-                    errors.push(num);
-                    parsed.push({
-                        id: newRangeId(),
-                        rawInput: num,
-                        prefix: "",
-                        middle: num,
-                        sequenceFrom: 1,
-                        sequenceTo: 1,
-                        sequenceDigits: 1,
-                        wellName: null,
-                        allSeqs: [1],
-                        skippedSeqs: [],
-                        selectedSeqs: [],
-                    });
-                }
-            }
-            setRanges(parsed);
-            setParseErrors(errors);
-        }
-        setPrefilled(true);
-    }, [task, prefilled, sites.data, researchTypes.data, containerTypes.data, laboratoryPrefixes, siteMatchPatterns]);
+    const headerProblems = HEADER_KEYS.filter(
+        (k) => issuesByKey[k] && !issuesByKey[k].ok,
+    ).length;
+    const sampleProblems =
+        audit.duplicateNumbers.length +
+        audit.missing.length +
+        audit.notOnPhotoIds.length +
+        audit.anomalyIds.length +
+        (ranges.length === 0 ? 1 : 0);
 
-    useEffect(() => {
-        if (!task?.raw_ocr_data?.text) return;
-        if (containerNumber) return;
-        const m = task.raw_ocr_data.text.match(/\b[TТ][-–]?\d{2,6}\b/);
-        if (m) setContainerNumber(m[0]);
-    }, [task, containerNumber]);
-
-    const rangesByWell = useMemo(() => {
-        const map = new Map<string, RangeEntry[]>();
-        for (const r of ranges) {
-            const key = r.wellName ?? "__none__";
-            if (!map.has(key)) map.set(key, []);
-            map.get(key)!.push(r);
+    const focusSampleFromPhoto = (link: SampleWordLink) => {
+        setActiveSample(link.number);
+        setActiveField("sample");
+        setTab("samples");
+        if (link.rangeId) {
+            const rid = link.rangeId;
+            window.setTimeout(() => {
+                rowRefs.current.get(rid)?.scrollIntoView({
+                    block: "nearest",
+                    behavior: "smooth",
+                });
+            }, 60);
         }
-        return map;
-    }, [ranges]);
-
-    const handleAddRange = () => {
-        const result = parseSampleInput(rangeInput, {
-            laboratoryPrefixes,
-            siteMatchPatterns,
-            hasIncomingWorkOrder: workOrderIncoming.trim() !== "",
-        });
-        if (!result.ok) {
-            setRangeInputError(result.error);
-            return;
-        }
-        setRanges((prev) => [
-            ...prev,
-            {
-                id: newRangeId(),
-                rawInput: rangeInput.trim(),
-                ...result.value,
-                allSeqs: makeAllSeqs(result.value.sequenceFrom, result.value.sequenceTo),
-                skippedSeqs: [],
-                selectedSeqs: [],
-            },
-        ]);
-        setRangeInput("");
-        setRangeInputError(null);
     };
 
-    const handleRangeSave = (raw: string, skipped: number[], selected: number[]) => {
-        if (!editingRange) return;
-        const result = parseSampleInput(raw, {
-            laboratoryPrefixes,
-            siteMatchPatterns,
-            hasIncomingWorkOrder: workOrderIncoming.trim() !== "",
-        });
-        if (!result.ok) {
-            setSubmitError(result.error);
-            return;
+    const focusSampleFromRow = (rangeId: string) => {
+        const ls = linksByRange.get(rangeId) ?? [];
+        const first = ls[0];
+        setActiveSample(first ? first.number : numbersByRange.get(rangeId)?.[0] ?? null);
+        setActiveField("sample");
+        if (first) {
+            wordRefs.current.get(first.index)?.scrollIntoView({
+                block: "center",
+                inline: "center",
+                behavior: "smooth",
+            });
         }
-        const validSkipped = skipped.filter(
-            (s) => s >= result.value.sequenceFrom && s <= result.value.sequenceTo,
-        );
-        const validSelected = selected.filter(
-            (s) => s >= result.value.sequenceFrom && s <= result.value.sequenceTo,
-        );
-        setRanges((prev) =>
-            prev.map((r) =>
-                r.id === editingRange.id
-                    ? {
-                        id: r.id,
-                        rawInput: raw.trim(),
-                        ...result.value,
-                        allSeqs: makeAllSeqs(result.value.sequenceFrom, result.value.sequenceTo),
-                        skippedSeqs: validSkipped,
-                        selectedSeqs: validSelected,
-                    }
-                    : r,
-            ),
-        );
-        setEditingRange(null);
     };
 
-    const removeRange = (id: string) => {
-        setRanges((prev) => prev.filter((r) => r.id !== id));
+    const handleBboxClick = (type: string) => {
+        setActiveField(type);
+        setTab(type === "sample" ? "samples" : "header");
     };
 
     if (isLoading) {
@@ -401,21 +318,19 @@ export default function OcrReviewPage() {
             setSubmitError("Тип тары не найден — выбери из списка.");
             return;
         }
+        if (containerNumber.trim() === "") {
+            setSubmitError("Номер тары обязателен.");
+            return;
+        }
         if (researchTypeId === null) {
             setSubmitError("Тип исследования не найден — выбери из списка.");
             return;
         }
-        const hasIncoming = workOrderIncoming.trim() !== "";
-        const sampleGroups: SampleGroup[] = [];
-        for (const r of ranges) {
-            const wellName = hasIncoming ? null : r.middle;
-            const skipped = new Set(r.skippedSeqs);
-            const selected = new Set(r.selectedSeqs);
-            const normal = r.allSeqs.filter((s) => !skipped.has(s) && !selected.has(s));
-            const selArr = r.allSeqs.filter((s) => selected.has(s) && !skipped.has(s));
-            sampleGroups.push(...groupSeqsToRanges(r, normal, "NORMAL", wellName));
-            sampleGroups.push(...groupSeqsToRanges(r, selArr, "SELECTED", wellName));
+        if (workOrderCoded.trim() === "") {
+            setSubmitError("Н/З (текущий) обязателен.");
+            return;
         }
+        const sampleGroups = buildSampleGroups(ranges, workOrderIncoming.trim() !== "");
         if (sampleGroups.length === 0) {
             setSubmitError("Все пробы пропущены — оставь хотя бы одну.");
             return;
@@ -431,6 +346,7 @@ export default function OcrReviewPage() {
         };
         approve.mutate(payload, {
             onSuccess: (res) => {
+                setApprovedContainerId(res.container_id);
                 setSubmitOk(
                     `Создана тара #${res.container_id}, проб: ${res.samples_created}.` +
                     (res.batch_completed ? " Батч закрыт." : ""),
@@ -447,17 +363,23 @@ export default function OcrReviewPage() {
 
     const focusField = (name: string) => setActiveField(name);
     const blurField = () => setActiveField(null);
-    const fieldSx = (name: string) => ({
-        bgcolor: activeField === name ? "rgba(255, 152, 0, 0.1)" : "transparent",
-        transition: "background-color 200ms",
-        borderRadius: 1,
-    });
 
     return (
         <Box sx={{ p: 2, height: "100%", overflow: "auto" }}>
             <Typography variant="h5" gutterBottom>
                 Проверка OCR — задача #{task.id} ({task.status})
             </Typography>
+            <FormControlLabel
+                sx={{ mb: 1 }}
+                control={
+                    <Switch
+                        size="small"
+                        checked={showZones}
+                        onChange={(e) => setShowZones(e.target.checked)}
+                    />
+                }
+                label="Показывать зоны на фото"
+            />
             <Box
                 sx={{
                     display: "grid",
@@ -466,240 +388,160 @@ export default function OcrReviewPage() {
                     alignItems: "start",
                 }}
             >
-                <ImageWithBboxes
-                    task={task}
-                    activeField={activeField}
-                    onBboxClick={(type) => setActiveField(type)}
-                />
+                <Box
+                    sx={{
+                        position: { md: "sticky" },
+                        top: { md: 8 },
+                        alignSelf: "start",
+                        maxHeight: { md: "calc(100vh - 110px)" },
+                        overflow: { md: "auto" },
+                    }}
+                >
+                    <ImageWithBboxes
+                        task={task}
+                        activeField={activeField}
+                        activeSample={activeSample}
+                        showZones={showZones}
+                        sampleNumbers={sampleNumbers}
+                        validPrefixes={validPrefixes}
+                        links={links}
+                        wordRefs={wordRefs}
+                        onBboxClick={handleBboxClick}
+                        onSampleClick={focusSampleFromPhoto}
+                    />
+                </Box>
                 <Paper sx={{ p: 2 }}>
-                    <Stack spacing={2}>
-                        <Typography variant="subtitle1">Шапка тары</Typography>
-
-                        <Box sx={fieldSx("site")} onFocus={() => focusField("site")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Участок"
-                                value={siteName}
-                                onChange={setSiteName}
-                                options={(sites.data ?? []).map(
-                                    (s) => `${s.code} — ${s.name}`,
-                                )}
-                                loading={sites.isLoading}
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("research_type")} onFocus={() => focusField("research_type")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Тип исследования"
-                                value={researchTypeName}
-                                onChange={setResearchTypeName}
-                                options={(researchTypes.data ?? []).map(
-                                    (r) => `${r.code} — ${r.name}`,
-                                )}
-                                loading={researchTypes.isLoading}
-                                required
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("work_order_coded")} onFocus={() => focusField("work_order_coded")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Н/З (текущий)"
-                                value={workOrderCoded}
-                                onChange={setWorkOrderCoded}
-                                options={suggestions.data?.work_orders ?? []}
-                                loading={suggestions.isFetching}
-                                required
-                                helperText={
-                                    siteId === null && researchTypeId === null
-                                        ? "Выбери участок или ТИ — появятся подсказки"
-                                        : suggestions.data?.work_orders?.length
-                                            ? `Подсказок: ${suggestions.data.work_orders.length}`
-                                            : "Подсказок нет — введи вручную"
-                                }
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("work_order_incoming")} onFocus={() => focusField("work_order_incoming")} onBlur={blurField}>
-                            <SmartAutocomplete
-                                label="Н/З (входящий)"
-                                value={workOrderIncoming}
-                                onChange={setWorkOrderIncoming}
-                                options={suggestions.data?.work_orders_incoming ?? []}
-                                loading={suggestions.isFetching}
-                                helperText={
-                                    workOrderIncoming.trim() !== ""
-                                        ? "Заполнено — пробы считаются шифрованными (без скважины)"
-                                        : "Не заполнено — проба нешифрованная (скважина = middle)"
-                                }
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("container_type")}>
-                            <SmartAutocomplete
-                                label="Тип тары"
-                                value={containerTypeName}
-                                onChange={setContainerTypeName}
-                                options={(containerTypes.data ?? []).map((c) => c.name)}
-                                loading={containerTypes.isLoading}
-                                required
-                            />
-                        </Box>
-
-                        <Box sx={fieldSx("container_number")} onFocus={() => focusField("container_number")} onBlur={blurField}>
-                            <TextField
-                                label="Номер тары"
-                                value={containerNumber}
-                                onChange={(e) => setContainerNumber(e.target.value)}
-                                fullWidth
-                                size="small"
-                            />
-                        </Box>
-
-                        <Typography variant="subtitle1" sx={{ pt: 1 }}>
-                            Пробы ({ranges.length})
-                        </Typography>
-
-                        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-                            <Box sx={{ flexGrow: 1 }} onFocus={() => focusField("sample")} onBlur={blurField}>
-                                <SmartAutocomplete
-                                    label="Диапазон проб"
-                                    value={rangeInput}
-                                    onChange={(v) => {
-                                        setRangeInput(v);
-                                        setRangeInputError(null);
-                                    }}
-                                    options={baseSampleOptions}
-                                    loading={suggestions.isFetching}
-                                    appendOnSelect="-"
-                                    error={Boolean(rangeInputError)}
-                                    helperText={
-                                        rangeInputError ??
-                                        "Выбери базу из подсказок (клик → «-») или введи вручную: TAA-A34076001-031"
-                                    }
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            handleAddRange();
-                                        }
-                                    }}
-                                />
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                startIcon={<AddIcon />}
-                                onClick={handleAddRange}
-                                sx={{ whiteSpace: "nowrap", height: 40 }}
-                            >
-                                Добавить
-                            </Button>
-                        </Box>
-
-                        {ranges.length > 0 && (
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Диапазон</TableCell>
-                                        <TableCell>Скважина</TableCell>
-                                        <TableCell align="right">Проб</TableCell>
-                                        <TableCell align="right"></TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {Array.from(rangesByWell.entries()).map(
-                                        ([wellKey, wellRanges]) => (
-                                            <Fragment key={wellKey}>
-                                                <TableRow>
-                                                    <TableCell
-                                                        colSpan={4}
-                                                        sx={{
-                                                            bgcolor: "action.hover",
-                                                            fontWeight: 600,
-                                                            fontSize: "0.85rem",
-                                                        }}
-                                                    >
-                                                        {wellKey === "__none__"
-                                                            ? "Без скважины (шифрованные)"
-                                                            : `Скважина: ${wellKey}`}
-                                                    </TableCell>
-                                                </TableRow>
-                                                {wellRanges.map((r) => {
-                                                    const validCount =
-                                                        r.allSeqs.length - r.skippedSeqs.length;
-                                                    return (
-                                                        <TableRow key={r.id}>
-                                                            <TableCell>
-                                                                <Typography
-                                                                    variant="body2"
-                                                                    sx={{ fontFamily: "monospace" }}
-                                                                >
-                                                                    {r.rawInput}
-                                                                </Typography>
-                                                                {(r.skippedSeqs.length > 0 ||
-                                                                    r.selectedSeqs.length > 0) && (
-                                                                        <Typography
-                                                                            variant="caption"
-                                                                            sx={{ color: "text.secondary" }}
-                                                                        >
-                                                                            {r.skippedSeqs.length > 0 &&
-                                                                                `Проп: ${r.skippedSeqs.length}`}
-                                                                            {r.skippedSeqs.length > 0 &&
-                                                                                r.selectedSeqs.length > 0 &&
-                                                                                " · "}
-                                                                            {r.selectedSeqs.length > 0 &&
-                                                                                `Выбр: ${r.selectedSeqs.length}`}
-                                                                        </Typography>
-                                                                    )}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {r.wellName ?? "—"}
-                                                            </TableCell>
-                                                            <TableCell align="right">
-                                                                {validCount}
-                                                            </TableCell>
-                                                            <TableCell align="right">
-                                                                <Tooltip title="Редактировать">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => setEditingRange(r)}
-                                                                    >
-                                                                        <EditIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                                <Tooltip title="Удалить">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => removeRange(r.id)}
-                                                                    >
-                                                                        <DeleteIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    );
-                                                })}
-                                            </Fragment>
-                                        ),
+                    <Tabs
+                        value={tab}
+                        onChange={(_, v) => setTab(v)}
+                        sx={{ mb: 2, minHeight: 40 }}
+                        variant="fullWidth"
+                    >
+                        <Tab
+                            value="header"
+                            sx={{ minHeight: 40, textTransform: "none" }}
+                            label={
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <span>Шапка тары</span>
+                                    {headerProblems > 0 && (
+                                        <Chip
+                                            size="small"
+                                            color="warning"
+                                            label={headerProblems}
+                                            sx={{ height: 18, fontSize: 11 }}
+                                        />
                                     )}
-                                </TableBody>
-                            </Table>
+                                </Stack>
+                            }
+                        />
+                        <Tab
+                            value="samples"
+                            sx={{ minHeight: 40, textTransform: "none" }}
+                            label={
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <span>Пробы ({ranges.length})</span>
+                                    {sampleProblems > 0 && (
+                                        <Chip
+                                            size="small"
+                                            color={audit.duplicateNumbers.length > 0 ? "error" : "warning"}
+                                            label={sampleProblems}
+                                            sx={{ height: 18, fontSize: 11 }}
+                                        />
+                                    )}
+                                </Stack>
+                            }
+                        />
+                    </Tabs>
+
+                    <Stack spacing={2}>
+                        {tab === "header" ? (
+                            <ContainerHeaderFields
+                                siteName={siteName}
+                                onSiteNameChange={setSiteName}
+                                researchTypeName={researchTypeName}
+                                onResearchTypeNameChange={setResearchTypeName}
+                                workOrderCoded={workOrderCoded}
+                                onWorkOrderCodedChange={setWorkOrderCoded}
+                                workOrderIncoming={workOrderIncoming}
+                                onWorkOrderIncomingChange={setWorkOrderIncoming}
+                                containerTypeName={containerTypeName}
+                                onContainerTypeNameChange={setContainerTypeName}
+                                containerNumber={containerNumber}
+                                onContainerNumberChange={setContainerNumber}
+                                siteOptions={(sites.data ?? []).map((s) => `${s.code} — ${s.name}`)}
+                                sitesLoading={sites.isLoading}
+                                researchTypeOptions={(researchTypes.data ?? []).map((r) => `${r.code} — ${r.name}`)}
+                                researchTypesLoading={researchTypes.isLoading}
+                                containerTypeOptions={(containerTypes.data ?? []).map((c) => c.name)}
+                                containerTypesLoading={containerTypes.isLoading}
+                                workOrderOptions={suggestions.data?.work_orders ?? []}
+                                workOrderIncomingOptions={suggestions.data?.work_orders_incoming ?? []}
+                                suggestionsLoading={suggestions.isFetching}
+                                siteId={siteId}
+                                researchTypeId={researchTypeId}
+                                activeField={activeField}
+                                issues={issuesByKey}
+                                onFocusField={focusField}
+                                onBlurField={blurField}
+                            />
+                        ) : (
+                            <SamplesPanel
+                                rangesCount={ranges.length}
+                                audit={audit}
+                                parseErrors={parseErrors}
+                                rangeInput={rangeInput}
+                                onRangeInputChange={(v) => {
+                                    setRangeInput(v);
+                                    setRangeInputError(null);
+                                }}
+                                rangeInputError={rangeInputError}
+                                baseSampleOptions={baseSampleOptions}
+                                suggestionsLoading={suggestions.isFetching}
+                                onAddRange={handleAddRange}
+                                onFocusInput={() => focusField("sample")}
+                                onBlurInput={blurField}
+                                rangesByWell={rangesByWell}
+                                anomalySet={anomalySet}
+                                notOnPhotoSet={notOnPhotoSet}
+                                duplicateSet={duplicateSet}
+                                linksByRange={linksByRange}
+                                numbersByRange={numbersByRange}
+                                activeSample={activeSample}
+                                rowRefs={rowRefs}
+                                onRowClick={focusSampleFromRow}
+                                onEdit={setEditingRange}
+                                onRemove={removeRange}
+                            />
                         )}
 
-                        {parseErrors.length > 0 && (
-                            <Alert severity="warning">
-                                Не удалось разобрать: {parseErrors.join(", ")}.
-                                Введены как есть — проверь номер и скважину.
-                            </Alert>
-                        )}
+                        <ReadinessPanel readiness={readiness} />
+
                         {submitError && <Alert severity="error">{submitError}</Alert>}
                         {submitOk && <Alert severity="success">{submitOk}</Alert>}
 
                         <Stack direction="row" spacing={2}>
                             <Button
                                 variant="contained"
+                                color={readiness.ready ? "success" : "primary"}
                                 onClick={onSubmit}
-                                disabled={approve.isPending || submitOk !== null}
+                                disabled={
+                                    approve.isPending ||
+                                    submitOk !== null ||
+                                    readiness.blockers > 0
+                                }
                             >
                                 {approve.isPending ? "Сохраняем…" : submitOk ? "Подтверждено" : "Подтвердить"}
                             </Button>
+                            {approvedContainerId !== null && (
+                                <Button
+                                    variant="outlined"
+                                    onClick={() =>
+                                        navigate(`/containers?highlight=${approvedContainerId}`)
+                                    }
+                                >
+                                    Открыть тару
+                                </Button>
+                            )}
                             <Button onClick={() => navigate(-1)}>Отмена</Button>
                         </Stack>
                     </Stack>
@@ -715,153 +557,5 @@ export default function OcrReviewPage() {
                 onSave={handleRangeSave}
             />
         </Box>
-    );
-}
-
-// ---------- Image + bbox overlay с подсветкой ----------
-function ImageWithBboxes({
-    task,
-    activeField,
-    onBboxClick,
-}: {
-    task: OcrTask;
-    activeField: string | null;
-    onBboxClick: (type: string) => void;
-}) {
-    const imgRef = useRef<HTMLImageElement | null>(null);
-    const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
-    const src = resolveImageUrl(task.image);
-
-    const zones: OcrZone[] = task.zones ?? [];
-    const ex = task.raw_ocr_data?.extracted;
-
-    // 6a-fix5b: слово → к какому полю относится (для клика).
-    function fieldForWord(text: string): string | null {
-        const t = text.trim().toUpperCase();
-        if (!t || !ex) return null;
-        if (ex.work_order_coded && ex.work_order_coded.toUpperCase().includes(t)) return 'work_order_coded';
-        if (ex.work_order_incoming && ex.work_order_incoming.toUpperCase().includes(t)) return 'work_order_incoming';
-        if (ex.container_number && ex.container_number.toUpperCase().includes(t)) return 'container_number';
-        if (ex.site && ex.site.toUpperCase().includes(t)) return 'site';
-        if (ex.research_type && ex.research_type.toUpperCase() === t) return 'research_type';
-        if (ex.container_type && ex.container_type.toUpperCase() === t) return 'container_type';
-        if (ex.samples && ex.samples.some((s) => s.toUpperCase().includes(t))) return 'sample';
-        return null;
-    }
-
-    return (
-        <Card sx={{ height: "100%" }}>
-            <CardContent sx={{ position: "relative", overflow: "auto" }}>
-                <div style={{ position: "relative", display: "inline-block" }}>
-                    <img
-                        ref={imgRef}
-                        src={src}
-                        alt="OCR"
-                        onLoad={() => {
-                            const el = imgRef.current;
-                            if (el) setDims({ w: el.naturalWidth, h: el.naturalHeight });
-                        }}
-                        style={{ maxWidth: "100%", display: "block" }}
-                    />
-                    {dims && (
-                        <svg
-                            viewBox={`0 0 ${dims.w} ${dims.h}`}
-                            preserveAspectRatio="none"
-                            style={{
-                                position: "absolute",
-                                inset: 0,
-                                width: "100%",
-                                height: "100%",
-                                pointerEvents: "none",
-                            }}
-                        >
-                            {zones.map((zone, i) => {
-                                const active = activeField === zone.type;
-                                return (
-                                    <polygon
-                                        key={`zone-${i}`}
-                                        points={zone.bbox
-                                            .map(([x, y]) => `${x},${y}`)
-                                            .join(" ")}
-                                        fill={
-                                            active
-                                                ? "rgba(255, 152, 0, 0.3)"
-                                                : "rgba(30, 58, 95, 0.08)"
-                                        }
-                                        stroke={
-                                            active
-                                                ? "rgba(255, 152, 0, 0.95)"
-                                                : "rgba(30, 58, 95, 0.7)"
-                                        }
-                                        strokeWidth={active ? 3 : 1.5}
-                                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                                        onClick={() => onBboxClick(zone.type)}
-                                    />
-                                );
-                            })}
-                            {task.raw_ocr_data?.words.map((w, i) => {
-                                const targetField = fieldForWord(w.text);
-                                const isActive =
-                                    targetField !== null && activeField === targetField;
-                                return (
-                                    <polygon
-                                        key={`word-${i}`}
-                                        points={w.bbox
-                                            .map(([x, y]) => `${x},${y}`)
-                                            .join(" ")}
-                                        fill={
-                                            isActive
-                                                ? "rgba(76, 175, 80, 0.3)"
-                                                : "rgba(30, 58, 95, 0.15)"
-                                        }
-                                        stroke={
-                                            isActive
-                                                ? "rgba(76, 175, 80, 0.95)"
-                                                : "rgba(30, 58, 95, 0.5)"
-                                        }
-                                        strokeWidth={isActive ? 2.5 : 1}
-                                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                                        onClick={() => {
-                                            if (targetField) onBboxClick(targetField);
-                                        }}
-                                    >
-                                        <title>{w.text}</title>
-                                    </polygon>
-                                );
-                            })}
-                        </svg>
-                    )}
-                    {dims && zones.length > 0 && zones.map((zone, i) => {
-                        const active = activeField === zone.type;
-                        const xs = zone.bbox.map((p) => p[0]);
-                        const ys = zone.bbox.map((p) => p[1]);
-                        const minX = Math.min(...xs);
-                        const minY = Math.min(...ys);
-                        return (
-                            <div
-                                key={`label-${i}`}
-                                onClick={() => onBboxClick(zone.type)}
-                                style={{
-                                    position: "absolute",
-                                    left: `${(minX / dims.w) * 100}%`,
-                                    top: `${(minY / dims.h) * 100}%`,
-                                    transform: "translateY(-100%)",
-                                    background: active ? "orange" : "#1E3A5F",
-                                    color: "white",
-                                    fontSize: 10,
-                                    padding: "1px 4px",
-                                    borderRadius: 2,
-                                    cursor: "pointer",
-                                    whiteSpace: "nowrap",
-                                    zIndex: 10,
-                                }}
-                            >
-                                {OCR_ZONE_LABELS[zone.type as OcrZoneType] ?? zone.type}
-                            </div>
-                        );
-                    })}
-                </div>
-            </CardContent>
-        </Card>
     );
 }
