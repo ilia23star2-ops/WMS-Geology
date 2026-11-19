@@ -31,7 +31,7 @@ class OcrBatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = OcrBatch
         fields = [
-            'id', 'user', 'cell', 'status',
+            'id', 'user', 'cell', 'name', 'status',
             'sent_at', 'created_at', 'processed_at', 'tasks',
         ]
         read_only_fields = ['user', 'status', 'sent_at', 'created_at', 'processed_at']

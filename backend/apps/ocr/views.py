@@ -67,6 +67,16 @@ class OcrRecognizeView(APIView):
             # 6e-1a: batch создаётся без cell (cell в task)
             batch = OcrBatch.objects.create(user=user)
 
+        name = (request.data.get('name') or '').strip()
+        if not batch.name:
+            if name:
+                batch.name = name[:120]
+            else:
+                from apps.storage.models import Cell
+                from .services.batch_name import make_batch_name
+                addr = Cell.objects.filter(id=cell_id).values_list('full_address', flat=True).first() if cell_id else None
+                batch.name = make_batch_name(addr)
+            batch.save(update_fields=['name'])
         task = OcrTask.objects.create(batch=batch, image=image_file, cell_id=cell_id)
         if zones is not None:
             task.zones = zones
@@ -168,7 +178,11 @@ class OcrBatchListCreateView(generics.ListCreateAPIView):
         return OcrBatch.objects.filter(user=user).prefetch_related('tasks')
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user, status='DRAFT')
+        batch = serializer.save(user=self.request.user, status='DRAFT')
+        if not batch.name:
+            from .services.batch_name import make_batch_name
+            batch.name = make_batch_name(None, batch.created_at.date())
+            batch.save(update_fields=['name'])
 
 
 class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
@@ -184,6 +198,12 @@ class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         batch = self.get_object()
+        new_name = request.data.get('name')
+        if new_name is not None:
+            batch.name = str(new_name)[:120]
+            batch.save(update_fields=['name'])
+            if 'status' not in request.data:
+                return Response(OcrBatchSerializer(batch).data)
         new_status = request.data.get('status')
         if new_status != 'SENT':
             return Response(
