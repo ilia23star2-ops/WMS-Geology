@@ -37,7 +37,7 @@ export default function ReadinessPanel({ readiness }: { readiness: Readiness }) 
                 py: 0.75,
             }}
         >
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                 <Typography component="span" sx={{ color, fontWeight: 700, lineHeight: 1 }}>
                     {TONE_MARK[summary.tone]}
                 </Typography>
