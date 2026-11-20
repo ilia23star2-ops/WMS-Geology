@@ -82,6 +82,39 @@ class OcrRecognizeView(APIView):
             task.zones = zones
             task.save(update_fields=['zones'])
 
+        # 6e-2-web-7 (ТД-95): пересчёт extracted по сохранённым зонам.
+        from .services.mapping import extract_fields
+        from apps.samples.catalogs import Site, ResearchType
+        from apps.storage.models import ContainerType
+        sites_meta = [
+            {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
+            for s in Site.objects.filter(is_active=True)
+        ]
+        rts_meta = [
+            {"code": rt.code, "name": rt.name}
+            for rt in ResearchType.objects.filter(is_active=True)
+        ]
+        cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
+        vp = set()
+        for s in sites_meta:
+            if s.get("code"):
+                vp.add(s["code"].upper())
+            for pat in (s.get("match_patterns") or []):
+                if pat:
+                    vp.add(pat.upper())
+        extracted = extract_fields(
+            task.zones or [],
+            task.raw_ocr_data or {},
+            sites=sites_meta,
+            research_types=rts_meta,
+            container_types=cts_meta,
+            valid_prefixes=vp,
+        )
+        raw = dict(task.raw_ocr_data or {})
+        raw["extracted"] = extracted
+        task.raw_ocr_data = raw
+        task.save(update_fields=["raw_ocr_data"])
+
         python_exe = r"D:\Dev\python312\python.exe"
         script_path = os.path.join(
             settings.BASE_DIR, "apps", "ocr", "services", "ocr_runner.py",
