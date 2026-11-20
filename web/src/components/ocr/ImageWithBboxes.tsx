@@ -56,13 +56,11 @@ import {
     shouldZoomOnWheel,
 } from "../../utils/photoZoom";
 import {
-    ZONE_GAP,
     bboxToRect,
     clampRect,
     isZoneBigEnough,
     rectFromPoints,
     rectToBbox,
-    resolveOverlap,
     viewToPhoto,
     type Pt,
     type Rect,
@@ -329,9 +327,7 @@ export default function ImageWithBboxes({
                 e.currentTarget.releasePointerCapture(e.pointerId);
             }
             if (rect && dims && drawing && isZoneBigEnough(rect)) {
-                const existing = zones.map((z) => bboxToRect(z.bbox));
-                const placed = resolveOverlap(rect, existing, dims, ZONE_GAP);
-                drawing.addZone(rectToBbox(placed));
+                drawing.addZone(rectToBbox(clampRect(rect, dims)));
             }
             return;
         }
