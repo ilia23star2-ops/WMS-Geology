@@ -72,7 +72,9 @@
 | c-3.x-migration-6e-4-resolve | Backend: единый резолвер зон (канонизатор + поиск по справочникам БД), клиенты только отображают | ⬜ |
 | c-3.x-migration-6e-5-ocr-memory | Backend: память исправлений OCR (словарь + правила из подтверждений) | ⬜ |
 | c-3.x-migration-agent-infra-1 | CI реально прогоняет тесты: убраны job-условия, пути тестов, env из .env.example, Python 3.14 / Node 24 / Flutter 3.47.6, DejaVu из пакета | ✅ |
-| c-3.x-migration-agent-infra | Инфраструктура агента: Codespaces/CLI, AGENTS.md, скрипты, фикстуры | ⬜ |
+| c-3.x-migration-agent-infra-2 | scripts/agent/run.sh — единые команды входа, AGENT_SUMMARY для парсинга агентом | ✅ |
+| c-3.x-migration-agent-infra-3 | job Report: отчёт прогона agent/reports/LATEST.md, коммит с [skip ci] | ✅ |
+| c-3.x-migration-agent-infra | Инфраструктура агента: CI-исполнитель, run.sh, отчёт файлом; дома локальный CLI (1.128), на работе Actions (1.129) | ✅ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
 | c-3.x-migration-6e-4 | Mobile: оценка качества фото при съёмке (резкость, яркость, разрешение) + подсказки | ⬜ |
