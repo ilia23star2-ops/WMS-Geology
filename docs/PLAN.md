@@ -71,6 +71,7 @@
 | c-3.x-migration-6e-2-web-7-web | Web: Н/З и OCR-двойники не считаются пробами, аудит учитывает зоны sample | ✅ |
 | c-3.x-migration-6e-4-resolve | Backend: единый резолвер зон (канонизатор + поиск по справочникам БД), клиенты только отображают | ⬜ |
 | c-3.x-migration-6e-5-ocr-memory | Backend: память исправлений OCR (словарь + правила из подтверждений) | ⬜ |
+| c-3.x-migration-agent-infra-1 | CI реально прогоняет тесты: убраны job-условия, пути тестов, env из .env.example, Python 3.14 / Node 24 / Flutter 3.47.6, DejaVu из пакета | ✅ |
 | c-3.x-migration-agent-infra | Инфраструктура агента: Codespaces/CLI, AGENTS.md, скрипты, фикстуры | ⬜ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
@@ -360,3 +361,4 @@
 | ТД-95 | Backend: POST /ocr/tasks/{id}/zones/ пересчитывает extracted и возвращает его | ✅ | закрыто в 6e-3-backend |
 | ТД-96 | Web: фото сессии оцифровки не переживают F5 — File в памяти; IndexedDB для blob + восстановление записей | средний | 6e-3-web-persist |
 | ТД-97 | Имя пакета (авто «ячейка + дата» / вручную) + на мобилке — требует миграции OcrBatch.name | ✅ | закрыто в 6e-3-backend |
+| ТД-98 | Шрифт DejaVuSans.ttf игнорируется git (.gitignore:126), но нужен в рантайме PDF; в CI ставится из fonts-dejavu-core. В installer (3.x-deploy) включить в поставку или закоммитить | средний | перед 3.x-deploy |
