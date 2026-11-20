@@ -3,12 +3,14 @@
  * номер тары (вынесено из OcrReviewPage, 6e-2-web-fix5).
  * fix7: подсказки готовности показываются inline под каждым полем —
  * расхождение номера с фото видно сразу, без прокрутки к итоговому блоку.
+ * 4a-2: чип «уточните» под полем, если резолвер сервера вернул needs_input.
  */
 import type { ReactNode } from "react";
 import { Box, TextField, Typography } from "@mui/material";
 
 import SmartAutocomplete from "../SmartAutocomplete";
 import type { ReadinessItem } from "../../utils/ocrReadiness";
+import { verdictHint, type ZoneVerdict } from "../../utils/ocrVerdicts";
 
 const ERROR_COLOR = "#C62828";
 const WARNING_COLOR = "#EF6C00";
@@ -42,6 +44,7 @@ export default function ContainerHeaderFields({
     issues,
     onFocusField,
     onBlurField,
+    verdicts = [],
 }: {
     siteName: string;
     onSiteNameChange: (value: string) => void;
@@ -70,6 +73,7 @@ export default function ContainerHeaderFields({
     issues: Record<string, ReadinessItem>;
     onFocusField: (name: string) => void;
     onBlurField: () => void;
+    verdicts?: ZoneVerdict[];
 }) {
     const fieldSx = (name: string) => ({
         bgcolor: activeField === name ? "rgba(255, 152, 0, 0.1)" : "transparent",
@@ -88,6 +92,13 @@ export default function ContainerHeaderFields({
                 {it.hint}
             </span>
         );
+    };
+
+    /** Вердикт резолвера needs_input → чип «уточните» под полем. */
+    const verdictChip = (key: string): ReactNode | null => {
+        const hint = verdictHint(verdicts, key);
+        if (!hint) return null;
+        return <span style={{ color: WARNING_COLOR }}>⚠ уточните: {hint}</span>;
     };
 
     const isBad = (key: string): boolean => {
@@ -114,7 +125,7 @@ export default function ContainerHeaderFields({
                     onChange={onSiteNameChange}
                     options={siteOptions}
                     loading={sitesLoading}
-                    helperText={problem("site")}
+                    helperText={problem("site") ?? verdictChip("site")}
                 />
             </Box>
 
@@ -127,7 +138,7 @@ export default function ContainerHeaderFields({
                     loading={researchTypesLoading}
                     required
                     error={isBad("research_type")}
-                    helperText={problem("research_type")}
+                    helperText={problem("research_type") ?? verdictChip("research_type")}
                 />
             </Box>
 
@@ -159,9 +170,10 @@ export default function ContainerHeaderFields({
                     options={workOrderIncomingOptions}
                     loading={suggestionsLoading}
                     helperText={
-                        workOrderIncoming.trim() !== ""
+                        verdictChip("work_order_incoming") ??
+                        (workOrderIncoming.trim() !== ""
                             ? "Заполнено — пробы считаются шифрованными (без скважины)"
-                            : "Не заполнено — проба нешифрованная (скважина = middle)"
+                            : "Не заполнено — проба нешифрованная (скважина = middle)")
                     }
                 />
             </Box>
