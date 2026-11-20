@@ -62,6 +62,7 @@ import SamplesPanel from "../components/ocr/SamplesPanel";
 import TokenEditsPanel from "../components/ocr/TokenEditsPanel";
 import ReviewTabs, { type ReviewTab } from "../components/ocr/ReviewTabs";
 import { useZoneDrawing } from "../hooks/useZoneDrawing";
+import { parseVerdicts } from "../utils/ocrVerdicts";
 
 const HEADER_KEYS = [
     "site",
@@ -99,6 +100,10 @@ export default function OcrReviewPage() {
         return [...codes, ...siteMatchPatterns, ...laboratoryPrefixes];
     }, [sites.data, siteMatchPatterns, laboratoryPrefixes]);
     const photoWords = useMemo(() => task?.raw_ocr_data?.words ?? [], [task]);
+    const zoneVerdicts = useMemo(
+        () => parseVerdicts(task?.raw_ocr_data?.zone_verdicts),
+        [task],
+    );
 
     const [siteName, setSiteName] = useState("");
     const [researchTypeName, setResearchTypeName] = useState("");
@@ -542,6 +547,7 @@ export default function OcrReviewPage() {
                                 issues={issuesByKey}
                                 onFocusField={focusField}
                                 onBlurField={blurField}
+                                verdicts={zoneVerdicts}
                             />
                         ) : (
                             <SamplesPanel
