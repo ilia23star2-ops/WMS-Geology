@@ -605,3 +605,25 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 - GET/POST /api/v1/ocr/batches/ — поле username (read-only, имя пользователя) в дополнение к user id (6e-3-backend-4a).
 
 - PATCH /api/v1/ocr/batches/{id}/ {status: SENT} — 400, если в пакете есть фото в статусах PENDING/PROCESSING/ERROR (6e-3-backend-4c).
+
+## OCR: вердикты резолвера (6e-4-resolve-3)
+
+Ответы `POST /api/v1/ocr/recognize/` и `POST /api/v1/ocr/tasks/{id}/zones/`
+содержат добавочное поле `zone_verdicts` — список вердиктов по извлечённым
+полям. Поле добавочное: старые клиенты игнорируют его.
+
+Элемент списка:
+
+| Поле | Тип | Значение |
+|---|---|---|
+| zone_type | str | тип зоны: site / research_type / work_order_incoming / work_order_outgoing |
+| raw | str | сырой токен из extracted |
+| canonical | str | токен после канонизации (canon.py) |
+| value | str или null | найденное значение справочника |
+| resolved | bool | однозначное совпадение со справочником |
+| needs_input | bool | не найдено или неоднозначно — нужен человек |
+| reason | str | причина при needs_input |
+
+`POST /api/v1/ocr/tasks/{id}/zones/` теперь также возвращает `extracted`
+(пересчёт по сохранённым зонам), чтобы web показывал свежие значения
+сразу после переразметки.
