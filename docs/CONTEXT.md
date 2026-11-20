@@ -3,7 +3,7 @@
 Одна страница. Обновляется в конце каждой сессии.
 ИИ читает третьим (после `RULES.md` и `PROJECT.md`).
 
-**Дата обновления:** 2026-11-18
+**Дата обновления:** 2026-11-20
 
 ---
 
@@ -12,77 +12,49 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** docs-пачка после 6e-3-web (смержена, c29b90a). Далее: 6e-3-backend (имя пакета — ждёт выбор варианта А/Б/В) → 6e-2-dup (дубли по БД) → 6k (без ячейки) → 6e-4 (качество фото).
-- **5b** — Web OCR review базовая (страница, approve, bbox-overlay).
-- **5c** — Web: списки батчей (`OcrBatchesPage`, `OcrBatchDetailPage`), sidebar «Оцифровка», `SmartAutocomplete` в форме.
-- **5d** — Web: `Н/З (входящий)` подсказки (`work_orders_incoming` в `/storage/suggestions/`).
-- **5e** — Backend: `OcrTask.zones`, `POST /ocr/tasks/{id}/zones/`, `mapping.py` (bbox ∩ words → `extracted`), авто-вызов в `recognize` (принимает `zones_json`).
-- **5f** — Web: предзаполнение из `extracted`, двусторонняя подсветка bbox ↔ поля, диапазоны через `SmartAutocomplete` + `RangeEditDialog` (skip/selected), группировка по скважинам.
-6f-1 — Backend: approve с batch.cell_id → Pallet+ACTIVE; приоритет payload>task>batch; миграция 0003.
-6f-1-pre — Pre-existing: encrypt action (4 бага + RBAC); stale-тесты sorting/encryption.
-6e-1 — Mobile: batch OCR (список фото → один батч), 6a-fix2 (label ячейки из API); Backend: поддержка cell_id/batch_id в recognize.
-6e-a1 — Mobile: экран сессии OCR (`OcrSession` в провайдерах, `OcrSessionScreen`, `OcrCellScreen`) + фиксы notify/inset/context.mounted; Backend: `6e-1a` (`cell` в `OcrTask`, `sent_at`/`SENT`, приоритет approve).
-6e-a2 — Mobile: замена входа «Оцифровка» на сессионный экран, удаление OcrNewScreen; один пункт drawer (6e-a2-fix).
-6e-a3 — Mobile: отправка сессии (recognize→sendBatch→clear) + прогресс; Web: метка SENT + stay-after-approve; Backend: PATCH batches→SENT, ASCII-safe runner (6e-a3-pre).
-6e-2 — Mobile: разметка зон на фото (drag-прямоугольник-тип, zoom/pan жестами, легенда-чипы в цвет зоны, авторазграничение пересекающихся зон с зазором).
-6e-2-site — Backend+Mobile: тип зоны Участок (ZONE_TYPES, mapping site_from_zone, UI); _pick_scalar v2 — из многословного текста зоны берётся токен формата, одиночная лексема as-is.
-6e-2-site-fix2 — Backend: _fix_leading_confusion (T→1 сразу после валидного префикса, TSTT234501→TST1234501); container_number из зоны подтверждён device-check.
-6e-2-web 🟡 (ветка fix/3.x-migration-6e-2-web, НЕ смержена): labels Участок/Пробы, переключатель зон, кнопка Тара (container_id в reviewed_data), легенда вместо подписей, аудит проб (нормализация, склейка строк, ранжирование), мини-зоны проб фото-строка, цвета статусов (зелёный/жёлтый/малиновый пунктир), панель готовности. Тесты: Web 64, Backend 1001 (97 apps/ocr), Mobile 270.
+**Текущий заход:** docs-пачка после `6e-3-backend` (смержена, `bae05c7`).
+Далее: `6e-4-resolve` (единый резолвер зон) → `6e-5-ocr-memory` (память исправлений OCR)
+→ `agent-infra` (Codespaces / локальный CLI-агент) → `6e-2-dup` (дубли по БД) → `6k` (без ячейки).
 
-**Backend: 1001 тестов** (в т.ч. **97** в `apps.ocr`).
-**Web: 225 юнит-тестов** (23 файла).
-**Mobile: 270 юнит-тестов.**
+**Тесты (замерено 2026-11-20):**
+- **Backend: 1016** (в т.ч. **112** в `apps.ocr`)
+- **Web: 235** (26 файлов)
+- **Mobile: 273**
 
-**Серия `3.x-offline`** (долгоживущий бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
-**Серия `2.x-lifecycle`** — закрыта (5/5 пачек).
-**Серия `2.x-shipments`** — закрыта.
-**Серия `2.x-smart-input`** — закрыта.
-**Серия `2.x-lab-portal`** — закрыта.
-**Серия `2.x-rbac`** — закрыта.
+### Закрыто в серии OCR (последнее сверху)
 
-### Что готово (OCR, 5b-5f)
+- **6e-3-backend** ✅ `bae05c7` — имя пакета: авто «адрес ячейки + дата» / вручную; web — inline-переименование и пользователь в списке; mobile — поле «Имя пакета», `name` уходит первым `recognize`; SENT-гард; `POST /zones/` пересчитывает `extracted`. Device-check: пакет #32 «Тара мобайл», #29 автоимя.
+- **6e-2-web-7-web** ✅ — Н/З и его OCR-двойники (`TUT13209`) больше не считаются пробами; аудит учитывает зоны `sample` и скаляры шапки.
+- **6e-3-web** ✅ — сессия оцифровки в web: каскадный выбор ячейки, записи с фото, очередь с прогрессом и SENT.
+- **6e-2-web-2/4/5/6, fix5–fix8** ✅ — инлайн-правка токена, зум/панорама/яркость, рисование зон и авто-зоны, подсказки OCR-ошибок, обратный аудит, дубли-блокер, deep-link тары.
+- **6e-2 / 6e-2-site / 6e-2-site-fix2** ✅ — разметка зон на мобилке, тип зоны «Участок», `_pick_scalar`, `_fix_leading_confusion`.
+- **6e-a1…a3, 6e-1** ✅ — сессионный экран OCR, отправка сессии, один вход «Оцифровка».
+- **6f-1, 5b–5f, 6i** ✅ — approve с `cell_id`, web-проверка, списки батчей, zones+mapping, preprocess.
 
-- **Backend:**
-  - `mapping.py`: OCR-fix (`O→0`, `I/l→1`), `_fix_prefix` (ST→TST), фильтр по `valid_prefixes` (site+lab+match_patterns), Latin↔Cyrillic.
-  - `ocr_preprocess.py`: EXIF rotate + resize + gray + autocontrast + unsharp, вызывается из `ocr_runner.py`.
-  - `POST /api/v1/ocr/recognize/` — принимает `image` + (опц.) `zones_json`. EasyOCR на python312. Возвращает `data` + `extracted`.
-  - `POST /api/v1/ocr/tasks/{id}/zones/` — сохранить разметку зон.
-  - `POST /api/v1/ocr/tasks/{id}/approve/` — `Container` + `Sample` + `WorkOrder` link из `sample_groups`.
-  - `GET /api/v1/ocr/batches/` / `batches/{id}/` / `tasks/{id}/` — списки.
-  - `apps/ocr/services/mapping.py` — 6 типов зон (`work_order_coded`, `work_order_incoming`, `container_number`, `research_type`, `sample`, `well`), AABB-intersect, regex-fallback для samples/wells.
-- **Mobile:**
-  - Drawer «Оцифровка» → `OcrNewScreen`: камера / галерея / QR ячейки → `POST /recognize/`.
-  - `OcrService.recognize()`, `ApiClient.uploadMultipart()`, `QrCellScannerDialog`.
-  - Drawer «Оцифровка (сессия)» → `OcrSessionScreen` / `OcrCellScreen`, модель `OcrSession` (ChangeNotifier) в `MultiProvider`.
-- **Web:**
-  - Sidebar «Оцифровка» → `/ocr/batches`.
-  - `OcrReviewPage`: prefill `site`/`research_type`/`container_type` из `extracted`; fallback проб (raw с warning); клики `words[]` ↔ поля.
-  - Форма `/ocr/review/:id` — предзаполнение, подсветка, диапазоны, `RangeEditDialog`.
-- **Demo (device-check 5f):** `curl` с `image` + `zones_json` → task READY → open `/ocr/review/N` → approve → Container + 3 Sample.
+**Серия `3.x-offline`** (бранч `fix/2.x-mobile-bundle-c-2`) — на паузе.
+**Серии `2.x-lifecycle`, `2.x-shipments`, `2.x-smart-input`, `2.x-lab-portal`, `2.x-rbac`** — закрыты.
 
 ### Что осталось (OCR)
 
-- **`c-3.x-migration-8`** — Web: fallback без зон (regex по всему тексту).
-- **ТД-78/79** — `apps/ocr/services/` спящие файлы; `ocr_runner.py` python_exe хардкод.
-- **ТД-80** — расхождение формата `sample_number` (DATABASE.md vs код vs UI).
-- **ТД-82** — связь номера тары ↔ диапазон проб.
-- **ТД-83** — мёртвый `parseSampleGroups.ts` после 5f.
-- **Закрыто fix5–fix8:** номер тары сверяется с фото; аномалии только внутри скважины; пробы не с фото помечены; дубли блокируют подтверждение; вкладки и подсказки под полями; deep-link тары.
-
-### Что было закрыто до OCR (2.x-lifecycle, для истории)
-
-- **Шифрование:** `POST /samples/{id}/encrypt/` → `is_encrypted=True`, `legacy_data`.
-- **Перекладывание:** `POST /shipments/{id}/repack-samples/`.
-- **RBAC:** `lab_worker` видит только свою лабораторию.
+- **`6e-4-resolve`** — единый резолвер на сервере: тип зоны задал человек → искать значение внутри зоны и сопоставлять с БД (`Site`, `ResearchType`, `WorkOrder`, `Sample`, префиксы). Канонизатор токена: гомоглифы кир↔лат, регистр, `1ST`/`T3T`/`ПтST` → `TST`. Клиенты только рисуют зоны и показывают `resolved`.
+- **`6e-5-ocr-memory`** — память исправлений: словарь точных пар + правила символов из подтверждений оператора. Требует миграции и обсуждения.
+- **`agent-infra`** — Codespaces (работа) / локальный CLI-агент (дом), `AGENTS.md`, скрипты входа, фикстуры реальных OCR-кейсов.
+- **Разрывы аудита mobile:** каскад выбора ячейки — заглушка; очередь фото без статусов; сессия не переживает перезапуск; авто-зон нет.
+- **`c-3.x-migration-8`** — web fallback без зон.
+- **ТД-78/79/80/82/83/84/85/86/93/94/96** — см. `PLAN.md`.
 
 ### Известные грабли
 
-- **Admin:** `users/admin.py` зарегистрирован, но `lab_worker` не видит лишних разделов в Django Admin.
-- **`mark_received`:** проверяет роль, `is_superuser` не проверяется (ТД-72, оставлено).
-- **`npm run build`** — `rc=2` из-за pre-existing MUI 9 breaking changes в 5 файлах (`PoolPage`, `ShipmentsPage`, `TopologyPage`, `ContainersPage`, `SamplesTreeTable`). ТД-81. Dev (`npm run dev`) работает.
-- **`ocr_runner.py`** — `python_exe = r"D:\Dev\python312\python.exe"` захардкожен (ТД-79). На другой машине не заведётся.
-- **Буфер чата:** `wms_report` шлёт base64 через stdin; аргумент командной строки powershell.exe ограничен 32767 символами → сводки >24 КБ молча не копируются (починено 2026-11-18).
-  - **Сборка на рабочем ПК** — без `export FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn` в каждом окне Gradle тянет движок с storage.googleapis.com → прокси ломает сертификат (PKIX). Артефакты лежат в `D:/Dev/maven-local`, среда разворачивается `install_build_env.ps1`.
+- **BOM в `mobile/android/gradle.properties`** молча отключает первую строку (`org.gradle.jvmargs`) → D8 падает с OOM при любом `-Xmx`. Проверять фактический `-Xmx` демона.
+- **`work-pc-setup/setup.ps1`** шаг 2 **удаляет** `D:\Dev\maven-local`, а в `work-pc-setup/maven-local/` нет `io/flutter`. После запуска восстанавливать артефакты из кэша Gradle. Шага проводки `allprojects.repositories` в скрипте нет.
+- **`WMS-Build-Pack/gradle-caches/9.3.1/install_build_env.ps1`** — **не запускать**: сносит `~/.gradle/caches` и копирует из несуществующих путей.
+- **Сборка APK на работе (офлайн):** `maven-local` первым в `allprojects.repositories` → `flutter build apk --debug --target-platform android-arm64 --android-skip-build-dependency-validation --dart-define=API_HOST=127.0.0.1 --dart-define=API_SCHEME=http`.
+- **applicationId мобилки** — `com.wmsgeology.wms_geology_mobile` (не `com.example.…`).
+- **Python и пути:** Windows-Python не понимает MSYS2 `/tmp` — писать в относительный путь, вывод в UTF-8 файл.
+- **Троттлинг логина (429)** — перезапуск backend сбрасывает счётчик (кэш в памяти процесса).
+- **`ocr_runner.py`** — `python_exe` захардкожен (ТД-79), вне рабочего ПК не заведётся.
+- **`npm run build`** — падает на pre-existing MUI 9 в 5 файлах (ТД-81/92). Dev работает.
+- **Буфер чата:** `wms_report` шлёт base64 через stdin; сводки >24 КБ молча не копируются.
 
 ---
 
@@ -103,16 +75,17 @@
 - Python 3.14 + Poetry + Django 5.2 + DRF.
 - PostgreSQL: Docker (домашний) / портативный (рабочий).
 - JWT, OpenAPI, 11 приложений (в т.ч. `apps.ocr`).
-- Node 20+, Vite 8, React 19, MUI 9.
+- Node 24, Vite 8, React 19, MUI 9.
 - Flutter 3.47 + Dart 3.13 + mobile_scanner 7.4.2.
 - EasyOCR на портативном Python 3.12 (`D:\Dev\python312`, только рабочий ПК).
+- CI: `.github/workflows/ci.yml`.
 
-### Backend (1001 тестов)
+### Backend (1016 тестов)
 
 | Приложение | Что внутри |
 |---|---|
-| `storage` | Топология, Pallet, ContainerType (+is_disposable), Container (+draft, PENDING_FILLING, DISPOSED, parent), bulk-create, fill-samples, bulk-place, create-in-cell, history, print_batch_status, `current_holder`, suggestions |
-| `samples` | ResearchType, Site, Laboratory, Well, Sample (+is_encrypted, parent, DISPOSED, SELECTED), SampleWorkOrder, sync-сервис, `encrypt`, `current_holder` |
+| `storage` | Топология, Pallet, ContainerType, Container (+draft, PENDING_FILLING, DISPOSED, parent), bulk-create, fill-samples, bulk-place, create-in-cell, history, `current_holder`, suggestions |
+| `samples` | ResearchType, Site, Laboratory, Well, Sample (+is_encrypted, parent, DISPOSED, SELECTED), SampleWorkOrder, sync, `encrypt` |
 | `work_orders` | WorkOrder (self-ref + site, admin, samples_count) |
 | `receiving` | Receipt, ReceiptItem, ImportSession, conflicts, act |
 | `picking` | PickList, Shipment (+direction), ShipmentItem, ShipmentContainerItem, `repack-samples` |
@@ -120,33 +93,32 @@
 | `inventory` | InventorySession, InventoryScan, ActualizationTask |
 | `users` | Role, UserProfile (+laboratory), AuditLog, JWT, `permissions.py` |
 | `labels` | QR-сервис, PDF-этикетки, PrintBatch, act_service |
-| **`ocr`** | **`OcrBatch`, `OcrTask` (+zones), `POST /recognize/` (+zones_json), `POST /zones/`, `POST /approve/`, `GET /batches/`, `mapping.py`, `approve.py`, `ocr_runner.py`** |
+| **`ocr`** (112) | **`OcrBatch` (+name), `OcrTask` (+zones, cell, sent_at), `recognize` (+zones_json, name), `zones` (пересчёт extracted), `approve`, `batches`, `mapping.py`, SENT-гард** |
 
-### Web (React, 225 юнит-тестов)
-
-| Раздел | Что внутри |
-|---|---|
-| Аутентификация | Zustand-стор, login, protected routes, JWT-интерцептор. |
-| Layout | MUI sidebar + header. `Sidebar` настроен по ролям. |
-| Тара | DataGrid, фильтры, edit, delete, PDF, bulk-print, создание, заполнение, предпросмотр. Скрытие по ролям. |
-| Пробы | Дерево-таблица, `SampleEditDialog`, геометка. |
-| Отправка | `ShipmentsPage`, `ShipmentDetailPage`, `CreateShipmentDialog`, `AddContainersToShipmentDialog`. |
-| **OCR** | **`OcrBatchesPage`, `OcrBatchDetailPage`, `OcrReviewPage` (v10), `RangeEditDialog`, `SmartAutocomplete`, `api/ocr.ts`** |
-
-### Mobile (Flutter, 270 юнит-тестов)
+### Web (React, 235 юнит-тестов)
 
 | Раздел | Что внутри |
 |---|---|
-| Офлайн-режим | SQLite, SyncService, SyncQueue, Deferred Offline Login, Auto-detect. |
-| Сеть | `NetworkProbe`, `NetworkStatusProvider`, `NetworkBadge`. |
-| Тара | 4 фильтра, пагинация, офлайн-кэш, создание. |
-| Карточка тары | 3 вкладки, `ContainerEditForm`, `FillContainerContent`, история. |
-| Пробы | Поиск, чекбоксы, bulk-статус, офлайн-редактирование через `sync_queue`. |
-| PDF | Online + offline на Dart. |
-| **OCR** | **OcrSessionScreen / OcrCellScreen, отправка сессии, прогресс; один вход «Оцифровка».** |
+| Аутентификация | Zustand, login, protected routes, JWT-интерцептор |
+| Layout | MUI sidebar + header по ролям |
+| Тара | DataGrid, фильтры, CRUD, PDF, bulk-print, заполнение |
+| Пробы | Дерево-таблица, `SampleEditDialog`, геометка |
+| Отправка | `ShipmentsPage`, `ShipmentDetailPage`, диалоги |
+| **OCR** | **`OcrBatchesPage` (имя inline, пользователь), `OcrBatchDetailPage`, `OcrSessionPage` (каскад, очередь, SENT), `OcrReviewPage` (зоны, авто-зоны, аудит проб, подсказки, готовность), `RangeEditDialog`, `SmartAutocomplete`** |
+
+### Mobile (Flutter, 273 юнит-теста)
+
+| Раздел | Что внутри |
+|---|---|
+| Офлайн | SQLite, SyncService, SyncQueue, Deferred Login, Auto-detect |
+| Сеть | `NetworkProbe`, `NetworkStatusProvider`, `NetworkBadge` |
+| Тара | фильтры, пагинация, офлайн-кэш, создание, карточка, заполнение |
+| Пробы | поиск, bulk-статус, офлайн-редактирование |
+| PDF | online + offline на Dart |
+| **OCR** | **`OcrSessionScreen` (имя пакета, отправка, прогресс), `OcrCellScreen`, разметка зон (drag, zoom/pan, чипы)** |
 
 ### Документация
-- `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`.
+- `PROJECT`, `CONTEXT`, `DECISIONS`, `DATABASE`, `API`, `SCENARIOS`, `UI`, `TESTING`, `PLAN`, `PROGRESS`, `ISSUES`, `AGENTS`, `COMMANDS`.
 
 ---
 
@@ -157,6 +129,7 @@
 - Файл `.env` (только `.env.example`).
 - Ветка `fix/2.x-mobile-bundle-c-2` (WIP).
 - `work-pc-setup/`, `wms-bundle/`, `D:\Dev\maven-local`, `D:\Dev\android-sdk\ndk\28.2.13676358`.
+- Машинные `mobile/android/*` — **не коммитить** (п.15).
 
 ---
 
@@ -166,3 +139,4 @@
 2. `PROJECT.md`
 3. `CONTEXT.md` (этот файл)
 4. `PLAN.md`
+5. `AGENTS.md` — если работа автономным агентом
