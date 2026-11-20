@@ -1,12 +1,14 @@
 /**
- * Аудит проб OCR (6e-2-web-fix…fix4): фото vs список.
+ * Аудит проб OCR (6e-2-web-fix…fix4, 6e-2-web-7-web).
  *
  * fix2: нормализация (пробелы буква↔цифра, O/I/L в хвосте, путаница сразу
  *   после валидного префикса), склейка слов строки, ранжирование кандидатов.
  * fix3: статус слова — covered / anomaly / missing.
- * fix4: missing считается ТОЙ ЖЕ терпимой сверкой, что и подсветка
- *   (исправленный номер больше не попадает в «нет в списке»);
+ * fix4: missing считается ТОЙ ЖЕ терпимой сверкой, что и подсветка;
  *   linkSampleWords — связь «слово фото ↔ строка списка» (мини-зоны проб).
+ * 6e-2-web-7-web: скаляры (Н/З, № тары) и их OCR-двойники по префиксу не
+ *   считаются пробами; при наличии зон типа sample кандидаты берутся только
+ *   из них — как на сервере.
  * Чистая логика, без UI — покрывается тестами.
  */
 import type { OcrWord } from "../api/ocr";
@@ -19,6 +21,12 @@ export interface AuditRange {
     sequenceTo: number;
     sequenceDigits: number;
     skippedSeqs: number[];
+}
+
+/** Контекст аудита: зоны разметки и значения шапки (скаляры). */
+export interface AuditContext {
+    zones?: { type: string; bbox: number[][] }[];
+    scalars?: (string | null | undefined)[];
 }
 
 export interface SampleAudit {
@@ -37,11 +45,8 @@ export interface SampleAudit {
 export type SampleWordStatus = "covered" | "anomaly" | "missing";
 
 export interface SampleWordLink {
-    /** Индекс слова в raw_ocr_data.words. */
     index: number;
-    /** Нормализованный номер пробы. */
     number: string;
-    /** Строка списка, которой соответствует слово (null — не внесена). */
     rangeId: string | null;
     status: SampleWordStatus;
     bbox: number[][];
@@ -57,11 +62,6 @@ const CONFUSION: Record<string, string> = {
     T: "1", I: "1", L: "1", O: "0", І: "1", О: "0",
 };
 
-/**
- * Нормализация токена.
- * `validPrefixes` — известные префиксы (site.code, match_patterns, lab.prefixes).
- * Без них коррекция на стыке не делается — обычный TST1234510 не ломается.
- */
 export function normalizeToken(
     raw: string,
     validPrefixes: string[] = [],
@@ -107,25 +107,80 @@ function minX(w: OcrWord): number {
     return xs.length ? Math.min(...xs) : 0;
 }
 
+/** 6e-2-web-7-web: слово внутри зоны типа sample (или зон нет). */
+function inSampleZones(w: OcrWord, ctx?: AuditContext): boolean {
+    const zones = (ctx?.zones ?? []).filter(
+        (z) => z.type === "sample" && (z.bbox?.length ?? 0) >= 4,
+    );
+    if (zones.length === 0) return true;
+    const xs = (w.bbox ?? []).map((p) => p[0]);
+    const ys = (w.bbox ?? []).map((p) => p[1]);
+    if (xs.length === 0 || ys.length === 0) return false;
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    return zones.some((z) => {
+        const zx = z.bbox.map((p) => p[0]);
+        const zy = z.bbox.map((p) => p[1]);
+        return (
+            cx >= Math.min(...zx) && cx <= Math.max(...zx) &&
+            cy >= Math.min(...zy) && cy <= Math.max(...zy)
+        );
+    });
+}
+
+function scalarSet(ctx: AuditContext | undefined, prefixes: string[]): Set<string> {
+    const out = new Set<string>();
+    for (const s of ctx?.scalars ?? []) {
+        const v = (s ?? "").trim();
+        if (v) out.add(normalizeToken(v, prefixes));
+    }
+    return out;
+}
+
+/**
+ * 6e-2-web-7-web: токен равен скаляру или отличается от него одной буквой
+ * префикса при том же цифровом хвосте (TST13209 → TUT13209).
+ */
+function isScalarVariant(token: string, scalars: Set<string>): boolean {
+    if (scalars.size === 0) return false;
+    if (scalars.has(token)) return true;
+    const tailA = (token.match(/[0-9]+$/) ?? [""])[0];
+    if (!tailA) return false;
+    const headA = token.slice(0, token.length - tailA.length);
+    for (const s of scalars) {
+        const tailB = (s.match(/[0-9]+$/) ?? [""])[0];
+        if (tailB !== tailA) continue;
+        const headB = s.slice(0, s.length - tailB.length);
+        if (headB.length !== headA.length) continue;
+        let diff = 0;
+        for (let i = 0; i < headA.length; i++) if (headA[i] !== headB[i]) diff++;
+        if (diff <= 1) return true;
+    }
+    return false;
+}
+
 /** Кандидаты в пробы: по каждому слову и по склейке слов одной строки. */
 export function collectPhotoTokens(
     words: OcrWord[],
     validPrefixes: string[] = [],
+    ctx?: AuditContext,
 ): string[] {
     const out = new Set<string>();
+    const scalars = scalarSet(ctx, validPrefixes);
+    const usable = (words ?? []).filter((w) => inSampleZones(w, ctx));
     const push = (text: string) => {
         const compact = (text ?? "").replace(/(?<=[A-ZА-ЯЁ])\s+(?=[0-9])/gi, "");
         const matches = compact.match(TOKEN_RE);
         if (!matches) return;
         for (const m of matches) {
             const ok = isSampleLike(m, validPrefixes);
-            if (ok) out.add(ok);
+            if (ok && !isScalarVariant(ok, scalars)) out.add(ok);
         }
     };
 
-    for (const w of words ?? []) push(w.text ?? "");
+    for (const w of usable) push(w.text ?? "");
 
-    const sorted = [...(words ?? [])].sort(
+    const sorted = [...usable].sort(
         (a, b) => centerY(a) - centerY(b) || minX(a) - minX(b),
     );
     let line: OcrWord[] = [];
@@ -220,10 +275,6 @@ function oneEditApart(a: string, b: string): boolean {
     return true;
 }
 
-/**
- * Связь слова фото со списком: точное совпадение или одна вставка/удаление
- * (TST11234506 ↔ TST1234506). Соседние номера (замена цифры) НЕ связываются.
- */
 export function matchesSampleNumber(
     text: string,
     numbers: Set<string>,
@@ -258,18 +309,15 @@ export function sampleWordStatus(
     return "missing";
 }
 
-/**
- * fix4: мини-зоны проб — каждое слово-проба связано со строкой списка.
- * Аномальные диапазоны проверяются первыми, чтобы неисправленный номер
- * не «прилипал» к нормальной строке.
- */
 export function linkSampleWords(
     words: OcrWord[],
     ranges: AuditRange[],
     anomalyIds: string[],
     validPrefixes: string[] = [],
+    ctx?: AuditContext,
 ): SampleWordLink[] {
     const anomalySet = new Set(anomalyIds);
+    const scalars = scalarSet(ctx, validPrefixes);
     const prepared = ranges.map((r) => ({
         id: r.id,
         anomaly: anomalySet.has(r.id),
@@ -280,6 +328,7 @@ export function linkSampleWords(
     (words ?? []).forEach((w, index) => {
         const n = normalizeToken(w.text ?? "", validPrefixes);
         if (!n || !SAMPLE_SHAPE_RE.test(n)) return;
+        if (!inSampleZones(w, ctx) || isScalarVariant(n, scalars)) return;
 
         let rangeId: string | null = null;
         let status: SampleWordStatus = "missing";
@@ -338,8 +387,9 @@ export function auditSamples(
     words: OcrWord[],
     ranges: AuditRange[],
     validPrefixes: string[] = [],
+    ctx?: AuditContext,
 ): SampleAudit {
-    const photoSamples = collectPhotoTokens(words, validPrefixes);
+    const photoSamples = collectPhotoTokens(words, validPrefixes, ctx);
     const covered = rangeNumberSet(ranges);
     const baseCount = new Map<string, number>();
 
@@ -357,9 +407,6 @@ export function auditSamples(
         }
     }
 
-    // fix5: аномалия — только OCR-сбой: base отличается от более частого
-    // base с тем же prefix ровно на одну вставку/удаление.
-    // Разные скважины в одной таре (middle 1234 и 5678) — норма.
     const anomalyIds: string[] = [];
     for (const r of ranges) {
         const base = `${r.prefix}${r.middle}`;
@@ -373,8 +420,6 @@ export function auditSamples(
         }
     }
 
-    // fix4: та же терпимая сверка, что и при подсветке — исправленный
-    // номер не считается «отсутствующим в списке».
     const missing = photoSamples
         .filter((p) => !matchesSampleNumber(p, covered, validPrefixes))
         .sort(

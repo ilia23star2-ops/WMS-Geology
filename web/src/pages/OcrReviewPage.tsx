@@ -217,9 +217,18 @@ export default function OcrReviewPage() {
 
     const baseSampleOptions = useSampleBaseOptions(suggestions.data?.samples, ranges);
 
+    // 6e-2-web-7-web: контекст аудита — зоны разметки и скаляры шапки.
+    const auditCtx = useMemo(
+        () => ({
+            zones: zoneDrawing.zones,
+            scalars: [workOrderCoded, workOrderIncoming, containerNumber],
+        }),
+        [zoneDrawing.zones, workOrderCoded, workOrderIncoming, containerNumber],
+    );
+
     const audit = useMemo(
-        () => auditSamples(photoWords, ranges, validPrefixes),
-        [photoWords, ranges, validPrefixes],
+        () => auditSamples(photoWords, ranges, validPrefixes, auditCtx),
+        [photoWords, ranges, validPrefixes, auditCtx],
     );
     const anomalySet = useMemo(() => new Set(audit.anomalyIds), [audit]);
     const notOnPhotoSet = useMemo(() => new Set(audit.notOnPhotoIds), [audit]);
@@ -232,8 +241,9 @@ export default function OcrReviewPage() {
             ranges,
             audit.anomalyIds,
             validPrefixes,
+            auditCtx,
         ),
-        [photoWords, ranges, audit.anomalyIds, validPrefixes],
+        [photoWords, ranges, audit.anomalyIds, validPrefixes, auditCtx],
     );
     const linksByRange = useMemo(() => {
         const m = new Map<string, SampleWordLink[]>();
