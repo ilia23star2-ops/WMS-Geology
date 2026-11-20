@@ -45,3 +45,9 @@ def test_patch_sent_keeps_name():
     assert r.status_code == 200
     assert r.data["status"] == "SENT"
     assert r.data["name"] == "X"
+
+def test_batch_exposes_username():
+    client = make_client()
+    r = client.post("/api/v1/ocr/batches/", {}, format="json")
+    assert r.status_code == 201
+    assert r.data["username"] == "name-api"

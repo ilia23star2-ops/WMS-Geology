@@ -110,7 +110,7 @@ export default function OcrBatchesPage() {
                     </Box>
                 ),
         },
-        { field: "user", headerName: "Пользователь", width: 160, valueGetter: (_v, row) => `id=${row.user}` },
+        { field: "user", headerName: "Пользователь", width: 160, valueGetter: (_v, row) => row.username || ("id=" + row.user) },
         {
             field: "status",
             headerName: "Статус",

@@ -121,6 +121,8 @@ export interface OcrBatch {
     cell: number | null;
     /** 6e-3-backend: имя пакета; пусто = безымянный («Пакет #id»). */
     name: string;
+    /** 6e-3-backend-4a: имя пользователя для списка пакетов. */
+    username?: string;
     status: OcrBatchStatus;
     created_at: string;
     processed_at: string | null;

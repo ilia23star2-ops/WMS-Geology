@@ -602,3 +602,4 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 - Лимит `per_page`? → предложить 200.
 - Глобальный `/search` — пока не реализован. Используются фильтры `GET /samples?q=` и `?work_order=`.
 - `POST /receiving/items/{id}/fill/` — заполнение заготовки приёмки — в разработке.
+- GET/POST /api/v1/ocr/batches/ — поле username (read-only, имя пользователя) в дополнение к user id (6e-3-backend-4a).
