@@ -22,6 +22,14 @@ class OcrSessionScreen extends StatefulWidget {
 }
 
 class _OcrSessionScreenState extends State<OcrSessionScreen> {
+  final TextEditingController _nameCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
   bool _isUploading = false;
   String _uploadLabel = '';
 
@@ -42,6 +50,20 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
 
           return Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: TextField(
+                  controller: _nameCtrl,
+                  enabled: _isUploading == false,
+                  decoration: const InputDecoration(
+                    labelText: 'Имя пакета (необязательно)',
+                    helperText: 'Пусто — сервер поставит адрес ячейки и дату',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: session.setBatchName,
+                ),
+              ),
+
               // Кнопки выбора ячейки
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -236,6 +258,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
             imagePath: photo.path,
             cellId: cell.cellId,
             batchId: batchId,
+            name: batchId == null ? session.batchName : null,
             zones: cell.zonesFor(photo.path).map((z) => z.toPayload()).toList(),
           );
           batchId ??= result.batchId;
@@ -248,6 +271,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
         await ocrService.sendBatch(batchId);
       }
       session.clear();
+      _nameCtrl.clear();
       messenger.showSnackBar(
         SnackBar(content: Text('Отправлено на сервер: $sent фото')),
       );
