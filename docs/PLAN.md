@@ -75,6 +75,7 @@
 | c-3.x-migration-agent-infra-2 | scripts/agent/run.sh — единые команды входа, AGENT_SUMMARY для парсинга агентом | ✅ |
 | c-3.x-migration-agent-infra-3 | job Report: отчёт прогона agent/reports/LATEST.md, коммит с [skip ci] | ✅ |
 | c-3.x-migration-6e-4-resolve-1 | canon.py — канонизатор токена: регистр, гомоглифы кир→лат, снап префикса Левенштейн≤1, OCR-замены цифр; 11 тестов | ✅ |
+| c-3.x-migration-6e-4-resolve-2 | resolve.py — резолвер значений зон по справочникам, вердикты resolved/needs_input, 6 тестов | ✅ |
 | c-3.x-migration-agent-infra | Инфраструктура агента: CI-исполнитель, run.sh, отчёт файлом; дома локальный CLI (1.128), на работе Actions (1.129) | ✅ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
