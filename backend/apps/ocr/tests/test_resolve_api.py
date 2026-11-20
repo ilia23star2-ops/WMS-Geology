@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 
+from apps.ocr.models import OcrTask
 from apps.ocr.views import _zone_verdicts
 from apps.samples.catalogs import Site
 
@@ -87,3 +88,15 @@ def test_recognize_response_contains_zone_verdicts(api_client, png):
     body = resp.json()
     assert 'zone_verdicts' in body
     assert isinstance(body['zone_verdicts'], list)
+
+
+@pytest.mark.django_db
+def test_recognize_persists_zone_verdicts_in_raw(api_client, png):
+    """4a-1: вердикты сохраняются в raw_ocr_data, как extracted."""
+    Site.objects.create(code='TST', name='Тестовый', is_active=True)
+    with patch('apps.ocr.views.subprocess.run', return_value=_fake_ocr_ok()):
+        resp = api_client.post('/api/v1/ocr/recognize/', {'image': png})
+    assert resp.status_code == 200
+    task = OcrTask.objects.get(id=resp.json()['task_id'])
+    assert 'zone_verdicts' in (task.raw_ocr_data or {})
+    assert isinstance(task.raw_ocr_data['zone_verdicts'], list)

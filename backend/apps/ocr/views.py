@@ -163,6 +163,7 @@ class OcrRecognizeView(APIView):
         )
         raw = dict(task.raw_ocr_data or {})
         raw["extracted"] = extracted
+        raw["zone_verdicts"] = _zone_verdicts(extracted)
         task.raw_ocr_data = raw
         task.save(update_fields=["raw_ocr_data"])
 
@@ -195,6 +196,7 @@ class OcrRecognizeView(APIView):
                         valid_prefixes=vp,
                     )
                     ocr_data['extracted'] = extracted
+                    ocr_data["zone_verdicts"] = _zone_verdicts(extracted)
                     task.raw_ocr_data = ocr_data
                     task.status = 'READY'
                     task.save()
@@ -371,6 +373,7 @@ class OcrTaskZonesView(APIView):
         )
         raw = dict(task.raw_ocr_data or {})
         raw["extracted"] = extracted
+        raw["zone_verdicts"] = _zone_verdicts(extracted)
         task.raw_ocr_data = raw
         task.save(update_fields=['raw_ocr_data'])
 
