@@ -61,6 +61,17 @@ class CellPhotos {
 class OcrSession extends ChangeNotifier {
   final List<CellPhotos> _cells = [];
 
+  /// 6e-3-backend-4d: имя пакета; null = автоимя сервера.
+  String? _batchName;
+
+  String? get batchName => _batchName;
+
+  void setBatchName(String? value) {
+    final trimmed = value?.trim();
+    _batchName = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    notifyListeners();
+  }
+
   List<CellPhotos> get cells => List.unmodifiable(_cells);
 
   void addCell(int cellId, String fullAddress) {
@@ -94,6 +105,7 @@ class OcrSession extends ChangeNotifier {
 
   void clear() {
     _cells.clear();
+    _batchName = null;
     notifyListeners();
   }
 

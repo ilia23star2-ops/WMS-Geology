@@ -9,6 +9,8 @@ c-6j: OCR-нормализация (O→0, I/l→1) в trailing; Latin↔Cyrilli
 import re
 from typing import Optional
 
+from .zone_samples import sample_tokens
+
 
 _SAMPLE_RE = re.compile(
     r"\b[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?[0-9OIl]{5,}\b",
@@ -287,7 +289,7 @@ def extract_fields(
 
     # 2. Samples
     samples_set: set = set()
-    for m in _SAMPLE_RE.findall(full_text):
+    for m in sample_tokens(zones, words, full_text, result):
         fixed = _fix_leading_confusion(_fix_ocr_digits(m), vp)
         if not re.match(r"^[A-ZА-ЯЁ]{2,}(?:-[A-ZА-ЯЁ])?-?\d+$", fixed, re.IGNORECASE):
             continue

@@ -24,11 +24,16 @@ class OcrService {
     required String imagePath,
     int? cellId,
     int? batchId,
+    String? name,
     List<Map<String, dynamic>>? zones,
   }) async {
     final fields = <String, dynamic>{};
     if (cellId != null) fields['cell_id'] = cellId.toString();
     if (batchId != null) fields['batch_id'] = batchId.toString();
+    final trimmedName = name?.trim();
+    if (batchId == null && trimmedName != null && trimmedName.isNotEmpty) {
+      fields['name'] = trimmedName;
+    }
     if (zones != null && zones.isNotEmpty) {
       fields['zones_json'] = jsonEncode(zones);
     }

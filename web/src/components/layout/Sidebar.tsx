@@ -16,6 +16,7 @@ import {
     ListItemText,
     Toolbar,
     Typography,
+    LinearProgress,
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
@@ -36,6 +37,7 @@ import { type ReactElement } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useAuthStore } from "../../stores/authStore";
+import { useOcrSessionStore } from "../../stores/ocrSessionStore";
 
 export const DRAWER_WIDTH = 240;
 
@@ -100,6 +102,10 @@ function DrawerContent({ onNavigate }: DrawerContentProps) {
     const location = useLocation();
     const user = useAuthStore((state) => state.user);
     const role = user?.role ?? "";
+    const ocrSending = useOcrSessionStore((s) => s.sending);
+    const ocrSent = useOcrSessionStore((s) => s.sentCount);
+    const ocrTotal = useOcrSessionStore((s) => s.totalCount);
+    const ocrLabel = useOcrSessionStore((s) => s.currentLabel);
 
     const allowedPaths = ROLE_MENU_ACCESS[role];
 
@@ -120,6 +126,18 @@ function DrawerContent({ onNavigate }: DrawerContentProps) {
                     WMS Geology
                 </Typography>
             </Toolbar>
+            {ocrSending && (
+                <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}>
+                    <Typography variant="caption" color="text.secondary">
+                        OCR: {ocrSent}/{ocrTotal}{ocrLabel ? " · " + ocrLabel : ""}
+                    </Typography>
+                    <LinearProgress
+                        variant="determinate"
+                        value={ocrTotal > 0 ? Math.round((ocrSent / ocrTotal) * 100) : 0}
+                        sx={{ mt: 0.5, height: 6, borderRadius: 3 }}
+                    />
+                </Box>
+            )}
             <Box sx={{ overflow: "auto" }}>
                 <List>
                     {visibleMenu.map((item) => {

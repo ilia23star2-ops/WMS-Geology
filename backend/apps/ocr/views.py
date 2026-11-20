@@ -67,10 +67,53 @@ class OcrRecognizeView(APIView):
             # 6e-1a: batch создаётся без cell (cell в task)
             batch = OcrBatch.objects.create(user=user)
 
+        name = (request.data.get('name') or '').strip()
+        if not batch.name:
+            if name:
+                batch.name = name[:120]
+            else:
+                from apps.storage.models import Cell
+                from .services.batch_name import make_batch_name
+                addr = Cell.objects.filter(id=cell_id).values_list('full_address', flat=True).first() if cell_id else None
+                batch.name = make_batch_name(addr)
+            batch.save(update_fields=['name'])
         task = OcrTask.objects.create(batch=batch, image=image_file, cell_id=cell_id)
         if zones is not None:
             task.zones = zones
             task.save(update_fields=['zones'])
+
+        # 6e-2-web-7 (ТД-95): пересчёт extracted по сохранённым зонам.
+        from .services.mapping import extract_fields
+        from apps.samples.catalogs import Site, ResearchType
+        from apps.storage.models import ContainerType
+        sites_meta = [
+            {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
+            for s in Site.objects.filter(is_active=True)
+        ]
+        rts_meta = [
+            {"code": rt.code, "name": rt.name}
+            for rt in ResearchType.objects.filter(is_active=True)
+        ]
+        cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
+        vp = set()
+        for s in sites_meta:
+            if s.get("code"):
+                vp.add(s["code"].upper())
+            for pat in (s.get("match_patterns") or []):
+                if pat:
+                    vp.add(pat.upper())
+        extracted = extract_fields(
+            task.zones or [],
+            task.raw_ocr_data or {},
+            sites=sites_meta,
+            research_types=rts_meta,
+            container_types=cts_meta,
+            valid_prefixes=vp,
+        )
+        raw = dict(task.raw_ocr_data or {})
+        raw["extracted"] = extracted
+        task.raw_ocr_data = raw
+        task.save(update_fields=["raw_ocr_data"])
 
         python_exe = r"D:\Dev\python312\python.exe"
         script_path = os.path.join(
@@ -168,7 +211,11 @@ class OcrBatchListCreateView(generics.ListCreateAPIView):
         return OcrBatch.objects.filter(user=user).prefetch_related('tasks')
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user, status='DRAFT')
+        batch = serializer.save(user=self.request.user, status='DRAFT')
+        if not batch.name:
+            from .services.batch_name import make_batch_name
+            batch.name = make_batch_name(None, batch.created_at.date())
+            batch.save(update_fields=['name'])
 
 
 class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
@@ -184,6 +231,12 @@ class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         batch = self.get_object()
+        new_name = request.data.get('name')
+        if new_name is not None:
+            batch.name = str(new_name)[:120]
+            batch.save(update_fields=['name'])
+            if 'status' not in request.data:
+                return Response(OcrBatchSerializer(batch).data)
         new_status = request.data.get('status')
         if new_status != 'SENT':
             return Response(
@@ -193,6 +246,13 @@ class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
         if batch.status != 'DRAFT':
             return Response(
                 {'error': f'Нельзя отправить из статуса {batch.status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # 6e-3-backend-4c: нельзя закрыть пакет, пока есть незавершённые фото.
+        unfinished = batch.tasks.exclude(status__in=["DONE", "READY"]).count()
+        if unfinished:
+            return Response(
+                {"error": f"Нельзя отправить: незавершённых фото {unfinished}. Дождись распознавания или повтори отправку."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         from django.utils import timezone

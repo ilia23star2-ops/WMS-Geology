@@ -1,8 +1,8 @@
 /**
- * Загрузка фото в OCR из web (6e-3-web, +SENT 6e-3-web-c).
- * POST /ocr/recognize/ — multipart: image + cell_id + batch_id.
- * PATCH /ocr/batches/{id}/ {status:"SENT"} — закрыть пакет после отправки,
- * как это делает мобильный OcrService.sendBatch.
+ * Загрузка фото в OCR из web (6e-3-web, +SENT 6e-3-web-c, +name 6e-3-backend).
+ * POST /ocr/recognize/ — multipart: image + cell_id + batch_id + name.
+ * `name` применяется сервером только когда пакет создаётся этим запросом.
+ * PATCH /ocr/batches/{id}/ {status:"SENT"} — закрыть пакет после отправки.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -20,17 +20,20 @@ export interface RecognizeVars {
     file: File;
     cellId: number | null;
     batchId: number | null;
+    /** Имя пакета — имеет смысл только для первого фото (создание пакета). */
+    batchName?: string | null;
     signal?: AbortSignal;
     onProgress?: (percent: number) => void;
 }
 
 export function useRecognizePhoto() {
     return useMutation({
-        mutationFn: async ({ file, cellId, batchId, signal, onProgress }: RecognizeVars) => {
+        mutationFn: async ({ file, cellId, batchId, batchName, signal, onProgress }: RecognizeVars) => {
             const form = new FormData();
             form.append("image", file);
             if (cellId !== null) form.append("cell_id", String(cellId));
             if (batchId !== null) form.append("batch_id", String(batchId));
+            if (batchName) form.append("name", batchName);
             const { data } = await apiClient.post<RecognizeResult>(
                 "/ocr/recognize/",
                 form,

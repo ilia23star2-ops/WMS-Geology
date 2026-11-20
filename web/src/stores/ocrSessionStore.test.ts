@@ -54,7 +54,7 @@ describe("ocrSessionStore", () => {
         expect(sessionFiles.has(photoId)).toBe(false);
     });
 
-    it("clearAll стирает записи, файлы и batchId", () => {
+    it("clearAll стирает записи, файлы, batchId и счётчики", () => {
         const id = useOcrSessionStore.getState().addRecord(2, "Y");
         useOcrSessionStore.getState().addPhotos(id, [file("a.png")]);
         useOcrSessionStore.getState().setBatchId(11);
@@ -62,6 +62,21 @@ describe("ocrSessionStore", () => {
         const s = useOcrSessionStore.getState();
         expect(s.records).toEqual([]);
         expect(s.batchId).toBeNull();
+        expect(s.sentCount).toBe(0);
+        expect(s.totalCount).toBe(0);
         expect(sessionFiles.size).toBe(0);
+    });
+
+    it("requestStop поднимает флаг мягкой остановки", () => {
+        expect(useOcrSessionStore.getState().stopRequested).toBe(false);
+        useOcrSessionStore.getState().requestStop();
+        expect(useOcrSessionStore.getState().stopRequested).toBe(true);
+    });
+
+    it("setBatchName обрезает пробелы и пустое превращает в null", () => {
+        useOcrSessionStore.getState().setBatchName("  Тара ноябрь  ");
+        expect(useOcrSessionStore.getState().batchName).toBe("Тара ноябрь");
+        useOcrSessionStore.getState().setBatchName("   ");
+        expect(useOcrSessionStore.getState().batchName).toBeNull();
     });
 });

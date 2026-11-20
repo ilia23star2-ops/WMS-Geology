@@ -25,6 +25,8 @@ import {
 } from "@mui/material";
 import Inventory2Icon from "@mui/icons-material/Inventory2";
 
+import { displayBatchName } from "../utils/batchName";
+
 import {
     approvedContainerId,
     OCR_BATCH_STATUS_LABELS,
@@ -81,10 +83,10 @@ export default function OcrBatchDetailPage() {
             >
                 <Box>
                     <Typography variant="h5">
-                        Пакет #{data.id} — {OCR_BATCH_STATUS_LABELS[data.status]}
+                        {displayBatchName(data.name, data.id)} — {OCR_BATCH_STATUS_LABELS[data.status]}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Создан: {new Date(data.created_at).toLocaleString("ru-RU")}
+                        #{data.id} · Создан: {new Date(data.created_at).toLocaleString("ru-RU")}
                         {data.processed_at &&
                             ` · Обработан: ${new Date(data.processed_at).toLocaleString("ru-RU")}`}
                     </Typography>

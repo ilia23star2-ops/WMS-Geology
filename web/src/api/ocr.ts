@@ -8,6 +8,7 @@
  * c-3.x-migration-6a-fix5b: +site, +container_type в ExtractedFields.
  * c-3.x-migration-6e-a3: +SENT — сессия отправлена с мобильного.
  * c-3.x-migration-6e-2-web: зона «Участок», label «Пробы», approvedContainerId.
+ * c-3.x-migration-6e-3-backend: +name у OcrBatch, useRenameOcrBatch.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -118,6 +119,10 @@ export interface OcrBatch {
     id: number;
     user: number;
     cell: number | null;
+    /** 6e-3-backend: имя пакета; пусто = безымянный («Пакет #id»). */
+    name: string;
+    /** 6e-3-backend-4a: имя пользователя для списка пакетов. */
+    username?: string;
     status: OcrBatchStatus;
     created_at: string;
     processed_at: string | null;
@@ -219,5 +224,22 @@ export function useOcrBatch(batchId: number | null) {
             return data;
         },
         enabled: batchId !== null && batchId > 0,
+    });
+}
+
+/** 6e-3-backend: переименовать пакет PATCH /ocr/batches/{id}/. */
+export function useRenameOcrBatch() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, name }: { id: number; name: string }) => {
+            const { data } = await apiClient.patch<OcrBatch>(
+                `/ocr/batches/${id}/`,
+                { name },
+            );
+            return data;
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ["ocr"] });
+        },
     });
 }

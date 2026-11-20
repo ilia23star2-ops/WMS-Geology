@@ -27,11 +27,12 @@ class OcrTaskSerializer(serializers.ModelSerializer):
 
 class OcrBatchSerializer(serializers.ModelSerializer):
     tasks = OcrTaskSerializer(many=True, read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
 
     class Meta:
         model = OcrBatch
         fields = [
-            'id', 'user', 'cell', 'status',
+            'id', 'user', 'username', 'cell', 'name', 'status',
             'sent_at', 'created_at', 'processed_at', 'tasks',
         ]
         read_only_fields = ['user', 'status', 'sent_at', 'created_at', 'processed_at']

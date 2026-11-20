@@ -19,6 +19,11 @@ class OcrBatch(models.Model):
         verbose_name='Ячейка (legacy, если batch = одна ячейка)',
         help_text='6e-1a: обычно пусто — ячейка хранится в OcrTask.cell',
     )
+    name = models.CharField(
+        max_length=120, blank=True, default='',
+        verbose_name='Имя пакета (6e-3-backend)',
+        help_text='Пусто = безымянный; автоимя «ячейка + дата» ставится при создании.',
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT', verbose_name='Статус')
     sent_at = models.DateTimeField(
         null=True, blank=True,
