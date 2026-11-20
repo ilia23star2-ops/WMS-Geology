@@ -248,6 +248,13 @@ class OcrBatchDetailView(generics.RetrieveUpdateAPIView):
                 {'error': f'Нельзя отправить из статуса {batch.status}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # 6e-3-backend-4c: нельзя закрыть пакет, пока есть незавершённые фото.
+        unfinished = batch.tasks.exclude(status__in=["DONE", "READY"]).count()
+        if unfinished:
+            return Response(
+                {"error": f"Нельзя отправить: незавершённых фото {unfinished}. Дождись распознавания или повтори отправку."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         from django.utils import timezone
         batch.status = 'SENT'
         batch.sent_at = timezone.now()

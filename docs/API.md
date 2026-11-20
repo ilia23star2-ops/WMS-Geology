@@ -603,3 +603,5 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 - Глобальный `/search` — пока не реализован. Используются фильтры `GET /samples?q=` и `?work_order=`.
 - `POST /receiving/items/{id}/fill/` — заполнение заготовки приёмки — в разработке.
 - GET/POST /api/v1/ocr/batches/ — поле username (read-only, имя пользователя) в дополнение к user id (6e-3-backend-4a).
+
+- PATCH /api/v1/ocr/batches/{id}/ {status: SENT} — 400, если в пакете есть фото в статусах PENDING/PROCESSING/ERROR (6e-3-backend-4c).

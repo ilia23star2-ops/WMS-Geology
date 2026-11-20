@@ -224,7 +224,8 @@ export const useOcrSessionStore = create<OcrSessionState>((set, get) => ({
             set({ sentCount: sent });
         }
 
-        if (!get().stopRequested && batch !== null) {
+        const allDone = get().records.every((r) => r.photos.every((p) => p.status === "done"));
+        if (!get().stopRequested && batch !== null && allDone) {
             try {
                 await apiClient.patch(`/ocr/batches/${batch}/`, { status: "SENT" });
             } catch {
