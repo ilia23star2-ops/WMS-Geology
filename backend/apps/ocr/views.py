@@ -19,6 +19,74 @@ from .serializers import (
 from .services.approve import approve_task
 
 
+def _dicts_for_mapping():
+    """Справочники для mapping и resolve (Site, ResearchType, ContainerType)."""
+    from apps.samples.catalogs import Site, ResearchType
+    from apps.storage.models import ContainerType
+
+    sites_meta = [
+        {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
+        for s in Site.objects.filter(is_active=True)
+    ]
+    rts_meta = [
+        {"code": rt.code, "name": rt.name}
+        for rt in ResearchType.objects.filter(is_active=True)
+    ]
+    cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
+    vp = set()
+    for s in sites_meta:
+        if s.get("code"):
+            vp.add(s["code"].upper())
+        for pat in (s.get("match_patterns") or []):
+            if pat:
+                vp.add(pat.upper())
+    return sites_meta, rts_meta, cts_meta, vp
+
+
+def _zone_verdicts(extracted: dict) -> list:
+    """Вердикты резолвера по извлечённым полям (6e-4-resolve-3).
+
+    Добавочное поле ответа: старые клиенты могут игнорировать его.
+    Для каждой присутствующей зоны спрашиваем resolve.py:
+    resolved — однозначное совпадение со справочником,
+    needs_input — не найдено или неоднозначно (нужен человек).
+    """
+    from apps.samples.catalogs import Site, ResearchType
+    from apps.work_orders.models import WorkOrder
+
+    from .services.resolve import resolve_by_code, resolve_by_number
+
+    site_codes = tuple(s.code for s in Site.objects.filter(is_active=True) if s.code)
+    rt_codes = tuple(rt.code for rt in ResearchType.objects.filter(is_active=True) if rt.code)
+    wo_numbers = tuple(w.number for w in WorkOrder.objects.all() if w.number)
+
+    checks = (
+        ("site", "site", site_codes, "code"),
+        ("research_type", "research_type", rt_codes, "code"),
+        ("work_order_incoming", "work_order_incoming", wo_numbers, "number"),
+        ("work_order_outgoing", "work_order_outgoing", wo_numbers, "number"),
+    )
+    verdicts = []
+    for zone_type, key, dictionary, kind in checks:
+        token = (extracted or {}).get(key)
+        if not token:
+            continue
+        if kind == "code":
+            r = resolve_by_code(zone_type, token, dictionary)
+        else:
+            r = resolve_by_number(zone_type, token, dictionary)
+        verdicts.append({
+            "zone_type": r.zone_type,
+            "raw": r.raw,
+            "canonical": r.canonical,
+            "value": r.value,
+            "resolved": r.resolved,
+            "needs_input": r.needs_input,
+            "reason": r.reason,
+        })
+    return verdicts
+
+
 class OcrRecognizeView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
@@ -84,24 +152,7 @@ class OcrRecognizeView(APIView):
 
         # 6e-2-web-7 (ТД-95): пересчёт extracted по сохранённым зонам.
         from .services.mapping import extract_fields
-        from apps.samples.catalogs import Site, ResearchType
-        from apps.storage.models import ContainerType
-        sites_meta = [
-            {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
-            for s in Site.objects.filter(is_active=True)
-        ]
-        rts_meta = [
-            {"code": rt.code, "name": rt.name}
-            for rt in ResearchType.objects.filter(is_active=True)
-        ]
-        cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
-        vp = set()
-        for s in sites_meta:
-            if s.get("code"):
-                vp.add(s["code"].upper())
-            for pat in (s.get("match_patterns") or []):
-                if pat:
-                    vp.add(pat.upper())
+        sites_meta, rts_meta, cts_meta, vp = _dicts_for_mapping()
         extracted = extract_fields(
             task.zones or [],
             task.raw_ocr_data or {},
@@ -134,26 +185,7 @@ class OcrRecognizeView(APIView):
                     # 5e-2: mapping zones + raw_ocr_data → extracted
                     # 6a-fix5a: fuzzy match справочников (site/research_type/container_type)
                     from .services.mapping import extract_fields
-                    from apps.samples.catalogs import Site, ResearchType
-                    from apps.storage.models import ContainerType
-
-                    sites_meta = [
-                        {"code": s.code, "name": s.name, "match_patterns": s.match_patterns}
-                        for s in Site.objects.filter(is_active=True)
-                    ]
-                    rts_meta = [
-                        {"code": rt.code, "name": rt.name}
-                        for rt in ResearchType.objects.filter(is_active=True)
-                    ]
-                    cts_meta = [{"name": ct.name} for ct in ContainerType.objects.all()]
-                    # 6j: valid_prefixes (site.code + match_patterns) — фильтр Н/З, коррекция ST→TST
-                    vp = set()
-                    for s in sites_meta:
-                        if s.get("code"):
-                            vp.add(s["code"].upper())
-                        for p in (s.get("match_patterns") or []):
-                            if p:
-                                vp.add(p.upper())
+                    sites_meta, rts_meta, cts_meta, vp = _dicts_for_mapping()
                     extracted = extract_fields(
                         task.zones or [],
                         ocr_data,
@@ -172,6 +204,7 @@ class OcrRecognizeView(APIView):
                         "batch_id": batch.id,
                         "data": ocr_data,
                         "extracted": extracted,
+                        "zone_verdicts": _zone_verdicts(extracted),
                     }, status=status.HTTP_200_OK)
                 except json.JSONDecodeError:
                     task.status = 'ERROR'
@@ -324,7 +357,29 @@ class OcrTaskZonesView(APIView):
         task.zones = ser.validated_data['zones']
         task.save(update_fields=['zones'])
 
+        # 6e-4-resolve-3: пересчёт extracted + вердикты, чтобы web видел
+        # свежие значения и подсказки сразу после переразметки зон.
+        from .services.mapping import extract_fields
+        sites_meta, rts_meta, cts_meta, vp = _dicts_for_mapping()
+        extracted = extract_fields(
+            task.zones or [],
+            task.raw_ocr_data or {},
+            sites=sites_meta,
+            research_types=rts_meta,
+            container_types=cts_meta,
+            valid_prefixes=vp,
+        )
+        raw = dict(task.raw_ocr_data or {})
+        raw["extracted"] = extracted
+        task.raw_ocr_data = raw
+        task.save(update_fields=['raw_ocr_data'])
+
         return Response(
-            {'task_id': task.id, 'zones_count': len(task.zones)},
+            {
+                'task_id': task.id,
+                'zones_count': len(task.zones),
+                'extracted': extracted,
+                'zone_verdicts': _zone_verdicts(extracted),
+            },
             status=status.HTTP_200_OK,
         )
