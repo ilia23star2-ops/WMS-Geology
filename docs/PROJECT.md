@@ -519,7 +519,7 @@ Android-приложение для планшетов. QR-коды как ос�
       включить / выключить туннель.
     - `flutter clean && flutter run ...` — пересборка APK (если менял
       код).
-    - `adb shell pm clear com.example.wms_geology_mobile` — стереть
+    - `adb shell pm clear com.wmsgeology.wms_geology_mobile` — стереть
       данные (если нужно «с нуля»).
     - `adb logcat -c && adb logcat | grep -iE "flutter|push|..."` —
       логи.
@@ -670,3 +670,43 @@ fi
     `git status` и `git log origin/<ветка> -1`: незакоммиченные правки
     и незапушенные коммиты на GitHub не видны — тогда читать локальный
     файл через буфер. Правило 12.1 (читать целиком) сохраняется.
+
+---
+
+## 39. Автономный режим ИИ-агента
+
+Протокол работы агента — `docs/AGENTS.md` (читать первым при автономной работе).
+
+**Схема А+Б (принята 2026-11-20):**
+
+| Машина | Исполнитель | Почему |
+|---|---|---|
+| 🏠 Домашний ПК | локальный CLI-агент (Claude Code / Codex CLI / Aider / Cline) | прямой интернет, права админа, полный доступ к терминалу, git и планшету по WiFi |
+| 🏢 Рабочий ПК | GitHub Codespaces + CLI-агент внутри | прокси Polymetal блокирует внешние API (UserCheck/PKIX), прав админа нет; Codespaces — облачная VM с терминалом |
+
+**Агент делает сам:** читает код → создаёт ветку захода → правит → гоняет тесты → чинит красное → коммит → push → отчёт + device-check для человека.
+
+**Человеку остаётся:** device-check (планшет/браузер), «норм», подтверждение merge, решения по схеме БД, контракту API и интерфейсу.
+
+**Границы автономии:** RULES §8 («норм»-гейт), §9 (одна незакрытая пачка), §14.1 (стоп-сигналы), PROJECT п.15 (не `git add .` на рабочем ПК).
+
+**Бюджет токенов:** разведка ≤ 300 строк (`rg`/`sed -n`, не `cat` целиком), правка ≤ 150 строк вывода, логи ≤ 30 строк, 1–3 файла за заход, bash-блок ≤ 30 строк. Один большой файл — одно сообщение, иначе ответ обрезается и файл доезжает неполным.
+
+**Приёмка:** юнит-тесты — не приёмка. Планшет в облаке недоступен (нет USB/adb), поэтому device-check всегда на человеке.
+
+---
+
+## 40. Грабли сборки на рабочем ПК (проверено 2026-11-20)
+
+| Грабли | Что делать |
+|---|---|
+| BOM в `mobile/android/gradle.properties` | Java Properties не снимает BOM → первая строка (`org.gradle.jvmargs`) игнорируется, D8 падает с OOM при любом `-Xmx`. Снимать BOM и проверять фактический `-Xmx` живого демона |
+| `work-pc-setup/setup.ps1` | шаг 2 **удаляет** `D:\Dev\maven-local`, а в `work-pc-setup/maven-local/` нет `io/flutter`. Восстанавливать артефакты из `~/.gradle/caches/modules-2/files-2.1/io.flutter` в Maven-расклад |
+| Проводка репозиториев | в `setup.ps1` нет шага: `maven { url = uri("file:///D:/Dev/maven-local") }` должен быть **первым** в `allprojects.repositories` файла `mobile/android/build.gradle.kts` |
+| `WMS-Build-Pack/gradle-caches/9.3.1/install_build_env.ps1` | **не запускать**: удаляет `~/.gradle/caches` и копирует из несуществующих путей (`9.3.1/gradle-caches`, `9.3.1/pub-cache`) |
+| D8 OOM на `mergeExtDexDebug` | `-Xmx6G`, `org.gradle.workers.max=1`, `kotlin.compiler.execution.strategy=in-process`; закрыть Chrome и Android Studio |
+| Сборка APK офлайн | `flutter build apk --debug --target-platform android-arm64 --android-skip-build-dependency-validation --dart-define=API_HOST=127.0.0.1 --dart-define=API_SCHEME=http` |
+| applicationId мобилки | `com.wmsgeology.wms_geology_mobile` (не `com.example.…`) |
+| Дампы `java_pid*.hprof` | появляются в `mobile/android/` после OOM, весят гигабайты, в git не коммитить |
+| Python и `/tmp` | Windows-Python не понимает MSYS2-путь `/tmp` → писать в относительный путь, вывод в UTF-8 файл |
+| Троттлинг логина 429 | перезапуск backend сбрасывает счётчик (кэш в памяти процесса) |
