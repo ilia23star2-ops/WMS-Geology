@@ -70,7 +70,7 @@
 | c-3.x-migration-6e-3-backend | Backend+Web+Mobile: имя пакета (авто и вручную), inline-переименование, пользователь в списке, SENT-гард, zones пересчёт extracted | ✅ |
 | c-3.x-migration-6e-2-web-7-web | Web: Н/З и OCR-двойники не считаются пробами, аудит учитывает зоны sample | ✅ |
 | c-3.x-migration-6e-4-resolve | Backend: единый резолвер зон (канонизатор + поиск по справочникам БД), клиенты только отображают | ✅ |
-| c-3.x-migration-6e-5-ocr-memory | Backend: память исправлений OCR (словарь + правила из подтверждений) | ⬜ |
+| c-3.x-migration-6e-5-ocr-memory | Backend: память исправлений OCR — модель, обучение в approve, чтение в резолвере | ✅ |
 | c-3.x-migration-agent-infra-1 | CI реально прогоняет тесты: убраны job-условия, пути тестов, env из .env.example, Python 3.14 / Node 24 / Flutter 3.47.6, DejaVu из пакета | ✅ |
 | c-3.x-migration-agent-infra-2 | scripts/agent/run.sh — единые команды входа, AGENT_SUMMARY для парсинга агентом | ✅ |
 | c-3.x-migration-agent-infra-3 | job Report: отчёт прогона agent/reports/LATEST.md, коммит с [skip ci] | ✅ |
@@ -81,6 +81,10 @@
 | c-3.x-migration-6e-4-resolve-4a-2 | web: util ocrVerdicts + чип уточните в ContainerHeaderFields (проп verdicts опционален); 4 теста | ✅ |
 | c-3.x-migration-6e-4-resolve-4a-3 | прокидка zone_verdicts из raw_ocr_data в ContainerHeaderFields (parseVerdicts + проп verdicts); чип виден оператору; +3 теста | ✅ |
 | c-3.x-migration-6e-4-resolve-4b | mobile: парсер zone_verdicts, счётчик needsAttention, SnackBar требует уточнения; +2 теста | ✅ |
+| c-3.x-migration-6e-5-ocr-memory-1 | Модель OcrMemoryEntry + миграция 0005, уникальность (zone_type, raw_token); 4 теста | ✅ |
+| c-3.x-migration-6e-5-ocr-memory-2 | Обучение из approve: канон сырого токена → подтверждённый код; точные совпадения, тара и даты не учим (1.127); 5 тестов | ✅ |
+| c-3.x-migration-6e-5-ocr-memory-3 | Чтение в резолвере: справочник не решил → пара из памяти, reason «из памяти исправлений», hit_count; 4 теста | ✅ |
+| c-3.x-migration-6e-5-ocr-memory-3b | Seam-фиксы: ключ work_order_coded вместо work_order_outgoing, order_number вместо number; +2 теста | ✅ |
 | c-3.x-migration-agent-infra | Инфраструктура агента: CI-исполнитель, run.sh, отчёт файлом; дома локальный CLI (1.128), на работе Actions (1.129) | ✅ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
@@ -371,3 +375,4 @@
 | ТД-96 | Web: фото сессии оцифровки не переживают F5 — File в памяти; IndexedDB для blob + восстановление записей | средний | 6e-3-web-persist |
 | ТД-97 | Имя пакета (авто «ячейка + дата» / вручную) + на мобилке — требует миграции OcrBatch.name | ✅ | закрыто в 6e-3-backend |
 | ТД-98 | Шрифт DejaVuSans.ttf игнорируется git (.gitignore:126), но нужен в рантайме PDF; в CI ставится из fonts-dejavu-core. В installer (3.x-deploy) включить в поставку или закоммитить | средний | перед 3.x-deploy |
+| ТД-99 | Web: чип «уточните» не запрашивается для Н/З текущего — ContainerHeaderFields спрашивает verdicts по site / research_type / work_order_incoming | низкий | следующий web-заход |

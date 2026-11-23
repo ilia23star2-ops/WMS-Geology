@@ -616,13 +616,13 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 
 | Поле | Тип | Значение |
 |---|---|---|
-| zone_type | str | тип зоны: site / research_type / work_order_incoming / work_order_outgoing |
+| zone_type | str | тип зоны: site / research_type / work_order_coded / work_order_incoming |
 | raw | str | сырой токен из extracted |
 | canonical | str | токен после канонизации (canon.py) |
 | value | str или null | найденное значение справочника |
 | resolved | bool | однозначное совпадение со справочником |
 | needs_input | bool | не найдено или неоднозначно — нужен человек |
-| reason | str | причина при needs_input |
+| reason | str | причина при needs_input; «из памяти исправлений» — значение из OcrMemoryEntry |
 
 `POST /api/v1/ocr/tasks/{id}/zones/` теперь также возвращает `extracted`
 (пересчёт по сохранённым зонам), чтобы web показывал свежие значения
