@@ -4,7 +4,15 @@ class OcrRecognizeResult {
   final int? batchId; // ID батча, к которому привязана задача
   final ExtractedData? extracted;
 
-  OcrRecognizeResult({required this.taskId, this.batchId, this.extracted});
+  /// Вердикты резолвера по зонам (6e-4-resolve-4b).
+  final List<ZoneVerdict> zoneVerdicts;
+
+  OcrRecognizeResult({
+    required this.taskId,
+    this.batchId,
+    this.extracted,
+    this.zoneVerdicts = const [],
+  });
 
   factory OcrRecognizeResult.fromJson(Map<String, dynamic> json) {
     return OcrRecognizeResult(
@@ -13,6 +21,38 @@ class OcrRecognizeResult {
       extracted: json['extracted'] != null
           ? ExtractedData.fromJson(json['extracted'])
           : null,
+      zoneVerdicts:
+          (json['zone_verdicts'] as List?)
+              ?.map((e) => ZoneVerdict.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+  }
+
+  /// Есть ли хоть одна зона, требующая уточнения человеком.
+  bool get needsAttention => zoneVerdicts.any((v) => v.needsInput);
+}
+
+/// Вердикт резолвера по одной зоне (6e-4-resolve).
+class ZoneVerdict {
+  final String zoneType;
+  final bool resolved;
+  final bool needsInput;
+  final String? reason;
+
+  ZoneVerdict({
+    required this.zoneType,
+    required this.resolved,
+    required this.needsInput,
+    this.reason,
+  });
+
+  factory ZoneVerdict.fromJson(Map<String, dynamic> json) {
+    return ZoneVerdict(
+      zoneType: json['zone_type'] as String? ?? '',
+      resolved: json['resolved'] as bool? ?? false,
+      needsInput: json['needs_input'] as bool? ?? false,
+      reason: json['reason'] as String?,
     );
   }
 }

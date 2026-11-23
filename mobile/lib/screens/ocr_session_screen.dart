@@ -3,6 +3,7 @@
 /// Список ячеек со счётчиком фото + кнопка "Отправить на сервер".
 /// 6e-a3: `_uploadSession` — фото → recognize (один батч) → sendBatch → clear.
 /// 6e-a3-fix: информативный прогресс «Фото N/M · адрес ячейки».
+/// 6e-4-resolve-4b: после отправки показываем, сколько фото требуют уточнения.
 library;
 
 import 'package:flutter/material.dart';
@@ -236,6 +237,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
   ///
   /// Успешно отправленные фото удаляются сразу — при ошибке повтор
   /// отправит только оставшиеся (без дублей задач на сервере).
+  /// 6e-4-resolve-4b: считаем фото с needs_input и показываем в SnackBar.
   Future<void> _uploadSession(BuildContext context, OcrSession session) async {
     if (_isUploading || session.totalPhotos == 0) return;
     setState(() => _isUploading = true);
@@ -244,6 +246,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final total = session.totalPhotos;
     var sent = 0;
+    var needsAttentionCount = 0;
     int? batchId;
 
     try {
@@ -262,6 +265,7 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
             zones: cell.zonesFor(photo.path).map((z) => z.toPayload()).toList(),
           );
           batchId ??= result.batchId;
+          if (result.needsAttention) needsAttentionCount++;
           cell.removePhoto(0);
           sent++;
         }
@@ -272,8 +276,11 @@ class _OcrSessionScreenState extends State<OcrSessionScreen> {
       }
       session.clear();
       _nameCtrl.clear();
+      final attention = needsAttentionCount > 0
+          ? ' · требуют уточнения: $needsAttentionCount (проверь в web)'
+          : '';
       messenger.showSnackBar(
-        SnackBar(content: Text('Отправлено на сервер: $sent фото')),
+        SnackBar(content: Text('Отправлено на сервер: $sent фото$attention')),
       );
     } catch (e) {
       messenger.showSnackBar(
