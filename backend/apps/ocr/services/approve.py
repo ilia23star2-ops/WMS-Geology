@@ -2,14 +2,20 @@
 
 c-6f-1: priority payload.cell_id > batch.cell_id.
 c-6e-1a: priority payload.cell_id > task.cell_id > batch.cell_id.
+6e-5-ocr-memory-2: после успеха учим память исправлений.
 """
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
+from apps.ocr.services import memory
 from apps.storage.models import Container, ContainerType
 from apps.storage.services import fill_container_with_samples
 from apps.storage.services.bulk_place import bulk_place_containers
 from apps.users.services import log_audit
+
+logger = logging.getLogger(__name__)
 
 
 def approve_task(task, payload, user):
@@ -96,6 +102,15 @@ def approve_task(task, payload, user):
                 'ocr_task_id': task.pk,
                 'placed_to_cell_id': cell_id,
             },
+        )
+
+    # 6e-5-ocr-memory-2: учим подтверждённые исправления. Память —
+    # вспомогательная фича: её сбой не должен ломать approve.
+    try:
+        memory.learn_from_approve(task, payload, user)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            'Не удалось записать память исправлений OCR (task=%s)', task.pk,
         )
 
     return {
