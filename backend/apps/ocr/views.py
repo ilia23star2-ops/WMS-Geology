@@ -43,6 +43,30 @@ def _dicts_for_mapping():
     return sites_meta, rts_meta, cts_meta, vp
 
 
+def _memory_lookup(zone_type, token):
+    """6e-5-ocr-memory-3: точное совпадение канон-токена в памяти исправлений.
+
+    Вызывается, когда живой справочник не смог однозначно резолвить токен.
+    Возвращает dict {canonical, value} или None. При совпадении
+    инкрементирует hit_count и обновляет last_used_at.
+    """
+    from django.utils import timezone
+
+    from apps.ocr.models import OcrMemoryEntry
+    from apps.ocr.services import canon
+
+    canonical = canon.canon_text(token)
+    entry = OcrMemoryEntry.objects.filter(
+        zone_type=zone_type, raw_token=canonical,
+    ).first()
+    if not entry:
+        return None
+    entry.hit_count += 1
+    entry.last_used_at = timezone.now()
+    entry.save(update_fields=['hit_count', 'last_used_at'])
+    return {'canonical': canonical, 'value': entry.resolved_value}
+
+
 def _zone_verdicts(extracted: dict) -> list:
     """Вердикты резолвера по извлечённым полям (6e-4-resolve-3).
 
@@ -50,6 +74,7 @@ def _zone_verdicts(extracted: dict) -> list:
     Для каждой присутствующей зоны спрашиваем resolve.py:
     resolved — однозначное совпадение со справочником,
     needs_input — не найдено или неоднозначно (нужен человек).
+    6e-5-ocr-memory-3: если справочник не решил, сверяемся с памятью исправлений.
     """
     from apps.samples.catalogs import Site, ResearchType
     from apps.work_orders.models import WorkOrder
@@ -75,6 +100,22 @@ def _zone_verdicts(extracted: dict) -> list:
             r = resolve_by_code(zone_type, token, dictionary)
         else:
             r = resolve_by_number(zone_type, token, dictionary)
+
+        # 6e-5-ocr-memory-3: справочник не решил однозначно — ищем в памяти.
+        if r.needs_input:
+            mem = _memory_lookup(zone_type, token)
+            if mem is not None:
+                verdicts.append({
+                    "zone_type": zone_type,
+                    "raw": token,
+                    "canonical": mem["canonical"],
+                    "value": mem["value"],
+                    "resolved": True,
+                    "needs_input": False,
+                    "reason": "из памяти исправлений",
+                })
+                continue
+
         verdicts.append({
             "zone_type": r.zone_type,
             "raw": r.raw,
