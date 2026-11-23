@@ -84,3 +84,61 @@ class OcrTask(models.Model):
 
     def __str__(self):
         return f'Фото #{self.id} из пакета #{self.batch_id} ({self.get_status_display()})'
+
+
+class OcrMemoryEntry(models.Model):
+    """Память исправлений OCR (6e-5-ocr-memory, решение 1.127).
+
+    Подтверждённые оператором пары «сырой токен → значение справочника».
+    Заход 1: только модель. Источник обучения — только approve (1А),
+    совпадение точное по канонизированному токену (2А), храним код
+    справочника, а не FK (3А). Номер тары и даты не учим.
+    """
+
+    ZONE_TYPE_CHOICES = [
+        ('site', 'Участок'),
+        ('research_type', 'Тип исследования'),
+        ('work_order_coded', 'Н/З (текущий)'),
+        ('work_order_incoming', 'Н/З (входящий)'),
+    ]
+
+    zone_type = models.CharField(
+        max_length=32, choices=ZONE_TYPE_CHOICES, db_index=True,
+        verbose_name='Тип зоны',
+    )
+    raw_token = models.CharField(
+        max_length=120, db_index=True,
+        verbose_name='Сырой токен (канонизированный)',
+        help_text='Токен из extracted после canon.canon_text.',
+    )
+    resolved_value = models.CharField(
+        max_length=120,
+        verbose_name='Значение (код справочника)',
+        help_text='Код справочника, который подтвердил оператор.',
+    )
+    hit_count = models.PositiveIntegerField(
+        default=0, verbose_name='Совпадений',
+        help_text='Сколько раз память сработала при резолве.',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, verbose_name='Кто подтвердил',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата создания')
+    last_used_at = models.DateTimeField(
+        null=True, blank=True, verbose_name='Последнее использование',
+    )
+
+    class Meta:
+        verbose_name = 'Память исправления OCR'
+        verbose_name_plural = 'Память исправлений OCR'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['zone_type', 'raw_token'],
+                name='uniq_ocr_memory_zone_raw',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.get_zone_type_display()}: {self.raw_token} → {self.resolved_value}'
