@@ -83,13 +83,13 @@ def _zone_verdicts(extracted: dict) -> list:
 
     site_codes = tuple(s.code for s in Site.objects.filter(is_active=True) if s.code)
     rt_codes = tuple(rt.code for rt in ResearchType.objects.filter(is_active=True) if rt.code)
-    wo_numbers = tuple(w.number for w in WorkOrder.objects.all() if w.number)
+    wo_numbers = tuple(w.order_number for w in WorkOrder.objects.all() if w.order_number)
 
     checks = (
         ("site", "site", site_codes, "code"),
         ("research_type", "research_type", rt_codes, "code"),
         ("work_order_incoming", "work_order_incoming", wo_numbers, "number"),
-        ("work_order_outgoing", "work_order_outgoing", wo_numbers, "number"),
+        ("work_order_coded", "work_order_coded", wo_numbers, "number"),
     )
     verdicts = []
     for zone_type, key, dictionary, kind in checks:
