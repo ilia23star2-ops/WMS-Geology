@@ -80,7 +80,7 @@
 | c-3.x-migration-6e-4-resolve-4a-1 | персист zone_verdicts в raw_ocr_data (3 точки) — источник для web/mobile; 5 тестов | ✅ |
 | c-3.x-migration-6e-4-resolve-4a-2 | web: util ocrVerdicts + чип уточните в ContainerHeaderFields (проп verdicts опционален); 4 теста | ✅ |
 | c-3.x-migration-6e-4-resolve-4a-3 | прокидка zone_verdicts из raw_ocr_data в ContainerHeaderFields (parseVerdicts + проп verdicts); чип виден оператору; +3 теста | ✅ |
-| c-3.x-migration-agent-infra | Инфраструктура агента: CI-исполнитель, run.sh, отчёт файлом; дома локальный CLI (1.128), на работе Actions (1.129) | ✅ |
+| c-3.x-migration-6e-4-resolve-4b | mobile: парсер zone_verdicts, счётчик needsAttention, SnackBar требует уточнения; +2 теста | ✅ || c-3.x-migration-agent-infra | Инфраструктура агента: CI-исполнитель, run.sh, отчёт файлом; дома локальный CLI (1.128), на работе Actions (1.129) | ✅ |
 | c-3.x-migration-6e-2-dup | Backend+Web: проверка дублей тары и проб перед approve | ⬜ |
 | c-3.x-migration-6k | OCR без ячейки → тара PENDING_PLACEMENT (backend+mobile) | ⬜ |
 | c-3.x-migration-6e-4 | Mobile: оценка качества фото при съёмке (резкость, яркость, разрешение) + подсказки | ⬜ |
