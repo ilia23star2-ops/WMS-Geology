@@ -243,6 +243,12 @@ class SyncQueueDao {
       'research_type_id',
       'container_type',
       'container_type_id',
+      // topology-offline-1: parent-ссылки топологии.
+      'room',
+      'rack',
+      'section',
+      'tier',
+      'floor_room',
     ];
     for (final key in keys) {
       final v = payload[key];

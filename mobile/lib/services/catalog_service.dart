@@ -245,10 +245,20 @@ class CatalogService {
         return ('/laboratories/', 'laboratory');
       case 'container_type':
         return ('/storage/container-types/', 'container_type');
+      case 'room':
+        return ('/storage/rooms/', 'room');
+      case 'rack':
+        return ('/storage/racks/', 'rack');
+      case 'section':
+        return ('/storage/sections/', 'section');
+      case 'tier':
+        return ('/storage/tiers/', 'tier');
+      case 'cell':
+        return ('/storage/cells/', 'cell');
       default:
         throw ArgumentError(
           'create: kind "$kind" не поддерживается (только site/research_type/'
-          'laboratory/container_type)',
+          'laboratory/container_type/топология: room/rack/section/tier/cell)',
         );
     }
   }
