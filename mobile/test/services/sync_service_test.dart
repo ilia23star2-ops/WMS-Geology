@@ -128,6 +128,7 @@ void main() {
       saveContainers: (list) async => savedContainers.addAll(list),
       saveSamples: (list) async => savedSamples.addAll(list),
       saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
       saveBase: (_, __) async {},
       saveHistory: (id, items) async => savedHistory[id] = items,
       getQueueItems: () async => const [],
@@ -161,6 +162,7 @@ void main() {
         saveContainers: (_) async {},
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
         saveBase: (_, __) async {},
         saveHistory: (_, __) async {},
         // sync-fix-1: инкрементальный Pull пишет историю через appendAll.
@@ -191,6 +193,7 @@ void main() {
         saveContainers: (_) async {},
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
         saveBase: (_, __) async {},
         saveHistory: (_, __) async {},
         // sync-fix-1: инкрементальный Pull пишет историю через appendAll.

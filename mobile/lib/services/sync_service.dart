@@ -40,6 +40,7 @@ class SyncService {
     Future<List<SyncQueueItem>> Function()? getQueueItems,
     Future<int> Function(Set<int> keepSampleIds)? reconcileSamples,
     Future<int> Function(Set<int> keepContainerIds)? reconcileContainers,
+    Future<int> Function(String kind, Iterable<int> serverIds)? pruneCatalog,
   }) : _saveContainers = saveContainers ?? ContainerDao.saveAll,
        _saveSamples = saveSamples ?? SampleDao.saveAll,
        _saveCatalog = saveCatalog ?? _defaultSaveCatalog,
@@ -50,7 +51,8 @@ class SyncService {
        _reconcileSamples =
            reconcileSamples ?? SampleDao.reconcilePendingSamples,
        _reconcileContainers =
-           reconcileContainers ?? ContainerDao.reconcilePendingContainers;
+           reconcileContainers ?? ContainerDao.reconcilePendingContainers,
+       _pruneCatalog = pruneCatalog ?? CatalogDao.pruneStale;
 
   final ApiClient _client;
   final Future<void> Function(List<Map<String, dynamic>>) _saveContainers;
@@ -62,6 +64,7 @@ class SyncService {
   final Future<List<SyncQueueItem>> Function() _getQueueItems;
   final Future<int> Function(Set<int>) _reconcileSamples;
   final Future<int> Function(Set<int>) _reconcileContainers;
+  final Future<int> Function(String, Iterable<int>) _pruneCatalog;
 
   static Future<void> _defaultSaveCatalog(
     String kind,
@@ -202,6 +205,7 @@ class SyncService {
   }
 
   Future<void> _pullCatalog(String endpoint, String kind) async {
+    final seenIds = <int>[];
     int page = 1;
     while (true) {
       final res = await _client.get<Map<String, dynamic>>(
@@ -214,10 +218,18 @@ class SyncService {
           (data['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
+      for (final r in results) {
+        final id = r['id'];
+        if (id is int) seenIds.add(id);
+      }
       await _saveCatalog(kind, results);
       await _saveBase(kind, results);
       if (data['next'] == null) break;
       page++;
+    }
+    // catalog-prune-15c: только после всех страниц.
+    if (seenIds.isNotEmpty) {
+      await _pruneCatalog(kind, seenIds);
     }
   }
 

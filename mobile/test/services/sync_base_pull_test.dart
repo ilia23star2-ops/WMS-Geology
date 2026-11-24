@@ -54,6 +54,7 @@ SyncService _make({required List<String> baseCalls, bool empty = false}) {
     saveContainers: (_) async {},
     saveSamples: (_) async {},
     saveCatalog: (_, __) async {},
+    pruneCatalog: (_, __) async => 0,
     saveHistory: (_, __) async {},
     appendHistory: (_, __) async {},
     saveBase: (entity, items) async => baseCalls.add(entity),
@@ -87,4 +88,48 @@ void main() {
     await _make(baseCalls: calls, empty: true).pullAll();
     expect(calls, isEmpty);
   });
+test('prune получает ID всех страниц справочника', () async {
+  final pruned = <String, List<int>>{};
+  final service = SyncService(
+    _FakeClient(),
+    saveContainers: (_) async {},
+    saveSamples: (_) async {},
+    saveCatalog: (_, __) async {},
+    saveHistory: (_, __) async {},
+    appendHistory: (_, __) async {},
+    saveBase: (_, __) async {},
+    getQueueItems: () async => [],
+    reconcileSamples: (_) async => 0,
+    reconcileContainers: (_) async => 0,
+    pruneCatalog: (kind, ids) async {
+      pruned[kind] = ids.toList();
+      return 0;
+    },
+  );
+  await service.pullAll();
+  expect(pruned['site'], <int>[3]);
+});
+
+test('пустой справочник — prune не вызывается', () async {
+  final pruned = <String>[];
+  final service = SyncService(
+    _FakeClient(empty: true),
+    saveContainers: (_) async {},
+    saveSamples: (_) async {},
+    saveCatalog: (_, __) async {},
+    saveHistory: (_, __) async {},
+    appendHistory: (_, __) async {},
+    saveBase: (_, __) async {},
+    getQueueItems: () async => [],
+    reconcileSamples: (_) async => 0,
+    reconcileContainers: (_) async => 0,
+    pruneCatalog: (kind, ids) async {
+      pruned.add(kind);
+      return 0;
+    },
+  );
+  await service.pullAll();
+  expect(pruned, isEmpty);
+});
+
 }
