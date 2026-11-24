@@ -88,7 +88,12 @@ class SyncScreen extends StatelessWidget {
         builder: (context, sync, net, _) {
           final online = net.isOnline;
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              16 + MediaQuery.of(context).padding.bottom,
+            ),
             children: [
               if (!online) ...[
                 const _OfflineBanner(),
