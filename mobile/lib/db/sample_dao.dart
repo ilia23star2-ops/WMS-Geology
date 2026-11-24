@@ -2,52 +2,138 @@
 ///
 /// c-9-natural-sort: `getByContainerId` сортирует по `sample_number`
 /// естественным образом (`TST6701 < TST6710`), а не по `id`.
+///
+/// conflict-samples-12: `saveAll` пишет со слиянием полей. Раньше записи
+/// с офлайн-правками пропускались, и серверные изменения по ним не
+/// применялись вовсе.
 library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../utils/natural_sort.dart';
+import '../utils/record_batch_merge.dart';
+import '../utils/sync_conflicts.dart';
 import 'database.dart';
+
+/// Готовит строки для таблицы `samples` (чистая, тестируется).
+///
+/// Слияние помечает правки полем `pending_sync` (стиль тары), а у проб
+/// флаг живёт в JSON как `_pending_sync` — здесь переводим.
+@visibleForTesting
+List<Map<String, dynamic>> sampleRowsForSave(
+  List<Map<String, dynamic>> records,
+) {
+  final rows = <Map<String, dynamic>>[];
+  for (final json in records) {
+    final id = json['id'];
+    if (id is! int) continue;
+    final data = Map<String, dynamic>.from(json);
+    final mergedFlag = data.remove('pending_sync');
+    if (mergedFlag == 1 || mergedFlag == true) {
+      data['_pending_sync'] = true;
+    }
+    rows.add(<String, dynamic>{
+      'id': id,
+      'container_id': data['container'],
+      'updated_at': (data['updated_at'] as String?) ?? '',
+      'data': jsonEncode(data),
+    });
+  }
+  return rows;
+}
 
 class SampleDao {
   static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
-    if (rawList.isEmpty) return;
-    final db = await AppDatabase.instance.database;
-    final batch = db.batch();
+    final merged = await saveAllMerged(rawList);
+    SyncConflicts.syncPage(
+      'sample',
+      rawList.map((j) => j['id']).whereType<int>().toSet(),
+      merged.conflicts,
+    );
+  }
 
-    final pendingIds = <int>{};
-    final ids = rawList.map((j) => j['id'] as int).toList();
+  /// Запись со слиянием по полям (conflict-samples-12).
+  static Future<BatchMergeResult> saveAllMerged(
+    List<Map<String, dynamic>> rawList,
+  ) async {
+    if (rawList.isEmpty) {
+      return const BatchMergeResult(
+        toSave: <Map<String, dynamic>>[],
+        conflicts: <RecordConflict>[],
+        autoMergedFields: 0,
+      );
+    }
+    final db = await AppDatabase.instance.database;
+    final ids = rawList.map((j) => j['id']).whereType<int>().toList();
+    if (ids.isEmpty) {
+      return BatchMergeResult(
+        toSave: rawList,
+        conflicts: const <RecordConflict>[],
+        autoMergedFields: 0,
+      );
+    }
     final placeholders = List.filled(ids.length, '?').join(',');
-    final rows = await db.query(
+
+    final localRows = await db.query(
       'samples',
-      columns: ['id', 'data'],
       where: 'id IN ($placeholders)',
       whereArgs: ids,
     );
-    for (final r in rows) {
+    final localById = <int, Map<String, dynamic>>{};
+    final pendingIds = <int>{};
+    for (final r in localRows) {
+      final id = r['id'] as int;
       final json = jsonDecode(r['data'] as String) as Map<String, dynamic>;
-      if (json['_pending_sync'] == true) {
-        pendingIds.add(r['id'] as int);
-      }
+      localById[id] = json;
+      if (json['_pending_sync'] == true) pendingIds.add(id);
     }
 
-    for (final json in rawList) {
-      final id = json['id'] as int;
-      if (pendingIds.contains(id)) continue;
-      final containerId = json['container'] as int;
-      final updatedAt = (json['updated_at'] as String?) ?? '';
-
-      batch.insert('samples', {
-        'id': id,
-        'container_id': containerId,
-        'updated_at': updatedAt,
-        'data': jsonEncode(json),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final baseRows = await db.query(
+      'sync_base',
+      where: 'entity = ? AND id IN ($placeholders)',
+      whereArgs: <Object>['sample', ...ids],
+    );
+    final baseById = <int, Map<String, dynamic>>{};
+    for (final r in baseRows) {
+      baseById[r['id'] as int] =
+          jsonDecode(r['data'] as String) as Map<String, dynamic>;
     }
 
+    final merged = mergeBatch(
+      entity: 'sample',
+      serverRecords: rawList,
+      localById: localById,
+      baseById: baseById,
+      pendingIds: pendingIds,
+      titleOf: (r) => (r['sample_number'] as String?) ?? 'Проба #${r['id']}',
+    );
+
+    final batch = db.batch();
+    for (final row in sampleRowsForSave(merged.toSave)) {
+      batch.insert(
+        'samples',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
     await batch.commit(noResult: true);
+    return merged;
+  }
+
+  /// Проба по id или null (conflict-samples-12).
+  static Future<Map<String, dynamic>?> getById(int id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'samples',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
   /// Все пробы тары, отсортированные по `sample_number`

@@ -128,6 +128,8 @@ void main() {
       saveContainers: (list) async => savedContainers.addAll(list),
       saveSamples: (list) async => savedSamples.addAll(list),
       saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
+      saveBase: (_, __) async {},
       saveHistory: (id, items) async => savedHistory[id] = items,
       getQueueItems: () async => const [],
       reconcileSamples: (_) async => 0,
@@ -160,7 +162,11 @@ void main() {
         saveContainers: (_) async {},
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
+        saveBase: (_, __) async {},
         saveHistory: (_, __) async {},
+        // sync-fix-1: инкрементальный Pull пишет историю через appendAll.
+        appendHistory: (_, __) async {},
         getQueueItems: () async => const [],
         reconcileSamples: (_) async => 0,
         reconcileContainers: (_) async => 0,
@@ -187,7 +193,11 @@ void main() {
         saveContainers: (_) async {},
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
+      pruneCatalog: (_, __) async => 0,
+        saveBase: (_, __) async {},
         saveHistory: (_, __) async {},
+        // sync-fix-1: инкрементальный Pull пишет историю через appendAll.
+        appendHistory: (_, __) async {},
         getQueueItems: () async => [
           SyncQueueItem(
             id: 1,

@@ -16,6 +16,7 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import '../utils/catalog_prune.dart';
 import 'database.dart';
 
 /// Извлечь ID родителя из JSON справочника.
@@ -231,6 +232,33 @@ class CatalogDao {
     if (cleared == 0) return 0;
     await batch.commit(noResult: true);
     return cleared;
+  }
+
+  /// Удалить записи, исчезнувшие с сервера (catalog-prune-15b).
+  /// Отрицательные ID (офлайн-созданные) не трогаются.
+  static Future<int> pruneStale(String kind, Iterable<int> serverIds) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'catalog',
+      columns: ['id'],
+      where: 'kind = ?',
+      whereArgs: [kind],
+    );
+    final stale = staleCatalogIds(
+      localIds: rows.map((r) => r['id'] as int),
+      serverIds: serverIds,
+    );
+    if (stale.isEmpty) return 0;
+    final batch = db.batch();
+    for (final id in stale) {
+      batch.delete(
+        'catalog',
+        where: 'kind = ? AND id = ?',
+        whereArgs: [kind, id],
+      );
+    }
+    await batch.commit(noResult: true);
+    return stale.length;
   }
 
   /// Полная очистка справочника (для будущего полного рефреша, сейчас

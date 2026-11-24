@@ -116,13 +116,14 @@ class SyncQueueDao {
   }
 
   static Future<Map<String, dynamic>?> getPayloadByEndpoint(
-    String endpoint,
-  ) async {
+    String endpoint, {
+    String action = 'POST',
+  }) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(
       'sync_queue',
       where: 'endpoint = ? AND action = ?',
-      whereArgs: [endpoint, 'POST'],
+      whereArgs: [endpoint, action],
       orderBy: 'created_at DESC',
       limit: 1,
     );
@@ -132,16 +133,30 @@ class SyncQueueDao {
 
   static Future<bool> updatePayloadByEndpoint(
     String endpoint,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    String action = 'POST',
+  }) async {
     final db = await AppDatabase.instance.database;
     final count = await db.update(
       'sync_queue',
       {'payload': jsonEncode(payload)},
       where: 'endpoint = ? AND action = ?',
-      whereArgs: [endpoint, 'POST'],
+      whereArgs: [endpoint, action],
     );
     return count > 0;
+  }
+
+  /// Убрать операцию по адресу (conflict-apply-9): править больше нечего.
+  static Future<void> deleteByEndpoint(
+    String endpoint, {
+    String action = 'PATCH',
+  }) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'sync_queue',
+      where: 'endpoint = ? AND action = ?',
+      whereArgs: [endpoint, action],
+    );
   }
 
   /// Перемапить negative → server во всех записях очереди (PENDING + ERROR).
@@ -223,6 +238,9 @@ class SyncQueueDao {
       'draft_site_id',
       'draft_research_type',
       'draft_research_type_id',
+      // sync-fix-6: офлайн-fill шлёт site_id/research_type_id без draft_.
+      'site_id',
+      'research_type_id',
       'container_type',
       'container_type_id',
     ];

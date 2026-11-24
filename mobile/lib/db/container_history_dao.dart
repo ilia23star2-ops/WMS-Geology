@@ -7,6 +7,10 @@
 /// история — append-only на сервере, при каждом `fetchHistory` онлайн
 /// мы получаем полный список и перезаписываем кэш. Иначе старые записи
 /// копились бы бесконечно.
+///
+/// `appendAll` (sync-fix-1) — дополнение без удаления. При инкрементальном
+/// Pull (`updated_since`) приходят только свежие записи, и полная замена
+/// стирала бы уже закэшированную историю тары.
 library;
 
 import 'dart:convert';
@@ -28,7 +32,29 @@ class ContainerHistoryDao {
       where: 'container_id = ?',
       whereArgs: [containerId],
     );
+    _putRows(batch, containerId, items);
 
+    await batch.commit(noResult: true);
+  }
+
+  /// Дополнить кэш истории, не удаляя существующие записи (sync-fix-1).
+  static Future<void> appendAll(
+    int containerId,
+    List<Map<String, dynamic>> items,
+  ) async {
+    if (items.isEmpty) return;
+    final db = await AppDatabase.instance.database;
+    final batch = db.batch();
+    _putRows(batch, containerId, items);
+    await batch.commit(noResult: true);
+  }
+
+  /// Общая вставка строк истории для `saveAll` и `appendAll`.
+  static void _putRows(
+    Batch batch,
+    int containerId,
+    List<Map<String, dynamic>> items,
+  ) {
     for (final json in items) {
       final id = json['id'] as int?;
       if (id == null) continue;
@@ -39,8 +65,6 @@ class ContainerHistoryDao {
         'data': jsonEncode(json),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
-
-    await batch.commit(noResult: true);
   }
 
   static Future<List<Map<String, dynamic>>> getByContainerId(

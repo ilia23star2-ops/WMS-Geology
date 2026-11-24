@@ -63,6 +63,9 @@ Future<void> _noSave(
   int? parentId,
 }) async {}
 
+/// No-op prune для тестов, чтобы не трогать SQLite.
+Future<int> _noPrune(String kind, Iterable<int> serverIds) async => 0;
+
 void main() {
   group('Site.fromJson', () {
     test('полный', () {
@@ -112,6 +115,7 @@ void main() {
       final service = CatalogService(
         ApiClient(dioOverride: dio),
         saveCatalog: _noSave,
+        pruneCatalog: _noPrune,
       );
       final sites = await service.fetchSites();
       expect(sites.length, 1);
@@ -127,6 +131,7 @@ void main() {
       final service = CatalogService(
         ApiClient(dioOverride: dio),
         saveCatalog: _noSave,
+        pruneCatalog: _noPrune,
       );
       final types = await service.fetchResearchTypes();
       expect(types.length, 1);
@@ -140,11 +145,45 @@ void main() {
       final service = CatalogService(
         ApiClient(dioOverride: dio),
         saveCatalog: _noSave,
+        pruneCatalog: _noPrune,
       );
       final types = await service.fetchContainerTypes();
       expect(types.length, 1);
       expect(types.first.id, 3);
       expect(types.first.label, 'Коробка');
+    });
+    test('полная выборка вызывает prune с серверными ID', () async {
+      final dio = _dioWithResponses({
+        '/api/v1/storage/container-types/': '{"count":1,"results":[{"id":3,"name":"Коробка"}]}',
+      });
+      final pruned = <String, List<int>>{};
+      final service = CatalogService(
+        ApiClient(dioOverride: dio),
+        saveCatalog: _noSave,
+        pruneCatalog: (kind, ids) async {
+          pruned[kind] = ids.toList();
+          return 0;
+        },
+      );
+      await service.fetchContainerTypes();
+      expect(pruned['container_type'], <int>[3]);
+    });
+
+    test('create не вызывает prune — иначе снесло бы справочник', () async {
+      final dio = _dioWithResponses({
+        '/api/v1/sites/': '{"id":42,"code":"TST","name":"Тестовый"}',
+      });
+      var pruneCalls = 0;
+      final service = CatalogService(
+        ApiClient(dioOverride: dio),
+        saveCatalog: _noSave,
+        pruneCatalog: (kind, ids) async {
+          pruneCalls++;
+          return 0;
+        },
+      );
+      await service.create('site', {'code': 'TST', 'name': 'Тестовый'});
+      expect(pruneCalls, 0);
     });
   });
 }

@@ -10,6 +10,9 @@ import '../providers/network_status_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/sync_pusher.dart';
 import '../services/sync_service.dart';
+import '../utils/sync_conflicts.dart';
+import 'sync_conflicts_entry.dart';
+import 'sync_problems_card.dart';
 
 class SyncScreen extends StatelessWidget {
   const SyncScreen({super.key});
@@ -100,6 +103,14 @@ class SyncScreen extends StatelessWidget {
                 onPull: () => _runPullAction(context, sync, sync.pull),
                 onPush: () => _runPushAction(context, sync, sync.push),
               ),
+              if (SyncConflicts.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SyncConflictsEntry(count: SyncConflicts.count),
+              ],
+              if (sync.errorItems.isNotEmpty || sync.mappingErrors.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SyncProblemsCard(sync: sync),
+              ],
               if (sync.lastError != null) ...[
                 const SizedBox(height: 16),
                 _ErrorCard(message: sync.lastError!),

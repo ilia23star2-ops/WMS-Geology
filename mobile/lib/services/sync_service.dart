@@ -3,10 +3,13 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../db/catalog_dao.dart';
 import '../db/container_dao.dart';
 import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
+import '../db/sync_base_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../models/label_config.dart';
 import 'api_client.dart';
@@ -30,27 +33,38 @@ class SyncService {
     saveCatalog,
     Future<void> Function(int containerId, List<Map<String, dynamic>> items)?
     saveHistory,
+    Future<void> Function(int containerId, List<Map<String, dynamic>> items)?
+    appendHistory,
+    Future<void> Function(String entity, List<Map<String, dynamic>> items)?
+    saveBase,
     Future<List<SyncQueueItem>> Function()? getQueueItems,
     Future<int> Function(Set<int> keepSampleIds)? reconcileSamples,
     Future<int> Function(Set<int> keepContainerIds)? reconcileContainers,
+    Future<int> Function(String kind, Iterable<int> serverIds)? pruneCatalog,
   }) : _saveContainers = saveContainers ?? ContainerDao.saveAll,
        _saveSamples = saveSamples ?? SampleDao.saveAll,
        _saveCatalog = saveCatalog ?? _defaultSaveCatalog,
        _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
+       _appendHistory = appendHistory ?? ContainerHistoryDao.appendAll,
+       _saveBase = saveBase ?? SyncBaseDao.saveAll,
        _getQueueItems = getQueueItems ?? SyncQueueDao.getAll,
        _reconcileSamples =
            reconcileSamples ?? SampleDao.reconcilePendingSamples,
        _reconcileContainers =
-           reconcileContainers ?? ContainerDao.reconcilePendingContainers;
+           reconcileContainers ?? ContainerDao.reconcilePendingContainers,
+       _pruneCatalog = pruneCatalog ?? CatalogDao.pruneStale;
 
   final ApiClient _client;
   final Future<void> Function(List<Map<String, dynamic>>) _saveContainers;
   final Future<void> Function(List<Map<String, dynamic>>) _saveSamples;
   final Future<void> Function(String, List<Map<String, dynamic>>) _saveCatalog;
   final Future<void> Function(int, List<Map<String, dynamic>>) _saveHistory;
+  final Future<void> Function(int, List<Map<String, dynamic>>) _appendHistory;
+  final Future<void> Function(String, List<Map<String, dynamic>>) _saveBase;
   final Future<List<SyncQueueItem>> Function() _getQueueItems;
   final Future<int> Function(Set<int>) _reconcileSamples;
   final Future<int> Function(Set<int>) _reconcileContainers;
+  final Future<int> Function(String, Iterable<int>) _pruneCatalog;
 
   static Future<void> _defaultSaveCatalog(
     String kind,
@@ -86,8 +100,9 @@ class SyncService {
     final queue = await _getQueueItems();
     final keepSampleIds = <int>{};
     final keepContainerIds = <int>{};
-    final sampleRe = RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$');
-    final fillRe = RegExp(r'^/storage/containers/(\d+)/fill-samples/$');
+    final sampleRe = RegExp(r'^/samples/(-?\d+)/(?:dispose/|restore/)?$');
+    final fillRe = RegExp(r'^/storage/containers/(-?\d+)/fill-samples/$');
+    final patchRe = RegExp(r'^/storage/containers/(-?\d+)/');
     for (final item in queue) {
       final sm = sampleRe.firstMatch(item.endpoint);
       if (sm != null) {
@@ -97,6 +112,11 @@ class SyncService {
       final fm = fillRe.firstMatch(item.endpoint);
       if (fm != null) {
         keepContainerIds.add(int.parse(fm.group(1)!));
+        continue;
+      }
+      final pm = patchRe.firstMatch(item.endpoint);
+      if (pm != null) {
+        keepContainerIds.add(int.parse(pm.group(1)!));
         continue;
       }
       if (item.endpoint == '/storage/containers/bulk-place/') {
@@ -152,6 +172,7 @@ class SyncService {
       }
       total += results.length;
       await _saveContainers(results);
+      await _saveBase('container', results);
       if (data['next'] == null) break;
       page++;
     }
@@ -176,6 +197,7 @@ class SyncService {
       if (results.isEmpty) break;
       total += results.length;
       await _saveSamples(results);
+      await _saveBase('sample', results);
       if (data['next'] == null) break;
       page++;
     }
@@ -183,6 +205,7 @@ class SyncService {
   }
 
   Future<void> _pullCatalog(String endpoint, String kind) async {
+    final seenIds = <int>[];
     int page = 1;
     while (true) {
       final res = await _client.get<Map<String, dynamic>>(
@@ -195,9 +218,18 @@ class SyncService {
           (data['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
+      for (final r in results) {
+        final id = r['id'];
+        if (id is int) seenIds.add(id);
+      }
       await _saveCatalog(kind, results);
+      await _saveBase(kind, results);
       if (data['next'] == null) break;
       page++;
+    }
+    // catalog-prune-15c: только после всех страниц.
+    if (seenIds.isNotEmpty) {
+      await _pruneCatalog(kind, seenIds);
     }
   }
 
@@ -227,7 +259,11 @@ class SyncService {
       }
 
       for (final entry in grouped.entries) {
-        await _saveHistory(entry.key, entry.value);
+        if (updatedSince != null) {
+          await _appendHistory(entry.key, entry.value);
+        } else {
+          await _saveHistory(entry.key, entry.value);
+        }
       }
 
       if (data['next'] == null) break;
@@ -244,5 +280,28 @@ class SyncService {
     } catch (_) {
       // Игнорируем, при отсутствии сети останется старый кэш
     }
+  }
+
+  /// Время сервера из /health/ (sync-fix-5b). Health живёт в корне,
+  /// а не под префиксом API, поэтому адрес строим от baseUrl.
+  Future<DateTime?> fetchServerTime() async {
+    try {
+      final base = _client.dio.options.baseUrl;
+      final root = Uri.parse(base).replace(path: '/health/', query: null).toString();
+      final res = await _client.dio.get<Map<String, dynamic>>(root);
+      return parseServerTime(res.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Разбор поля time: только tz-aware ISO 8601.
+  @visibleForTesting
+  static DateTime? parseServerTime(Map<String, dynamic>? data) {
+    final raw = data?['time'];
+    if (raw is! String || raw.isEmpty) return null;
+    final dt = DateTime.tryParse(raw);
+    if (dt == null || !dt.isUtc) return null;
+    return dt;
   }
 }
