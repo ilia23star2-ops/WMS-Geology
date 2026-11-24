@@ -23,7 +23,8 @@ class SyncProvider extends ChangeNotifier {
        _getPendingCount =
            getPendingCount ??
            (() async => (await SyncQueueDao.getPending()).length),
-       _getPendingItems = getPendingItems ?? SyncQueueDao.getPending;
+       // sync-problems-1: getAll, а не getPending — иначе ошибки не видны.
+       _getPendingItems = getPendingItems ?? SyncQueueDao.getAll;
 
   final SyncService _syncService;
   final SyncPusher _syncPusher;
@@ -36,6 +37,8 @@ class SyncProvider extends ChangeNotifier {
   int _pendingCount = 0;
   int _errorCount = 0;
   String? _lastError;
+  List<SyncQueueItem> _errorItems = const <SyncQueueItem>[];
+  List<String> _mappingErrors = const <String>[];
 
   bool get isSyncing => _isSyncing;
   DateTime? get lastSyncTime => _lastSyncTime;
@@ -43,11 +46,18 @@ class SyncProvider extends ChangeNotifier {
   int get errorCount => _errorCount;
   String? get lastError => _lastError;
 
+  /// Операции очереди, упавшие с ошибкой (sync-problems-1).
+  List<SyncQueueItem> get errorItems => List.unmodifiable(_errorItems);
+
+  /// Проблемы связывания локальных записей с серверными.
+  List<String> get mappingErrors => List.unmodifiable(_mappingErrors);
+
   Future<void> refresh() async {
     try {
       _pendingCount = await _getPendingCount();
       final items = await _getPendingItems();
-      _errorCount = items.where((i) => i.status == 'ERROR').length;
+      _errorItems = items.where((i) => i.status == 'ERROR').toList();
+      _errorCount = _errorItems.length;
       notifyListeners();
     } catch (e) {
       _lastError = 'Ошибка чтения очереди: $e';
@@ -88,6 +98,7 @@ class SyncProvider extends ChangeNotifier {
     PushResult? result;
     try {
       result = await _syncPusher.pushAll();
+      _mappingErrors = result.mappingErrors;
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка отправки (Push): $e';
@@ -111,6 +122,7 @@ class SyncProvider extends ChangeNotifier {
       // серверные. Иначе pull перезаписывал кэш старыми данными, а reconcile
       // снимал pending-флаги до отправки очереди.
       result = await _syncPusher.pushAll();
+      _mappingErrors = result.mappingErrors;
       final serverTime = await _syncService.fetchServerTime();
       await _syncService.pullAll(updatedSince: _lastPullSince);
       if (serverTime != null) _lastPullSince = serverTime;

@@ -223,6 +223,9 @@ class SyncQueueDao {
       'draft_site_id',
       'draft_research_type',
       'draft_research_type_id',
+      // sync-fix-6: офлайн-fill шлёт site_id/research_type_id без draft_.
+      'site_id',
+      'research_type_id',
       'container_type',
       'container_type_id',
     ];
