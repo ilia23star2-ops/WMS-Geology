@@ -156,7 +156,7 @@ void main() {
           isA<ApiException>().having(
             (e) => e.message,
             'message',
-            contains('sample_number'),
+            contains('Номер пробы'),
           ),
         ),
       );

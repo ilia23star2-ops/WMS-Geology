@@ -4,6 +4,7 @@ library;
 import 'package:dio/dio.dart';
 
 import '../config.dart';
+import '../utils/api_error_text.dart';
 
 typedef TokenProvider = Future<String?> Function();
 typedef TokenRefresher = Future<String?> Function();
@@ -184,29 +185,16 @@ class ApiClient {
     final response = e.response;
     final statusCode = response?.statusCode;
 
-    String message = 'Ошибка сети';
     Map<String, dynamic>? details;
     bool isNetwork = false;
 
     if (response?.data is Map<String, dynamic>) {
-      final data = response!.data as Map<String, dynamic>;
-      details = data;
-      if (data['detail'] is String) {
-        message = data['detail'] as String;
-      } else if (data['error'] is String) {
-        message = data['error'] as String;
-      } else {
-        for (final entry in data.entries) {
-          if (entry.value is List && (entry.value as List).isNotEmpty) {
-            message = '${entry.key}: ${(entry.value as List).first}';
-            break;
-          } else if (entry.value is String) {
-            message = '${entry.key}: ${entry.value}';
-            break;
-          }
-        }
-      }
-    } else if (response?.data is String &&
+      details = response!.data as Map<String, dynamic>;
+    }
+    // sync-errors-14: все причины по-русски, а не первое поле.
+    String message = apiErrorText(details, statusCode: statusCode);
+    if (details == null &&
+        response?.data is String &&
         (response!.data as String).isNotEmpty) {
       message = response.data as String;
     }

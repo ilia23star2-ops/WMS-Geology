@@ -21,6 +21,7 @@ typedef SaveCatalog = Future<void> Function(
   List<Map<String, dynamic>> items, {
   int? parentId,
 });
+typedef PruneCatalog = Future<int> Function(String kind, Iterable<int> serverIds);
 typedef GetCatalog = Future<List<Map<String, dynamic>>> Function(String kind);
 typedef GetCatalogByParent = Future<List<Map<String, dynamic>>> Function(
   String kind,
@@ -61,11 +62,13 @@ class CatalogService {
     GetCatalogByParent? getCatalogByParent,
     SaveLocalOffline? saveLocalOffline,
     Enqueue? enqueue,
+    PruneCatalog? pruneCatalog,
   }) : _saveCatalog = saveCatalog ?? _defaultSave,
        _getCatalog = getCatalog ?? CatalogDao.getAll,
        _getByParent = getCatalogByParent ?? CatalogDao.getByParent,
        _saveLocalOffline = saveLocalOffline ?? CatalogDao.saveLocalOffline,
-       _enqueue = enqueue ?? _defaultEnqueue;
+       _enqueue = enqueue ?? _defaultEnqueue,
+       _pruneCatalog = pruneCatalog ?? CatalogDao.pruneStale;
 
   final ApiClient _client;
   final SaveCatalog _saveCatalog;
@@ -73,6 +76,7 @@ class CatalogService {
   final GetCatalogByParent _getByParent;
   final SaveLocalOffline _saveLocalOffline;
   final Enqueue _enqueue;
+  final PruneCatalog _pruneCatalog;
 
   static Future<void> _defaultSave(
     String kind,
@@ -260,6 +264,10 @@ class CatalogService {
     try {
       final items = await _fetchAllPages(path, query);
       await _saveCatalog(kind, items, parentId: parentId);
+      // Фильтрованная выборка не prune-ится: снесло бы соседей.
+      if (parentId == null && query == null) {
+        await _pruneCatalog(kind, items.map((j) => j['id']).whereType<int>());
+      }
       return items.map(NamedCatalog.fromJson).toList(growable: false);
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
@@ -278,6 +286,7 @@ class CatalogService {
     try {
       final items = await _fetchAllPages(path, null);
       await _saveCatalog(kind, items);
+      await _pruneCatalog(kind, items.map((j) => j['id']).whereType<int>());
       return items.map(fromJson).toList(growable: false);
     } on ApiException catch (e) {
       if (!e.isNetworkError) rethrow;
