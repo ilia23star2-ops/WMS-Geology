@@ -161,6 +161,8 @@ void main() {
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
         saveHistory: (_, __) async {},
+        // sync-fix-1: инкрементальный Pull пишет историю через appendAll.
+        appendHistory: (_, __) async {},
         getQueueItems: () async => const [],
         reconcileSamples: (_) async => 0,
         reconcileContainers: (_) async => 0,
@@ -188,6 +190,8 @@ void main() {
         saveSamples: (_) async {},
         saveCatalog: (_, __) async {},
         saveHistory: (_, __) async {},
+        // sync-fix-1: инкрементальный Pull пишет историю через appendAll.
+        appendHistory: (_, __) async {},
         getQueueItems: () async => [
           SyncQueueItem(
             id: 1,

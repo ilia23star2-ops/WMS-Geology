@@ -63,8 +63,11 @@ class SyncProvider extends ChangeNotifier {
 
     PullStats? stats;
     try {
+      // sync-fix-5c: время сервера берём ДО выгрузки, иначе изменения,
+      // произошедшие во время Pull, потеряются.
+      final serverTime = await _syncService.fetchServerTime();
       stats = await _syncService.pullAll(updatedSince: _lastPullSince);
-      _lastPullSince = DateTime.now();
+      if (serverTime != null) _lastPullSince = serverTime;
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка загрузки (Pull): $e';
@@ -104,9 +107,13 @@ class SyncProvider extends ChangeNotifier {
 
     PushResult? result;
     try {
-      await _syncService.pullAll(updatedSince: _lastPullSince);
-      _lastPullSince = DateTime.now();
+      // sync-fix-3: сначала отправляем локальные изменения, потом забираем
+      // серверные. Иначе pull перезаписывал кэш старыми данными, а reconcile
+      // снимал pending-флаги до отправки очереди.
       result = await _syncPusher.pushAll();
+      final serverTime = await _syncService.fetchServerTime();
+      await _syncService.pullAll(updatedSince: _lastPullSince);
+      if (serverTime != null) _lastPullSince = serverTime;
       _lastSyncTime = DateTime.now();
     } catch (e) {
       _lastError = 'Ошибка синхронизации: $e';

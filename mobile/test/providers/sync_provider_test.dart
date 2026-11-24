@@ -10,8 +10,21 @@ class FakeSyncService extends Fake implements SyncService {
   PullStats nextStats = const PullStats(containers: 0, samples: 0);
   final List<DateTime?> updatedSinceArgs = [];
 
+  /// sync-fix-5c: время сервера из /health/. null — сервер не отдал.
+  DateTime? serverTime = DateTime.utc(2026, 11, 24, 10);
+
+  /// Порядок вызовов: время должно браться ДО выгрузки.
+  final List<String> calls = [];
+
+  @override
+  Future<DateTime?> fetchServerTime() async {
+    calls.add('serverTime');
+    return serverTime;
+  }
+
   @override
   Future<PullStats> pullAll({DateTime? updatedSince}) async {
+    calls.add('pull');
     pullCallCount++;
     updatedSinceArgs.add(updatedSince);
     if (shouldThrow) throw Exception('Pull error');
@@ -156,6 +169,33 @@ void main() {
 
       expect(provider.pendingCount, 5);
       expect(provider.errorCount, 1);
+    });
+
+    // --- sync-fix-5c: отметка Pull из времени сервера, не из часов клиента ---
+
+    test('отметка Pull равна времени сервера', () async {
+      final provider = createProvider();
+      await provider.pull();
+      await provider.pull();
+
+      expect(service.updatedSinceArgs[1], DateTime.utc(2026, 11, 24, 10));
+    });
+
+    test('время сервера берётся ДО выгрузки', () async {
+      final provider = createProvider();
+      await provider.pull();
+
+      expect(service.calls, <String>['serverTime', 'pull']);
+    });
+
+    test('сервер не отдал время — отметка не сдвигается', () async {
+      service.serverTime = null;
+      final provider = createProvider();
+      await provider.pull();
+      await provider.pull();
+
+      // Безопасный повтор полного Pull вместо потери изменений.
+      expect(service.updatedSinceArgs, <DateTime?>[null, null]);
     });
   });
 }

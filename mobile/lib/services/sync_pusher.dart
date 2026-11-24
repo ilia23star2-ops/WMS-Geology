@@ -6,16 +6,14 @@
 /// c-8-catalog-create-offline: маппинг справочников (`/sites/` и др.).
 ///
 /// c-8-catalog-create-offline-c:
-/// - **Приоритет очереди:** справочники (site/research_type/laboratory/
-///   container_type) → bulk-create → fill-samples/bulk-place/PATCH containers
-///   → samples ops → прочее. Иначе при одинаковом `created_at` (мс) SQLite
-///   может вернуть `bulk-create` раньше `site` → bulk-create уйдёт с
-///   negative `draft_site_id` → 400.
-/// - **Ретрай ERROR после маппинга:** после успешного `bulk-create` /
-///   catalog create перечитываем очередь **и** сбрасываем ERROR → PENDING
-///   один раз. Иначе `bulk-create`, упавший раньше, не будет повторён.
-/// - **`debugPrint` при ошибке:** `[push] endpoint failed: message` — в
-///   `flutter run` видно точный URL и текст.
+/// - **Приоритет очереди:** справочники → bulk-create → операции над тарой
+///   → samples ops → прочее.
+/// - **Ретрай ERROR после маппинга:** один раз за `pushAll`.
+///
+/// sync-fix-4: ошибки связывания локальных записей с серверными больше не
+/// глотаются. Критичные случаи бросают исключение, `pushAll` собирает их
+/// в `PushResult.mappingErrors` — операция ушла, но кэш рассогласован,
+/// и об этом надо сказать человеку, а не молчать.
 library;
 
 import 'dart:convert';
@@ -29,12 +27,23 @@ import '../db/sync_queue_dao.dart';
 import 'api_client.dart';
 
 class PushResult {
-  const PushResult({required this.sent, required this.failed});
+  const PushResult({
+    required this.sent,
+    required this.failed,
+    this.mappingErrors = const <String>[],
+  });
+
   final int sent;
   final int failed;
 
+  /// Проблемы связывания локальных ID с серверными (sync-fix-4).
+  /// Операция при этом могла уйти успешно.
+  final List<String> mappingErrors;
+
   @override
-  String toString() => 'PushResult(sent: $sent, failed: $failed)';
+  String toString() =>
+      'PushResult(sent: $sent, failed: $failed, '
+      'mappingErrors: ${mappingErrors.length})';
 }
 
 typedef OnSuccess = Future<void> Function(
@@ -66,12 +75,6 @@ class SyncPusher {
   final OnSuccess _onSuccess;
 
   /// Приоритет обработки: чем меньше — тем раньше.
-  ///
-  /// 0 — справочники (создают ID, на которые ссылается тара).
-  /// 1 — bulk-create (создаёт ID тары).
-  /// 2 — операции над тарой (PATCH / fill-samples / bulk-place).
-  /// 3 — samples ops (PATCH/DELETE / dispose / restore).
-  /// 4 — прочее.
   static int _endpointPriority(String endpoint) {
     if (endpoint == '/sites/' ||
         endpoint == '/research-types/' ||
@@ -82,24 +85,24 @@ class SyncPusher {
     if (endpoint == '/storage/containers/bulk-create/') {
       return 1;
     }
-    if (RegExp(r'^/storage/containers/(\d+)/fill-samples/$')
+    if (RegExp(r'^/storage/containers/(-?\d+)/fill-samples/$')
         .hasMatch(endpoint)) {
       return 2;
     }
     if (endpoint == '/storage/containers/bulk-place/') {
       return 2;
     }
-    if (RegExp(r'^/storage/containers/(\d+)/$').hasMatch(endpoint)) {
+    if (RegExp(r'^/storage/containers/(-?\d+)/$').hasMatch(endpoint)) {
       return 2;
     }
-    if (RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$').hasMatch(endpoint)) {
+    if (RegExp(r'^/samples/(-?\d+)/(?:dispose/|restore/)?$')
+        .hasMatch(endpoint)) {
       return 3;
     }
     return 4;
   }
 
-  /// Стабильная сортировка по приоритету. Сохраняет `created_at ASC`
-  /// внутри одного приоритета.
+  /// Стабильная сортировка по приоритету.
   static void _sortByPriority(List<SyncQueueItem> items) {
     items.sort((a, b) {
       final p = _endpointPriority(a.endpoint)
@@ -119,9 +122,7 @@ class SyncPusher {
     var failed = 0;
     var i = 0;
     final processedIds = <int>{};
-    // c-8-catalog-create-offline-c: один раз за `pushAll` сбрасываем ERROR
-    // в PENDING после маппинга, чтобы записи, упавшие из-за negative ID,
-    // ушли повторно с серверными.
+    final mappingErrors = <String>[];
     var didRetryErrors = false;
 
     while (i < items.length) {
@@ -154,6 +155,8 @@ class SyncPusher {
           await _markSynced(item.id!);
         }
 
+        // sync-fix-4: операция ушла, но связывание могло не удаться.
+        // Не глотаем — собираем проблему для человека.
         try {
           await _onSuccess(
             item.endpoint,
@@ -161,11 +164,15 @@ class SyncPusher {
             item.localRef,
             responseData,
           );
-        } catch (_) {}
+        } catch (e) {
+          final message =
+              'Не удалось связать локальные записи (${item.endpoint}): $e';
+          mappingErrors.add(message);
+          debugPrint('[push] $message');
+        }
 
         sent++;
 
-        // Reload после bulk-create / catalog create — там маппинг IDs.
         if (item.endpoint == '/storage/containers/bulk-create/' ||
             _catalogKindForEndpoint(item.endpoint) != null) {
           needsReload = true;
@@ -181,9 +188,6 @@ class SyncPusher {
       if (item.id != null) processedIds.add(item.id!);
 
       if (needsReload) {
-        // c-8-catalog-create-offline-c: первый reload — с resetErrors
-        // (ERROR → PENDING), чтобы записи, упавшие из-за negative ID,
-        // ушли повторно с серверными ID после маппинга.
         if (!didRetryErrors) {
           await _resetErrors();
           didRetryErrors = true;
@@ -195,7 +199,7 @@ class SyncPusher {
         i++;
       }
     }
-    return PushResult(sent: sent, failed: failed);
+    return PushResult(sent: sent, failed: failed, mappingErrors: mappingErrors);
   }
 
   /// Endpoint → kind для `CatalogDao.remapId`. `null` — не справочник.
@@ -220,44 +224,35 @@ class SyncPusher {
     String? localRef,
     Map<String, dynamic>? responseData,
   ) async {
-    // c-2d-2: bulk-create
+    // sync-fix-4: ошибки маппинга пробрасываем в pushAll, не глотаем.
     if (endpoint == '/storage/containers/bulk-create/' &&
         localRef != null &&
         responseData != null) {
-      try {
-        await _remapBulkCreate(localRef, responseData);
-      } catch (e) {
-        debugPrint('[c-2d-2] bulk-create onSuccess: $e');
-      }
+      await _remapBulkCreate(localRef, responseData);
       return;
     }
 
-    // c-8-catalog-create-offline: catalog create
     final catalogKind = _catalogKindForEndpoint(endpoint);
     if (catalogKind != null && localRef != null && responseData != null) {
-      try {
-        await _remapCatalogCreate(catalogKind, localRef, responseData);
-      } catch (e) {
-        debugPrint('[c-8-catalog-create-offline] $endpoint onSuccess: $e');
-      }
+      await _remapCatalogCreate(catalogKind, localRef, responseData);
       return;
     }
 
-    final sampleRe = RegExp(r'^/samples/(\d+)/(?:dispose/|restore/)?$');
+    final sampleRe = RegExp(r'^/samples/(-?\d+)/(?:dispose/|restore/)?$');
     final sm = sampleRe.firstMatch(endpoint);
     if (sm != null) {
       await SampleDao.clearPendingSyncBySampleId(int.parse(sm.group(1)!));
       return;
     }
 
-    final fillRe = RegExp(r'^/storage/containers/(\d+)/fill-samples/$');
+    final fillRe = RegExp(r'^/storage/containers/(-?\d+)/fill-samples/$');
     final fm = fillRe.firstMatch(endpoint);
     if (fm != null) {
       await ContainerDao.clearPendingSync(int.parse(fm.group(1)!));
       return;
     }
 
-    final patchContainerRe = RegExp(r'^/storage/containers/(\d+)/$');
+    final patchContainerRe = RegExp(r'^/storage/containers/(-?\d+)/$');
     final pm = patchContainerRe.firstMatch(endpoint);
     if (pm != null) {
       await ContainerDao.clearPendingSync(int.parse(pm.group(1)!));
@@ -285,23 +280,18 @@ class SyncPusher {
     final negativeId = int.tryParse(localRef);
     final serverId = responseData['id'];
     if (negativeId == null || serverId is! int || negativeId >= 0) {
-      debugPrint(
-        '[c-8-catalog-create-offline] bad pair: $localRef → $serverId',
-      );
-      return;
-    }
-    try {
-      await CatalogDao.remapId(kind, negativeId, serverId);
-    } catch (e) {
-      debugPrint(
-        '[c-8-catalog-create-offline] CatalogDao.remapId($kind, '
-        '$negativeId→$serverId): $e',
+      throw StateError(
+        'справочник $kind: некорректная пара локальный=$localRef '
+        'серверный=$serverId',
       );
     }
+    await CatalogDao.remapId(kind, negativeId, serverId);
     await SyncQueueDao.remapAllLocalRefs({negativeId: serverId});
     try {
       await CatalogDao.setPendingSync(kind, serverId, false);
-    } catch (_) {}
+    } catch (_) {
+      // Некритично: флаг снимется при следующем Pull.
+    }
     debugPrint('[c-8-catalog-create-offline] $kind: $negativeId → $serverId');
   }
 
@@ -311,21 +301,18 @@ class SyncPusher {
   ) async {
     final localRaw = jsonDecode(localRef);
     if (localRaw is! List) {
-      debugPrint('[c-2d-2] bulk-create: local_ref не список: $localRef');
-      return;
+      throw StateError('bulk-create: local_ref не список: $localRef');
     }
 
     final created = responseData['created_containers'];
     if (created is! List) {
-      debugPrint('[c-2d-2] bulk-create: в ответе нет created_containers');
-      return;
+      throw StateError('bulk-create: в ответе нет created_containers');
     }
     if (created.length != localRaw.length) {
-      debugPrint(
-        '[c-2d-2] bulk-create: сервер вернул ${created.length}, '
-        'ожидалось ${localRaw.length}. Маппинг пропущен.',
+      throw StateError(
+        'bulk-create: сервер вернул ${created.length} тар, '
+        'ожидалось ${localRaw.length} — локальные ID не связаны',
       );
-      return;
     }
 
     final mapping = <int, int>{};
@@ -336,29 +323,16 @@ class SyncPusher {
       if (localId is int && serverId is int) {
         mapping[localId] = serverId;
       } else {
-        debugPrint(
-          '[c-2d-2] bulk-create: некорректная пара #$i: '
-          'local=$localId server=${item is Map ? item['id'] : '?'}',
+        throw StateError(
+          'bulk-create: некорректная пара #$i (локальный=$localId)',
         );
       }
     }
     if (mapping.isEmpty) return;
 
     for (final entry in mapping.entries) {
-      try {
-        await ContainerDao.remapId(entry.key, entry.value);
-      } catch (e) {
-        debugPrint(
-          '[c-2d-2] ContainerDao.remapId(${entry.key}→${entry.value}): $e',
-        );
-      }
-      try {
-        await SampleDao.remapContainerId(entry.key, entry.value);
-      } catch (e) {
-        debugPrint(
-          '[c-2d-2] SampleDao.remapContainerId(${entry.key}→${entry.value}): $e',
-        );
-      }
+      await ContainerDao.remapId(entry.key, entry.value);
+      await SampleDao.remapContainerId(entry.key, entry.value);
     }
 
     await SyncQueueDao.remapAllLocalRefs(mapping);
@@ -366,7 +340,9 @@ class SyncPusher {
     for (final entry in mapping.entries) {
       try {
         await ContainerDao.clearPendingSync(entry.value);
-      } catch (_) {}
+      } catch (_) {
+        // Некритично: флаг снимется при следующем Pull.
+      }
     }
 
     debugPrint('[c-2d-2] bulk-create mapped: $mapping');
