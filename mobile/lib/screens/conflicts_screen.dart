@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../db/container_dao.dart';
+import '../db/sample_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../services/conflict_apply_service.dart';
 import '../utils/field_labels.dart';
@@ -43,6 +44,18 @@ class _ConflictsScreenState extends State<ConflictsScreen> {
         ContainerDao.updateFieldsLocal(id, fields),
   );
 
+  /// Пробы правятся своим DAO: флаг у них в JSON, а не в колонке.
+  ConflictApplyService _sampleService() => ConflictApplyService(
+    getLocal: (id) => SampleDao.getById(id),
+    getQueuePayload: (endpoint) =>
+        SyncQueueDao.getPayloadByEndpoint(endpoint, action: 'PATCH'),
+    updateQueuePayload: (endpoint, payload) async {
+      await SyncQueueDao.updatePayloadByEndpoint(endpoint, payload, action: 'PATCH');
+    },
+    deleteQueueItem: (endpoint) => SyncQueueDao.deleteByEndpoint(endpoint),
+    updateLocalFields: (id, fields) => SampleDao.updateLocalFields(id, fields),
+  );
+
   Future<void> _apply(
     RecordConflict conflict, {
     required bool keepLocal,
@@ -52,7 +65,8 @@ class _ConflictsScreenState extends State<ConflictsScreen> {
       _error = null;
     });
     try {
-      await _service().apply(conflict, keepLocal: keepLocal);
+      final service = conflict.entity == 'sample' ? _sampleService() : _service();
+      await service.apply(conflict, keepLocal: keepLocal);
     } catch (e) {
       _error = 'Не удалось применить выбор: $e';
     }
