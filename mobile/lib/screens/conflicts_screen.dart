@@ -84,7 +84,12 @@ class _ConflictsScreenState extends State<ConflictsScreen> {
       body: items.isEmpty
           ? const _EmptyState()
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(context).padding.bottom,
+              ),
               children: <Widget>[
                 const _Intro(),
                 if (_error != null) ...<Widget>[
