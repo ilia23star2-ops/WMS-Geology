@@ -1,11 +1,17 @@
-/// Диалог создания справочника (c-8-catalog-create, c-8-catalog-create-offline).
+/// Диалог создания справочника (c-8-catalog-create, c-8-catalog-create-offline,
+/// topology-offline-2).
 ///
 /// Поля — по `kind`:
 /// - `site` → `code`, `name`, `match_patterns` (через запятую);
 /// - `research_type` → `code`, `name`;
 /// - `laboratory` → `code`, `name`, `prefixes` (через запятую);
 /// - `container_type` → `name`, `size_class`, `max_on_standard_pallet`,
-///   `is_core`, `laboratory`.
+///   `is_core`, `laboratory`;
+/// - топология: `room` → `name`; `rack`/`section`/`tier`/`cell` →
+///   родитель из `parents` + `code`. Родитель обязателен, кроме комнаты.
+///   Ключи родителя — голые FK, как в сериализаторах (`room`, `rack`,
+///   `section`, `tier`). `cell_type` и `level_number` не шлём: у них
+///   серверные дефолты / опциональность.
 ///
 /// c-8-catalog-create-offline: при офлайне создаётся локально (negative ID),
 /// SnackBar «Создано офлайн. Отправится при синхронизации.».
@@ -25,13 +31,19 @@ class CatalogCreateDialog extends StatefulWidget {
     super.key,
     required this.kind,
     this.laboratories = const [],
+    this.parents = const [],
   });
 
-  /// `site` / `research_type` / `laboratory` / `container_type`.
+  /// `site` / `research_type` / `laboratory` / `container_type` /
+  /// `room` / `rack` / `section` / `tier` / `cell`.
   final String kind;
 
-  /// Для `container_type` — список лабораторий (dropdown `laboratory`).
+  /// Для `container_type` — список лабораторий (дропдаун `laboratory`).
   final List<Laboratory> laboratories;
+
+  /// Для топологии (кроме `room`) — варианты родителя
+  /// (комнаты для стеллажа, стеллажи для секции и т.д.).
+  final List<NamedCatalog> parents;
 
   @override
   State<CatalogCreateDialog> createState() => _CatalogCreateDialogState();
@@ -46,6 +58,7 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
   final _maxCtrl = TextEditingController(text: '10');
 
   int? _laboratoryId;
+  int? _parentId;
   bool _isCore = false;
   bool _submitting = false;
   String? _error;
@@ -54,6 +67,52 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
   bool get _isResearchType => widget.kind == 'research_type';
   bool get _isLaboratory => widget.kind == 'laboratory';
   bool get _isContainerType => widget.kind == 'container_type';
+  bool get _isRoom => widget.kind == 'room';
+  bool get _isRack => widget.kind == 'rack';
+  bool get _isSection => widget.kind == 'section';
+  bool get _isTier => widget.kind == 'tier';
+  bool get _isCell => widget.kind == 'cell';
+
+  /// Топология с кодом вместо имени (всё, кроме комнаты).
+  bool get _isCodeTopology => _isRack || _isSection || _isTier || _isCell;
+
+  /// Поле родителя в payload (голый FK-ключ, как в сериализаторах).
+  String? get _parentField {
+    switch (widget.kind) {
+      case 'rack':
+        return 'room';
+      case 'section':
+        return 'rack';
+      case 'tier':
+        return 'section';
+      case 'cell':
+        return 'tier';
+      default:
+        return null;
+    }
+  }
+
+  /// Подпись родителя в винительном падеже («выберите комнату»).
+  String get _parentLabel {
+    switch (widget.kind) {
+      case 'rack':
+        return 'комнату';
+      case 'section':
+        return 'стеллаж';
+      case 'tier':
+        return 'секцию';
+      case 'cell':
+        return 'ярус';
+      default:
+        return 'родителя';
+    }
+  }
+
+  String get _codeHint {
+    if (_isTier) return 'A / B / C / D';
+    if (_isCell) return '1 / 2 / 3';
+    return 'TST / ШЛ / ЛАБ-1';
+  }
 
   String get _title {
     switch (widget.kind) {
@@ -65,6 +124,16 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
         return 'Новая лаборатория';
       case 'container_type':
         return 'Новый тип тары';
+      case 'room':
+        return 'Новая комната';
+      case 'rack':
+        return 'Новый стеллаж';
+      case 'section':
+        return 'Новая секция';
+      case 'tier':
+        return 'Новый ярус';
+      case 'cell':
+        return 'Новая ячейка';
       default:
         return 'Новый справочник';
     }
@@ -90,13 +159,27 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
   }
 
   Future<void> _submit() async {
+    // Топология с родителем: родитель обязателен до остальных проверок.
+    if (_isCodeTopology && _parentId == null) {
+      setState(() => _error = 'Выберите $_parentLabel');
+      return;
+    }
+
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
+    final nameRequired =
+        _isSite ||
+        _isResearchType ||
+        _isLaboratory ||
+        _isContainerType ||
+        _isRoom;
+    if (nameRequired && name.isEmpty) {
       setState(() => _error = 'Название обязательно');
       return;
     }
     final code = _codeCtrl.text.trim();
-    if ((_isSite || _isResearchType || _isLaboratory) && code.isEmpty) {
+    final codeRequired =
+        _isSite || _isResearchType || _isLaboratory || _isCodeTopology;
+    if (codeRequired && code.isEmpty) {
       setState(() => _error = 'Код обязателен');
       return;
     }
@@ -129,6 +212,10 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
         'max_on_standard_pallet': max,
         'is_core': _isCore,
       };
+    } else if (_isRoom) {
+      payload = {'name': name};
+    } else if (_isCodeTopology) {
+      payload = {'code': code, _parentField!: _parentId};
     } else {
       setState(() => _error = 'Неизвестный тип справочника');
       return;
@@ -149,7 +236,7 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
           content: Text(
             created.queued
                 ? 'Создано офлайн. Отправится при синхронизации.'
-                : 'Создано: ${created.raw['name'] ?? created.id}',
+                : 'Создано: ${created.raw['name'] ?? created.raw['code'] ?? created.id}',
           ),
         ),
       );
@@ -198,26 +285,63 @@ class _CatalogCreateDialogState extends State<CatalogCreateDialog> {
               ),
               const SizedBox(height: 12),
             ],
-            if (_isSite || _isResearchType || _isLaboratory) ...[
+            if (_isCodeTopology) ...[
+              if (widget.parents.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Сначала создайте $_parentLabel — пока выбирать не из чего.',
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                ),
+              DropdownButtonFormField<int?>(
+                initialValue: _parentId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Родитель *',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: widget.parents
+                    .map(
+                      (p) => DropdownMenuItem<int?>(
+                        value: p.id,
+                        child: Text(
+                          p.label,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _parentId = v),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (_isSite ||
+                _isResearchType ||
+                _isLaboratory ||
+                _isCodeTopology) ...[
               TextField(
                 controller: _codeCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Код *',
-                  hintText: 'TST / ШЛ / ЛАБ-1',
-                  border: OutlineInputBorder(),
+                  hintText: _codeHint,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
               const SizedBox(height: 8),
             ],
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Название *',
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (!_isCodeTopology)
+              TextField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Название *',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
-            ),
             if (_isSite) ...[
               const SizedBox(height: 8),
               TextField(
