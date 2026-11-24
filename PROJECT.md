@@ -13,3 +13,27 @@ VS Code автоформатирует вставленный код и пере
 и упадут с databaseFactory not initialized.
 Обновление тестов — в том же блоке, не отдельным заходом.
 Источник: appendHistory (sync-fix-1), saveBase (conflict-detect-3).
+
+41. Guard проверяет результат push, а не наличие коммита локально.
+После git push сверять: git merge-base --is-ancestor HEAD origin/ветка.
+Иначе пуши отбиваются non-fast-forward из-за коммитов CI-бота,
+а guard рапортует запушено при незапушенном.
+Источник: sync-fix-1 .. catalog-prune-15c, пять ложных запушено.
+
+42. Guard проверяет точное положительное условие, а не подстроку.
+Подстрока встречается и в сообщении об ошибке: grep device матчит
+no devices found, имя ветки матчит и при незавершённом merge.
+Проверять конкретное значение: grep -w device, точный timestamp,
+два родителя у merge-коммита, отсутствие unmerged в status.
+Источник: device-check стадии 1-2, конфликт merge в LATEST.md.
+
+43. В Git Bash пути для adb экранировать MSYS_NO_PATHCONV=1.
+Без него /data/local/tmp/x.db превращается в D:/Dev/git/data/...
+и adb push падает с secure_mkdirs failed. Ставить export в блоке.
+Источник: очистка очереди планшета, 2026-11-24.
+
+44. Файл БД планшета править обычным python, не poetry run.
+poetry run python падает: Система не удается найти указанный путь.
+sqlite3 — стандартная библиотека, окружение Django не нужно.
+Интерпретатор: which python даёт /d/Dev/python/python.
+Источник: очистка очереди планшета, 2026-11-24.
