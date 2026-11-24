@@ -1,16 +1,19 @@
-/// Экран «Топология» (topology-offline-3).
+/// Экран «Топология» (topology-offline-3 + topology-browse).
 ///
 /// Каскад комната → стеллаж → секция → ярус: выбор существующих мест
-/// хранения и кнопка «+» для создания на каждом уровне. Создание
-/// работает офлайн: диалог пишет в `sync_queue` (negative ID), parent-ссылки
-/// перемапливаются при синхронизации (пачка topology-offline-1).
+/// хранения и кнопка «+» для создания на каждом уровне. Ниже — список
+/// ячеек выбранного яруса; по тапу на ячейку — тара в ней.
+/// Создание работает офлайн (negative ID + sync_queue); parent-ссылки
+/// перемапливаются при синхронизации (topology-offline-1).
 library;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/catalog.dart';
+import '../models/container.dart' as model;
 import '../services/catalog_service.dart';
+import '../services/container_service.dart';
 import '../widgets/catalog_create_dialog.dart';
 
 class TopologyScreen extends StatefulWidget {
@@ -25,11 +28,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
   List<NamedCatalog> _racks = const [];
   List<NamedCatalog> _sections = const [];
   List<NamedCatalog> _tiers = const [];
+  List<NamedCatalog> _cells = const [];
+  List<model.Container> _cellContainers = const [];
 
   int? _roomId;
   int? _rackId;
   int? _sectionId;
   int? _tierId;
+  int? _cellId;
 
   bool _loading = false;
   String? _error;
@@ -41,6 +47,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
   }
 
   CatalogService get _catalog => context.read<CatalogService>();
+  ContainerService get _containers => context.read<ContainerService>();
 
   Future<void> _run(Future<void> Function() body) async {
     setState(() {
@@ -72,6 +79,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
         _sectionId = null;
         _tiers = const [];
         _tierId = null;
+        _cells = const [];
+        _cellId = null;
+        _cellContainers = const [];
       });
       return;
     }
@@ -82,6 +92,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
       _sectionId = null;
       _tiers = const [];
       _tierId = null;
+      _cells = const [];
+      _cellId = null;
+      _cellContainers = const [];
     });
   }
 
@@ -93,6 +106,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
         _sectionId = null;
         _tiers = const [];
         _tierId = null;
+        _cells = const [];
+        _cellId = null;
+        _cellContainers = const [];
       });
       return;
     }
@@ -101,6 +117,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
       _sectionId = null;
       _tiers = const [];
       _tierId = null;
+      _cells = const [];
+      _cellId = null;
+      _cellContainers = const [];
     });
   }
 
@@ -110,12 +129,47 @@ class _TopologyScreenState extends State<TopologyScreen> {
       setState(() {
         _tiers = const [];
         _tierId = null;
+        _cells = const [];
+        _cellId = null;
+        _cellContainers = const [];
       });
       return;
     }
     await _run(() async {
       _tiers = await _catalog.fetchTiers(sectionId);
       _tierId = null;
+      _cells = const [];
+      _cellId = null;
+      _cellContainers = const [];
+    });
+  }
+
+  Future<void> _loadCells() async {
+    final tierId = _tierId;
+    if (tierId == null) {
+      setState(() {
+        _cells = const [];
+        _cellId = null;
+        _cellContainers = const [];
+      });
+      return;
+    }
+    await _run(() async {
+      _cells = await _catalog.fetchCells(tierId);
+      _cellId = null;
+      _cellContainers = const [];
+    });
+  }
+
+  Future<void> _loadCellContainers() async {
+    final cellId = _cellId;
+    if (cellId == null) {
+      setState(() => _cellContainers = const []);
+      return;
+    }
+    await _run(() async {
+      final page = await _containers.fetchList(cellId: cellId, pageSize: 200);
+      _cellContainers = page.items;
     });
   }
 
@@ -134,8 +188,10 @@ class _TopologyScreenState extends State<TopologyScreen> {
         await _loadSections();
       case 'tier':
         await _loadTiers();
+      case 'cell':
+        await _loadCells();
       default:
-        break; // ячейка: список ячеек на экране не показывается
+        break;
     }
   }
 
@@ -246,7 +302,10 @@ class _TopologyScreenState extends State<TopologyScreen> {
             label: 'Ярус',
             items: _tiers,
             value: _tierId,
-            onChanged: (v) => setState(() => _tierId = v),
+            onChanged: (v) {
+              setState(() => _tierId = v);
+              _loadCells();
+            },
             onAdd: () => _create('tier', _sections),
             addEnabled: _sections.isNotEmpty,
           ),
@@ -259,14 +318,62 @@ class _TopologyScreenState extends State<TopologyScreen> {
               child: Text('Создать ячейку'),
             ),
           ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text('Ячейки яруса', style: theme.textTheme.titleMedium),
           if (_tierId == null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Чтобы создать ячейку, сначала выберите ярус.',
+                'Выберите ярус, чтобы увидеть его ячейки.',
                 style: theme.textTheme.bodySmall,
               ),
+            )
+          else if (_cells.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'В этом ярусе пока нет ячеек. Создайте первую кнопкой выше.',
+                style: theme.textTheme.bodySmall,
+              ),
+            )
+          else
+            ..._cells.map(
+              (cell) => Card(
+                child: ListTile(
+                  leading: const Icon(Icons.grid_view_outlined),
+                  title: Text(cell.label),
+                  subtitle: _cellId == cell.id
+                      ? Text('Тары в ячейке: ${_cellContainers.length}')
+                      : null,
+                  selected: _cellId == cell.id,
+                  onTap: () {
+                    setState(() => _cellId = cell.id);
+                    _loadCellContainers();
+                  },
+                ),
+              ),
             ),
+          if (_cellId != null) ...[
+            const SizedBox(height: 12),
+            Text('Тара в ячейке', style: theme.textTheme.titleMedium),
+            if (_cellContainers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Ячейка пуста.', style: theme.textTheme.bodySmall),
+              )
+            else
+              ..._cellContainers.map(
+                (c) => Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.inventory_2_outlined),
+                    title: Text('Тара #${c.id}'),
+                    subtitle: Text(c.status.name),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );

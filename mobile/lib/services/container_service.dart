@@ -133,6 +133,7 @@ class ContainerService {
     int? containerTypeId,
     String? draftWorkOrderCoded,
     int? draftResearchTypeId,
+    int? cellId,
   }) async {
     final query = <String, dynamic>{'page': page};
     if (status != null) {
@@ -148,6 +149,9 @@ class ContainerService {
     }
     if (draftResearchTypeId != null) {
       query['draft_research_type_id'] = draftResearchTypeId;
+    }
+    if (cellId != null) {
+      query['cell_id'] = cellId;
     }
 
     try {
