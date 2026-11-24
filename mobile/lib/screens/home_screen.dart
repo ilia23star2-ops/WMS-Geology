@@ -21,6 +21,7 @@ import 'containers_list_screen.dart';
 import 'ocr_session_screen.dart';
 import 'scanner_screen.dart';
 import 'sync_screen.dart';
+import 'topology_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -84,6 +85,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openContainers() async {
     await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const ContainersListScreen()));
+  }
+
+  Future<void> _openTopology() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const TopologyScreen()));
   }
 
   Future<void> _openOcrSession() async {
@@ -291,7 +297,14 @@ class _HomeScreenState extends State<HomeScreen> {
           _drawerStub(context, Icons.assignment_outlined, 'Наряд-заказы'),
           _drawerStub(context, Icons.move_to_inbox_outlined, 'Приёмка'),
           _drawerStub(context, Icons.print_outlined, 'Печать'),
-          _drawerStub(context, Icons.account_tree_outlined, 'Топология'),
+          ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: const Text('Топология'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openTopology();
+            },
+          ),
           _drawerStub(context, Icons.menu_book_outlined, 'Справочники'),
 
           ListTile(
