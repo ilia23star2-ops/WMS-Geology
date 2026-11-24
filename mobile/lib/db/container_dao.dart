@@ -1,48 +1,121 @@
 /// DAO для работы с кэшем тар (c-1, c-9-fill-offline-2a..-2c-3-fix-3a, c-2d-2, c-2d-2c-fix-1, c-8b).
+///
+/// conflict-pull-5: `saveAllMerged` — запись со слиянием по полям.
+/// Старый `saveAll` пропускал записи с офлайн-правками, из-за чего
+/// серверные изменения по ним не применялись вовсе.
 library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../utils/record_batch_merge.dart';
+import '../utils/sync_conflicts.dart';
 import 'database.dart';
 
-class ContainerDao {
-    static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
-    if (rawList.isEmpty) return;
-    final db = await AppDatabase.instance.database;
-    final batch = db.batch();
+/// Готовит строки для таблицы `containers` (чистая, тестируется).
+@visibleForTesting
+List<Map<String, dynamic>> containerRowsForSave(
+  List<Map<String, dynamic>> records,
+) {
+  final rows = <Map<String, dynamic>>[];
+  for (final json in records) {
+    final id = json['id'];
+    if (id is! int) continue;
+    final pending =
+        (json['pending_sync'] as int?) ??
+        (json['_pending_sync'] == true ? 1 : 0);
+    rows.add(<String, dynamic>{
+      'id': id,
+      'updated_at': (json['updated_at'] as String?) ?? '',
+      'pending_sync': pending,
+      'data': jsonEncode(json),
+    });
+  }
+  return rows;
+}
 
-    final pendingIds = <int>{};
-    final ids = rawList.map((j) => j['id'] as int).toList();
+class ContainerDao {
+  static Future<void> saveAll(List<Map<String, dynamic>> rawList) async {
+    // conflict-pull-6: пишем со слиянием, расхождения — человеку.
+    final merged = await saveAllMerged(rawList);
+    SyncConflicts.syncPage(
+      'container',
+      rawList.map((j) => j['id']).whereType<int>().toSet(),
+      merged.conflicts,
+    );
+  }
+
+  /// Запись со слиянием по полям (conflict-pull-5).
+  ///
+  /// Записи без офлайн-правок берутся серверными. С правками —
+  /// объединяются: разные поля дополняют друг друга, спорные уходят
+  /// в результат для человека, а своё значение остаётся в кэше.
+  static Future<BatchMergeResult> saveAllMerged(
+    List<Map<String, dynamic>> rawList,
+  ) async {
+    if (rawList.isEmpty) {
+      return const BatchMergeResult(
+        toSave: <Map<String, dynamic>>[],
+        conflicts: <RecordConflict>[],
+        autoMergedFields: 0,
+      );
+    }
+    final db = await AppDatabase.instance.database;
+    final ids = rawList.map((j) => j['id']).whereType<int>().toList();
+    if (ids.isEmpty) {
+      return BatchMergeResult(
+        toSave: rawList,
+        conflicts: const <RecordConflict>[],
+        autoMergedFields: 0,
+      );
+    }
     final placeholders = List.filled(ids.length, '?').join(',');
-    final rows = await db.query(
+
+    final localRows = await db.query(
       'containers',
-      columns: ['id', 'pending_sync'],
       where: 'id IN ($placeholders)',
       whereArgs: ids,
     );
-    for (final r in rows) {
-      if ((r['pending_sync'] as int? ?? 0) == 1) {
-        pendingIds.add(r['id'] as int);
-      }
+    final localById = <int, Map<String, dynamic>>{};
+    final pendingIds = <int>{};
+    for (final r in localRows) {
+      final id = r['id'] as int;
+      localById[id] = jsonDecode(r['data'] as String) as Map<String, dynamic>;
+      if ((r['pending_sync'] as int? ?? 0) == 1) pendingIds.add(id);
     }
 
-    for (final json in rawList) {
-      final id = json['id'] as int;
-      if (pendingIds.contains(id)) continue;
-
-      final updatedAt = (json['updated_at'] as String?) ?? '';
-
-      batch.insert('containers', {
-        'id': id,
-        'updated_at': updatedAt,
-        'pending_sync': 0,
-        'data': jsonEncode(json),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final baseRows = await db.query(
+      'sync_base',
+      where: 'entity = ? AND id IN ($placeholders)',
+      whereArgs: <Object>['container', ...ids],
+    );
+    final baseById = <int, Map<String, dynamic>>{};
+    for (final r in baseRows) {
+      baseById[r['id'] as int] =
+          jsonDecode(r['data'] as String) as Map<String, dynamic>;
     }
 
+    final merged = mergeBatch(
+      entity: 'container',
+      serverRecords: rawList,
+      localById: localById,
+      baseById: baseById,
+      pendingIds: pendingIds,
+      titleOf: (r) => (r['container_number'] as String?) ?? 'Тара #${r['id']}',
+    );
+
+    final batch = db.batch();
+    for (final row in containerRowsForSave(merged.toSave)) {
+      batch.insert(
+        'containers',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
     await batch.commit(noResult: true);
+    return merged;
   }
 
   static Future<Map<String, dynamic>?> getById(int id) async {
