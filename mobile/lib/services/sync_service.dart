@@ -9,6 +9,7 @@ import '../db/catalog_dao.dart';
 import '../db/container_dao.dart';
 import '../db/container_history_dao.dart';
 import '../db/sample_dao.dart';
+import '../db/sync_base_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../models/label_config.dart';
 import 'api_client.dart';
@@ -34,6 +35,8 @@ class SyncService {
     saveHistory,
     Future<void> Function(int containerId, List<Map<String, dynamic>> items)?
     appendHistory,
+    Future<void> Function(String entity, List<Map<String, dynamic>> items)?
+    saveBase,
     Future<List<SyncQueueItem>> Function()? getQueueItems,
     Future<int> Function(Set<int> keepSampleIds)? reconcileSamples,
     Future<int> Function(Set<int> keepContainerIds)? reconcileContainers,
@@ -42,6 +45,7 @@ class SyncService {
        _saveCatalog = saveCatalog ?? _defaultSaveCatalog,
        _saveHistory = saveHistory ?? ContainerHistoryDao.saveAll,
        _appendHistory = appendHistory ?? ContainerHistoryDao.appendAll,
+       _saveBase = saveBase ?? SyncBaseDao.saveAll,
        _getQueueItems = getQueueItems ?? SyncQueueDao.getAll,
        _reconcileSamples =
            reconcileSamples ?? SampleDao.reconcilePendingSamples,
@@ -54,6 +58,7 @@ class SyncService {
   final Future<void> Function(String, List<Map<String, dynamic>>) _saveCatalog;
   final Future<void> Function(int, List<Map<String, dynamic>>) _saveHistory;
   final Future<void> Function(int, List<Map<String, dynamic>>) _appendHistory;
+  final Future<void> Function(String, List<Map<String, dynamic>>) _saveBase;
   final Future<List<SyncQueueItem>> Function() _getQueueItems;
   final Future<int> Function(Set<int>) _reconcileSamples;
   final Future<int> Function(Set<int>) _reconcileContainers;
@@ -164,6 +169,7 @@ class SyncService {
       }
       total += results.length;
       await _saveContainers(results);
+      await _saveBase('container', results);
       if (data['next'] == null) break;
       page++;
     }
@@ -188,6 +194,7 @@ class SyncService {
       if (results.isEmpty) break;
       total += results.length;
       await _saveSamples(results);
+      await _saveBase('sample', results);
       if (data['next'] == null) break;
       page++;
     }
@@ -208,6 +215,7 @@ class SyncService {
           const <Map<String, dynamic>>[];
       if (results.isEmpty) break;
       await _saveCatalog(kind, results);
+      await _saveBase(kind, results);
       if (data['next'] == null) break;
       page++;
     }

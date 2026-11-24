@@ -1,9 +1,9 @@
 /// Локальная SQLite (3.x-offline).
 ///
-/// Версия 8 (c-2d-2): +колонка `local_ref` в `sync_queue`.
+/// Версия 9 (conflict-base-2): +таблица `sync_base` — снимки записей
+/// на момент последней синхронизации, нужны для слияния по полям.
 ///
-/// **Миграция v7 → v8:** только `ALTER TABLE sync_queue ADD COLUMN
-/// local_ref TEXT`. Данные сохраняем.
+/// **Миграция v8 → v9:** только `CREATE TABLE sync_base`. Данные сохраняем.
 library;
 
 import 'package:path/path.dart';
@@ -16,7 +16,7 @@ class AppDatabase {
   static Database? _database;
   static const String _dbName = 'wms_geology.db';
 
-  static const int _dbVersion = 8;
+  static const int _dbVersion = 9;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -55,6 +55,10 @@ class AppDatabase {
         // v7 → v8: local_ref в sync_queue.
         if (oldVersion < 8) {
           await db.execute('ALTER TABLE sync_queue ADD COLUMN local_ref TEXT');
+        }
+        // v8 → v9: снимки для слияния. Только CREATE, данные целы.
+        if (oldVersion < 9) {
+          await _createSyncBase(db);
         }
       },
     );
@@ -115,6 +119,24 @@ class AppDatabase {
       'CREATE INDEX IF NOT EXISTS idx_history_container '
       'ON container_history (container_id)',
     );
+    await _createSyncBase(db);
+  }
+
+  /// Снимки записей на момент прошлой синхронизации (conflict-base-2).
+  ///
+  /// Отдельная таблица, а не колонка в `containers`: `saveAll` пишет
+  /// строку через `ConflictAlgorithm.replace` и стёр бы колонку при
+  /// каждом pull. Здесь же хранятся и снимки справочников.
+  static Future<void> _createSyncBase(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_base (
+        entity TEXT NOT NULL,
+        id INTEGER NOT NULL,
+        base_updated_at TEXT,
+        data TEXT NOT NULL,
+        PRIMARY KEY (entity, id)
+      )
+    ''');
   }
 
   static Future<void> close() async {
