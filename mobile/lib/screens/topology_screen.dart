@@ -158,6 +158,8 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   /// Метаданные ячейки: адрес + чипы тип/активность/поддон (как в вебе).
   Widget _cellMeta(CellInfo cell, ThemeData theme) {
+    final active = cell.isActive != false;
+    final palletActive = cell.palletStatus == 'ACTIVE';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -169,21 +171,35 @@ class _TopologyScreenState extends State<TopologyScreen> {
           runSpacing: 4,
           children: [
             if (cell.cellType != null)
-              Chip(
-                label: Text(cell.cellType!),
-                visualDensity: VisualDensity.compact,
-              ),
-            Chip(
-              label: Text(cell.activeLabel),
-              visualDensity: VisualDensity.compact,
+              _chip(cell.cellTypeLabel, Colors.blueGrey.shade50, Colors.blueGrey.shade700),
+            _chip(
+              cell.activeLabel,
+              active ? Colors.green.shade50 : Colors.red.shade50,
+              active ? Colors.green.shade700 : Colors.red.shade700,
             ),
-            Chip(
-              label: Text(cell.palletChipLabel ?? 'без поддона'),
-              visualDensity: VisualDensity.compact,
+            _chip(
+              cell.palletChipLabel ?? 'без поддона',
+              cell.palletId == null
+                  ? Colors.grey.shade100
+                  : (palletActive ? Colors.green.shade50 : Colors.amber.shade50),
+              cell.palletId == null
+                  ? Colors.grey.shade600
+                  : (palletActive ? Colors.green.shade700 : Colors.amber.shade800),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _chip(String label, Color bg, Color fg) {
+    return Chip(
+      label: Text(label, style: TextStyle(color: fg, fontSize: 12)),
+      backgroundColor: bg,
+      side: BorderSide.none,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
     );
   }
 

@@ -224,6 +224,16 @@ class CellInfo {
   /// Подпись активности для чипа.
   String get activeLabel => isActive == false ? 'Отключена' : 'Активна';
 
+  /// Русский тип ячейки (как в вебе).
+  String get cellTypeLabel {
+    switch (cellType) {
+      case 'STANDARD':
+        return 'Обычная';
+      default:
+        return cellType ?? '—';
+    }
+  }
+
   /// Подпись поддон-чипа; null — поддона нет.
   String? get palletChipLabel {
     if (palletId == null) return null;
