@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45582288062
-- ветка: fix/3.x-topology-parity-1
+- run: 45589263955
+- ветка: feature/3.x-migration
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
+| Backend (Django) | success | — |
 | Web (React) | success | — |
 | Mobile (Flutter) | success | — |
-| Backend (Django) | success | — |
 | Report (agent) | in_progress | — |
