@@ -339,15 +339,32 @@ class _TopologyScreenState extends State<TopologyScreen> {
                       ),
                     )
                   else
-                    ..._cellContainers.map(
-                      (c) => Card(
+                    ..._cellContainers.map((c) {
+                      final n = c.status.name;
+                      final bg = n == 'active' || n == 'placed'
+                          ? Colors.green.shade50
+                          : n == 'pendingPlacement'
+                              ? Colors.amber.shade50
+                              : n == 'issued' ? Colors.blue.shade50 : Colors.grey.shade100;
+                      final fg = n == 'active' || n == 'placed'
+                          ? Colors.green.shade700
+                          : n == 'pendingPlacement'
+                              ? Colors.amber.shade800
+                              : n == 'issued' ? Colors.blue.shade700 : Colors.grey.shade700;
+                      return Card(
                         child: ListTile(
                           leading: const Icon(Icons.inventory_2_outlined),
                           title: Text(c.displayName),
-                          subtitle: Text(c.statusLabel),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _chip(c.statusLabel, bg, fg),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                 ],
               ],
             ),
