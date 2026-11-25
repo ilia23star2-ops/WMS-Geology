@@ -126,6 +126,28 @@ class ContainerService {
     }
   }
 
+  /// ID поддона в ячейке (cell → pallet OneToOne). null — поддона нет.
+  static int? firstPalletId(Map<String, dynamic>? data) {
+    final results =
+        (data?['results'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
+        const <Map<String, dynamic>>[];
+    if (results.isEmpty) return null;
+    return results.first['id'] as int?;
+  }
+
+  Future<int?> fetchPalletIdByCell(int cellId) async {
+    try {
+      final response = await _client.get<Map<String, dynamic>>(
+        '/storage/pallets/',
+        queryParameters: {'cell_id': cellId},
+      );
+      return firstPalletId(response.data);
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      return null;
+    }
+  }
+
   Future<ContainersPage> fetchList({
     int page = 1,
     int pageSize = 50,
@@ -134,6 +156,7 @@ class ContainerService {
     String? draftWorkOrderCoded,
     int? draftResearchTypeId,
     int? cellId,
+    int? palletId,
   }) async {
     final query = <String, dynamic>{'page': page};
     if (status != null) {
@@ -152,6 +175,9 @@ class ContainerService {
     }
     if (cellId != null) {
       query['cell_id'] = cellId;
+    }
+    if (palletId != null) {
+      query['pallet_id'] = palletId;
     }
 
     try {

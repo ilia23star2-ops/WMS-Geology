@@ -32,7 +32,6 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   int? _tierId;
   int? _cellId;
-  bool _loading = false;
   String? _error;
 
   @override
@@ -45,16 +44,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
   ContainerService get _containers => context.read<ContainerService>();
 
   Future<void> _run(Future<void> Function() body) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _error = null);
     try {
       await body();
     } catch (e) {
       if (mounted) setState(() => _error = 'Не удалось загрузить: $e');
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -92,7 +86,12 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   Future<void> _loadCellContainers(int cellId) async {
     await _run(() async {
-      final page = await _containers.fetchList(cellId: cellId, pageSize: 200);
+      final palletId = await _containers.fetchPalletIdByCell(cellId);
+      if (palletId == null) {
+        _cellContainers = const [];
+        return;
+      }
+      final page = await _containers.fetchList(palletId: palletId, pageSize: 200);
       _cellContainers = page.items;
     });
   }
@@ -155,7 +154,6 @@ class _TopologyScreenState extends State<TopologyScreen> {
             const SizedBox(height: 8),
             Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
           ],
-          if (_loading) const LinearProgressIndicator(),
           const SizedBox(height: 8),
           ..._rooms.map(
             (room) => ExpansionTile(
@@ -261,8 +259,8 @@ class _TopologyScreenState extends State<TopologyScreen> {
                 (c) => Card(
                   child: ListTile(
                     leading: const Icon(Icons.inventory_2_outlined),
-                    title: Text('Тара #${c.id}'),
-                    subtitle: Text(c.status.name),
+                    title: Text(c.displayName),
+                    subtitle: Text(c.statusLabel),
                   ),
                 ),
               ),
