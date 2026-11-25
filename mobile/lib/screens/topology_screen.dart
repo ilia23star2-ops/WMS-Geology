@@ -1,10 +1,9 @@
-/// Экран «Топология» (topology-offline-3 + topology-browse).
+/// Экран «Топология» (topology-tree): выбор дерева, как в вебе.
 ///
-/// Каскад комната → стеллаж → секция → ярус: выбор существующих мест
-/// хранения и кнопка «+» для создания на каждом уровне. Ниже — список
-/// ячеек выбранного яруса; по тапу на ячейку — тара в ней.
-/// Создание работает офлайн (negative ID + sync_queue); parent-ссылки
-/// перемапливаются при синхронизации (topology-offline-1).
+/// Раскрывающееся дерево комната → стеллаж → секция → ярус (ленивая
+/// загрузка детей). Под выбранным ярусом — список ячеек; по тапу на
+/// ячейку — тара в ней. «+» на узле создаёт ребёнка (офлайн через
+/// sync_queue, parent-ссылки перемапливаются при синхронизации).
 library;
 
 import 'package:flutter/material.dart';
@@ -25,18 +24,14 @@ class TopologyScreen extends StatefulWidget {
 
 class _TopologyScreenState extends State<TopologyScreen> {
   List<NamedCatalog> _rooms = const [];
-  List<NamedCatalog> _racks = const [];
-  List<NamedCatalog> _sections = const [];
-  List<NamedCatalog> _tiers = const [];
+  final Map<int, List<NamedCatalog>> _racks = {};
+  final Map<int, List<NamedCatalog>> _sections = {};
+  final Map<int, List<NamedCatalog>> _tiers = {};
   List<NamedCatalog> _cells = const [];
   List<model.Container> _cellContainers = const [];
 
-  int? _roomId;
-  int? _rackId;
-  int? _sectionId;
   int? _tierId;
   int? _cellId;
-
   bool _loading = false;
   String? _error;
 
@@ -69,91 +64,25 @@ class _TopologyScreenState extends State<TopologyScreen> {
     });
   }
 
-  Future<void> _loadRacks() async {
-    final roomId = _roomId;
-    if (roomId == null) {
-      setState(() {
-        _racks = const [];
-        _rackId = null;
-        _sections = const [];
-        _sectionId = null;
-        _tiers = const [];
-        _tierId = null;
-        _cells = const [];
-        _cellId = null;
-        _cellContainers = const [];
-      });
-      return;
-    }
+  Future<void> _loadRacks(int roomId) async {
     await _run(() async {
-      _racks = await _catalog.fetchRacks(roomId);
-      _rackId = null;
-      _sections = const [];
-      _sectionId = null;
-      _tiers = const [];
-      _tierId = null;
-      _cells = const [];
-      _cellId = null;
-      _cellContainers = const [];
+      _racks[roomId] = await _catalog.fetchRacks(roomId);
     });
   }
 
-  Future<void> _loadSections() async {
-    final rackId = _rackId;
-    if (rackId == null) {
-      setState(() {
-        _sections = const [];
-        _sectionId = null;
-        _tiers = const [];
-        _tierId = null;
-        _cells = const [];
-        _cellId = null;
-        _cellContainers = const [];
-      });
-      return;
-    }
+  Future<void> _loadSections(int rackId) async {
     await _run(() async {
-      _sections = await _catalog.fetchSections(rackId);
-      _sectionId = null;
-      _tiers = const [];
-      _tierId = null;
-      _cells = const [];
-      _cellId = null;
-      _cellContainers = const [];
+      _sections[rackId] = await _catalog.fetchSections(rackId);
     });
   }
 
-  Future<void> _loadTiers() async {
-    final sectionId = _sectionId;
-    if (sectionId == null) {
-      setState(() {
-        _tiers = const [];
-        _tierId = null;
-        _cells = const [];
-        _cellId = null;
-        _cellContainers = const [];
-      });
-      return;
-    }
+  Future<void> _loadTiers(int sectionId) async {
     await _run(() async {
-      _tiers = await _catalog.fetchTiers(sectionId);
-      _tierId = null;
-      _cells = const [];
-      _cellId = null;
-      _cellContainers = const [];
+      _tiers[sectionId] = await _catalog.fetchTiers(sectionId);
     });
   }
 
-  Future<void> _loadCells() async {
-    final tierId = _tierId;
-    if (tierId == null) {
-      setState(() {
-        _cells = const [];
-        _cellId = null;
-        _cellContainers = const [];
-      });
-      return;
-    }
+  Future<void> _loadCells(int tierId) async {
     await _run(() async {
       _cells = await _catalog.fetchCells(tierId);
       _cellId = null;
@@ -161,12 +90,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
     });
   }
 
-  Future<void> _loadCellContainers() async {
-    final cellId = _cellId;
-    if (cellId == null) {
-      setState(() => _cellContainers = const []);
-      return;
-    }
+  Future<void> _loadCellContainers(int cellId) async {
     await _run(() async {
       final page = await _containers.fetchList(cellId: cellId, pageSize: 200);
       _cellContainers = page.items;
@@ -183,59 +107,23 @@ class _TopologyScreenState extends State<TopologyScreen> {
       case 'room':
         await _loadRooms();
       case 'rack':
-        await _loadRacks();
+        if (parents.isNotEmpty) await _loadRacks(parents.first.id);
       case 'section':
-        await _loadSections();
+        if (parents.isNotEmpty) await _loadSections(parents.first.id);
       case 'tier':
-        await _loadTiers();
+        if (parents.isNotEmpty) await _loadTiers(parents.first.id);
       case 'cell':
-        await _loadCells();
+        if (_tierId != null) await _loadCells(_tierId!);
       default:
         break;
     }
   }
 
-  Widget _levelRow({
-    required String label,
-    required List<NamedCatalog> items,
-    required int? value,
-    required ValueChanged<int?> onChanged,
-    required VoidCallback onAdd,
-    required bool addEnabled,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: DropdownButtonFormField<int?>(
-            initialValue: value,
-            isExpanded: true,
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: items
-                .map(
-                  (p) => DropdownMenuItem<int?>(
-                    value: p.id,
-                    child: Text(
-                      p.label,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: onChanged,
-          ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          tooltip: 'Создать',
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: addEnabled ? onAdd : null,
-        ),
-      ],
+  Widget _addBtn(VoidCallback onTap) {
+    return IconButton(
+      tooltip: 'Создать',
+      icon: const Icon(Icons.add_circle_outline),
+      onPressed: onTap,
     );
   }
 
@@ -246,87 +134,92 @@ class _TopologyScreenState extends State<TopologyScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Топология')),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
         children: [
-          Text('Места хранения', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(
-            'Выберите уровень, чтобы посмотреть содержимое, или «+», чтобы '
-            'создать новый. Создание работает без сети.',
-            style: theme.textTheme.bodySmall,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Места хранения',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _create('room', const []),
+                icon: const Icon(Icons.add),
+                label: const Text('Комната'),
+              ),
+            ],
           ),
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
           ],
-          const SizedBox(height: 16),
           if (_loading) const LinearProgressIndicator(),
-          const SizedBox(height: 16),
-          _levelRow(
-            label: 'Комната',
-            items: _rooms,
-            value: _roomId,
-            onChanged: (v) {
-              setState(() => _roomId = v);
-              _loadRacks();
-            },
-            onAdd: () => _create('room', const []),
-            addEnabled: true,
-          ),
-          const SizedBox(height: 12),
-          _levelRow(
-            label: 'Стеллаж',
-            items: _racks,
-            value: _rackId,
-            onChanged: (v) {
-              setState(() => _rackId = v);
-              _loadSections();
-            },
-            onAdd: () => _create('rack', _rooms),
-            addEnabled: _rooms.isNotEmpty,
-          ),
-          const SizedBox(height: 12),
-          _levelRow(
-            label: 'Секция',
-            items: _sections,
-            value: _sectionId,
-            onChanged: (v) {
-              setState(() => _sectionId = v);
-              _loadTiers();
-            },
-            onAdd: () => _create('section', _racks),
-            addEnabled: _racks.isNotEmpty,
-          ),
-          const SizedBox(height: 12),
-          _levelRow(
-            label: 'Ярус',
-            items: _tiers,
-            value: _tierId,
-            onChanged: (v) {
-              setState(() => _tierId = v);
-              _loadCells();
-            },
-            onAdd: () => _create('tier', _sections),
-            addEnabled: _sections.isNotEmpty,
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _tierId == null ? null : () => _create('cell', _tiers),
-            icon: const Icon(Icons.add),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Text('Создать ячейку'),
+          const SizedBox(height: 8),
+          ..._rooms.map(
+            (room) => ExpansionTile(
+              title: Text(room.label),
+              trailing: _addBtn(() => _create('rack', [room])),
+              onExpansionChanged: (open) {
+                if (open && !_racks.containsKey(room.id)) {
+                  _loadRacks(room.id);
+                }
+              },
+              children: (_racks[room.id] ?? const [])
+                  .map(
+                    (rack) => ExpansionTile(
+                      title: Text(rack.label),
+                      trailing: _addBtn(() => _create('section', [rack])),
+                      onExpansionChanged: (open) {
+                        if (open && !_sections.containsKey(rack.id)) {
+                          _loadSections(rack.id);
+                        }
+                      },
+                      children: (_sections[rack.id] ?? const [])
+                          .map(
+                            (section) => ExpansionTile(
+                              title: Text(section.label),
+                              trailing: _addBtn(
+                                () => _create('tier', [section]),
+                              ),
+                              onExpansionChanged: (open) {
+                                if (open && !_tiers.containsKey(section.id)) {
+                                  _loadTiers(section.id);
+                                }
+                              },
+                              children: (_tiers[section.id] ?? const [])
+                                  .map(
+                                    (tier) => ListTile(
+                                      title: Text(tier.label),
+                                      selected: _tierId == tier.id,
+                                      trailing: _addBtn(
+                                        () => _create('cell', [tier]),
+                                      ),
+                                      onTap: () {
+                                        setState(() => _tierId = tier.id);
+                                        _loadCells(tier.id);
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  )
+                  .toList(),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           const Divider(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text('Ячейки яруса', style: theme.textTheme.titleMedium),
           if (_tierId == null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Выберите ярус, чтобы увидеть его ячейки.',
+                'Раскройте дерево и выберите ярус, чтобы увидеть ячейки.',
                 style: theme.textTheme.bodySmall,
               ),
             )
@@ -334,7 +227,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'В этом ярусе пока нет ячеек. Создайте первую кнопкой выше.',
+                'В этом ярусе пока нет ячеек. Создайте кнопкой «+» у яруса.',
                 style: theme.textTheme.bodySmall,
               ),
             )
@@ -350,7 +243,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                   selected: _cellId == cell.id,
                   onTap: () {
                     setState(() => _cellId = cell.id);
-                    _loadCellContainers();
+                    _loadCellContainers(cell.id);
                   },
                 ),
               ),
