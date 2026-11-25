@@ -172,6 +172,21 @@ class CatalogService {
     );
   }
 
+  /// Ячейки яруса с метаданными (topology-parity-1).
+  ///
+  /// Онлайн — живой запрос + кэш; офлайн — кэш (полный JSON).
+  Future<List<CellInfo>> fetchCellsDetailed(int tierId) async {
+    try {
+      final items = await _fetchAllPages('/storage/cells/', {'tier_id': tierId});
+      await _saveCatalog('cell', items, parentId: tierId);
+      return items.map(CellInfo.fromJson).toList(growable: false);
+    } on ApiException catch (e) {
+      if (!e.isNetworkError) rethrow;
+      final cached = await _getByParent('cell', tierId);
+      return cached.map(CellInfo.fromJson).toList(growable: false);
+    }
+  }
+
   // ----- Создание справочника (c-8-catalog-create + offline) -----
 
   /// POST в справочник.
