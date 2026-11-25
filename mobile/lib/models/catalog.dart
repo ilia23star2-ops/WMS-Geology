@@ -171,3 +171,63 @@ class NamedCatalog {
   String toString() =>
       'NamedCatalog(id: $id, label: $label, fullAddress: $fullAddress)';
 }
+
+/// Ячейка с метаданными для экрана «Топология» (topology-parity-1).
+///
+/// Отдельный класс по решению из комментария NamedCatalog: каскад
+/// размещения использует NamedCatalog, топология показывает тип,
+/// активность и поддон.
+class CellInfo {
+  const CellInfo({
+    required this.id,
+    required this.label,
+    this.fullAddress,
+    this.cellType,
+    this.isActive,
+    this.palletId,
+    this.palletStatus,
+  });
+
+  final int id;
+  final String label;
+  final String? fullAddress;
+  final String? cellType;
+  final bool? isActive;
+  final int? palletId;
+  final String? palletStatus;
+
+  factory CellInfo.fromJson(Map<String, dynamic> json) {
+    final id = json['id'] as int;
+    final code = json['code'] as String?;
+    final fullAddress = json['full_address'] as String?;
+    final String label;
+    if (code != null && code.isNotEmpty) {
+      label = code;
+    } else if (fullAddress != null && fullAddress.isNotEmpty) {
+      label = fullAddress;
+    } else {
+      label = ['#', id.toString()].join('');
+    }
+    return CellInfo(
+      id: id,
+      label: label,
+      fullAddress: (fullAddress != null && fullAddress.isNotEmpty)
+          ? fullAddress
+          : null,
+      cellType: json['cell_type'] as String?,
+      isActive: json['is_active'] as bool?,
+      palletId: json['pallet_id'] as int?,
+      palletStatus: json['pallet_status'] as String?,
+    );
+  }
+
+  /// Подпись активности для чипа.
+  String get activeLabel => isActive == false ? 'Отключена' : 'Активна';
+
+  /// Подпись поддон-чипа; null — поддона нет.
+  String? get palletChipLabel {
+    if (palletId == null) return null;
+    final ru = palletStatus == 'ACTIVE' ? 'активен' : (palletStatus ?? '—');
+    return ['Поддон #', palletId.toString(), ' · ', ru].join('');
+  }
+}

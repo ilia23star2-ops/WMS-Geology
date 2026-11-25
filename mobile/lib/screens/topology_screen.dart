@@ -1,9 +1,10 @@
-/// Экран «Топология» (topology-tree-ux): дерево как в вебе, без лагов.
+/// Экран «Топология» (topology-tree-ux + topology-parity-1).
 ///
 /// Всё дерево (комната→стеллаж→секция→ярус) предзагружается при входе
 /// со спиннером, поэтому раскрытие узлов мгновенное (без сети по клику).
 /// Шеврон раскрытия сохранён; «+» в строке узла создаёт ребёнка (офлайн
-/// через sync_queue). Под выбранным ярусом — ячейки, по тапу — тара.
+/// через sync_queue). Под выбранным ярусом — ячейки с метаданными
+/// (адрес, тип, активность, поддон-чип) как в вебе; по тапу — тара.
 library;
 
 import 'package:flutter/material.dart';
@@ -27,7 +28,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
   final Map<int, List<NamedCatalog>> _racks = {};
   final Map<int, List<NamedCatalog>> _sections = {};
   final Map<int, List<NamedCatalog>> _tiers = {};
-  List<NamedCatalog> _cells = const [];
+  List<CellInfo> _cells = const [];
   List<model.Container> _cellContainers = const [];
 
   int? _tierId;
@@ -104,7 +105,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
       _cellContainers = const [];
     });
     try {
-      final cells = await _catalog.fetchCells(tierId);
+      final cells = await _catalog.fetchCellsDetailed(tierId);
       if (mounted) setState(() => _cells = cells);
     } catch (e) {
       if (mounted) setState(() => _error = 'Не удалось загрузить: $e');
@@ -150,6 +151,37 @@ class _TopologyScreenState extends State<TopologyScreen> {
           visualDensity: VisualDensity.compact,
           icon: const Icon(Icons.add_circle_outline),
           onPressed: onAdd,
+        ),
+      ],
+    );
+  }
+
+  /// Метаданные ячейки: адрес + чипы тип/активность/поддон (как в вебе).
+  Widget _cellMeta(CellInfo cell, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (cell.fullAddress != null)
+          Text(cell.fullAddress!, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            if (cell.cellType != null)
+              Chip(
+                label: Text(cell.cellType!),
+                visualDensity: VisualDensity.compact,
+              ),
+            Chip(
+              label: Text(cell.activeLabel),
+              visualDensity: VisualDensity.compact,
+            ),
+            Chip(
+              label: Text(cell.palletChipLabel ?? 'без поддона'),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
         ),
       ],
     );
@@ -270,9 +302,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                       child: ListTile(
                         leading: const Icon(Icons.grid_view_outlined),
                         title: Text(['Ячейка', cell.label].join(' · ')),
-                        subtitle: _cellId == cell.id
-                            ? Text('Тары в ячейке: ${_cellContainers.length}')
-                            : null,
+                        subtitle: _cellMeta(cell, theme),
                         selected: _cellId == cell.id,
                         onTap: () {
                           setState(() => _cellId = cell.id);
