@@ -1,7 +1,7 @@
 # Отчёт CI
 
-- run: 45353073174
-- ветка: feature/3.x-migration
+- run: 45577563751
+- ветка: fix/3.x-topology-offline-1
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|

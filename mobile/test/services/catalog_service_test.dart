@@ -162,5 +162,19 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+    test('topology: create room online → endpoint /storage/rooms/', () async {
+      client.postData = {'id': 77, 'code': 'R1'};
+      final result = await createService().create('room', {'code': 'R1'});
+      expect(result.id, 77);
+      expect(client.postCalls.first.key, '/storage/rooms/');
+    });
+
+    test('topology: create rack offline → enqueue /storage/racks/ с родителем', () async {
+      client.throwOnPost = ApiException(message: 'offline', isNetworkError: true);
+      final result = await createService().create('rack', {'room': -5, 'code': 'K1'});
+      expect(result.queued, isTrue);
+      expect(enqueued.first.endpoint, '/storage/racks/');
+      expect(enqueued.first.payload['room'], -5);
+    });
   });
 }

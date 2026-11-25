@@ -203,6 +203,10 @@ class SyncPusher {
   }
 
   /// Endpoint → kind для `CatalogDao.remapId`. `null` — не справочник.
+  @visibleForTesting
+  static String? catalogKindForEndpoint(String endpoint) =>
+      _catalogKindForEndpoint(endpoint);
+
   static String? _catalogKindForEndpoint(String endpoint) {
     switch (endpoint) {
       case '/sites/':
@@ -213,6 +217,16 @@ class SyncPusher {
         return 'laboratory';
       case '/storage/container-types/':
         return 'container_type';
+      case '/storage/rooms/':
+        return 'room';
+      case '/storage/racks/':
+        return 'rack';
+      case '/storage/sections/':
+        return 'section';
+      case '/storage/tiers/':
+        return 'tier';
+      case '/storage/cells/':
+        return 'cell';
       default:
         return null;
     }
