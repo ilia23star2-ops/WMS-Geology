@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45595977906
-- ветка: fix/3.x-topology-container-chips
+- run: 45596524389
+- ветка: feature/3.x-migration
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
-| Mobile (Flutter) | success | — |
 | Web (React) | success | — |
+| Mobile (Flutter) | success | — |
 | Backend (Django) | success | — |
 | Report (agent) | in_progress | — |
