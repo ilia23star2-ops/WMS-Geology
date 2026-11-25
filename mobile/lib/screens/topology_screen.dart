@@ -159,7 +159,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
           const SizedBox(height: 8),
           ..._rooms.map(
             (room) => ExpansionTile(
-              title: Text(room.label),
+              title: Text(['Комната', room.label].join(' · ')),
               trailing: _addBtn(() => _create('rack', [room])),
               onExpansionChanged: (open) {
                 if (open && !_racks.containsKey(room.id)) {
@@ -169,7 +169,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
               children: (_racks[room.id] ?? const [])
                   .map(
                     (rack) => ExpansionTile(
-                      title: Text(rack.label),
+                      title: Text(['Стеллаж', rack.label].join(' · ')),
                       trailing: _addBtn(() => _create('section', [rack])),
                       onExpansionChanged: (open) {
                         if (open && !_sections.containsKey(rack.id)) {
@@ -179,7 +179,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                       children: (_sections[rack.id] ?? const [])
                           .map(
                             (section) => ExpansionTile(
-                              title: Text(section.label),
+                              title: Text(['Секция', section.label].join(' · ')),
                               trailing: _addBtn(
                                 () => _create('tier', [section]),
                               ),
@@ -191,7 +191,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                               children: (_tiers[section.id] ?? const [])
                                   .map(
                                     (tier) => ListTile(
-                                      title: Text(tier.label),
+                                      title: Text(['Ярус', tier.label].join(' · ')),
                                       selected: _tierId == tier.id,
                                       trailing: _addBtn(
                                         () => _create('cell', [tier]),
@@ -236,7 +236,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
               (cell) => Card(
                 child: ListTile(
                   leading: const Icon(Icons.grid_view_outlined),
-                  title: Text(cell.label),
+                  title: Text(['Ячейка', cell.label].join(' · ')),
                   subtitle: _cellId == cell.id
                       ? Text('Тары в ячейке: ${_cellContainers.length}')
                       : null,
