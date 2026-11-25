@@ -1,10 +1,10 @@
-/// Экран «Топология» (topology-tree-ux + topology-parity-1).
+/// Экран «Топология» (topology-ux-mobile).
 ///
-/// Всё дерево (комната→стеллаж→секция→ярус) предзагружается при входе
-/// со спиннером, поэтому раскрытие узлов мгновенное (без сети по клику).
-/// Шеврон раскрытия сохранён; «+» в строке узла создаёт ребёнка (офлайн
-/// через sync_queue). Под выбранным ярусом — ячейки с метаданными
-/// (адрес, тип, активность, поддон-чип) как в вебе; по тапу — тара.
+/// Дерево комната→стеллаж→секция→ярус предзагружается при входе
+/// (спиннер), раскрытие мгновенное. Ячейки выбранного яруса — плиткой
+/// (код + статус-точка + поддон); тап по плитке открывает шторку с
+/// деталями ячейки и тарой (цветные чипы статусов). «+» на узле дерева
+/// создаёт ребёнка (офлайн через sync_queue).
 library;
 
 import 'package:flutter/material.dart';
@@ -141,6 +141,55 @@ class _TopologyScreenState extends State<TopologyScreen> {
     if (_tierId != null) await _loadCells(_tierId!);
   }
 
+  /// Тап по плитке: грузим тару и открываем шторку детали ячейки.
+  Future<void> _openCell(CellInfo cell) async {
+    setState(() => _cellId = cell.id);
+    await _loadCellContainers(cell.id);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (ctx2, scroll) {
+          final t = Theme.of(ctx2);
+          return ListView(
+            controller: scroll,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                ['Ячейка', cell.label].join(' · '),
+                style: t.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              _cellMeta(cell, t),
+              const SizedBox(height: 16),
+              Text('Тара в ячейке', style: t.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (_cellContainers.isEmpty)
+                Text('Ячейка пуста.', style: t.textTheme.bodySmall)
+              else
+                ..._cellContainers.map(_containerRow),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// Заголовок узла: текст + «+» (шеврон раскрытия остаётся стандартным).
   Widget _nodeTitle(String label, VoidCallback onAdd) {
     return Row(
@@ -156,7 +205,64 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
   }
 
-  /// Метаданные ячейки: адрес + чипы тип/активность/поддон (как в вебе).
+  /// Плитка ячейки: статус-точка + код + поддон.
+  Widget _cellTile(CellInfo cell, ThemeData theme) {
+    final active = cell.isActive != false;
+    final selected = _cellId == cell.id;
+    return SizedBox(
+      width: 116,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        shape: selected
+            ? RoundedRectangleBorder(
+                side: BorderSide(color: theme.colorScheme.primary, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              )
+            : null,
+        child: InkWell(
+          onTap: () => _openCell(cell),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: active ? Colors.green : Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        cell.label,
+                        style: theme.textTheme.titleMedium,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  cell.palletId == null
+                      ? 'без поддона'
+                      : ['подд #', cell.palletId.toString()].join(''),
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Метаданные ячейки: адрес + чипы тип/активность/поддон.
   Widget _cellMeta(CellInfo cell, ThemeData theme) {
     final active = cell.isActive != false;
     final palletActive = cell.palletStatus == 'ACTIVE';
@@ -171,7 +277,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
           runSpacing: 4,
           children: [
             if (cell.cellType != null)
-              _chip(cell.cellTypeLabel, Colors.blueGrey.shade50, Colors.blueGrey.shade700),
+              _chip(
+                cell.cellTypeLabel,
+                Colors.blueGrey.shade50,
+                Colors.blueGrey.shade700,
+              ),
             _chip(
               cell.activeLabel,
               active ? Colors.green.shade50 : Colors.red.shade50,
@@ -181,14 +291,50 @@ class _TopologyScreenState extends State<TopologyScreen> {
               cell.palletChipLabel ?? 'без поддона',
               cell.palletId == null
                   ? Colors.grey.shade100
-                  : (palletActive ? Colors.green.shade50 : Colors.amber.shade50),
+                  : (palletActive
+                        ? Colors.green.shade50
+                        : Colors.amber.shade50),
               cell.palletId == null
                   ? Colors.grey.shade600
-                  : (palletActive ? Colors.green.shade700 : Colors.amber.shade800),
+                  : (palletActive
+                        ? Colors.green.shade700
+                        : Colors.amber.shade800),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  /// Строка тары с цветным чипом статуса.
+  Widget _containerRow(model.Container c) {
+    final n = c.status.name;
+    final bg = n == 'active' || n == 'placed'
+        ? Colors.green.shade50
+        : n == 'pendingPlacement'
+        ? Colors.amber.shade50
+        : n == 'issued'
+        ? Colors.blue.shade50
+        : Colors.grey.shade100;
+    final fg = n == 'active' || n == 'placed'
+        ? Colors.green.shade700
+        : n == 'pendingPlacement'
+        ? Colors.amber.shade800
+        : n == 'issued'
+        ? Colors.blue.shade700
+        : Colors.grey.shade700;
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.inventory_2_outlined),
+        title: Text(c.displayName),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _chip(c.statusLabel, bg, fg),
+          ),
+        ),
+      ),
     );
   }
 
@@ -313,59 +459,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
                     ),
                   )
                 else
-                  ..._cells.map(
-                    (cell) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.grid_view_outlined),
-                        title: Text(['Ячейка', cell.label].join(' · ')),
-                        subtitle: _cellMeta(cell, theme),
-                        selected: _cellId == cell.id,
-                        onTap: () {
-                          setState(() => _cellId = cell.id);
-                          _loadCellContainers(cell.id);
-                        },
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _cells.map((c) => _cellTile(c, theme)).toList(),
                     ),
                   ),
-                if (_cellId != null) ...[
-                  const SizedBox(height: 12),
-                  Text('Тара в ячейке', style: theme.textTheme.titleMedium),
-                  if (_cellContainers.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Ячейка пуста.',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    )
-                  else
-                    ..._cellContainers.map((c) {
-                      final n = c.status.name;
-                      final bg = n == 'active' || n == 'placed'
-                          ? Colors.green.shade50
-                          : n == 'pendingPlacement'
-                              ? Colors.amber.shade50
-                              : n == 'issued' ? Colors.blue.shade50 : Colors.grey.shade100;
-                      final fg = n == 'active' || n == 'placed'
-                          ? Colors.green.shade700
-                          : n == 'pendingPlacement'
-                              ? Colors.amber.shade800
-                              : n == 'issued' ? Colors.blue.shade700 : Colors.grey.shade700;
-                      return Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.inventory_2_outlined),
-                          title: Text(c.displayName),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: _chip(c.statusLabel, bg, fg),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                ],
               ],
             ),
     );
