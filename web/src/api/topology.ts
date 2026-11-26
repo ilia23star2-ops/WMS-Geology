@@ -549,3 +549,22 @@ export function useAllTiers() {
         staleTime: 60_000,
     });
 }
+
+async function fetchById<T>(url: string): Promise<T> {
+    const { data } = await apiClient.get<T>(url);
+    return data;
+}
+
+/// Цепочка ячейка→ярус→секция для скана (topology-scan).
+export async function resolveCellChain(cellId: number) {
+    const cell = await fetchById<Cell>("/storage/cells/" + cellId + "/");
+    const tier = await fetchById<Tier>("/storage/tiers/" + cell.tier + "/");
+    const section = await fetchById<Section>("/storage/sections/" + tier.section + "/");
+    return { cell, tier, section };
+}
+
+/// Секция→стеллаж для скана (topology-scan).
+export async function resolveSectionChain(sectionId: number) {
+    const section = await fetchById<Section>("/storage/sections/" + sectionId + "/");
+    return { section };
+}
