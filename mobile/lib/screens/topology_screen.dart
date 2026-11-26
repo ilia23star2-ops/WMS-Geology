@@ -1,12 +1,12 @@
-/// Экран «Топология» (topology-ux-mobile + cell-card-ui-mobile).
+/// Экран «Топология» (topology-ux-mobile + cell-card-ui-mobile
+/// + topology-cell-select-mobile).
 ///
 /// Дерево комната→стеллаж→секция→ярус предзагружается при входе
 /// (спиннер), раскрытие мгновенное. Ячейки выбранного яруса — плиткой
-/// в паритете с веб-карточкой: чип состояния (Занята N / Свободна /
-/// Отключена), подпись «Секция · Ярус», мини-схема позиций яруса
-/// (текущая в рамке, цвет = заполненность), подпись схемы, адрес с
-/// копированием, чипы типа и поддона со счётчиком. Тап по плитке —
-/// шторка с деталями ячейки и тарой (цветные чипы статусов).
+/// в паритете с веб-карточкой. Долгое нажатие на плитку — режим
+/// выделения (галочки, шапка «Выбрано: N» + «Печать QR»/«Снять»);
+/// «Печать QR» скачивает пакетный PDF (qr-batch) и открывает вьювер.
+/// Тап по плитке вне режима — шторка с деталями ячейки и тарой.
 /// «+» на узле дерева создаёт ребёнка (офлайн через sync_queue).
 library;
 
@@ -19,6 +19,7 @@ import '../models/container.dart' as model;
 import '../services/catalog_service.dart';
 import '../services/container_service.dart';
 import '../widgets/catalog_create_dialog.dart';
+import '../widgets/cell_widgets.dart';
 
 class TopologyScreen extends StatefulWidget {
   const TopologyScreen({super.key});
@@ -34,6 +35,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
   final Map<int, List<NamedCatalog>> _tiers = {};
   List<CellInfo> _cells = const [];
   List<model.Container> _cellContainers = const [];
+
+  bool _selecting = false;
+  final Set<int> _selected = {};
 
   int? _tierId;
   int? _cellId;
@@ -107,6 +111,8 @@ class _TopologyScreenState extends State<TopologyScreen> {
       _cellsLoading = true;
       _cellId = null;
       _cellContainers = const [];
+      _selecting = false;
+      _selected.clear();
     });
     try {
       final cells = await _catalog.fetchCellsDetailed(tierId);
@@ -153,7 +159,44 @@ class _TopologyScreenState extends State<TopologyScreen> {
         .showSnackBar(const SnackBar(content: Text('Скопировано')));
   }
 
-  /// Тап по плитке: грузим тару и открываем шторку детали ячейки.
+  /// Долгое нажатие: вход в режим выделения и выбор ячейки.
+  void _startSelecting(CellInfo cell) {
+    setState(() {
+      _selecting = true;
+      _selected.add(cell.id);
+    });
+  }
+
+  /// Тап в режиме выделения: переключить выбор ячейки.
+  void _toggleSelected(CellInfo cell) {
+    setState(() {
+      if (_selected.contains(cell.id)) {
+        _selected.remove(cell.id);
+      } else {
+        _selected.add(cell.id);
+      }
+    });
+  }
+
+  void _stopSelecting() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
+
+  /// Пакетный QR выделенных ячеек: PDF через qr-batch + вьювер.
+  Future<void> _printSelectedQr() async {
+    if (_selected.isEmpty) return;
+    final ok = await _catalog.openCellsBatchQrPdf(_selected.toList());
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Не удалось открыть PDF.')));
+    }
+  }
+
+  /// Тап по плитке вне режима выделения: шторка детали ячейки.
   Future<void> _openCell(CellInfo cell) async {
     setState(() => _cellId = cell.id);
     await _loadCellContainers(cell.id);
@@ -187,14 +230,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
                 style: t.textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
-              _cellMeta(cell, t),
+              cellMeta(cell, t),
               const SizedBox(height: 16),
               Text('Тара в ячейке', style: t.textTheme.titleMedium),
               const SizedBox(height: 8),
               if (_cellContainers.isEmpty)
                 Text('Ячейка пуста.', style: t.textTheme.bodySmall)
               else
-                ..._cellContainers.map(_containerRow),
+                ..._cellContainers.map(containerRow),
             ],
           );
         },
@@ -262,23 +305,29 @@ class _TopologyScreenState extends State<TopologyScreen> {
     return const Color(0xFF2EB84C);
   }
 
-  /// Плитка ячейки в паритете с веб-карточкой: чип состояния,
-  /// секция·ярус, мини-схема, подпись схемы, адрес с копированием,
-  /// чипы типа и поддона со счётчиком.
+  /// Плитка ячейки в паритете с веб-карточкой + выделение.
   Widget _cellTile(CellInfo cell, ThemeData theme) {
     final selected = _cellId == cell.id;
+    final checked = _selected.contains(cell.id);
     return SizedBox(
       width: 170,
       child: Card(
         clipBehavior: Clip.antiAlias,
-        shape: selected
+        shape: selected || (_selecting && checked)
             ? RoundedRectangleBorder(
                 side: BorderSide(color: theme.colorScheme.primary, width: 2),
                 borderRadius: BorderRadius.circular(12),
               )
             : null,
         child: InkWell(
-          onTap: () => _openCell(cell),
+          onTap: () {
+            if (_selecting) {
+              _toggleSelected(cell);
+            } else {
+              _openCell(cell);
+            }
+          },
+          onLongPress: () => _startSelecting(cell),
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: Column(
@@ -286,6 +335,18 @@ class _TopologyScreenState extends State<TopologyScreen> {
               children: [
                 Row(
                   children: [
+                    if (_selecting) ...[
+                      Icon(
+                        checked
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        size: 18,
+                        color: checked
+                            ? theme.colorScheme.primary
+                            : Colors.grey,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
                     Expanded(
                       child: Text(
                         cell.label,
@@ -293,7 +354,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    _chip(_stateLabel(cell), _stateBg(cell), _stateFg(cell)),
+                    chip(_stateLabel(cell), _stateBg(cell), _stateFg(cell)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -351,13 +412,13 @@ class _TopologyScreenState extends State<TopologyScreen> {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    _chip(
+                    chip(
                       cell.cellTypeLabel,
                       Colors.blueGrey.shade50,
                       Colors.blueGrey.shade700,
                     ),
                     if (cell.palletId != null)
-                      _chip(
+                      chip(
                         [
                           '#',
                           cell.palletId.toString(),
@@ -369,7 +430,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                         Colors.green.shade700,
                       )
                     else
-                      _chip(
+                      chip(
                         'без поддона',
                         Colors.grey.shade100,
                         Colors.grey.shade600,
@@ -381,93 +442,6 @@ class _TopologyScreenState extends State<TopologyScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  /// Метаданные ячейки: адрес + чипы тип/активность/поддон (шторка).
-  Widget _cellMeta(CellInfo cell, ThemeData theme) {
-    final active = cell.isActive != false;
-    final palletActive = cell.palletStatus == 'ACTIVE';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (cell.fullAddress != null)
-          Text(cell.fullAddress!, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            if (cell.cellType != null)
-              _chip(
-                cell.cellTypeLabel,
-                Colors.blueGrey.shade50,
-                Colors.blueGrey.shade700,
-              ),
-            _chip(
-              cell.activeLabel,
-              active ? Colors.green.shade50 : Colors.red.shade50,
-              active ? Colors.green.shade700 : Colors.red.shade700,
-            ),
-            _chip(
-              cell.palletChipLabel ?? 'без поддона',
-              cell.palletId == null
-                  ? Colors.grey.shade100
-                  : (palletActive
-                        ? Colors.green.shade50
-                        : Colors.amber.shade50),
-              cell.palletId == null
-                  ? Colors.grey.shade600
-                  : (palletActive
-                        ? Colors.green.shade700
-                        : Colors.amber.shade800),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Строка тары с цветным чипом статуса (шторка).
-  Widget _containerRow(model.Container c) {
-    final n = c.status.name;
-    final bg = n == 'active' || n == 'placed'
-        ? Colors.green.shade50
-        : n == 'pendingPlacement'
-        ? Colors.amber.shade50
-        : n == 'issued'
-        ? Colors.blue.shade50
-        : Colors.grey.shade100;
-    final fg = n == 'active' || n == 'placed'
-        ? Colors.green.shade700
-        : n == 'pendingPlacement'
-        ? Colors.amber.shade800
-        : n == 'issued'
-        ? Colors.blue.shade700
-        : Colors.grey.shade700;
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.inventory_2_outlined),
-        title: Text(c.displayName),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _chip(c.statusLabel, bg, fg),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String label, Color bg, Color fg) {
-    return Chip(
-      label: Text(label, style: TextStyle(color: fg, fontSize: 12)),
-      backgroundColor: bg,
-      side: BorderSide.none,
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
     );
   }
 
@@ -558,7 +532,27 @@ class _TopologyScreenState extends State<TopologyScreen> {
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
-                Text('Ячейки яруса', style: theme.textTheme.titleMedium),
+                if (_selecting)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ['Выбрано: ', _selected.length.toString()].join(''),
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _printSelectedQr(),
+                        child: const Text('Печать QR'),
+                      ),
+                      TextButton(
+                        onPressed: _stopSelecting,
+                        child: const Text('Снять'),
+                      ),
+                    ],
+                  )
+                else
+                  Text('Ячейки яруса', style: theme.textTheme.titleMedium),
                 if (_tierId == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),

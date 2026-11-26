@@ -153,6 +153,27 @@ class ApiClient {
     }
   }
 
+  /// POST, возвращающий бинарные данные (PDF).
+  Future<List<int>> downloadPost(String path, Map<String, dynamic> body) async {
+    try {
+      final response = await dio.post<List<int>>(
+        path,
+        data: body,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = response.data;
+      if (data == null) {
+        throw ApiException(
+          message: 'Пустой ответ от сервера.',
+          statusCode: response.statusCode,
+        );
+      }
+      return data;
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
   /// 6a: multipart POST (загрузка файла + доп. поля).
   Future<Response<T>> uploadMultipart<T>(
     String path, {
