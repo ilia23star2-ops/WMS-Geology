@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45759972125
-- ветка: fix/3.x-topology-cell-card-ui
+- run: 45760899206
+- ветка: feature/3.x-migration
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
-| Backend (Django) | success | — |
 | Web (React) | success | — |
+| Backend (Django) | success | — |
 | Mobile (Flutter) | success | — |
 | Report (agent) | in_progress | — |
