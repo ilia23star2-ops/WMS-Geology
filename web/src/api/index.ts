@@ -121,6 +121,7 @@ export {
     useCell,
     useCells,
     useCellsForTiers,
+    useAllTiers,
     useCreateCell,
     useCreatePallet,
     useCreateRack,

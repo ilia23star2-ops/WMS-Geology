@@ -540,3 +540,11 @@ export function useCellsForTiers(tierIds: number[]) {
         staleTime: 60_000,
     });
 }
+
+export function useAllTiers() {
+    return useQuery({
+        queryKey: ["topology", "tiers-all"],
+        queryFn: () => fetchList<Tier>("/storage/tiers/"),
+        staleTime: 60_000,
+    });
+}
