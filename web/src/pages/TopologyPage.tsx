@@ -416,6 +416,8 @@ export default function TopologyPage() {
                                                 cell={cell}
                                                 selected={cellSelection.has(cell.id)}
                                                 onToggleSelect={() => toggleCell(cell.id)}
+                                                tierCells={cells.data ?? []}
+                                                onToggleSelectCell={(id) => toggleCell(id)}
                                                 onOpenPallet={(c) => setPalletCell(c)}
                                                 onViewContents={(c, pId) => { setViewCell(c); setViewPalletId(pId); }}
                                                 onQr={(c) => void handleCellQr(c)}

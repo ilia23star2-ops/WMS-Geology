@@ -64,6 +64,7 @@ export interface Cell {
     is_active: boolean;
     pallet_id: number | null;
     pallet_status: string | null;
+    containers_count: number;
 }
 
 export type PalletType = "STANDARD" | "CORE";
