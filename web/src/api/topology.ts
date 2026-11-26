@@ -556,15 +556,22 @@ async function fetchById<T>(url: string): Promise<T> {
 }
 
 /// Цепочка ячейка→ярус→секция для скана (topology-scan).
+/// Детальные роуты ярусов/секций не документированы — резолвим списками.
 export async function resolveCellChain(cellId: number) {
     const cell = await fetchById<Cell>("/storage/cells/" + cellId + "/");
-    const tier = await fetchById<Tier>("/storage/tiers/" + cell.tier + "/");
-    const section = await fetchById<Section>("/storage/sections/" + tier.section + "/");
+    const tiers = await fetchList<Tier>("/storage/tiers/");
+    const tier = tiers.find((t) => t.id === cell.tier);
+    if (!tier) throw new Error("Ярус не найден");
+    const sections = await fetchList<Section>("/storage/sections/");
+    const section = sections.find((s) => s.id === tier.section);
+    if (!section) throw new Error("Секция не найдена");
     return { cell, tier, section };
 }
 
 /// Секция→стеллаж для скана (topology-scan).
 export async function resolveSectionChain(sectionId: number) {
-    const section = await fetchById<Section>("/storage/sections/" + sectionId + "/");
+    const sections = await fetchList<Section>("/storage/sections/");
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section) throw new Error("Секция не найдена");
     return { section };
 }
