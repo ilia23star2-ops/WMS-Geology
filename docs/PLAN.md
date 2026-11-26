@@ -407,7 +407,7 @@ P2 — оставить на web: приёмка Excel, OCR-review, токены
 | 2d | topology-cell-card-ui-mobile | плитка в паритете с веб-карточкой + containersCount | ✅ |
 | 2e | topology-cell-select-mobile | выделение ячеек + пакетная печать QR | ✅ |
 | 3 | topology-scan | скан секции/ячейки/тары в вкладке | ⬜ |
-| 4 | topology-capacity | модель вместимости + миграция + отображение | ⬜ |
+| 4 | topology-capacity | модель вместимости + миграция + отображение | ✅ |
 | 5 | topology-zones | Zone/ZoneRow + напольное размещение + ряды для карты | ⬜ |
 | 6 | topology-constructor | конструктор стеллажей/зон (bulk) | ⬜ |
 | 7 | topology-cell-edit | правка ячейки/поддона + тара в ячейке (ручное/OCR) | ⬜ |
