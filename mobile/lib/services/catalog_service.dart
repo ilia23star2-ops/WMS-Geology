@@ -14,6 +14,9 @@ library;
 import '../db/catalog_dao.dart';
 import '../db/sync_queue_dao.dart';
 import '../models/catalog.dart';
+import 'dart:io';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'api_client.dart';
 
 typedef SaveCatalog = Future<void> Function(
@@ -52,6 +55,13 @@ class CreatedCatalogItem {
   final int id;
   final Map<String, dynamic> raw;
   final bool queued;
+}
+
+/// Пункты пакетного QR для ячеек (чистая функция, тестируется).
+List<Map<String, Object>> cellQrBatchItems(List<int> cellIds) {
+  return cellIds
+      .map((id) => <String, Object>{'type': 'CELL', 'id': id})
+      .toList();
 }
 
 class CatalogService {
@@ -175,6 +185,24 @@ class CatalogService {
   /// Ячейки яруса с метаданными (topology-parity-1).
   ///
   /// Онлайн — живой запрос + кэш; офлайн — кэш (полный JSON).
+  /// Байты пакетного PDF с QR ячеек (endpoint qr-batch).
+  Future<List<int>> fetchCellsBatchQrPdf(List<int> cellIds) {
+    return _client.downloadPost(
+      '/storage/sections/qr-batch/',
+      {'items': cellQrBatchItems(cellIds)},
+    );
+  }
+
+  /// Скачать пакетный QR и открыть в системном PDF-вьювере.
+  Future<bool> openCellsBatchQrPdf(List<int> cellIds) async {
+    final bytes = await fetchCellsBatchQrPdf(cellIds);
+    final dir = await getTemporaryDirectory();
+    final file = File([dir.path, 'cells-qr-batch.pdf'].join(Platform.pathSeparator));
+    await file.writeAsBytes(bytes, flush: true);
+    final result = await OpenFilex.open(file.path);
+    return result.type == ResultType.done;
+  }
+
   Future<List<CellInfo>> fetchCellsDetailed(int tierId) async {
     try {
       final items = await _fetchAllPages('/storage/cells/', {'tier_id': tierId});
