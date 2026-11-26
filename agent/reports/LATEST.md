@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45791983113
-- ветка: fix/3.x-topology-capacity
+- run: 45796543184
+- ветка: feature/3.x-migration
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
-| Web (React) | success | — |
 | Mobile (Flutter) | success | — |
+| Web (React) | success | — |
 | Backend (Django) | success | — |
 | Report (agent) | in_progress | — |
