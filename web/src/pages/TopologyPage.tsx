@@ -409,7 +409,7 @@ export default function TopologyPage() {
                                 ) : (cells.data?.length ?? 0) === 0 ? (
                                     <Alert severity="info">В этом ярусе пока нет ячеек. Создайте кнопкой «+».</Alert>
                                 ) : (
-                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 1.5, alignItems: "stretch" }}>
+                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 1.5, alignItems: "stretch" }}>
                                         {(cells.data ?? []).map((cell: Cell) => (
                                             <CellCard
                                                 key={cell.id}
