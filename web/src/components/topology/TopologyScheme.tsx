@@ -43,13 +43,13 @@ export default function TopologyScheme({
                                     <Box
                                         key={c.id}
                                         onClick={() => onPickCell(c)}
-                                        title={`Ячейка ${c.code}: ${c.containers_count} тар (клик — открыть)`}
+                                        title={`Ячейка ${c.code}: ${c.containers_count}${c.capacity_limit !== null ? `/${c.capacity_limit}` : ""} тар (клик — открыть)`}
                                         sx={{
                                             width: 26,
                                             height: 26,
                                             borderRadius: 1,
                                             cursor: "pointer",
-                                            bgcolor: OCCUPANCY_COLORS[occupancyColor(c.containers_count)],
+                                            bgcolor: OCCUPANCY_COLORS[occupancyColor(c.containers_count, c.capacity_limit)],
                                             border: c.id === currentCellId ? "2px solid" : "2px solid transparent",
                                             borderColor: c.id === currentCellId ? "primary.main" : "transparent",
                                             "&:hover": { opacity: 0.85 },

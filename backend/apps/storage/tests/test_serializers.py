@@ -339,3 +339,36 @@ def test_cell_containers_count_excludes_disposed(db, cell, container_type):
     disposed.save()
     data = CellSerializer(cell).data
     assert data["containers_count"] == 1
+
+
+# ============================================================
+# capacity (topology-capacity)
+# ============================================================
+def test_container_type_max_on_floor_pallet_default_null(db, container_type):
+    data = ContainerTypeSerializer(container_type).data
+    assert data["max_on_floor_pallet"] is None
+
+
+def test_cell_capacity_limit_none_without_pallet(db, cell):
+    data = CellSerializer(cell).data
+    assert data["capacity_limit"] is None
+
+
+def test_cell_capacity_limit_from_type(db, cell, container_type):
+    p = Pallet.objects.create(cell=cell)
+    Container.objects.create(
+        container_number="T-K1", container_type=container_type, pallet=p,
+    )
+    data = CellSerializer(cell).data
+    assert data["capacity_limit"] == 10
+
+
+def test_cell_capacity_limit_from_override(db, cell, container_type):
+    p = Pallet.objects.create(
+        cell=cell, capacity_override={str(container_type.id): 15},
+    )
+    Container.objects.create(
+        container_number="T-K2", container_type=container_type, pallet=p,
+    )
+    data = CellSerializer(cell).data
+    assert data["capacity_limit"] == 15

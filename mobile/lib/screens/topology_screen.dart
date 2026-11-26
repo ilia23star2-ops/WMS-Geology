@@ -264,7 +264,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
   String _stateLabel(CellInfo cell) {
     if (cell.isActive == false) return 'Отключена';
     if (cell.containersCount > 0) {
-      return ['Занята ', cell.containersCount.toString()].join('');
+      final limit = cell.capacityLimit;
+      final suffix = (limit != null && limit > 0)
+          ? ['/', limit.toString()].join('')
+          : '';
+      return ['Занята ', cell.containersCount.toString(), suffix].join('');
     }
     return 'Свободна';
   }
@@ -302,6 +306,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
   Color _occupancyColor(CellInfo cell) {
     if (cell.isActive == false) return Colors.grey;
     if (cell.containersCount <= 0) return const Color(0xFFBDBDBD);
+    final limit = cell.capacityLimit;
+    if (limit != null && limit > 0) {
+      if (cell.containersCount >= limit) return const Color(0xFFE8112D);
+      if (cell.containersCount >= limit * 0.7) return const Color(0xFFF2E500);
+    }
     return const Color(0xFF2EB84C);
   }
 
