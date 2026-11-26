@@ -1,13 +1,17 @@
-/// Экран «Топология» (topology-ux-mobile).
+/// Экран «Топология» (topology-ux-mobile + cell-card-ui-mobile).
 ///
 /// Дерево комната→стеллаж→секция→ярус предзагружается при входе
 /// (спиннер), раскрытие мгновенное. Ячейки выбранного яруса — плиткой
-/// (код + статус-точка + поддон); тап по плитке открывает шторку с
-/// деталями ячейки и тарой (цветные чипы статусов). «+» на узле дерева
-/// создаёт ребёнка (офлайн через sync_queue).
+/// в паритете с веб-карточкой: чип состояния (Занята N / Свободна /
+/// Отключена), подпись «Секция · Ярус», мини-схема позиций яруса
+/// (текущая в рамке, цвет = заполненность), подпись схемы, адрес с
+/// копированием, чипы типа и поддона со счётчиком. Тап по плитке —
+/// шторка с деталями ячейки и тарой (цветные чипы статусов).
+/// «+» на узле дерева создаёт ребёнка (офлайн через sync_queue).
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/catalog.dart';
@@ -141,6 +145,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
     if (_tierId != null) await _loadCells(_tierId!);
   }
 
+  /// Копирование адреса ячейки в буфер + SnackBar.
+  Future<void> _copyAddress(String address) async {
+    await Clipboard.setData(ClipboardData(text: address));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Скопировано')));
+  }
+
   /// Тап по плитке: грузим тару и открываем шторку детали ячейки.
   Future<void> _openCell(CellInfo cell) async {
     setState(() => _cellId = cell.id);
@@ -216,13 +228,13 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   Color _stateBg(CellInfo cell) {
     if (cell.isActive == false) return Colors.red.shade50;
-    if (cell.containersCount > 0) return Colors.green.shade50;
+    if (cell.containersCount > 0) return Colors.green.shade700;
     return Colors.grey.shade100;
   }
 
   Color _stateFg(CellInfo cell) {
     if (cell.isActive == false) return Colors.red.shade700;
-    if (cell.containersCount > 0) return Colors.green.shade700;
+    if (cell.containersCount > 0) return Colors.white;
     return Colors.grey.shade700;
   }
 
@@ -243,18 +255,20 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   int _intCode(String s) => int.tryParse(s) ?? 0;
 
-  /// Цвет точки заполненности плитки (палитра как в вебе).
+  /// Цвет заливки мини-схемы (палитра как в вебе).
   Color _occupancyColor(CellInfo cell) {
     if (cell.isActive == false) return Colors.grey;
     if (cell.containersCount <= 0) return const Color(0xFFBDBDBD);
     return const Color(0xFF2EB84C);
   }
 
-  /// Плитка ячейки: точка заполненности + код + счётчик + поддон.
+  /// Плитка ячейки в паритете с веб-карточкой: чип состояния,
+  /// секция·ярус, мини-схема, подпись схемы, адрес с копированием,
+  /// чипы типа и поддона со счётчиком.
   Widget _cellTile(CellInfo cell, ThemeData theme) {
     final selected = _cellId == cell.id;
     return SizedBox(
-      width: 150,
+      width: 170,
       child: Card(
         clipBehavior: Clip.antiAlias,
         shape: selected
@@ -283,10 +297,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _sectionTierLabel(cell),
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text(_sectionTierLabel(cell), style: theme.textTheme.bodySmall),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 4,
@@ -310,13 +321,60 @@ class _TopologyScreenState extends State<TopologyScreen> {
                       )
                       .toList(),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
-                  cell.palletId == null
-                      ? 'без поддона'
-                      : ['подд #', cell.palletId.toString()].join(''),
-                  style: theme.textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
+                  'Позиции яруса: слева→направо',
+                  style: theme.textTheme.labelSmall,
+                ),
+                const SizedBox(height: 6),
+                if (cell.fullAddress != null)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          cell.fullAddress!,
+                          style: theme.textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Скопировать адрес',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 16,
+                        icon: const Icon(Icons.content_copy),
+                        onPressed: () => _copyAddress(cell.fullAddress!),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    _chip(
+                      cell.cellTypeLabel,
+                      Colors.blueGrey.shade50,
+                      Colors.blueGrey.shade700,
+                    ),
+                    if (cell.palletId != null)
+                      _chip(
+                        [
+                          '#',
+                          cell.palletId.toString(),
+                          ' · ',
+                          cell.containersCount.toString(),
+                          ' тар',
+                        ].join(''),
+                        Colors.green.shade50,
+                        Colors.green.shade700,
+                      )
+                    else
+                      _chip(
+                        'без поддона',
+                        Colors.grey.shade100,
+                        Colors.grey.shade600,
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -326,7 +384,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
   }
 
-  /// Метаданные ячейки: адрес + чипы тип/активность/поддон.
+  /// Метаданные ячейки: адрес + чипы тип/активность/поддон (шторка).
   Widget _cellMeta(CellInfo cell, ThemeData theme) {
     final active = cell.isActive != false;
     final palletActive = cell.palletStatus == 'ACTIVE';
@@ -370,7 +428,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
   }
 
-  /// Строка тары с цветным чипом статуса.
+  /// Строка тары с цветным чипом статуса (шторка).
   Widget _containerRow(model.Container c) {
     final n = c.status.name;
     final bg = n == 'active' || n == 'placed'
