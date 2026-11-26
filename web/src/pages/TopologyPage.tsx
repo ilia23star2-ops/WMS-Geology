@@ -4,6 +4,9 @@
  * topology-ux-web: сетка карточек ячеек вместо DataGrid (без h-scroll).
  */
 import { useMemo, useState, useEffect } from "react";
+import TopologyScheme from "../components/topology/TopologyScheme";
+import { buildSchemeRows } from "../utils/schemeRows";
+import { useCellsForTiers } from "../api";
 import { useSearchParams } from "react-router-dom";
 import {
     Alert,
@@ -131,6 +134,31 @@ export default function TopologyPage() {
     const sections = useSections(selectedRack);
     const tiers = useTiers(selectedSection);
     const cells = useCells(selectedTier);
+    const tierIds = useMemo(
+        () => (tiers.data ?? []).map((t) => t.id),
+        [tiers.data],
+    );
+    const multiCells = useCellsForTiers(selectedTier === null ? tierIds : []);
+    const schemeGroups = useMemo(
+        () =>
+            selectedSection === null
+                ? []
+                : [
+                      {
+                          label: "",
+                          rows: buildSchemeRows(tiers.data ?? [], multiCells.data ?? []),
+                      },
+                  ],
+        [selectedSection, tiers.data, multiCells.data],
+    );
+
+    function handlePickCell(cell: Cell) {
+        setSelectedTier(cell.tier);
+        if (cell.pallet_id !== null) {
+            setViewCell(cell);
+            setViewPalletId(cell.pallet_id);
+        }
+    }
 
     const delRoom = useDeleteRoom();
     const delRack = useDeleteRack();
@@ -378,7 +406,7 @@ export default function TopologyPage() {
                         <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
                         {selectedTier === null ? (
-                            <Alert severity="info">Выберите ярус в дереве, чтобы увидеть ячейки.</Alert>
+                            selectedSection === null ? (<Alert severity="info">Выберите секцию или ярус в дереве, чтобы увидеть ячейки.</Alert>) : (<TopologyScheme groups={schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
                         ) : (
                             <>
                                 <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center", mb: 1, flexWrap: "wrap", rowGap: 1 }}>
