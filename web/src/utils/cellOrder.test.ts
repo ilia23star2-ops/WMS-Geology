@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderCellsByCode, occupancyColor } from "./cellOrder";
+import { orderCellsByCode, occupancyColor, OCCUPANCY_COLORS } from "./cellOrder";
 import type { Cell } from "../api";
 
 function cell(id: number, code: string): Cell {
@@ -29,7 +29,22 @@ describe("occupancyColor", () => {
         expect(occupancyColor(0)).toBe("empty");
     });
 
-    it("есть тара → filled", () => {
+    it("есть тара без лимита → filled", () => {
         expect(occupancyColor(3)).toBe("filled");
+    });
+
+    it("70–99% лимита → near", () => {
+        expect(occupancyColor(8, 10)).toBe("near");
+    });
+
+    it("100% и больше → full", () => {
+        expect(occupancyColor(10, 10)).toBe("full");
+        expect(occupancyColor(12, 10)).toBe("full");
+    });
+});
+
+describe("OCCUPANCY_COLORS", () => {
+    it("все состояния имеют цвет", () => {
+        expect(Object.keys(OCCUPANCY_COLORS)).toEqual(["empty", "filled", "near", "full"]);
     });
 });

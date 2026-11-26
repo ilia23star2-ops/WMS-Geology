@@ -1,10 +1,11 @@
 /**
  * Карточка ячейки для сетки топологии (topology-ux-web + cell-card-ui).
  * Без горизонтального скролла: адрес переносится, действия иконками.
- * Мини-схема позиций яруса (слева→направо по коду) с подписью секции,
- * осмысленный чип состояния (Свободна/Занята N/Отключена),
+ * Мини-схема позиций яруса (слева→направо по коду) с подписью секции:
+ * заливка = заполненность (серый/зелёный/жёлтый/красный),
+ * текущая ячейка — чистая скруглённая синяя обводка 2px.
+ * Осмысленный чип состояния (Свободна/Занята N/Отключена),
  * выделение иконкой + рамкой вместо чекбокса.
- * Интерактивные части подсвечены hover и тултипами.
  */
 import { useState } from "react";
 import {
@@ -26,7 +27,7 @@ import QrCode2Icon from "@mui/icons-material/QrCode2";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import { CELL_TYPE_LABELS, type Cell } from "../../api";
-import { orderCellsByCode, occupancyColor } from "../../utils/cellOrder";
+import { orderCellsByCode, occupancyColor, OCCUPANCY_COLORS } from "../../utils/cellOrder";
 
 export default function CellCard({
     cell,
@@ -103,25 +104,20 @@ export default function CellCard({
                     Секция {sectionLabel} · Ярус {tierLabel}
                 </Typography>
 
-                <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: "wrap", rowGap: 0.5 }}>
+                <Stack direction="row" spacing={0.75} sx={{ mt: 0.5, flexWrap: "wrap", rowGap: 0.5 }}>
                     {ordered.map((c) => (
                         <Tooltip key={c.id} title={`Ячейка ${c.code}: ${c.containers_count} тар (клик — выделить)`}>
                             <Box
                                 onClick={() => onToggleSelectCell(c.id)}
                                 sx={{
-                                    width: 24,
-                                    height: 24,
-                                    borderRadius: 0.5,
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: 1,
                                     cursor: "pointer",
-                                    border: c.id === cell.id ? "3px solid" : "1px solid",
-                                    borderColor: c.id === cell.id ? "primary.main" : "divider",
-                                    boxShadow: c.id === cell.id ? "0 0 0 2px rgba(30, 58, 95, 0.35)" : undefined,
-                                    bgcolor:
-                                        occupancyColor(c.containers_count) === "filled"
-                                            ? "success.main"
-                                            : "action.disabledBackground",
-                                    opacity: c.containers_count > 0 ? 1 : 0.6,
-                                    "&:hover": { opacity: 1, borderColor: "primary.main" },
+                                    bgcolor: OCCUPANCY_COLORS[occupancyColor(c.containers_count)],
+                                    border: c.id === cell.id ? "2px solid" : "2px solid transparent",
+                                    borderColor: c.id === cell.id ? "primary.main" : "transparent",
+                                    "&:hover": { opacity: 0.85 },
                                 }}
                             />
                         </Tooltip>
