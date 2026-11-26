@@ -63,7 +63,7 @@ export default function CellCard({
     const stateLabel = !cell.is_active
         ? "Отключена"
         : cell.containers_count > 0
-            ? `Занята ${cell.containers_count}`
+            ? `Занята ${cell.containers_count}${cell.capacity_limit !== null ? `/${cell.capacity_limit}` : ""}`
             : "Свободна";
     const stateColor = !cell.is_active
         ? "error"
@@ -106,7 +106,7 @@ export default function CellCard({
 
                 <Stack direction="row" spacing={0.75} sx={{ mt: 0.5, flexWrap: "wrap", rowGap: 0.5 }}>
                     {ordered.map((c) => (
-                        <Tooltip key={c.id} title={`Ячейка ${c.code}: ${c.containers_count} тар (клик — выделить)`}>
+                        <Tooltip key={c.id} title={`Ячейка ${c.code}: ${c.containers_count}${c.capacity_limit !== null ? `/${c.capacity_limit}` : ""} тар (клик — выделить)`}>
                             <Box
                                 onClick={() => onToggleSelectCell(c.id)}
                                 sx={{
@@ -114,7 +114,7 @@ export default function CellCard({
                                     height: 26,
                                     borderRadius: 1,
                                     cursor: "pointer",
-                                    bgcolor: OCCUPANCY_COLORS[occupancyColor(c.containers_count)],
+                                    bgcolor: OCCUPANCY_COLORS[occupancyColor(c.containers_count, c.capacity_limit)],
                                     border: c.id === cell.id ? "2px solid" : "2px solid transparent",
                                     borderColor: c.id === cell.id ? "primary.main" : "transparent",
                                     "&:hover": { opacity: 0.85 },

@@ -65,6 +65,7 @@ export interface Cell {
     pallet_id: number | null;
     pallet_status: string | null;
     containers_count: number;
+    capacity_limit: number | null;
 }
 
 export type PalletType = "STANDARD" | "CORE";
