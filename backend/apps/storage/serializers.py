@@ -42,6 +42,7 @@ class ContainerTypeSerializer(serializers.ModelSerializer):
             "laboratory_name",
             "size_class",
             "max_on_standard_pallet",
+            "max_on_floor_pallet",
             "is_core",
             "is_disposable",
             "description",
@@ -94,6 +95,24 @@ class CellSerializer(serializers.ModelSerializer):
             1 for c in pallet.containers.all() if c.status != "DISPOSED"
         )
 
+    capacity_limit = serializers.SerializerMethodField()
+
+    def get_capacity_limit(self, obj):
+        # Лимит ячейки: override поддона по типу, иначе лимит типа.
+        pallet = getattr(obj, "pallet", None)
+        if pallet is None:
+            return None
+        containers = [
+            c for c in pallet.containers.all() if c.status != "DISPOSED"
+        ]
+        if not containers:
+            return None
+        ctype = containers[0].container_type
+        override = (pallet.capacity_override or {}).get(str(ctype.id))
+        if override is not None:
+            return int(override)
+        return ctype.max_on_standard_pallet
+
     class Meta:
         model = Cell
         fields = [
@@ -107,6 +126,7 @@ class CellSerializer(serializers.ModelSerializer):
             "pallet_id",
             "pallet_status",
             "containers_count",
+            "capacity_limit",
         ]
 
 

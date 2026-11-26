@@ -285,6 +285,11 @@ class ContainerType(models.Model):
         default=10,
         help_text="Максимум таких тар на стандартном поддоне.",
     )
+    max_on_floor_pallet = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Максимум таких тар на напольном поддоне; NULL — как на стандартном.",
+    )
     is_core = models.BooleanField(
         default=False,
         help_text="Задел: тип относится к керну.",
