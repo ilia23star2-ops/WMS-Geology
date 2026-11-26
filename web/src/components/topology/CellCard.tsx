@@ -1,8 +1,10 @@
 /**
  * Карточка ячейки для сетки топологии (topology-ux-web + cell-card-ui).
  * Без горизонтального скролла: адрес переносится, действия иконками.
- * Мини-схема позиций яруса (слева→направо по коду), счётчик тар,
+ * Мини-схема позиций яруса (слева→направо по коду) с подписью секции,
+ * осмысленный чип состояния (Свободна/Занята N/Отключена),
  * выделение иконкой + рамкой вместо чекбокса.
+ * Интерактивные части подсвечены hover и тултипами.
  */
 import { useState } from "react";
 import {
@@ -23,7 +25,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
 import VisibilityIcon from "@mui/icons-material/Visibility";
-import { CELL_TYPE_LABELS, PALLET_STATUS_LABELS, type Cell } from "../../api";
+import { CELL_TYPE_LABELS, type Cell } from "../../api";
 import { orderCellsByCode, occupancyColor } from "../../utils/cellOrder";
 
 export default function CellCard({
@@ -53,6 +55,20 @@ export default function CellCard({
     const palletId = cell.pallet_id;
     const palletStatus = cell.pallet_status;
     const ordered = orderCellsByCode(tierCells);
+    const parts = cell.full_address.split(" / ");
+    const sectionLabel = parts[2] ?? "—";
+    const tierLabel = parts[3] ?? "—";
+
+    const stateLabel = !cell.is_active
+        ? "Отключена"
+        : cell.containers_count > 0
+            ? `Занята ${cell.containers_count}`
+            : "Свободна";
+    const stateColor = !cell.is_active
+        ? "error"
+        : cell.containers_count > 0
+            ? "success"
+            : "default";
 
     function copyAddress() {
         void navigator.clipboard.writeText(cell.full_address);
@@ -67,6 +83,7 @@ export default function CellCard({
                 height: "100%",
                 borderColor: selected ? "primary.main" : undefined,
                 borderWidth: selected ? 2 : 1,
+                "&:hover": { boxShadow: 3 },
             }}
         >
             <CardContent sx={{ pb: 1 }}>
@@ -74,11 +91,7 @@ export default function CellCard({
                     <Typography variant="h3" sx={{ flex: 1, minWidth: 0 }} noWrap>
                         {cell.code}
                     </Typography>
-                    <Chip
-                        size="small"
-                        label={cell.is_active ? "Активна" : "Отключена"}
-                        color={cell.is_active ? "success" : "default"}
-                    />
+                    <Chip size="small" label={stateLabel} color={stateColor} variant={cell.is_active && cell.containers_count > 0 ? "filled" : "outlined"} />
                     <Tooltip title={selected ? "Снять выделение" : "Выделить для пакетной печати"}>
                         <IconButton size="small" color={selected ? "primary" : "default"} onClick={onToggleSelect}>
                             {selected ? <CheckCircleIcon fontSize="small" /> : <RadioButtonUncheckedIcon fontSize="small" />}
@@ -86,33 +99,37 @@ export default function CellCard({
                     </Tooltip>
                 </Stack>
 
-                <Stack direction="row" spacing={1} sx={{ mt: 1, alignItems: "center" }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 64 }}>
-                        Ярус {cell.full_address.split(" / ")[3] ?? "—"}
-                    </Typography>
-                    <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", rowGap: 0.5 }}>
-                        {ordered.map((c) => (
-                            <Tooltip key={c.id} title={`Ячейка ${c.code}: ${c.containers_count} тар (клик — выделить)`}>
-                                <Box
-                                    onClick={() => onToggleSelectCell(c.id)}
-                                    sx={{
-                                        width: 22,
-                                        height: 22,
-                                        borderRadius: 0.5,
-                                        cursor: "pointer",
-                                        border: c.id === cell.id ? "2px solid" : "1px solid",
-                                        borderColor: c.id === cell.id ? "primary.main" : "divider",
-                                        bgcolor:
-                                            occupancyColor(c.containers_count) === "filled"
-                                                ? "success.main"
-                                                : "action.disabledBackground",
-                                        opacity: c.containers_count > 0 ? 1 : 0.6,
-                                    }}
-                                />
-                            </Tooltip>
-                        ))}
-                    </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Секция {sectionLabel} · Ярус {tierLabel}
+                </Typography>
+
+                <Stack direction="row" spacing={0.5} sx={{ mt: 0.5, flexWrap: "wrap", rowGap: 0.5 }}>
+                    {ordered.map((c) => (
+                        <Tooltip key={c.id} title={`Ячейка ${c.code}: ${c.containers_count} тар (клик — выделить)`}>
+                            <Box
+                                onClick={() => onToggleSelectCell(c.id)}
+                                sx={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: 0.5,
+                                    cursor: "pointer",
+                                    border: c.id === cell.id ? "3px solid" : "1px solid",
+                                    borderColor: c.id === cell.id ? "primary.main" : "divider",
+                                    boxShadow: c.id === cell.id ? "0 0 0 2px rgba(30, 58, 95, 0.35)" : undefined,
+                                    bgcolor:
+                                        occupancyColor(c.containers_count) === "filled"
+                                            ? "success.main"
+                                            : "action.disabledBackground",
+                                    opacity: c.containers_count > 0 ? 1 : 0.6,
+                                    "&:hover": { opacity: 1, borderColor: "primary.main" },
+                                }}
+                            />
+                        </Tooltip>
+                    ))}
                 </Stack>
+                <Typography variant="caption" color="text.secondary">
+                    Позиции яруса слева→направо; клик по квадрату — выделить ячейку.
+                </Typography>
 
                 <Stack direction="row" spacing={0.5} sx={{ mt: 1, alignItems: "center" }}>
                     <Typography variant="body2" color="text.secondary" sx={{ flex: 1, wordBreak: "break-word" }}>
@@ -127,19 +144,16 @@ export default function CellCard({
 
                 <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: "wrap", rowGap: 0.5, alignItems: "center" }}>
                     <Chip size="small" variant="outlined" label={CELL_TYPE_LABELS[cell.cell_type] ?? cell.cell_type} />
-                    <Chip
-                        size="small"
-                        label={`${cell.containers_count} тар`}
-                        color={cell.containers_count > 0 ? "info" : "default"}
-                    />
                     {palletId ? (
-                        <Chip
-                            size="small"
-                            color={palletStatus === "ACTIVE" ? "success" : "default"}
-                            label={`#${palletId} · ${PALLET_STATUS_LABELS[palletStatus as keyof typeof PALLET_STATUS_LABELS] || palletStatus}`}
-                            onClick={() => onViewContents(cell, palletId)}
-                            clickable
-                        />
+                        <Tooltip title="Открыть содержимое поддона">
+                            <Chip
+                                size="small"
+                                color={palletStatus === "ACTIVE" ? "success" : "default"}
+                                label={`#${palletId} · ${cell.containers_count} тар`}
+                                onClick={() => onViewContents(cell, palletId)}
+                                clickable
+                            />
+                        </Tooltip>
                     ) : (
                         <Button size="small" variant="text" onClick={() => onOpenPallet(cell)} sx={{ textTransform: "none" }}>
                             Добавить поддон
