@@ -260,7 +260,7 @@ export default function TopologyPage() {
     }
 
     return (
-        <Box>
+        <Box sx={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", rowGap: 1 }}>
                 <Typography variant="h2" component="h1">Топология склада</Typography>
                 <Tooltip title="Добавить комнату">
@@ -270,7 +270,7 @@ export default function TopologyPage() {
 
             {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { xs: "stretch", md: "flex-start" } }}>
                 <Card sx={{ width: { xs: "100%", md: 460 }, flexShrink: 0 }}>
                     <CardContent>
                         <Typography variant="h3" sx={{ mb: 1 }}>Иерархия</Typography>
@@ -373,7 +373,7 @@ export default function TopologyPage() {
                     </CardContent>
                 </Card>
 
-                <Card sx={{ flex: 1, minWidth: 0 }}>
+                <Card sx={{ flex: 1, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
                     <CardContent>
                         <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
@@ -409,7 +409,7 @@ export default function TopologyPage() {
                                 ) : (cells.data?.length ?? 0) === 0 ? (
                                     <Alert severity="info">В этом ярусе пока нет ячеек. Создайте кнопкой «+».</Alert>
                                 ) : (
-                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 1.5 }}>
+                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 1.5, alignItems: "stretch" }}>
                                         {(cells.data ?? []).map((cell: Cell) => (
                                             <CellCard
                                                 key={cell.id}
