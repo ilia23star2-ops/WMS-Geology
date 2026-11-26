@@ -122,6 +122,8 @@ export {
     useCells,
     useCellsForTiers,
     useAllTiers,
+    resolveCellChain,
+    resolveSectionChain,
     useCreateCell,
     useCreatePallet,
     useCreateRack,

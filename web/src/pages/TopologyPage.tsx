@@ -4,6 +4,8 @@
  * topology-ux-web: сетка карточек ячеек вместо DataGrid (без h-scroll).
  */
 import { useMemo, useState, useEffect } from "react";
+import { parseWmsg } from "../utils/wmsgParse";
+import { resolveCellChain, resolveSectionChain } from "../api";
 import TopologyScheme from "../components/topology/TopologyScheme";
 import { buildSchemeRows } from "../utils/schemeRows";
 import { useCellsForTiers, useAllTiers } from "../api";
@@ -13,6 +15,7 @@ import {
     Box,
     Button,
     Card,
+    TextField,
     CardContent,
     CircularProgress,
     IconButton,
@@ -134,6 +137,38 @@ export default function TopologyPage() {
     const sections = useSections(selectedRack);
     const tiers = useTiers(selectedSection);
     const cells = useCells(selectedTier);
+    const [scanInput, setScanInput] = useState("");
+    const [scanError, setScanError] = useState<string | null>(null);
+
+    /// Сканирование/ввод кода: переход к секции или ячейке.
+    async function handleScan() {
+        const parsed = parseWmsg(scanInput.trim());
+        if (!parsed) {
+            setScanError("Неверный формат. Ожидается WMSG:<ТИП>:<ID>.");
+            return;
+        }
+        try {
+            if (parsed.type === "CELL") {
+                const chain = await resolveCellChain(parsed.id);
+                setSelectedRack(chain.section.rack);
+                setSelectedSection(chain.section.id);
+                setSelectedTier(chain.tier.id);
+                setViewCell(chain.cell);
+                setViewPalletId(chain.cell.pallet_id);
+                setScanError(null);
+            } else if (parsed.type === "SECTION") {
+                const chain = await resolveSectionChain(parsed.id);
+                setSelectedRack(chain.section.rack);
+                setSelectedSection(chain.section.id);
+                setSelectedTier(null);
+                setScanError(null);
+            } else {
+                setScanError("Тип кода не для топологии: " + parsed.type + ".");
+            }
+        } catch {
+            setScanError("Не найдено по коду.");
+        }
+    }
     const allTiers = useAllTiers();
     const tierIds = useMemo(
         () => (tiers.data ?? []).map((t) => t.id),
@@ -331,7 +366,12 @@ export default function TopologyPage() {
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { xs: "stretch", md: "flex-start" } }}>
                 <Card sx={{ width: { xs: "100%", md: 460 }, flexShrink: 0 }}>
                     <CardContent>
-                        <Typography variant="h3" sx={{ mb: 1 }}>Иерархия</Typography>
+                        <Stack direction="row" spacing={1} sx={{ mb: 1, alignItems: "center" }}>
+                            <Typography variant="h3" sx={{ flexGrow: 1 }}>Иерархия</Typography>
+                            <TextField size="small" placeholder="Скан: WMSG:…" value={scanInput} onChange={(ev) => setScanInput(ev.target.value)} sx={{ width: 190 }} />
+                            <Button variant="outlined" onClick={() => void handleScan()}>Найти</Button>
+                        </Stack>
+                        {scanError && <Alert severity="error" sx={{ mb: 1 }}>{scanError}</Alert>}
                         <List dense disablePadding>
                             {(rooms.data ?? []).map((room: Room) => {
                                 const roomSelected = selectedRoom === room.id;
