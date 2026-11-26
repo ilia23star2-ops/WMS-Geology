@@ -1,7 +1,7 @@
 # Отчёт CI
 
-- run: 45752262961
-- ветка: feature/3.x-migration
+- run: 45755797950
+- ветка: fix/3.x-topology-cell-card-ui
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
