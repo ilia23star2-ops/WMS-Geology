@@ -205,6 +205,44 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
   }
 
+  /// Подпись состояния ячейки (как в вебе).
+  String _stateLabel(CellInfo cell) {
+    if (cell.isActive == false) return 'Отключена';
+    if (cell.containersCount > 0) {
+      return ['Занята ', cell.containersCount.toString()].join('');
+    }
+    return 'Свободна';
+  }
+
+  Color _stateBg(CellInfo cell) {
+    if (cell.isActive == false) return Colors.red.shade50;
+    if (cell.containersCount > 0) return Colors.green.shade50;
+    return Colors.grey.shade100;
+  }
+
+  Color _stateFg(CellInfo cell) {
+    if (cell.isActive == false) return Colors.red.shade700;
+    if (cell.containersCount > 0) return Colors.green.shade700;
+    return Colors.grey.shade700;
+  }
+
+  /// «Секция X · Ярус Y» из полного адреса.
+  String _sectionTierLabel(CellInfo cell) {
+    final parts = (cell.fullAddress ?? '').split(' / ');
+    final sec = parts.length > 2 ? parts[2] : '—';
+    final tier = parts.length > 3 ? parts[3] : '—';
+    return ['Секция ', sec, ' · Ярус ', tier].join('');
+  }
+
+  /// Ячейки яруса в числовом порядке (слева→направо).
+  List<CellInfo> _orderedCells() {
+    final list = List<CellInfo>.from(_cells);
+    list.sort((a, b) => _intCode(a.label).compareTo(_intCode(b.label)));
+    return list;
+  }
+
+  int _intCode(String s) => int.tryParse(s) ?? 0;
+
   /// Цвет точки заполненности плитки (палитра как в вебе).
   Color _occupancyColor(CellInfo cell) {
     if (cell.isActive == false) return Colors.grey;
@@ -214,10 +252,9 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   /// Плитка ячейки: точка заполненности + код + счётчик + поддон.
   Widget _cellTile(CellInfo cell, ThemeData theme) {
-    final active = cell.isActive != false;
     final selected = _cellId == cell.id;
     return SizedBox(
-      width: 116,
+      width: 150,
       child: Card(
         clipBehavior: Clip.antiAlias,
         shape: selected
@@ -235,15 +272,6 @@ class _TopologyScreenState extends State<TopologyScreen> {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _occupancyColor(cell),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         cell.label,
@@ -251,17 +279,38 @@ class _TopologyScreenState extends State<TopologyScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    _chip(_stateLabel(cell), _stateBg(cell), _stateFg(cell)),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
-                  active
-                      ? [cell.containersCount.toString(), ' тар'].join('')
-                      : 'Отключена',
+                  _sectionTierLabel(cell),
                   style: theme.textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: _orderedCells()
+                      .map(
+                        (c) => Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: _occupancyColor(c),
+                            borderRadius: BorderRadius.circular(4),
+                            border: c.id == cell.id
+                                ? Border.all(
+                                    color: theme.colorScheme.primary,
+                                    width: 2,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 6),
                 Text(
                   cell.palletId == null
                       ? 'без поддона'
