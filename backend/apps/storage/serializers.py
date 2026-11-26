@@ -83,6 +83,16 @@ class CellSerializer(serializers.ModelSerializer):
     pallet_status = serializers.CharField(
         source="pallet.status", read_only=True, default=None,
     )
+    containers_count = serializers.SerializerMethodField()
+
+    def get_containers_count(self, obj):
+        # Число тар на поддоне (без утилизированных).
+        pallet = getattr(obj, "pallet", None)
+        if pallet is None:
+            return 0
+        return sum(
+            1 for c in pallet.containers.all() if c.status != "DISPOSED"
+        )
 
     class Meta:
         model = Cell
@@ -96,6 +106,7 @@ class CellSerializer(serializers.ModelSerializer):
             "is_active",
             "pallet_id",
             "pallet_status",
+            "containers_count",
         ]
 
 

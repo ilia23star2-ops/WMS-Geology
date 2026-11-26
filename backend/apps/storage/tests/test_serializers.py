@@ -305,3 +305,37 @@ def test_pallet_serializer_includes_updated_at(db):
     data = PalletSerializer(p).data
     assert "updated_at" in data
     assert data["updated_at"] is not None
+
+
+# ============================================================
+# containers_count в CellSerializer (topology-cell-count)
+# ============================================================
+def test_cell_containers_count_no_pallet(db, cell):
+    data = CellSerializer(cell).data
+    assert data["containers_count"] == 0
+
+
+def test_cell_containers_count_with_pallet(db, cell, container_type):
+    p = Pallet.objects.create(cell=cell)
+    Container.objects.create(
+        container_number="T-C1", container_type=container_type, pallet=p,
+    )
+    Container.objects.create(
+        container_number="T-C2", container_type=container_type, pallet=p,
+    )
+    data = CellSerializer(cell).data
+    assert data["containers_count"] == 2
+
+
+def test_cell_containers_count_excludes_disposed(db, cell, container_type):
+    p = Pallet.objects.create(cell=cell)
+    Container.objects.create(
+        container_number="T-C3", container_type=container_type, pallet=p,
+    )
+    disposed = Container.objects.create(
+        container_number="T-C4", container_type=container_type, pallet=p,
+    )
+    disposed.status = "DISPOSED"
+    disposed.save()
+    data = CellSerializer(cell).data
+    assert data["containers_count"] == 1
