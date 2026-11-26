@@ -120,6 +120,8 @@ export {
     downloadSectionQrPdf,
     useCell,
     useCells,
+    useCellsForTiers,
+    useAllTiers,
     useCreateCell,
     useCreatePallet,
     useCreateRack,

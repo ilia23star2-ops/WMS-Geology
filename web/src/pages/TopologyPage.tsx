@@ -4,6 +4,9 @@
  * topology-ux-web: сетка карточек ячеек вместо DataGrid (без h-scroll).
  */
 import { useMemo, useState, useEffect } from "react";
+import TopologyScheme from "../components/topology/TopologyScheme";
+import { buildSchemeRows } from "../utils/schemeRows";
+import { useCellsForTiers, useAllTiers } from "../api";
 import { useSearchParams } from "react-router-dom";
 import {
     Alert,
@@ -131,6 +134,61 @@ export default function TopologyPage() {
     const sections = useSections(selectedRack);
     const tiers = useTiers(selectedSection);
     const cells = useCells(selectedTier);
+    const allTiers = useAllTiers();
+    const tierIds = useMemo(
+        () => (tiers.data ?? []).map((t) => t.id),
+        [tiers.data],
+    );
+    const multiCells = useCellsForTiers(selectedTier === null ? tierIds : []);
+    const schemeGroups = useMemo(
+        () =>
+            selectedSection === null
+                ? []
+                : [
+                      {
+                          label: "",
+                          rows: buildSchemeRows(tiers.data ?? [], multiCells.data ?? []),
+                      },
+                  ],
+        [selectedSection, tiers.data, multiCells.data],
+    );
+
+    const rackTierIds = useMemo(
+        () => {
+            if (selectedRack === null || selectedSection !== null) return [];
+            const secs = sections.data ?? [];
+            return (allTiers.data ?? [])
+                .filter((t) => secs.some((s) => s.id === t.section))
+                .map((t) => t.id);
+        },
+        [selectedRack, selectedSection, sections.data, allTiers.data],
+    );
+    const rackCells = useCellsForTiers(rackTierIds);
+    const rackGroups = useMemo(
+        () => {
+            if (selectedRack === null || selectedSection !== null) return [];
+            const secs = sections.data ?? [];
+            const tset = (allTiers.data ?? []).filter((t) => secs.some((s) => s.id === t.section));
+            return secs.map((sec) => ({
+                label: "Секция " + sec.code,
+                rows: buildSchemeRows(
+                    tset.filter((t) => t.section === sec.id),
+                    rackCells.data ?? [],
+                ),
+            }));
+        },
+        [selectedRack, selectedSection, sections.data, allTiers.data, rackCells.data],
+    );
+
+    function handlePickCell(cell: Cell) {
+        const t = (allTiers.data ?? []).find((x) => x.id === cell.tier);
+        if (t) setSelectedSection(t.section);
+        setSelectedTier(cell.tier);
+        if (cell.pallet_id !== null) {
+            setViewCell(cell);
+            setViewPalletId(cell.pallet_id);
+        }
+    }
 
     const delRoom = useDeleteRoom();
     const delRack = useDeleteRack();
@@ -378,7 +436,7 @@ export default function TopologyPage() {
                         <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
                         {selectedTier === null ? (
-                            <Alert severity="info">Выберите ярус в дереве, чтобы увидеть ячейки.</Alert>
+                            selectedRack === null ? (<Alert severity="info">Выберите стеллаж, секцию или ярус в дереве, чтобы увидеть схему.</Alert>) : (<TopologyScheme groups={selectedSection === null ? rackGroups : schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
                         ) : (
                             <>
                                 <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center", mb: 1, flexWrap: "wrap", rowGap: 1 }}>
