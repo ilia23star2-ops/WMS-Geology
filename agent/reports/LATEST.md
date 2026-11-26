@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45755797950
+- run: 45757963567
 - ветка: fix/3.x-topology-cell-card-ui
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
-| Mobile (Flutter) | success | — |
-| Web (React) | success | — |
 | Backend (Django) | success | — |
+| Web (React) | success | — |
+| Mobile (Flutter) | success | — |
 | Report (agent) | in_progress | — |
