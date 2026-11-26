@@ -523,3 +523,20 @@ export async function downloadCellsBatchQrPdf(items: QrBatchItem[]): Promise<voi
     window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+/// Ячейки нескольких ярусов одним запросом-веером (для схемы стеллажа/секции).
+export function useCellsForTiers(tierIds: number[]) {
+    const key = tierIds.join(",");
+    return useQuery({
+        queryKey: ["topology", "cells-multi", key],
+        queryFn: async () => {
+            const lists = await Promise.all(
+                tierIds.map((id) => fetchList<Cell>("/storage/cells/", { tier_id: id })),
+            );
+            return lists.flat();
+        },
+        enabled: tierIds.length > 0,
+        placeholderData: keepPreviousData,
+        staleTime: 60_000,
+    });
+}
