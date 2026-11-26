@@ -168,14 +168,17 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
     if (raw == null || !mounted) return;
     final parsed = parseQrPayload(raw);
-    if (!parsed.isValid) {
+    final cellId = parsed.isValid && parsed.type == QrEntityType.cell
+        ? parsed.id
+        : bareCellId(raw);
+    if (cellId == null && !parsed.isValid) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(parsed.error ?? 'Неверный QR.')),
       );
       return;
     }
-    if (parsed.type == QrEntityType.cell) {
-      final cell = await _catalog.fetchCell(parsed.id!);
+    if (cellId != null) {
+      final cell = await _catalog.fetchCell(cellId);
       if (!mounted) return;
       setState(() => _tierId = cell.tier);
       await _loadCells(cell.tier);
