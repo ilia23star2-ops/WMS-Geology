@@ -186,6 +186,7 @@ class CellInfo {
     this.isActive,
     this.palletId,
     this.palletStatus,
+    this.containersCount = 0,
   });
 
   final int id;
@@ -195,6 +196,7 @@ class CellInfo {
   final bool? isActive;
   final int? palletId;
   final String? palletStatus;
+  final int containersCount;
 
   factory CellInfo.fromJson(Map<String, dynamic> json) {
     final id = json['id'] as int;
@@ -218,6 +220,7 @@ class CellInfo {
       isActive: json['is_active'] as bool?,
       palletId: json['pallet_id'] as int?,
       palletStatus: json['pallet_status'] as String?,
+      containersCount: (json['containers_count'] as num?)?.toInt() ?? 0,
     );
   }
 

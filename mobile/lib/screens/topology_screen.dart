@@ -205,7 +205,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
     );
   }
 
-  /// Плитка ячейки: статус-точка + код + поддон.
+  /// Цвет точки заполненности плитки (палитра как в вебе).
+  Color _occupancyColor(CellInfo cell) {
+    if (cell.isActive == false) return Colors.grey;
+    if (cell.containersCount <= 0) return const Color(0xFFBDBDBD);
+    return const Color(0xFF2EB84C);
+  }
+
+  /// Плитка ячейки: точка заполненности + код + счётчик + поддон.
   Widget _cellTile(CellInfo cell, ThemeData theme) {
     final active = cell.isActive != false;
     final selected = _cellId == cell.id;
@@ -232,7 +239,7 @@ class _TopologyScreenState extends State<TopologyScreen> {
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: active ? Colors.green : Colors.red,
+                        color: _occupancyColor(cell),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -247,6 +254,14 @@ class _TopologyScreenState extends State<TopologyScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
+                Text(
+                  active
+                      ? [cell.containersCount.toString(), ' тар'].join('')
+                      : 'Отключена',
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
                 Text(
                   cell.palletId == null
                       ? 'без поддона'
