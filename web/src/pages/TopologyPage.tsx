@@ -1,6 +1,7 @@
 /**
- * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11).
+ * Топология склада (пачка 2f-4a + 2f-4b + 2f-4c-2 + 2f-11 + topology-ux-web).
  * ТД-37: оптимизация N+1 (данные поддона берутся из Cell).
+ * topology-ux-web: сетка карточек ячеек вместо DataGrid (без h-scroll).
  */
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -10,7 +11,6 @@ import {
     Button,
     Card,
     CardContent,
-    Chip,
     CircularProgress,
     IconButton,
     List,
@@ -28,17 +28,8 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import PrintIcon from "@mui/icons-material/Print";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
-import VisibilityIcon from "@mui/icons-material/Visibility";
-import {
-    DataGrid,
-    type GridColDef,
-    type GridRowId,
-    type GridRowSelectionModel,
-} from "@mui/x-data-grid";
 
 import {
-    CELL_TYPE_LABELS,
-    PALLET_STATUS_LABELS,
     downloadCellQrPdf,
     downloadCellsBatchQrPdf,
     downloadSectionQrPdf,
@@ -70,6 +61,7 @@ import TopologyEntityDialog, {
     type TopologyKind,
 } from "../components/TopologyEntityDialog";
 import CellContentsDialog from "../components/CellContentsDialog";
+import CellCard from "../components/topology/CellCard";
 
 function extractError(err: unknown): string | null {
     const anyErr = err as {
@@ -79,59 +71,6 @@ function extractError(err: unknown): string | null {
         anyErr?.response?.data?.error
         ?? anyErr?.response?.data?.detail
         ?? null
-    );
-}
-
-function emptySelection(): GridRowSelectionModel {
-    return { type: "include", ids: new Set<GridRowId>() };
-}
-
-function CellPalletChip({
-    cell,
-    onOpenPallet,
-    onViewContents,
-}: {
-    cell: Cell;
-    onOpenPallet: (cell: Cell) => void;
-    onViewContents: (cell: Cell, palletId: number) => void;
-}) {
-    // ТД-37: берем данные из cell, без запроса к API.
-    const palletId = cell.pallet_id;
-    const palletStatus = cell.pallet_status;
-
-    if (!palletId) {
-        return (
-            <Button
-                size="small"
-                variant="text"
-                onClick={() => onOpenPallet(cell)}
-                sx={{ textTransform: "none" }}
-            >
-                Добавить
-            </Button>
-        );
-    }
-
-    return (
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
-            <Chip
-                size="small"
-                label={`#${palletId} · ${PALLET_STATUS_LABELS[palletStatus as keyof typeof PALLET_STATUS_LABELS] || palletStatus}`}
-                color={palletStatus === "ACTIVE" ? "success" : "default"}
-                onClick={() => onViewContents(cell, palletId)}
-                clickable
-            />
-            <Tooltip title="Посмотреть содержимое">
-                <IconButton size="small" onClick={() => onViewContents(cell, palletId)}>
-                    <VisibilityIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-            </Tooltip>
-            <Tooltip title="Настроить поддон">
-                <IconButton size="small" onClick={() => onOpenPallet(cell)}>
-                    <EditIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-            </Tooltip>
-        </Stack>
     );
 }
 
@@ -154,7 +93,7 @@ export default function TopologyPage() {
     const [viewCell, setViewCell] = useState<Cell | null>(null);
     const [viewPalletId, setViewPalletId] = useState<number | null>(null);
 
-    const [cellSelection, setCellSelection] = useState<GridRowSelectionModel>(emptySelection());
+    const [cellSelection, setCellSelection] = useState<Set<number>>(new Set());
 
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -200,9 +139,18 @@ export default function TopologyPage() {
     const delCell = useDeleteCell();
 
     const selectedCellIds = useMemo(
-        () => Array.from(cellSelection.ids).map((id) => Number(id)),
+        () => Array.from(cellSelection),
         [cellSelection],
     );
+
+    function toggleCell(id: number) {
+        setCellSelection((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
 
     function openCreate(kind: TopologyKind, parentId: number | null, addressPrefix?: string) {
         setDialogKind(kind);
@@ -252,76 +200,9 @@ export default function TopologyPage() {
         const items: QrBatchItem[] = selectedCellIds.map((id) => ({ type: "CELL", id }));
         try {
             await downloadCellsBatchQrPdf(items);
-            setCellSelection(emptySelection());
+            setCellSelection(new Set());
         } catch { setError("Не удалось сформировать PDF с QR."); }
     }
-
-    const cellColumns: GridColDef<Cell>[] = [
-        { field: "id", headerName: "ID", width: 70 },
-        { field: "code", headerName: "Код", width: 90 },
-        { field: "full_address", headerName: "Адрес", flex: 1, minWidth: 240 },
-        {
-            field: "cell_type",
-            headerName: "Тип",
-            width: 110,
-            valueGetter: (value) => CELL_TYPE_LABELS[value as keyof typeof CELL_TYPE_LABELS] ?? value,
-        },
-        {
-            field: "pallet",
-            headerName: "Поддон",
-            width: 240,
-            sortable: false,
-            filterable: false,
-            renderCell: (params) => (
-                <CellPalletChip
-                    cell={params.row}
-                    onOpenPallet={(c) => setPalletCell(c)}
-                    onViewContents={(c, pId) => {
-                        setViewCell(c);
-                        setViewPalletId(pId);
-                    }}
-                />
-            ),
-        },
-        {
-            field: "is_active",
-            headerName: "Статус",
-            width: 110,
-            renderCell: (params) =>
-                params.value ? (
-                    <Chip label="Активна" color="success" size="small" />
-                ) : (
-                    <Chip label="Отключена" size="small" />
-                ),
-        },
-        {
-            field: "actions",
-            headerName: "",
-            width: 140,
-            sortable: false,
-            filterable: false,
-            disableColumnMenu: true,
-            renderCell: (params) => (
-                <Stack direction="row" spacing={0.5}>
-                    <Tooltip title="QR-код">
-                        <IconButton size="small" onClick={() => void handleCellQr(params.row)}>
-                            <QrCode2Icon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Редактировать">
-                        <IconButton size="small" onClick={() => openEdit("cell", { ...params.row })}>
-                            <EditIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Удалить">
-                        <IconButton size="small" color="error" onClick={() => void handleDelete("cell", params.row.id, params.row.full_address)}>
-                            <DeleteIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                </Stack>
-            ),
-        },
-    ];
 
     function TreeNode({
         label,
@@ -379,7 +260,7 @@ export default function TopologyPage() {
     }
 
     return (
-        <Box>
+        <Box sx={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, flexWrap: "wrap", rowGap: 1 }}>
                 <Typography variant="h2" component="h1">Топология склада</Typography>
                 <Tooltip title="Добавить комнату">
@@ -389,7 +270,7 @@ export default function TopologyPage() {
 
             {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "flex-start" }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { xs: "stretch", md: "flex-start" } }}>
                 <Card sx={{ width: { xs: "100%", md: 460 }, flexShrink: 0 }}>
                     <CardContent>
                         <Typography variant="h3" sx={{ mb: 1 }}>Иерархия</Typography>
@@ -466,7 +347,7 @@ export default function TopologyPage() {
                                                                             selected={tierSelected}
                                                                             onSelect={() => {
                                                                                 setSelectedTier(tier.id);
-                                                                                setCellSelection(emptySelection());
+                                                                                setCellSelection(new Set());
                                                                             }}
                                                                             onAdd={() => openCreate("cell", tier.id, `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`)}
                                                                             onEdit={() => openEdit("tier", { id: tier.id, code: tier.code, level_number: tier.level_number, description: tier.description })}
@@ -492,7 +373,7 @@ export default function TopologyPage() {
                     </CardContent>
                 </Card>
 
-                <Card sx={{ flex: 1, minWidth: 0 }}>
+                <Card sx={{ flex: 1, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
                     <CardContent>
                         <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
@@ -523,21 +404,27 @@ export default function TopologyPage() {
                                         </IconButton>
                                     </Tooltip>
                                 </Stack>
-                                <Box sx={{ height: 480, width: "100%" }}>
-                                    <DataGrid
-                                        rows={cells.data ?? []}
-                                        columns={cellColumns}
-                                        loading={cells.isLoading}
-                                        checkboxSelection
-                                        rowSelectionModel={cellSelection}
-                                        onRowSelectionModelChange={setCellSelection}
-                                        disableRowSelectionOnClick
-                                        disableColumnFilter
-                                        disableColumnSelector
-                                        disableDensitySelector
-                                        hideFooter
-                                    />
-                                </Box>
+                                {cells.isLoading ? (
+                                    <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
+                                ) : (cells.data?.length ?? 0) === 0 ? (
+                                    <Alert severity="info">В этом ярусе пока нет ячеек. Создайте кнопкой «+».</Alert>
+                                ) : (
+                                    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 1.5, alignItems: "stretch" }}>
+                                        {(cells.data ?? []).map((cell: Cell) => (
+                                            <CellCard
+                                                key={cell.id}
+                                                cell={cell}
+                                                selected={cellSelection.has(cell.id)}
+                                                onToggleSelect={() => toggleCell(cell.id)}
+                                                onOpenPallet={(c) => setPalletCell(c)}
+                                                onViewContents={(c, pId) => { setViewCell(c); setViewPalletId(pId); }}
+                                                onQr={(c) => void handleCellQr(c)}
+                                                onEdit={(c) => openEdit("cell", { ...c })}
+                                                onDelete={(c) => void handleDelete("cell", c.id, c.full_address)}
+                                            />
+                                        ))}
+                                    </Box>
+                                )}
                             </>
                         )}
                     </CardContent>
