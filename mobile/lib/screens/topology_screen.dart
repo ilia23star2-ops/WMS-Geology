@@ -21,6 +21,7 @@ import '../services/container_service.dart';
 import '../widgets/catalog_create_dialog.dart';
 import '../widgets/cell_widgets.dart';
 import '../services/qr_parser.dart';
+import '../utils/cell_label.dart';
 import '../widgets/qr_payload_scanner.dart';
 
 class TopologyScreen extends StatefulWidget {
@@ -318,10 +319,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   /// «Секция X · Ярус Y» из полного адреса.
   String _sectionTierLabel(CellInfo cell) {
-    final parts = (cell.fullAddress ?? '').split(' / ');
-    final sec = parts.length > 2 ? parts[2] : '—';
-    final tier = parts.length > 3 ? parts[3] : '—';
-    return ['Секция ', sec, ' · Ярус ', tier].join('');
+    return sectionTierLabel(
+      sectionCode: cell.sectionCode,
+      tierCode: cell.tierCode,
+      fullAddress: cell.fullAddress,
+    );
   }
 
   /// Ячейки яруса в числовом порядке (слева→направо).
