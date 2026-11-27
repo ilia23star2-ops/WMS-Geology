@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45942066297
-- ветка: feature/3.x-migration
+- run: 45954329099
+- ветка: fix/3.x-zones-backend-models
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
 | Mobile (Flutter) | success | — |
-| Backend (Django) | success | — |
 | Web (React) | success | — |
+| Backend (Django) | success | — |
 | Report (agent) | in_progress | — |
