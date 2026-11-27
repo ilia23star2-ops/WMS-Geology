@@ -75,3 +75,23 @@ def test_zone_scheme_levels(api, place):
     assert resp.json()["rows"][0]["places"][0]["levels"][0]["level"] == 2
 
 
+
+
+def test_zone_scheme_level_nz(api, place):
+    ctype = ContainerType.objects.create(name="T")
+    Container.objects.create(
+        container_type=ctype, floor_place=place, floor_level=1,
+        draft_work_order_coded="NZ1",
+    )
+    resp = api.get(reverse("zone-scheme", args=[place.row.zone.id]))
+    assert resp.json()["rows"][0]["places"][0]["levels"][0]["nz"] == "NZ1"
+
+
+def test_zone_scheme_level_number(api, place):
+    ctype = ContainerType.objects.create(name="T")
+    Container.objects.create(
+        container_type=ctype, floor_place=place, floor_level=1,
+        container_number="7",
+    )
+    resp = api.get(reverse("zone-scheme", args=[place.row.zone.id]))
+    assert resp.json()["rows"][0]["places"][0]["levels"][0]["number"] == "7"
