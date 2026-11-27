@@ -14,6 +14,9 @@ from .views import (
     SectionViewSet,
     SmartInputSuggestionsView,
     TierViewSet,
+    ZoneViewSet,
+    ZoneRowViewSet,
+    FloorPlaceViewSet,
 )
 
 router = DefaultRouter()
@@ -32,6 +35,9 @@ router.register("cells", CellViewSet, basename="cell")
 router.register("pallets", PalletViewSet, basename="pallet")
 router.register("container-types", ContainerTypeViewSet, basename="container-type")
 router.register("containers", ContainerViewSet, basename="container")
+router.register("zones", ZoneViewSet, basename="zone")
+router.register("zone-rows", ZoneRowViewSet, basename="zone-row")
+router.register("floor-places", FloorPlaceViewSet, basename="floor-place")
 
 # Custom endpoint для подсказок
 urlpatterns = [

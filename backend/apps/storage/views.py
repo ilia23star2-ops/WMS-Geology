@@ -31,8 +31,14 @@ from .models import (
     Room,
     Section,
     Tier,
+    Zone,
+    ZoneRow,
+    FloorPlace,
 )
 from .serializers import (
+    ZoneSerializer,
+    ZoneRowSerializer,
+    FloorPlaceSerializer,
     BulkCreateSerializer,
     CellSerializer,
     ContainerCommentSerializer,
@@ -810,3 +816,49 @@ class SmartInputSuggestionsView(APIView):
             "samples": samples,
             "wells": wells,
         })
+
+class ZoneViewSet(viewsets.ModelViewSet):
+    "CRUD зон + схема напольного хранения."
+
+    queryset = Zone.objects.select_related("room")
+    serializer_class = ZoneSerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=["get"])
+    def scheme(self, request, pk=None):
+        zone = self.get_object()
+        rows = []
+        for row in zone.rows.all():
+            places = []
+            for place in row.places.all():
+                containers = place.containers.filter(
+                    status=Container.STATUS_ACTIVE,
+                ).order_by("floor_level")
+                places.append({
+                    "id": place.id,
+                    "code": place.code,
+                    "count": containers.count(),
+                    "levels": [
+                        {"container_id": c.id, "level": c.floor_level}
+                        for c in containers
+                    ],
+                })
+            rows.append({
+                "id": row.id,
+                "code": row.code,
+                "orientation": row.orientation,
+                "places": places,
+            })
+        return Response({"id": zone.id, "code": zone.code, "rows": rows})
+
+
+class ZoneRowViewSet(viewsets.ModelViewSet):
+    queryset = ZoneRow.objects.select_related("zone")
+    serializer_class = ZoneRowSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class FloorPlaceViewSet(viewsets.ModelViewSet):
+    queryset = FloorPlace.objects.select_related("row")
+    serializer_class = FloorPlaceSerializer
+    permission_classes = [IsAuthenticated]
