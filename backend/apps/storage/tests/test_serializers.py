@@ -372,3 +372,13 @@ def test_cell_capacity_limit_from_override(db, cell, container_type):
     )
     data = CellSerializer(cell).data
     assert data["capacity_limit"] == 15
+
+
+def test_cell_tier_code(db, cell):
+    data = CellSerializer(cell).data
+    assert data["tier_code"] == cell.tier.code
+
+
+def test_cell_section_code(db, cell):
+    data = CellSerializer(cell).data
+    assert data["section_code"] == cell.tier.section.code

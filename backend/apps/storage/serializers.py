@@ -113,6 +113,18 @@ class CellSerializer(serializers.ModelSerializer):
             return int(override)
         return ctype.max_on_standard_pallet
 
+    section_code = serializers.SerializerMethodField()
+    tier_code = serializers.SerializerMethodField()
+
+    def get_section_code(self, obj):
+        tier = getattr(obj, "tier", None)
+        section = getattr(tier, "section", None) if tier else None
+        return getattr(section, "code", None)
+
+    def get_tier_code(self, obj):
+        tier = getattr(obj, "tier", None)
+        return getattr(tier, "code", None)
+
     class Meta:
         model = Cell
         fields = [
@@ -127,6 +139,8 @@ class CellSerializer(serializers.ModelSerializer):
             "pallet_status",
             "containers_count",
             "capacity_limit",
+            "section_code",
+            "tier_code",
         ]
 
 
