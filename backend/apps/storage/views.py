@@ -833,13 +833,22 @@ class ZoneViewSet(viewsets.ModelViewSet):
             for place in row.places.all():
                 containers = place.containers.filter(
                     status=Container.STATUS_ACTIVE,
+                ).select_related(
+                    "draft_research_type",
                 ).order_by("floor_level")
                 places.append({
                     "id": place.id,
                     "code": place.code,
                     "count": containers.count(),
                     "levels": [
-                        {"container_id": c.id, "level": c.floor_level}
+                        {
+                            "container_id": c.id,
+                            "level": c.floor_level,
+                            "number": c.container_number,
+                            "nz": c.draft_work_order_coded,
+                            "research": c.draft_research_type.name
+                            if c.draft_research_type else None,
+                        }
                         for c in containers
                     ],
                 })

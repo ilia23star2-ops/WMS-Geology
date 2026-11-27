@@ -69,7 +69,8 @@ import TopologyEntityDialog, {
 import CellContentsDialog from "../components/CellContentsDialog";
 import CellCard from "../components/topology/CellCard";
 import ZoneScheme from "../components/topology/ZoneScheme";
-import { useZones, useZoneScheme, useDeleteZone } from "../api/zones";
+import RowStackGrid from "../components/topology/RowStackGrid";
+import { useZones, useZoneRows, useZoneScheme, useDeleteZone } from "../api/zones";
 import ZoneEntityDialog, { type ZoneDialogState } from "../components/ZoneEntityDialog";
 
 function extractError(err: unknown): string | null {
@@ -83,13 +84,17 @@ function extractError(err: unknown): string | null {
     );
 }
 
-function ZoneSchemeView({ zoneId, onCreateRow, onCreatePlace }: { zoneId: number; onCreateRow: () => void; onCreatePlace: (rowId: number) => void }) {
+function ZoneSchemeView({ zoneId, selectedRowId, onCreateRow, onCreatePlace }: { zoneId: number; selectedRowId: number | null; onCreateRow: () => void; onCreatePlace: (rowId: number) => void }) {
     const scheme = useZoneScheme(zoneId);
     if (scheme.isLoading) {
         return <Typography color="text.secondary">Загрузка схемы зоны…</Typography>;
     }
     if (!scheme.data || scheme.data.rows.length === 0) {
         return <Alert severity="info">В зоне пока нет рядов и мест.</Alert>;
+    }
+    const activeRow = selectedRowId === null ? null : scheme.data.rows.find((r) => r.id === selectedRowId) ?? null;
+    if (activeRow) {
+        return <RowStackGrid row={activeRow} />;
     }
     return <ZoneScheme scheme={scheme.data} onCreateRow={onCreateRow} onCreatePlace={onCreatePlace} />;
 }
@@ -103,6 +108,8 @@ export default function TopologyPage() {
     const [selectedSection, setSelectedSection] = useState<number | null>(null);
     const [selectedTier, setSelectedTier] = useState<number | null>(null);
     const [selectedZone, setSelectedZone] = useState<number | null>(null);
+    const [selectedZoneRow, setSelectedZoneRow] = useState<number | null>(null);
+    const zoneRows = useZoneRows();
     const zones = useZones();
     const [zoneDialog, setZoneDialog] = useState<ZoneDialogState | null>(null);
     const deleteZone = useDeleteZone();
@@ -409,6 +416,7 @@ export default function TopologyPage() {
                                             onSelect={() => {
                                                 setSelectedRoom(room.id);
                                                 setSelectedZone(null);
+                                                setSelectedZoneRow(null);
                                                 setSelectedRack(null);
                                                 setSelectedSection(null);
                                                 setSelectedTier(null);
@@ -431,6 +439,7 @@ export default function TopologyPage() {
                                                         onSelect={() => {
                                                             setSelectedRack(rack.id);
                                                             setSelectedZone(null);
+                                                            setSelectedZoneRow(null);
                                                             setSelectedSection(null);
                                                             setSelectedTier(null);
                                                         }}
@@ -452,6 +461,7 @@ export default function TopologyPage() {
                                                                     onSelect={() => {
                                                                         setSelectedSection(section.id);
                                                                         setSelectedZone(null);
+                                                                        setSelectedZoneRow(null);
                                                                         setSelectedTier(null);
                                                                     }}
                                                                     onAdd={() => openCreate("tier", section.id)}
@@ -472,6 +482,7 @@ export default function TopologyPage() {
                                                                             onSelect={() => {
                                                                                 setSelectedTier(tier.id);
                                                                                 setSelectedZone(null);
+                                                                                setSelectedZoneRow(null);
                                                                                 setCellSelection(new Set());
                                                                             }}
                                                                             onAdd={() => openCreate("cell", tier.id, `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`)}
@@ -489,23 +500,39 @@ export default function TopologyPage() {
 
                                         {roomSelected && roomZones.map((zone) => {
                                             const zoneSelected = selectedZone === zone.id;
+                                            const zoneRowList = zoneSelected ? (zoneRows.data ?? []).filter((r) => r.zone === zone.id) : [];
                                             return (
-                                                <TreeNode
-                                                    key={zone.id}
-                                                    label={`Зона ${zone.code}`}
-                                                    depth={1}
-                                                    hasChildren={false}
-                                                    selected={zoneSelected}
-                                                    onSelect={() => {
-                                                        setSelectedZone(zone.id);
-                                                        setSelectedRack(null);
-                                                        setSelectedSection(null);
-                                                        setSelectedTier(null);
-                                                    }}
+                                                <Box key={zone.id}>
+                                                    <TreeNode
+                                                        label={`Зона ${zone.code}`}
+                                                        depth={1}
+                                                        hasChildren={true}
+                                                        selected={zoneSelected}
+                                                        onSelect={() => {
+                                                            setSelectedZone(zone.id);
+                                                            setSelectedZoneRow(null);
+                                                            setSelectedRack(null);
+                                                            setSelectedSection(null);
+                                                            setSelectedTier(null);
+                                                        }}
                                                     onAdd={() => setZoneDialog({ kind: "zone", parentId: room.id, initial: null })}
                                                     onEdit={() => setZoneDialog({ kind: "zone", parentId: room.id, initial: { id: zone.id, code: zone.code, name: zone.name, description: zone.description } })}
-                                                    onDelete={() => handleZoneDelete(zone.id, zone.code)}
-                                                />
+                                                        onDelete={() => handleZoneDelete(zone.id, zone.code)}
+                                                    />
+                                                    {zoneRowList.map((zr) => (
+                                                        <TreeNode
+                                                            key={zr.id}
+                                                            label={`Ряд ${zr.code}`}
+                                                            depth={2}
+                                                            hasChildren={false}
+                                                            selected={selectedZoneRow === zr.id}
+                                                            onSelect={() => setSelectedZoneRow(zr.id)}
+                                                            onAdd={() => setZoneDialog({ kind: "floor-place", parentId: zr.id, initial: null })}
+                                                            onEdit={() => setMessage("Правка ряда — в следующей пачке")}
+                                                            onDelete={() => setMessage("Удаление ряда — в следующей пачке")}
+                                                        />
+                                                    ))}
+                                                </Box>
                                             );
                                         })}
                                     </Box>
@@ -526,7 +553,7 @@ export default function TopologyPage() {
 
                         {selectedTier === null ? (
                             selectedRack === null ? (selectedZone !== null ? (
-                                    <ZoneSchemeView zoneId={selectedZone} onCreateRow={() => setZoneDialog({ kind: "zone-row", parentId: selectedZone, initial: null })} onCreatePlace={(rowId) => setZoneDialog({ kind: "floor-place", parentId: rowId, initial: null })} />
+                                    <ZoneSchemeView zoneId={selectedZone} selectedRowId={selectedZoneRow} onCreateRow={() => setZoneDialog({ kind: "zone-row", parentId: selectedZone, initial: null })} onCreatePlace={(rowId) => setZoneDialog({ kind: "floor-place", parentId: rowId, initial: null })} />
                                 ) : (
                                     <Alert severity="info">Выберите стеллаж, секцию или ярус в дереве, чтобы увидеть схему.</Alert>
                                 )) : (<TopologyScheme groups={selectedSection === null ? rackGroups : schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
