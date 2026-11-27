@@ -913,3 +913,12 @@
 **Где:** backend/apps/storage/models.py (Zone, ZoneRow), миграция; DATABASE.md; UI topology-zones.
 
 **Статус:** 🟡 решение принято, реализация в topology-zones.
+
+
+## Зоны (напольное хранение), 2026-11-27
+- Zone — отдельная сущность: место в комнате для напольного хранения тары рядами; Zone.room FK.
+- Ориентация ряда — на каждый ряд (ZoneRow.orientation: horizontal/vertical).
+- Лимита хранения нет: счётчик тары вычисляемый по зоне/ряду/месту, без валидации.
+- Адрес: комната/зона/ряд/место/ярус-стопки (ярус снизу вверх от 1).
+- QR: только зона и ряд (WMSG:ZONE:<id>, WMSG:ROW:<id>); место и ярус виртуальные.
+- Глоссарий: Zone, ZoneRow, FloorPlace, floor_level — см. ZONES-DESIGN.md.
