@@ -69,7 +69,8 @@ import TopologyEntityDialog, {
 import CellContentsDialog from "../components/CellContentsDialog";
 import CellCard from "../components/topology/CellCard";
 import ZoneScheme from "../components/topology/ZoneScheme";
-import { useZones, useZoneScheme } from "../api/zones";
+import { useZones, useZoneScheme, useDeleteZone } from "../api/zones";
+import ZoneEntityDialog, { type ZoneDialogState } from "../components/ZoneEntityDialog";
 
 function extractError(err: unknown): string | null {
     const anyErr = err as {
@@ -82,7 +83,7 @@ function extractError(err: unknown): string | null {
     );
 }
 
-function ZoneSchemeView({ zoneId }: { zoneId: number }) {
+function ZoneSchemeView({ zoneId, onCreateRow, onCreatePlace }: { zoneId: number; onCreateRow: () => void; onCreatePlace: (rowId: number) => void }) {
     const scheme = useZoneScheme(zoneId);
     if (scheme.isLoading) {
         return <Typography color="text.secondary">Загрузка схемы зоны…</Typography>;
@@ -90,7 +91,7 @@ function ZoneSchemeView({ zoneId }: { zoneId: number }) {
     if (!scheme.data || scheme.data.rows.length === 0) {
         return <Alert severity="info">В зоне пока нет рядов и мест.</Alert>;
     }
-    return <ZoneScheme scheme={scheme.data} />;
+    return <ZoneScheme scheme={scheme.data} onCreateRow={onCreateRow} onCreatePlace={onCreatePlace} />;
 }
 
 export default function TopologyPage() {
@@ -103,6 +104,12 @@ export default function TopologyPage() {
     const [selectedTier, setSelectedTier] = useState<number | null>(null);
     const [selectedZone, setSelectedZone] = useState<number | null>(null);
     const zones = useZones();
+    const [zoneDialog, setZoneDialog] = useState<ZoneDialogState | null>(null);
+    const deleteZone = useDeleteZone();
+    const handleZoneDelete = (id: number, code: string) => {
+        if (!window.confirm(`Удалить зону ${code}?`)) return;
+        deleteZone.mutate(id, { onSuccess: () => setMessage(`Зона ${code} удалена.`) });
+    };
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogKind, setDialogKind] = useState<TopologyKind>("room");
@@ -495,9 +502,9 @@ export default function TopologyPage() {
                                                         setSelectedSection(null);
                                                         setSelectedTier(null);
                                                     }}
-                                                    onAdd={() => setMessage("Создание зон — в пачке zones-web-crud")}
-                                                    onEdit={() => setMessage("Правка зон — в пачке zones-web-crud")}
-                                                    onDelete={() => setMessage("Удаление зон — в пачке zones-web-crud")}
+                                                    onAdd={() => setZoneDialog({ kind: "zone", parentId: room.id, initial: null })}
+                                                    onEdit={() => setZoneDialog({ kind: "zone", parentId: room.id, initial: { id: zone.id, code: zone.code, name: zone.name, description: zone.description } })}
+                                                    onDelete={() => handleZoneDelete(zone.id, zone.code)}
                                                 />
                                             );
                                         })}
@@ -519,7 +526,7 @@ export default function TopologyPage() {
 
                         {selectedTier === null ? (
                             selectedRack === null ? (selectedZone !== null ? (
-                                    <ZoneSchemeView zoneId={selectedZone} />
+                                    <ZoneSchemeView zoneId={selectedZone} onCreateRow={() => setZoneDialog({ kind: "zone-row", parentId: selectedZone, initial: null })} onCreatePlace={(rowId) => setZoneDialog({ kind: "floor-place", parentId: rowId, initial: null })} />
                                 ) : (
                                     <Alert severity="info">Выберите стеллаж, секцию или ярус в дереве, чтобы увидеть схему.</Alert>
                                 )) : (<TopologyScheme groups={selectedSection === null ? rackGroups : schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
@@ -576,6 +583,13 @@ export default function TopologyPage() {
                     </CardContent>
                 </Card>
             </Stack>
+
+            <ZoneEntityDialog
+                open={zoneDialog !== null}
+                state={zoneDialog}
+                onClose={() => setZoneDialog(null)}
+                onSuccess={(m) => { setZoneDialog(null); setMessage(m); }}
+            />
 
             <TopologyEntityDialog
                 open={dialogOpen}

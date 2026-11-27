@@ -17,3 +17,8 @@ export function placeTone(count: number): "empty" | "filled" {
 export function schemeTotal(places: ZoneSchemePlace[]): number {
     return places.reduce((acc, p) => acc + p.count, 0);
 }
+
+/** Следующий код места в ряду (максимум + 1). */
+export function nextPlaceCode(places: ZoneSchemePlace[]): number {
+    return places.reduce((max, p) => Math.max(max, p.code), 0) + 1;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { placeTone, rowIsVertical, schemeTotal } from "./zoneScheme";
+import { nextPlaceCode, placeTone, rowIsVertical, schemeTotal } from "./zoneScheme";
 
 describe("rowIsVertical", () => {
     it("vertical → true", () => {
@@ -29,5 +29,15 @@ describe("schemeTotal", () => {
             { id: 2, code: 2, count: 3, levels: [] },
         ];
         expect(schemeTotal(places)).toBe(5);
+    });
+});
+
+describe("nextPlaceCode", () => {
+    it("максимум кода + 1", () => {
+        const places = [
+            { id: 1, code: 1, count: 0, levels: [] },
+            { id: 2, code: 7, count: 0, levels: [] },
+        ];
+        expect(nextPlaceCode(places)).toBe(8);
     });
 });
