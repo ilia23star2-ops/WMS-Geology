@@ -379,6 +379,19 @@ class Container(models.Model):
         related_name="floor_containers",
         help_text="Комната, если тара стоит прямо на полу.",
     )
+    floor_place = models.ForeignKey(
+        "FloorPlace",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="containers",
+        help_text="Место напольного хранения (зона/ряд/стопка).",
+    )
+    floor_level = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Ярус стопки на полу (снизу вверх от 1).",
+    )
     position_on_pallet = models.IntegerField(
         null=True,
         blank=True,
@@ -470,3 +483,97 @@ class Container(models.Model):
 
     def __str__(self) -> str:
         return self.container_number or f"Черновик #{self.pk}"
+
+class Zone(models.Model):
+    "Зона — место в комнате для напольного хранения тары рядами."
+
+    room = models.ForeignKey(
+        Room, on_delete=models.CASCADE, related_name="zones",
+    )
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=100, blank=True, default="")
+    qr_code = models.TextField(unique=True, null=True, blank=True)
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Зона"
+        verbose_name_plural = "Зоны"
+        ordering = ["room", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["room", "code"], name="zone_unique_room_code",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.room.name} / {self.code}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.qr_code:
+            self.qr_code = f"WMSG:ZONE:{self.id}"
+            super().save(update_fields=["qr_code"])
+
+
+class ZoneRow(models.Model):
+    "Ряд внутри зоны; ориентация на каждый ряд."
+
+    ORIENTATION_HORIZONTAL = "horizontal"
+    ORIENTATION_VERTICAL = "vertical"
+    ORIENTATION_CHOICES = [
+        (ORIENTATION_HORIZONTAL, "Горизонтально"),
+        (ORIENTATION_VERTICAL, "Вертикально"),
+    ]
+
+    zone = models.ForeignKey(
+        Zone, on_delete=models.CASCADE, related_name="rows",
+    )
+    code = models.CharField(max_length=50)
+    orientation = models.CharField(
+        max_length=10, choices=ORIENTATION_CHOICES,
+        default=ORIENTATION_HORIZONTAL,
+    )
+    qr_code = models.TextField(unique=True, null=True, blank=True)
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Ряд зоны"
+        verbose_name_plural = "Ряды зон"
+        ordering = ["zone", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["zone", "code"], name="zonerow_unique_zone_code",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.zone} / ряд {self.code}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.qr_code:
+            self.qr_code = f"WMSG:ROW:{self.id}"
+            super().save(update_fields=["qr_code"])
+
+
+class FloorPlace(models.Model):
+    "Место (позиция) в ряду; тара ставится друг на друга."
+
+    row = models.ForeignKey(
+        ZoneRow, on_delete=models.CASCADE, related_name="places",
+    )
+    code = models.IntegerField()
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Место напольного хранения"
+        verbose_name_plural = "Места напольного хранения"
+        ordering = ["row", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["row", "code"], name="floorplace_unique_row_code",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.row} / место {self.code}"
