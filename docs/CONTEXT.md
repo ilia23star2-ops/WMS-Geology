@@ -12,7 +12,7 @@
 **Активная серия:** `feature/3.x-migration` (OCR, переоткрыта 2026-11-13).
 **Ветка:** `feature/3.x-migration`.
 
-**Текущий заход:** серия `3.x-topology-redesign`: ux-mobile ✅, ux-web ✅, cell-count ✅, cell-card-ui ✅ (веб), cell-card-ui-mobile ✅ (мобилка), cell-select-mobile ✅, topology-scheme ✅, topology-capacity ✅ (N/лимит + градация; миграция 0013 max_on_floor_pallet). Далее: topology-scan (скан секции/ячейки/тары в вкладке топологии), затем topology-zones, topology-constructor, topology-cell-edit, topology-stats. Известная мелочь: на очень широком экране карточки не растягиваются (auto-fit) — вернёмся в topology-stats.
+**Текущий заход:** серия `3.x-topology-redesign`: ux-mobile ✅, ux-web ✅, cell-count ✅, cell-card-ui ✅ (веб), cell-card-ui-mobile ✅ (мобилка), cell-select-mobile ✅, topology-scheme ✅, topology-capacity ✅ (N/лимит + градация; миграция 0013 max_on_floor_pallet), topology-scan ✅ (веб: все типы; мобилка: ячейка), topology-labels ✅ (section_code/tier_code на плитках). Далее: topology-scheme-mobile (схема стеллажа/секции на мобилке), затем topology-zones, topology-constructor, topology-cell-edit, topology-stats. Известная мелочь: на очень широком экране карточки не растягиваются (auto-fit) — вернёмся в topology-stats.
 Остаток OCR: `6e-2-dup`, `6k`, `6e-4`.
 
 **Тесты (замерено 2026-11-23, run.sh all на рабочем ПК):**

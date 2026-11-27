@@ -217,7 +217,7 @@ Hard-delete. `ProtectedError` (`PickListItem`, `ShipmentItem`) → 409.
 
 ---
 
-**Поля ячейки в ответе списка (`GET /storage/cells`):** `containers_count` — число тар не-DISPOSED на поддоне; `capacity_limit` — лимит ячейки: `capacity_override` поддона по типу первой тары, иначе `max_on_standard_pallet` типа; `null` без поддона или тар. Тип тары: `max_on_floor_pallet` (NULL — как на стандартном).
+**Поля ячейки в ответе списка (`GET /storage/cells`):** `containers_count` — число тар не-DISPOSED на поддоне; `capacity_limit` — лимит ячейки: `capacity_override` поддона по типу первой тары, иначе `max_on_standard_pallet` типа; `null` без поддона или тар. Тип тары: `max_on_floor_pallet` (NULL — как на стандартном). `section_code` / `tier_code` — коды секции и яруса (подписи на карточках/плитках).
 
 ## Тара и поддоны
 
