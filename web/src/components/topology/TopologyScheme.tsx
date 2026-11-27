@@ -25,7 +25,8 @@ export default function TopologyScheme({
     onPickCell: (cell: Cell) => void;
 }) {
     return (
-        <Stack direction="row" spacing={3} sx={{ flexWrap: "wrap", columnGap: 3, rowGap: 2 }}>
+        <Box sx={{ overflowX: "auto", pb: 1 }}>
+            <Stack direction="row" spacing={3} sx={{ flexWrap: "nowrap", columnGap: 3 }}>
             {groups.map((g, gi) => (
                 <Box key={g.label || `group-${gi}`}>
                     {g.label && (
@@ -61,6 +62,7 @@ export default function TopologyScheme({
                     </Stack>
                 </Box>
             ))}
-        </Stack>
+            </Stack>
+        </Box>
     );
 }

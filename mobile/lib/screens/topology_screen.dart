@@ -351,6 +351,8 @@ class _TopologyScreenState extends State<TopologyScreen> {
 
   /// Ячейки для схемы: sectionId → tierId → cells.
   final Map<int, Map<int, List<CellInfo>>> _schemeCells = {};
+  NamedCatalog? _schemeRack;
+  NamedCatalog? _schemeSection;
 
   Future<void> _loadSchemeSection(int sectionId) async {
     if (_schemeCells.containsKey(sectionId)) return;
@@ -601,11 +603,15 @@ class _TopologyScreenState extends State<TopologyScreen> {
                               () => _create('section', [rack]),
                             ),
                             onExpansionChanged: (open) {
-                              if (open) _loadSchemeRack(rack.id);
+                              if (open) {
+                                setState(() {
+                                  _schemeRack = rack;
+                                  _schemeSection = null;
+                                });
+                                _loadSchemeRack(rack.id);
+                              }
                             },
-                            children: [
-                              _rackScheme(rack),
-                              ...(_sections[rack.id] ?? const [])
+                            children: (_sections[rack.id] ?? const [])
                                 .map(
                                   (section) => ExpansionTile(
                                     title: _nodeTitle(
@@ -613,11 +619,15 @@ class _TopologyScreenState extends State<TopologyScreen> {
                                       () => _create('tier', [section]),
                                     ),
                                     onExpansionChanged: (open) {
-                                      if (open) _loadSchemeSection(section.id);
+                                      if (open) {
+                                        setState(() {
+                                          _schemeSection = section;
+                                          _schemeRack = null;
+                                        });
+                                        _loadSchemeSection(section.id);
+                                      }
                                     },
-                                    children: [
-                                      _sectionScheme(section),
-                                      ...(_tiers[section.id] ?? const [])
+                                    children: (_tiers[section.id] ?? const [])
                                         .map(
                                           (tier) => ListTile(
                                             title: Text(
@@ -637,11 +647,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
                                               _loadCells(tier.id);
                                             },
                                           ),
-                                        ),
-                                    ],
+                                        )
+                                        .toList(),
                                   ),
-                                ),
-                            ],
+                                )
+                                .toList(),
                           ),
                         )
                         .toList(),
@@ -671,6 +681,16 @@ class _TopologyScreenState extends State<TopologyScreen> {
                   )
                 else
                   Text('Ячейки яруса', style: theme.textTheme.titleMedium),
+                if (_tierId == null && (_schemeRack != null || _schemeSection != null))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: _schemeSection != null
+                          ? _sectionScheme(_schemeSection!)
+                          : _rackScheme(_schemeRack!),
+                    ),
+                  ),
                 if (_tierId == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
