@@ -68,7 +68,8 @@ import TopologyEntityDialog, {
 } from "../components/TopologyEntityDialog";
 import CellContentsDialog from "../components/CellContentsDialog";
 import CellCard from "../components/topology/CellCard";
-import ZonesCard from "../components/topology/ZonesCard";
+import ZoneScheme from "../components/topology/ZoneScheme";
+import { useZones, useZoneScheme } from "../api/zones";
 
 function extractError(err: unknown): string | null {
     const anyErr = err as {
@@ -81,6 +82,17 @@ function extractError(err: unknown): string | null {
     );
 }
 
+function ZoneSchemeView({ zoneId }: { zoneId: number }) {
+    const scheme = useZoneScheme(zoneId);
+    if (scheme.isLoading) {
+        return <Typography color="text.secondary">Загрузка схемы зоны…</Typography>;
+    }
+    if (!scheme.data || scheme.data.rows.length === 0) {
+        return <Alert severity="info">В зоне пока нет рядов и мест.</Alert>;
+    }
+    return <ZoneScheme scheme={scheme.data} />;
+}
+
 export default function TopologyPage() {
     const [searchParams] = useSearchParams();
     const targetCellId = searchParams.get("cell_id") ? Number(searchParams.get("cell_id")) : null;
@@ -89,6 +101,8 @@ export default function TopologyPage() {
     const [selectedRack, setSelectedRack] = useState<number | null>(null);
     const [selectedSection, setSelectedSection] = useState<number | null>(null);
     const [selectedTier, setSelectedTier] = useState<number | null>(null);
+    const [selectedZone, setSelectedZone] = useState<number | null>(null);
+    const zones = useZones();
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [dialogKind, setDialogKind] = useState<TopologyKind>("room");
@@ -377,6 +391,7 @@ export default function TopologyPage() {
                             {(rooms.data ?? []).map((room: Room) => {
                                 const roomSelected = selectedRoom === room.id;
                                 const roomRacks = roomSelected ? racks.data ?? [] : [];
+                                const roomZones = roomSelected ? (zones.data ?? []).filter((z) => z.room === room.id) : [];
                                 return (
                                     <Box key={room.id}>
                                         <TreeNode
@@ -386,6 +401,7 @@ export default function TopologyPage() {
                                             selected={roomSelected}
                                             onSelect={() => {
                                                 setSelectedRoom(room.id);
+                                                setSelectedZone(null);
                                                 setSelectedRack(null);
                                                 setSelectedSection(null);
                                                 setSelectedTier(null);
@@ -407,6 +423,7 @@ export default function TopologyPage() {
                                                         selected={rackSelected}
                                                         onSelect={() => {
                                                             setSelectedRack(rack.id);
+                                                            setSelectedZone(null);
                                                             setSelectedSection(null);
                                                             setSelectedTier(null);
                                                         }}
@@ -427,6 +444,7 @@ export default function TopologyPage() {
                                                                     selected={sectionSelected}
                                                                     onSelect={() => {
                                                                         setSelectedSection(section.id);
+                                                                        setSelectedZone(null);
                                                                         setSelectedTier(null);
                                                                     }}
                                                                     onAdd={() => openCreate("tier", section.id)}
@@ -446,6 +464,7 @@ export default function TopologyPage() {
                                                                             selected={tierSelected}
                                                                             onSelect={() => {
                                                                                 setSelectedTier(tier.id);
+                                                                                setSelectedZone(null);
                                                                                 setCellSelection(new Set());
                                                                             }}
                                                                             onAdd={() => openCreate("cell", tier.id, `${room.name} / ${rack.code} / ${section.code} / ${tier.code}`)}
@@ -458,6 +477,28 @@ export default function TopologyPage() {
                                                         );
                                                     })}
                                                 </Box>
+                                            );
+                                        })}
+
+                                        {roomSelected && roomZones.map((zone) => {
+                                            const zoneSelected = selectedZone === zone.id;
+                                            return (
+                                                <TreeNode
+                                                    key={zone.id}
+                                                    label={`Зона ${zone.code}`}
+                                                    depth={1}
+                                                    hasChildren={false}
+                                                    selected={zoneSelected}
+                                                    onSelect={() => {
+                                                        setSelectedZone(zone.id);
+                                                        setSelectedRack(null);
+                                                        setSelectedSection(null);
+                                                        setSelectedTier(null);
+                                                    }}
+                                                    onAdd={() => setMessage("Создание зон — в пачке zones-web-crud")}
+                                                    onEdit={() => setMessage("Правка зон — в пачке zones-web-crud")}
+                                                    onDelete={() => setMessage("Удаление зон — в пачке zones-web-crud")}
+                                                />
                                             );
                                         })}
                                     </Box>
@@ -477,7 +518,11 @@ export default function TopologyPage() {
                         <Typography variant="h3" sx={{ mb: 1 }}>Ячейки {selectedTier !== null && `яруса #${selectedTier}`}</Typography>
 
                         {selectedTier === null ? (
-                            selectedRack === null ? (<Alert severity="info">Выберите стеллаж, секцию или ярус в дереве, чтобы увидеть схему.</Alert>) : (<TopologyScheme groups={selectedSection === null ? rackGroups : schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
+                            selectedRack === null ? (selectedZone !== null ? (
+                                    <ZoneSchemeView zoneId={selectedZone} />
+                                ) : (
+                                    <Alert severity="info">Выберите стеллаж, секцию или ярус в дереве, чтобы увидеть схему.</Alert>
+                                )) : (<TopologyScheme groups={selectedSection === null ? rackGroups : schemeGroups} currentCellId={viewCell ? viewCell.id : null} onPickCell={handlePickCell} />)
                         ) : (
                             <>
                                 <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end", alignItems: "center", mb: 1, flexWrap: "wrap", rowGap: 1 }}>
@@ -530,8 +575,6 @@ export default function TopologyPage() {
                         )}
                     </CardContent>
                 </Card>
-
-            <ZonesCard />
             </Stack>
 
             <TopologyEntityDialog
