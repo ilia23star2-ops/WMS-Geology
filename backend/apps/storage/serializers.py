@@ -16,6 +16,9 @@ from .models import (
     Room,
     Section,
     Tier,
+    Zone,
+    ZoneRow,
+    FloorPlace,
 )
 
 
@@ -197,6 +200,10 @@ class ContainerSerializer(serializers.ModelSerializer):
     floor_room_name = serializers.CharField(
         source="floor_room.name", read_only=True, default=None,
     )
+    floor_place_id = serializers.IntegerField(
+        source="floor_place.id", read_only=True, default=None,
+    )
+    floor_level = serializers.IntegerField(read_only=True, default=None)
     cell_id = serializers.IntegerField(
         source="pallet.cell_id", read_only=True, default=None,
     )
@@ -228,6 +235,10 @@ class ContainerSerializer(serializers.ModelSerializer):
             "cell_full_address",
             "floor_room",
             "floor_room_name",
+
+            "floor_place_id",
+
+            "floor_level",
             "position_on_pallet",
             "status",
             "comment",
@@ -535,3 +546,20 @@ class CreateInCellSerializer(serializers.Serializer):
         if not Site.objects.filter(pk=value).exists():
             raise serializers.ValidationError(f"Участок #{value} не найден.")
         return value
+
+class ZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Zone
+        fields = ["id", "room", "code", "name", "qr_code", "description"]
+
+
+class ZoneRowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ZoneRow
+        fields = ["id", "zone", "code", "orientation", "qr_code", "description"]
+
+
+class FloorPlaceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FloorPlace
+        fields = ["id", "row", "code", "description"]
