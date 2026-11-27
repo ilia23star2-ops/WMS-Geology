@@ -68,6 +68,7 @@ import TopologyEntityDialog, {
 } from "../components/TopologyEntityDialog";
 import CellContentsDialog from "../components/CellContentsDialog";
 import CellCard from "../components/topology/CellCard";
+import ZonesCard from "../components/topology/ZonesCard";
 
 function extractError(err: unknown): string | null {
     const anyErr = err as {
@@ -529,6 +530,8 @@ export default function TopologyPage() {
                         )}
                     </CardContent>
                 </Card>
+
+            <ZonesCard />
             </Stack>
 
             <TopologyEntityDialog
