@@ -22,6 +22,8 @@ import '../widgets/catalog_create_dialog.dart';
 import '../widgets/cell_widgets.dart';
 import '../services/qr_parser.dart';
 import '../utils/cell_label.dart';
+import '../utils/scheme_rows.dart';
+import '../widgets/topology_scheme.dart';
 import '../widgets/qr_payload_scanner.dart';
 
 class TopologyScreen extends StatefulWidget {
@@ -347,6 +349,61 @@ class _TopologyScreenState extends State<TopologyScreen> {
     return const Color(0xFF2EB84C);
   }
 
+  /// Ячейки для схемы: sectionId → tierId → cells.
+  final Map<int, Map<int, List<CellInfo>>> _schemeCells = {};
+
+  Future<void> _loadSchemeSection(int sectionId) async {
+    if (_schemeCells.containsKey(sectionId)) return;
+    final tiers = _tiers[sectionId] ?? await _catalog.fetchTiers(sectionId);
+    final map = <int, List<CellInfo>>{};
+    for (final t in tiers) {
+      map[t.id] = await _catalog.fetchCellsDetailed(t.id);
+    }
+    if (!mounted) return;
+    setState(() => _schemeCells[sectionId] = map);
+  }
+
+  Future<void> _loadSchemeRack(int rackId) async {
+    for (final s in (_sections[rackId] ?? const <NamedCatalog>[])) {
+      await _loadSchemeSection(s.id);
+    }
+  }
+
+  Widget _sectionScheme(NamedCatalog section) {
+    final byTier = _schemeCells[section.id];
+    if (byTier == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: TopologyScheme(
+        groups: [SchemeGroup(label: '', rows: buildSchemeRows(_tiers[section.id] ?? const [], byTier))],
+        currentCellId: _cellId,
+        onPickCell: (c) {
+          setState(() => _tierId = c.tier);
+          _loadCells(c.tier);
+          _openCell(c);
+        },
+      ),
+    );
+  }
+
+  Widget _rackScheme(NamedCatalog rack) {
+    final groups = <SchemeGroup>[];
+    for (final s in (_sections[rack.id] ?? const <NamedCatalog>[])) {
+      final byTier = _schemeCells[s.id];
+      if (byTier == null) continue;
+      groups.add(SchemeGroup(label: ['Секция', s.label].join(' · '), rows: buildSchemeRows(_tiers[s.id] ?? const [], byTier)));
+    }
+    if (groups.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: TopologyScheme(groups: groups, currentCellId: _cellId, onPickCell: (c) {
+        setState(() => _tierId = c.tier);
+        _loadCells(c.tier);
+        _openCell(c);
+      }),
+    );
+  }
+
   /// Плитка ячейки в паритете с веб-карточкой + выделение.
   Widget _cellTile(CellInfo cell, ThemeData theme) {
     final selected = _cellId == cell.id;
@@ -543,14 +600,24 @@ class _TopologyScreenState extends State<TopologyScreen> {
                               ['Стеллаж', rack.label].join(' · '),
                               () => _create('section', [rack]),
                             ),
-                            children: (_sections[rack.id] ?? const [])
+                            onExpansionChanged: (open) {
+                              if (open) _loadSchemeRack(rack.id);
+                            },
+                            children: [
+                              _rackScheme(rack),
+                              ...(_sections[rack.id] ?? const [])
                                 .map(
                                   (section) => ExpansionTile(
                                     title: _nodeTitle(
                                       ['Секция', section.label].join(' · '),
                                       () => _create('tier', [section]),
                                     ),
-                                    children: (_tiers[section.id] ?? const [])
+                                    onExpansionChanged: (open) {
+                                      if (open) _loadSchemeSection(section.id);
+                                    },
+                                    children: [
+                                      _sectionScheme(section),
+                                      ...(_tiers[section.id] ?? const [])
                                         .map(
                                           (tier) => ListTile(
                                             title: Text(
@@ -570,11 +637,11 @@ class _TopologyScreenState extends State<TopologyScreen> {
                                               _loadCells(tier.id);
                                             },
                                           ),
-                                        )
-                                        .toList(),
+                                        ),
+                                    ],
                                   ),
-                                )
-                                .toList(),
+                                ),
+                            ],
                           ),
                         )
                         .toList(),
