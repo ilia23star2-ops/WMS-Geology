@@ -1,5 +1,5 @@
 /**
- * API напольных зон (zones-web + zones-web-crud).
+ * API напольных зон (zones-web + zones-web-crud + zones-stack-ui).
  * Контракт: docs/API.md «Зоны (напольное хранение)».
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,6 +36,9 @@ export interface FloorPlace {
 export interface ZoneSchemeLevel {
     container_id: number;
     level: number;
+    number: string | null;
+    nz: string | null;
+    research: string | null;
 }
 
 export interface ZoneSchemePlace {
@@ -97,6 +100,19 @@ export function useZones() {
     });
 }
 
+/** Все ряды зон (фильтр по зоне — на клиенте). */
+export function useZoneRows() {
+    return useQuery({
+        queryKey: ["zone-rows"],
+        queryFn: async () => {
+            const { data } = await apiClient.get<ZoneRow[] | { results: ZoneRow[] }>(
+                "/storage/zone-rows/",
+            );
+            return Array.isArray(data) ? data : data.results;
+        },
+    });
+}
+
 /** Схема зоны: ряды → места → стопки. */
 export function useZoneScheme(zoneId: number | null) {
     return useQuery({
@@ -115,6 +131,7 @@ function useInvalidateZones() {
     const qc = useQueryClient();
     return () => {
         void qc.invalidateQueries({ queryKey: ["zones"] });
+        void qc.invalidateQueries({ queryKey: ["zone-rows"] });
         void qc.invalidateQueries({ queryKey: ["zone-scheme"] });
     };
 }
