@@ -1,7 +1,7 @@
 # Отчёт CI
 
-- run: 45936874435
-- ветка: fix/3.x-topology-labels-mobile
+- run: 45937675541
+- ветка: feature/3.x-migration
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
