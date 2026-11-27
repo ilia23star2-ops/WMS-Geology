@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45941029077
+- run: 45941913914
 - ветка: fix/3.x-topology-scheme-layout
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
 | Web (React) | success | — |
-| Backend (Django) | success | — |
 | Mobile (Flutter) | success | — |
+| Backend (Django) | success | — |
 | Report (agent) | in_progress | — |
