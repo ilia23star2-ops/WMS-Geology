@@ -40,11 +40,12 @@ class TopologyScheme extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Wrap(
-      spacing: 24,
-      runSpacing: 12,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: groups.map((g) {
-        return Column(
+        return Padding(
+        padding: const EdgeInsets.only(right: 24),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (g.label.isNotEmpty)
@@ -92,6 +93,7 @@ class TopologyScheme extends StatelessWidget {
               ),
             ),
           ],
+        ),
         );
       }).toList(),
     );
