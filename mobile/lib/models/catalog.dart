@@ -189,6 +189,8 @@ class CellInfo {
     this.containersCount = 0,
     this.capacityLimit,
     this.tier = 0,
+    this.sectionCode,
+    this.tierCode,
   });
 
   final int id;
@@ -201,6 +203,8 @@ class CellInfo {
   final int containersCount;
   final int? capacityLimit;
   final int tier;
+  final String? sectionCode;
+  final String? tierCode;
 
   factory CellInfo.fromJson(Map<String, dynamic> json) {
     final id = json['id'] as int;
@@ -227,6 +231,8 @@ class CellInfo {
       containersCount: (json['containers_count'] as num?)?.toInt() ?? 0,
       capacityLimit: (json['capacity_limit'] as num?)?.toInt(),
       tier: (json['tier'] as num?)?.toInt() ?? 0,
+      sectionCode: json['section_code'] as String?,
+      tierCode: json['tier_code'] as String?,
     );
   }
 
