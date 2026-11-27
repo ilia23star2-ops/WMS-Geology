@@ -629,3 +629,10 @@ PDF «Акт приёмки». Только `Receipt.status=CONFIRMED`.
 `POST /api/v1/ocr/tasks/{id}/zones/` теперь также возвращает `extracted`
 (пересчёт по сохранённым зонам), чтобы web показывал свежие значения
 сразу после переразметки.
+
+## Зоны (напольное хранение), 2026-11-27
+
+- CRUD: `/storage/zones/`, `/storage/zone-rows/`, `/storage/floor-places/` (стандартные ViewSet).
+- Поля зоны: id, room, code, name, qr_code, description. Ряд: id, zone, code, orientation, qr_code, description. Место: id, row, code, description.
+- `GET /storage/zones/{id}/scheme/` — `{ id, code, rows: [ { id, code, orientation, places: [ { id, code, count, levels: [ { container_id, level } ] } ] } ] }`; `count` — число ACTIVE-тар на месте.
+- Container: в ответах списка/детали + `floor_place_id`, `floor_level`.

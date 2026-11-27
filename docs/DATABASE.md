@@ -493,3 +493,11 @@ RETURNED / CANCELLED / LOST`.
 
 - Расшифровка проб (до появления ЛИМС-выгрузки).
 - Сгенерированные PDF-этикетки (генерируются на лету).
+
+## Зоны (напольное хранение) — миграция 0014 (2026-11-27)
+
+- `Zone`: room FK (Room), code, name, qr_code (`WMSG:ZONE:<id>`, автогенерация), description; unique (room, code).
+- `ZoneRow`: zone FK (Zone), code, orientation (horizontal|vertical), qr_code (`WMSG:ROW:<id>`, автогенерация), description; unique (zone, code).
+- `FloorPlace`: row FK (ZoneRow), code (int), description; unique (row, code).
+- `Container`: + `floor_place` FK (FloorPlace, SET_NULL, null) и `floor_level` (int, null) — ярус стопки снизу вверх от 1; взаимно исключающе с `pallet` (на уровне БД не форсируется).
+- Дизайн: docs/ZONES-DESIGN.md.

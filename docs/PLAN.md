@@ -420,7 +420,7 @@ P2 — оставить на web: приёмка Excel, OCR-review, токены
 
 
 ## topology-zones — напольные зоны (дизайн 2026-11-27)
-- [ ] zones-backend: модели Zone/ZoneRow/FloorPlace + Container.floor_place/floor_level, миграция, API, тесты.
+- [x] zones-backend: модели Zone/ZoneRow/FloorPlace + Container.floor_place/floor_level, миграция, API, тесты.
 - [ ] zones-web: схема зоны в топологии (ряды по ориентации, стопки), CRUD.
 - [ ] zones-mobile: зоны в топологии + скан WMSG:ZONE/ROW.
 Дизайн: docs/ZONES-DESIGN.md.
