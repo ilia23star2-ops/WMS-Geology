@@ -96,3 +96,11 @@ QrParseResult parseQrPayload(String raw) {
 
   return QrParseResult.success(type: type, id: id, raw: trimmed);
 }
+
+/// Голое число во вводе — считать id ячейки (topology-scan-mobile).
+int? bareCellId(String raw) {
+  final t = raw.trim();
+  if (!RegExp(r'^[0-9]+$').hasMatch(t)) return null;
+  final id = int.tryParse(t);
+  return (id != null && id > 0) ? id : null;
+}

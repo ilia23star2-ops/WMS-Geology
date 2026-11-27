@@ -188,6 +188,7 @@ class CellInfo {
     this.palletStatus,
     this.containersCount = 0,
     this.capacityLimit,
+    this.tier = 0,
   });
 
   final int id;
@@ -199,6 +200,7 @@ class CellInfo {
   final String? palletStatus;
   final int containersCount;
   final int? capacityLimit;
+  final int tier;
 
   factory CellInfo.fromJson(Map<String, dynamic> json) {
     final id = json['id'] as int;
@@ -224,6 +226,7 @@ class CellInfo {
       palletStatus: json['pallet_status'] as String?,
       containersCount: (json['containers_count'] as num?)?.toInt() ?? 0,
       capacityLimit: (json['capacity_limit'] as num?)?.toInt(),
+      tier: (json['tier'] as num?)?.toInt() ?? 0,
     );
   }
 

@@ -1,11 +1,11 @@
 # Отчёт CI
 
-- run: 45805069499
-- ветка: feature/3.x-migration
+- run: 45816023159
+- ветка: fix/3.x-topology-scan-mobile
 
 | Job | Статус | Упавшие шаги |
 |---|---|---|
-| Mobile (Flutter) | success | — |
 | Web (React) | success | — |
 | Backend (Django) | success | — |
+| Mobile (Flutter) | success | — |
 | Report (agent) | in_progress | — |

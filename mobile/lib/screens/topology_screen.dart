@@ -20,6 +20,8 @@ import '../services/catalog_service.dart';
 import '../services/container_service.dart';
 import '../widgets/catalog_create_dialog.dart';
 import '../widgets/cell_widgets.dart';
+import '../services/qr_parser.dart';
+import '../widgets/qr_payload_scanner.dart';
 
 class TopologyScreen extends StatefulWidget {
   const TopologyScreen({super.key});
@@ -157,6 +159,35 @@ class _TopologyScreenState extends State<TopologyScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Скопировано')));
+  }
+
+  /// Сканировать QR и перейти: ячейка → её ярус + шторка.
+  Future<void> _scanAndGo() async {
+    final raw = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrPayloadScannerPage()),
+    );
+    if (raw == null || !mounted) return;
+    final parsed = parseQrPayload(raw);
+    final cellId = parsed.isValid && parsed.type == QrEntityType.cell
+        ? parsed.id
+        : bareCellId(raw);
+    if (cellId == null && !parsed.isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(parsed.error ?? 'Неверный QR.')),
+      );
+      return;
+    }
+    if (cellId != null) {
+      final cell = await _catalog.fetchCell(cellId);
+      if (!mounted) return;
+      setState(() => _tierId = cell.tier);
+      await _loadCells(cell.tier);
+      await _openCell(cell);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пока поддерживается только QR ячейки.')),
+      );
+    }
   }
 
   /// Долгое нажатие: вход в режим выделения и выбор ячейки.
@@ -459,7 +490,16 @@ class _TopologyScreenState extends State<TopologyScreen> {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).padding.bottom;
     return Scaffold(
-      appBar: AppBar(title: const Text('Топология')),
+      appBar: AppBar(
+        title: const Text('Топология'),
+        actions: [
+          IconButton(
+            tooltip: 'Скан QR',
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () => _scanAndGo(),
+          ),
+        ],
+      ),
       body: _initialLoading
           ? const Center(child: CircularProgressIndicator())
           : ListView(

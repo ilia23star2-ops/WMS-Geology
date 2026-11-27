@@ -203,6 +203,12 @@ class CatalogService {
     return result.type == ResultType.done;
   }
 
+  /// Одна ячейка по id (переход по QR).
+  Future<CellInfo> fetchCell(int id) async {
+    final response = await _client.get<Map<String, dynamic>>('/storage/cells/$id/');
+    return CellInfo.fromJson(response.data!);
+  }
+
   Future<List<CellInfo>> fetchCellsDetailed(int tierId) async {
     try {
       final items = await _fetchAllPages('/storage/cells/', {'tier_id': tierId});

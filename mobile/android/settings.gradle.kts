@@ -1,4 +1,4 @@
-pluginManagement {
+﻿pluginManagement {
     val flutterSdkPath =
         run {
             val properties = java.util.Properties()
@@ -11,6 +11,7 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
+        maven { url = uri("https://artifacts-zl.talend.com/nexus/content/groups/gradle_plugins_group/") }
         google()
         mavenCentral()
         gradlePluginPortal()
